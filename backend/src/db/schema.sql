@@ -1,0 +1,33 @@
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  email TEXT UNIQUE,
+  access_token TEXT,
+  refresh_token TEXT,
+  push_token TEXT,
+  gmail_history_id TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS emails (
+  id TEXT PRIMARY KEY,
+  user_id TEXT,
+  gmail_thread_id TEXT,
+  gmail_message_id TEXT,
+  subject TEXT,
+  from_email TEXT,
+  from_name TEXT,
+  snippet TEXT,
+  body TEXT,
+  received_at DATETIME,
+  status TEXT DEFAULT 'pending',
+  draft_content TEXT,
+  gmail_draft_id TEXT,
+  sent_at DATETIME,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_emails_user_id ON emails(user_id);
+CREATE INDEX IF NOT EXISTS idx_emails_status ON emails(status);
+CREATE INDEX IF NOT EXISTS idx_emails_received_at ON emails(received_at);
+CREATE INDEX IF NOT EXISTS idx_emails_gmail_thread_id ON emails(gmail_thread_id);
+CREATE INDEX IF NOT EXISTS idx_emails_gmail_message_id ON emails(gmail_message_id);

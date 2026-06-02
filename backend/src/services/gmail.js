@@ -1,0 +1,375 @@
+'use strict';
+
+const { google } = require('googleapis');
+const { updateUserTokens, updateUserHistoryId, getUser } = require('../db');
+
+function createOAuthClient() {
+  return new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
+}
+
+/**
+ * Returns an authenticated OAuth2 client for the given user,
+ * automatically refreshing the access token if needed.
+ */
+async function refreshAndGetClient(user) {
+  const oauth2Client = createOAuthClient();
+  oauth2Client.setCredentials({
+    access_token: user.access_token,
+    refresh_token: user.refresh_token,
+  });
+
+  // Set up token refresh listener to persist new tokens
+  oauth2Client.on('tokens', (tokens) => {
+    updateUserTokens(
+      user.id,
+      tokens.access_token || user.access_token,
+      tokens.refresh_token || null
+    );
+  });
+
+  // Proactively refresh if the token looks expired or missing
+  try {
+    const tokenInfo = await oauth2Client.getTokenInfo(user.access_token);
+    const expiryMs = tokenInfo.expiry_date;
+    const bufferMs = 5 * 60 * 1000; // 5-minute buffer
+    if (expiryMs && Date.now() > expiryMs - bufferMs) {
+      const { credentials } = await oauth2Client.refreshAccessToken();
+      oauth2Client.setCredentials(credentials);
+      updateUserTokens(
+        user.id,
+        credentials.access_token,
+        credentials.refresh_token || null
+      );
+    }
+  } catch (_err) {
+    // If getTokenInfo fails (e.g., network), attempt a refresh anyway
+    try {
+      const { credentials } = await oauth2Client.refreshAccessToken();
+      oauth2Client.setCredentials(credentials);
+      updateUserTokens(
+        user.id,
+        credentials.access_token,
+        credentials.refresh_token || null
+      );
+    } catch (refreshErr) {
+      console.error(`[gmail] Token refresh failed for user ${user.id}:`, refreshErr.message);
+      throw refreshErr;
+    }
+  }
+
+  return oauth2Client;
+}
+
+/**
+ * Register Gmail push notifications via Google Cloud Pub/Sub.
+ * Returns the historyId from the watch response.
+ */
+async function setupGmailWatch(userId) {
+  const user = getUser(userId);
+  if (!user) throw new Error(`User ${userId} not found`);
+
+  const auth = await refreshAndGetClient(user);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  const res = await gmail.users.watch({
+    userId: 'me',
+    requestBody: {
+      topicName: process.env.PUBSUB_TOPIC,
+      labelIds: ['INBOX'],
+      labelFilterBehavior: 'INCLUDE',
+    },
+  });
+
+  const historyId = res.data.historyId;
+  updateUserHistoryId(userId, historyId);
+  console.log(`[gmail] Watch set up for user ${userId}, historyId=${historyId}`);
+  return historyId;
+}
+
+/**
+ * Fetch new messages since the given historyId.
+ * Returns an array of { messageId, threadId }.
+ */
+async function getNewMessages(userId, historyId) {
+  const user = getUser(userId);
+  if (!user) throw new Error(`User ${userId} not found`);
+
+  const auth = await refreshAndGetClient(user);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  const results = [];
+  let pageToken;
+
+  do {
+    const res = await gmail.users.history.list({
+      userId: 'me',
+      startHistoryId: historyId,
+      historyTypes: ['messageAdded'],
+      labelId: 'INBOX',
+      pageToken,
+    });
+
+    const history = res.data.history || [];
+    for (const record of history) {
+      for (const added of record.messagesAdded || []) {
+        const msg = added.message;
+        // Only include messages that are in INBOX (not sent by us)
+        if (msg.labelIds && msg.labelIds.includes('INBOX') && !msg.labelIds.includes('SENT')) {
+          results.push({ messageId: msg.id, threadId: msg.threadId });
+        }
+      }
+    }
+
+    pageToken = res.data.nextPageToken;
+
+    // Update historyId to the latest seen
+    if (res.data.historyId) {
+      updateUserHistoryId(userId, res.data.historyId);
+    }
+  } while (pageToken);
+
+  return results;
+}
+
+/**
+ * Decode base64url-encoded Gmail message body.
+ */
+function decodeBody(data) {
+  if (!data) return '';
+  // Gmail uses base64url encoding
+  const base64 = data.replace(/-/g, '+').replace(/_/g, '/');
+  return Buffer.from(base64, 'base64').toString('utf8');
+}
+
+/**
+ * Recursively extract the plain-text (or HTML fallback) body from MIME parts.
+ */
+function extractBody(payload) {
+  if (!payload) return '';
+
+  // Direct body
+  if (payload.body && payload.body.data) {
+    return decodeBody(payload.body.data);
+  }
+
+  if (!payload.parts || payload.parts.length === 0) return '';
+
+  // Prefer text/plain
+  const plainPart = payload.parts.find(p => p.mimeType === 'text/plain');
+  if (plainPart) {
+    if (plainPart.body && plainPart.body.data) {
+      return decodeBody(plainPart.body.data);
+    }
+  }
+
+  // Fall back to text/html, strip tags
+  const htmlPart = payload.parts.find(p => p.mimeType === 'text/html');
+  if (htmlPart && htmlPart.body && htmlPart.body.data) {
+    const html = decodeBody(htmlPart.body.data);
+    return html.replace(/<[^>]+>/g, ' ').replace(/\s{2,}/g, '\n').trim();
+  }
+
+  // Recurse into multipart
+  for (const part of payload.parts) {
+    if (part.mimeType && part.mimeType.startsWith('multipart/')) {
+      const body = extractBody(part);
+      if (body) return body;
+    }
+  }
+
+  return '';
+}
+
+/**
+ * Parse a single Gmail message resource into a clean object.
+ */
+function parseMessage(msg) {
+  const headers = {};
+  for (const h of (msg.payload?.headers || [])) {
+    headers[h.name.toLowerCase()] = h.value;
+  }
+
+  const fromHeader = headers['from'] || '';
+  // Parse "Name <email>" format
+  const fromMatch = fromHeader.match(/^(.+?)\s*<(.+?)>$/) ||
+                    fromHeader.match(/^(.+)$/);
+  const fromName = fromMatch?.[1]?.trim().replace(/^"|"$/g, '') || '';
+  const fromEmail = fromMatch?.[2]?.trim() || fromHeader.trim();
+
+  const body = extractBody(msg.payload);
+  const receivedAt = msg.internalDate
+    ? new Date(parseInt(msg.internalDate)).toISOString()
+    : new Date().toISOString();
+
+  return {
+    messageId: msg.id,
+    threadId: msg.threadId,
+    subject: headers['subject'] || '(no subject)',
+    fromEmail,
+    fromName,
+    snippet: msg.snippet || '',
+    body,
+    receivedAt,
+    labelIds: msg.labelIds || [],
+  };
+}
+
+/**
+ * Fetch a single Gmail message.
+ */
+async function getMessage(userId, messageId) {
+  const user = getUser(userId);
+  if (!user) throw new Error(`User ${userId} not found`);
+
+  const auth = await refreshAndGetClient(user);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  const res = await gmail.users.messages.get({
+    userId: 'me',
+    id: messageId,
+    format: 'full',
+  });
+
+  return parseMessage(res.data);
+}
+
+/**
+ * Fetch a full Gmail thread with all messages.
+ * Returns { threadId, messages: [...] }
+ */
+async function getThread(userId, threadId) {
+  const user = getUser(userId);
+  if (!user) throw new Error(`User ${userId} not found`);
+
+  const auth = await refreshAndGetClient(user);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  const res = await gmail.users.threads.get({
+    userId: 'me',
+    id: threadId,
+    format: 'full',
+  });
+
+  const messages = (res.data.messages || []).map(parseMessage);
+  return { threadId, messages };
+}
+
+/**
+ * Create a Gmail draft reply in an existing thread.
+ * Returns the draft object { id, message }.
+ */
+async function createDraft(userId, to, subject, body, threadId) {
+  const user = getUser(userId);
+  if (!user) throw new Error(`User ${userId} not found`);
+
+  const auth = await refreshAndGetClient(user);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  // Ensure subject has Re: prefix
+  const reSubject = subject.toLowerCase().startsWith('re:')
+    ? subject
+    : `Re: ${subject}`;
+
+  // Build RFC 2822 message
+  const messageParts = [
+    `To: ${to}`,
+    `Subject: ${reSubject}`,
+    `Content-Type: text/plain; charset=utf-8`,
+    `MIME-Version: 1.0`,
+    '',
+    body,
+  ];
+  const rawMessage = messageParts.join('\r\n');
+  const encodedMessage = Buffer.from(rawMessage)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+
+  const requestBody = {
+    message: {
+      raw: encodedMessage,
+    },
+  };
+
+  if (threadId) {
+    requestBody.message.threadId = threadId;
+  }
+
+  const res = await gmail.users.drafts.create({
+    userId: 'me',
+    requestBody,
+  });
+
+  return res.data;
+}
+
+/**
+ * Send an existing Gmail draft by draft ID.
+ */
+async function sendDraft(userId, draftId) {
+  const user = getUser(userId);
+  if (!user) throw new Error(`User ${userId} not found`);
+
+  const auth = await refreshAndGetClient(user);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  const res = await gmail.users.drafts.send({
+    userId: 'me',
+    requestBody: { id: draftId },
+  });
+
+  return res.data;
+}
+
+/**
+ * Delete an existing Gmail draft.
+ */
+async function deleteDraft(userId, draftId) {
+  const user = getUser(userId);
+  if (!user) throw new Error(`User ${userId} not found`);
+
+  const auth = await refreshAndGetClient(user);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  await gmail.users.drafts.delete({
+    userId: 'me',
+    id: draftId,
+  });
+}
+
+/**
+ * Archive (remove INBOX label) from a Gmail message thread.
+ */
+async function archiveThread(userId, threadId) {
+  const user = getUser(userId);
+  if (!user) throw new Error(`User ${userId} not found`);
+
+  const auth = await refreshAndGetClient(user);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  await gmail.users.threads.modify({
+    userId: 'me',
+    id: threadId,
+    requestBody: {
+      removeLabelIds: ['INBOX'],
+    },
+  });
+}
+
+module.exports = {
+  createOAuthClient,
+  refreshAndGetClient,
+  setupGmailWatch,
+  getNewMessages,
+  getMessage,
+  getThread,
+  createDraft,
+  sendDraft,
+  deleteDraft,
+  archiveThread,
+};

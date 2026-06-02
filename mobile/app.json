@@ -1,0 +1,44 @@
+{
+  "expo": {
+    "name": "Glow SF",
+    "slug": "glow-sf",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "glowsf",
+    "backgroundColor": "#FDF6F0",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#FDF6F0"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.glowsf.app",
+      "infoPlist": {
+        "UIBackgroundModes": ["remote-notification"]
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FDF6F0"
+      },
+      "package": "com.glowsf.app"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#D4A0A0",
+          "sounds": [],
+          "androidMode": "default",
+          "androidCollapsedTitle": "Glow SF"
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
