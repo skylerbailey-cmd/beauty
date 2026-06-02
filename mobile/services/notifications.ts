@@ -69,7 +69,7 @@ export function handleNotificationResponse(
   }
 }
 
-export function useNotificationListener(router: Router): void {
+export function useNotificationListener(router: Router): () => void {
   // This is called from _layout.tsx inside a useEffect
   const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
     handleNotificationResponse(response, router);
