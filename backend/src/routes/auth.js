@@ -80,8 +80,14 @@ router.get('/google/callback', async (req, res) => {
     // Store userId in session
     req.session.userId = userId;
 
-    const deepLink = `${process.env.FRONTEND_DEEP_LINK || 'glowsf://'}auth-success?userId=${encodeURIComponent(userId)}&email=${encodeURIComponent(profile.email)}`;
-    res.redirect(deepLink);
+    res.send(`
+      <html><body style="font-family:sans-serif;text-align:center;padding:60px;background:#FDF6F0;">
+        <h2 style="color:#D4A0A0;">✓ Gmail Connected!</h2>
+        <p style="color:#2D2D2D;">Your User ID: <strong>${userId}</strong></p>
+        <p style="color:#8A8A8A;">Copy this ID and add it to your mobile app .env as<br><code>EXPO_PUBLIC_USER_ID=${userId}</code></p>
+        <p style="color:#8A8A8A;margin-top:30px;">You can close this tab.</p>
+      </body></html>
+    `);
   } catch (err) {
     console.error('[auth] Callback error:', err);
     res.redirect(`${process.env.FRONTEND_DEEP_LINK || 'glowsf://'}auth-error?reason=${encodeURIComponent(err.message)}`);
