@@ -11,6 +11,7 @@ const path = require('path');
 const authRoutes = require('./routes/auth');
 const emailRoutes = require('./routes/emails');
 const webhookRoutes = require('./routes/webhook');
+const { router: welcomeRoutes } = require('./routes/welcome');
 const { getAllUsers } = require('./db');
 const { setupGmailWatch } = require('./services/gmail');
 
@@ -42,8 +43,12 @@ app.use(session({
 
 // ─── Routes ────────────────────────────────────────────────────────────────────
 
+// Serve the welcome email generator web UI
+app.use(express.static(path.join(__dirname, '../../web')));
+
 app.use('/auth', authRoutes);
 app.use('/api/emails', emailRoutes);
+app.use('/api/welcome', welcomeRoutes);
 app.use('/webhook', webhookRoutes);
 
 // Health check
