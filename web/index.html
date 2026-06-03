@@ -162,6 +162,7 @@
       margin-bottom: 8px;
     }
 
+    .field input[type="text"],
     .field input[type="email"] {
       width: 100%;
       padding: 13px 16px;
@@ -175,6 +176,7 @@
       transition: border-color .2s;
     }
 
+    .field input[type="text"]:focus,
     .field input[type="email"]:focus {
       border-color: var(--rose);
       background: var(--white);
@@ -370,6 +372,15 @@
 
     .btn-secondary:hover { border-color: var(--rose); color: var(--rose-dk); }
 
+    .btn-send {
+      background: var(--gold);
+      color: white;
+    }
+
+    .btn-send:hover:not(:disabled) { background: #b8943d; }
+    .btn-send:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-send.sent { background: #81c784; }
+
     /* ── Loading ──────────────────────────────────────────────────────── */
     .loading-wrap {
       text-align: center;
@@ -544,6 +555,12 @@
       <h2 class="card-title">New Customer Welcome</h2>
       <p class="card-sub">Enter the customer's email and select the products they purchased. We'll generate a personalized welcome email with usage instructions.</p>
 
+      <!-- Customer Name -->
+      <div class="field">
+        <label for="customerName">Customer First Name</label>
+        <input type="text" id="customerName" placeholder="e.g. Sarah" autocomplete="off" />
+      </div>
+
       <!-- Email -->
       <div class="field">
         <label for="customerEmail">Customer Email Address</label>
@@ -607,14 +624,6 @@
           <strong>To:</strong>
           <span id="previewTo"></span>
         </div>
-        <div class="email-meta-row">
-          <strong>From:</strong>
-          <span>Glow SF &lt;hello@glowsf.com&gt;</span>
-        </div>
-        <div class="email-meta-row">
-          <strong>Subject:</strong>
-          <span id="previewSubject"></span>
-        </div>
       </div>
 
       <div class="products-used">
@@ -631,8 +640,9 @@
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-secondary" onclick="goBack()">← Start over</button>
+        <button class="btn btn-secondary" onclick="goBack()">&larr; Start over</button>
         <button class="btn btn-primary" onclick="copyEmail()">Copy Email</button>
+        <button class="btn btn-send" id="sendBtn" onclick="sendEmail()">Send Email</button>
       </div>
     </div>
   </div>
@@ -761,10 +771,18 @@
     document.getElementById('formError').hidden = true;
   }
 
+  let currentCustomerEmail = '';
+
   async function handleNext() {
     hideError();
+    const name = document.getElementById('customerName').value.trim();
     const email = document.getElementById('customerEmail').value.trim();
     const selectedIds = getSelectedIds();
+
+    if (!name) {
+      showError('Please enter the customer\'s first name.');
+      return;
+    }
 
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       showError('Please enter a valid customer email address.');
@@ -775,6 +793,8 @@
       showError('Please select at least one product.');
       return;
     }
+
+    currentCustomerEmail = email;
 
     // Show loading
     document.getElementById('step1').hidden = true;
@@ -787,7 +807,7 @@
       const res = await fetch('/api/welcome/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerEmail: email, selectedProductIds: selectedIds }),
+        body: JSON.stringify({ customerEmail: email, customerName: name, selectedProductIds: selectedIds }),
       });
 
       const data = await res.json();
@@ -796,7 +816,6 @@
 
       // Populate preview
       document.getElementById('previewTo').textContent = email;
-      document.getElementById('previewSubject').textContent = 'Welcome to Glow SF — Your Beauty Routine Awaits ✨';
       document.getElementById('emailBody').value = data.emailBody;
 
       // Populate product pills
@@ -845,6 +864,47 @@
       // Fallback for older browsers
       document.getElementById('emailBody').select();
       document.execCommand('copy');
+    }
+  }
+
+  async function sendEmail() {
+    const emailBody = document.getElementById('emailBody').value;
+    const btn = document.getElementById('sendBtn');
+
+    if (!currentCustomerEmail) {
+      showError('No customer email set.');
+      return;
+    }
+
+    if (!confirm(`Send this welcome email to ${currentCustomerEmail}?`)) {
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    try {
+      const res = await fetch('/api/welcome/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerEmail: currentCustomerEmail, emailBody }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || 'Unknown error');
+
+      btn.textContent = 'Sent!';
+      btn.classList.add('sent');
+      setTimeout(() => {
+        btn.textContent = 'Send Email';
+        btn.classList.remove('sent');
+        btn.disabled = false;
+      }, 3000);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = 'Send Email';
+      alert('Failed to send: ' + err.message);
     }
   }
 </script>

@@ -361,6 +361,44 @@ async function archiveThread(userId, threadId) {
   });
 }
 
+/**
+ * Send a new email directly (not a draft, not a reply).
+ */
+async function sendNewEmail(userId, to, subject, body, fromName) {
+  const user = getUser(userId);
+  if (!user) throw new Error(`User ${userId} not found`);
+
+  const auth = await refreshAndGetClient(user);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  const fromHeader = fromName
+    ? `From: ${fromName} <${user.email}>`
+    : `From: ${user.email}`;
+
+  const messageParts = [
+    fromHeader,
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    `Content-Type: text/plain; charset=utf-8`,
+    `MIME-Version: 1.0`,
+    '',
+    body,
+  ];
+  const rawMessage = messageParts.join('\r\n');
+  const encodedMessage = Buffer.from(rawMessage)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+
+  const res = await gmail.users.messages.send({
+    userId: 'me',
+    requestBody: { raw: encodedMessage },
+  });
+
+  return res.data;
+}
+
 module.exports = {
   createOAuthClient,
   refreshAndGetClient,
@@ -370,6 +408,7 @@ module.exports = {
   getThread,
   createDraft,
   sendDraft,
+  sendNewEmail,
   deleteDraft,
   archiveThread,
 };

@@ -374,10 +374,13 @@ router.get('/products', (req, res) => {
 
 // POST /api/welcome/generate — generate a welcome email
 router.post('/generate', async (req, res) => {
-  const { customerEmail, selectedProductIds } = req.body;
+  const { customerEmail, customerName, selectedProductIds } = req.body;
 
   if (!customerEmail || typeof customerEmail !== 'string') {
     return res.status(400).json({ error: 'customerEmail is required' });
+  }
+  if (!customerName || typeof customerName !== 'string' || !customerName.trim()) {
+    return res.status(400).json({ error: 'customerName is required' });
   }
   if (!Array.isArray(selectedProductIds) || selectedProductIds.length === 0) {
     return res.status(400).json({ error: 'At least one product must be selected' });
@@ -405,22 +408,29 @@ router.post('/generate', async (req, res) => {
 
   const prompt = `You are a warm, expert beauty consultant for Glow SF, a boutique beauty store in Santa Fe, New Mexico.
 
-Write a personalized welcome email to a new customer. Their email is: ${customerEmail}
+Write a personalized welcome email to a new customer named ${customerName.trim()}.
 
 They have purchased the following products:
 ${productDetails}
 
 The email must include:
-1. A warm, genuine welcome as a Glow SF customer
+1. A warm, genuine welcome as a Glow SF customer — address them as "${customerName.trim()}"
 2. For each product: a brief, enthusiastic description of what it does, highlight its hero ingredients if provided, and explain why they'll love it
-3. A step-by-step daily skincare routine incorporating ALL products in correct order (cleanser → toner → serum → eye treatment → moisturizer → SPF in the morning; masks 1–3x/week; devices as directed)
+3. A step-by-step daily skincare routine incorporating ALL products in correct order (cleanser, toner, serum, eye treatment, moisturizer, SPF in the morning; masks 1-3x/week; devices as directed)
 4. The exact how-to-use directions for each product, phrased naturally
 5. Helpful tips: introduce new products one at a time, always patch test, and any product-specific advice
 6. An invitation to reach out with questions and to visit the store in Santa Fe
 
-Tone: warm, knowledgeable, and excited — like a trusted beauty friend, not a corporate newsletter. Use the customer's first name if you can parse it from their email, otherwise "Dear Glow SF Customer".
+Tone: warm, knowledgeable, and excited — like a trusted beauty friend, not a corporate newsletter.
 
-Format with clear sections and line breaks. Sign off as "The Glow SF Team".`;
+IMPORTANT FORMATTING RULES:
+- Write in plain text only. Do NOT use markdown formatting (no #, ##, **, *, ---, or any other markdown syntax).
+- Use emojis at the start of section titles to visually break up the content (e.g. "Your New Products" or "Your Daily Routine").
+- Separate sections with blank lines for readability.
+- Do NOT use dashes, asterisks, or hashtags for decoration or emphasis.
+- Do NOT include a subject line — just write the email body starting with the greeting.
+
+Sign off as "The Glow SF Team".`;
 
   try {
     const message = await client.messages.create({
@@ -438,12 +448,48 @@ Format with clear sections and line breaks. Sign off as "The Glow SF Team".`;
     res.json({
       success: true,
       customerEmail,
+      customerName: customerName.trim(),
       selectedProducts: selectedProducts.map(p => ({ id: p.id, name: p.name, brand: p.brand })),
       emailBody,
     });
   } catch (err) {
     console.error('[welcome] Error generating email:', err);
     res.status(500).json({ error: 'Failed to generate email: ' + err.message });
+  }
+});
+
+// POST /api/welcome/send — send the welcome email directly via Gmail
+router.post('/send', async (req, res) => {
+  const { customerEmail, emailBody } = req.body;
+
+  if (!customerEmail || typeof customerEmail !== 'string') {
+    return res.status(400).json({ error: 'customerEmail is required' });
+  }
+  if (!emailBody || typeof emailBody !== 'string') {
+    return res.status(400).json({ error: 'emailBody is required' });
+  }
+
+  const { getUserByEmail } = require('../db');
+  const { sendNewEmail } = require('../services/gmail');
+
+  const glowUser = getUserByEmail('glow.sf.santafe@gmail.com');
+  if (!glowUser) {
+    return res.status(500).json({ error: 'Glow SF Gmail account is not connected. Please connect glow.sf.santafe@gmail.com via OAuth first.' });
+  }
+
+  try {
+    await sendNewEmail(
+      glowUser.id,
+      customerEmail,
+      'Welcome to Glow SF — Your Beauty Routine Awaits!',
+      emailBody,
+      'Glow SF'
+    );
+
+    res.json({ success: true, message: 'Email sent successfully' });
+  } catch (err) {
+    console.error('[welcome] Error sending email:', err);
+    res.status(500).json({ error: 'Failed to send email: ' + err.message });
   }
 });
 
