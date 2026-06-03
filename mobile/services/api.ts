@@ -1,11 +1,13 @@
 import axios, { AxiosInstance } from 'axios';
-import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 
 const BASE_URL =
   (Constants.expoConfig?.extra?.apiUrl as string) ||
   process.env.EXPO_PUBLIC_API_URL ||
-  'https://api.glowsf.com';
+  'https://beauty-production-5140.up.railway.app';
+
+// User ID set once after connecting Gmail via browser — see setup instructions
+const USER_ID = process.env.EXPO_PUBLIC_USER_ID || '';
 
 const apiClient: AxiosInstance = axios.create({
   baseURL: BASE_URL,
@@ -15,25 +17,13 @@ const apiClient: AxiosInstance = axios.create({
   },
 });
 
-// Inject auth token from SecureStore before every request
-apiClient.interceptors.request.use(async (config) => {
-  const token = await SecureStore.getItemAsync('auth_token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+// Send user ID header with every request
+apiClient.interceptors.request.use((config) => {
+  if (USER_ID) {
+    config.headers['X-User-Id'] = USER_ID;
   }
   return config;
 });
-
-// ---------- Auth ----------
-
-export async function login(token: string): Promise<void> {
-  await SecureStore.setItemAsync('auth_token', token);
-}
-
-export async function logout(): Promise<void> {
-  await SecureStore.deleteItemAsync('auth_token');
-  await SecureStore.deleteItemAsync('user_id');
-}
 
 // ---------- User ----------
 
