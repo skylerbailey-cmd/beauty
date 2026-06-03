@@ -184,8 +184,8 @@ const PRODUCTS = {
       id: 'hydrasphere-facial-peeling-gel',
       name: 'Facial Peeling Gel',
       brand: 'HydraSphere Plus',
-      description: 'A gentle exfoliating gel that dissolves dead skin cells and impurities without scratching or irritating, revealing a brighter, smoother complexion.',
-      howToUse: 'Apply to dry, clean skin. Massage gently in circular motions — the gel will ball up as it lifts away dead skin cells. Rinse thoroughly. Use 1–2 times per week before serum.',
+      description: 'A revolutionary exfoliating formula that gently eliminates dead skin cells while addressing sunspots, pigmentation, age spots, acne, discoloration, redness, and rosacea. Powered by mandelic acid (a gentle AHA) with Vitamin C, Vitamin E, Vitamin A, Grapefruit Extract, Avocado Oil, and Centella Asiatica.',
+      howToUse: 'Apply a thin layer to dry skin. Massage in circular motions until dry. Wash with warm water. Use 1–2 times a week. For optimal results, pair with the HydraSphere+ Deep Moisturizing Cream.',
       step: 'exfoliant',
     },
     {
