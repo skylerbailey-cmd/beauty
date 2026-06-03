@@ -469,12 +469,13 @@ router.post('/send', async (req, res) => {
     return res.status(400).json({ error: 'emailBody is required' });
   }
 
-  const { getUserByEmail } = require('../db');
+  const { getAllUsers } = require('../db');
   const { sendNewEmail } = require('../services/gmail');
 
-  const glowUser = getUserByEmail('glow.sf.santafe@gmail.com');
+  const users = getAllUsers();
+  const glowUser = users[0];
   if (!glowUser) {
-    return res.status(500).json({ error: 'Glow SF Gmail account is not connected. Please connect glow.sf.santafe@gmail.com via OAuth first.' });
+    return res.status(500).json({ error: 'No Gmail account is connected. Please connect via OAuth first.' });
   }
 
   try {
