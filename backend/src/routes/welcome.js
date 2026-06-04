@@ -55,6 +55,17 @@ const PRODUCTS = {
       image: '',
     },
     {
+      id: 'avologi-lumnen',
+      name: 'LUMNEN',
+      brand: 'Avologi',
+      description: 'The world\'s first FDA-certified home-use bio-stimulator laser system designed to support facial volume, firmness, and skin vitality. Recognized with the 2026 Global Recognition Award. Combines LED light therapy with advanced laser-based bio-stimulation developed by Prof. Barry Barish, Nobel Prize-winning physicist. Targets facial volume loss, sagging, dullness, and wrinkles by stimulating collagen and hyaluronic acid production at the base layer of the dermis.',
+      benefits: 'FDA-certified bio-stimulator laser, 98% product satisfaction, 96% noticeable wrinkle/scar reduction, increases facial volume naturally, non-invasive at-home use, suitable for all skin types, 100x stronger than LED therapy yet painless, compatible with any skincare, limited lifetime warranty',
+      ingredients: '',
+      howToUse: 'Cleanse skin and remove all makeup, oils, and impurities; dry skin. Optionally apply Avologi Age-Defying Gel Primer for easy gliding. Apply device with mild pressure, gliding continuously in small V-shaped motions from bottom to top. Treat each area for 3 minutes. Apply moisturizer after each session. Use daily for first 8 weeks, then 3 times per week.',
+      step: 'device treatment',
+      image: 'https://avologi.com/wp-content/uploads/2024/03/Avologi-lumen-548x731-BG-1.jpg',
+    },
+    {
       id: 'avologi-eneo-totale',
       name: 'Eneo Totalé',
       brand: 'Avologi',
