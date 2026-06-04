@@ -121,6 +121,17 @@ const PRODUCTS = {
       image: 'https://avologi.com/wp-content/uploads/2018/08/av14.jpg',
     },
     {
+      id: 'avologi-eneo-classic',
+      name: 'Eneo Classic',
+      brand: 'Avologi',
+      description: 'A noninvasive, professional, FDA cleared class II anti-aging medical device that provides immediate improvements with long-lasting results on the face. This unique second-generation technology gives you immediate and long-lasting anti-aging results clearing almost any impurity in facial skin appearance: fine lines, wrinkles, pigmentation, enlarged pore size and discoloration. Uses dual wavelengths of 633 and 830 nanometers with precise penetration to the dermis, enhanced by 925 silver and detox blue light. Clinically tested, dermatologist recommended, suitable for all skin types and tones.',
+      benefits: 'FDA cleared class II medical device, dual wavelengths (633nm + 830nm), 925 silver applicator, detox blue light, immediate and long-lasting anti-aging results, treats fine lines, wrinkles, pigmentation, enlarged pores, discoloration, zero side effects, no allergies, suitable for all skin types and tones, 2-year limited warranty',
+      ingredients: '',
+      howToUse: 'Cleanse skin with oil-free cleanser, removing all makeup and impurities. Dry skin. Apply device with mild pressure, glide in small circular motions from bottom to top, treat each area for 4 minutes. Apply moisturizer after each session. Use 3 times per week for the first month, then once per week to maintain results.',
+      step: 'device treatment',
+      image: 'https://avologi.com/wp-content/uploads/2018/08/Eneo-Classic-AV15-1.jpg',
+    },
+    {
       id: 'avologi-enas-mask',
       name: 'ENAS Youth Activating Mask',
       brand: 'Avologi',
