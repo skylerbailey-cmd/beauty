@@ -576,8 +576,8 @@ router.post('/generate', (req, res) => {
   });
 });
 
-// POST /api/welcome/send — send the welcome email via Gmail SMTP (Nodemailer)
-// Requires GMAIL_APP_PASSWORD env var (Google App Password for glow.sf.santafe@gmail.com)
+// POST /api/welcome/send — send the welcome email via Gmail API (HTTPS, no SMTP)
+// Uses GLOW_GMAIL_REFRESH_TOKEN env var to authenticate
 router.post('/send', async (req, res) => {
   const { customerEmail, emailBody } = req.body;
 
@@ -588,32 +588,50 @@ router.post('/send', async (req, res) => {
     return res.status(400).json({ error: 'emailBody is required' });
   }
 
-  const appPassword = process.env.GMAIL_APP_PASSWORD;
-  if (!appPassword) {
-    return res.status(500).json({ error: 'GMAIL_APP_PASSWORD is not set. Generate one at https://myaccount.google.com/apppasswords and add it to Railway env vars.' });
+  const refreshToken = process.env.GLOW_GMAIL_REFRESH_TOKEN;
+  if (!refreshToken) {
+    return res.status(500).json({
+      error: 'GLOW_GMAIL_REFRESH_TOKEN is not configured.',
+      hasClientId: !!process.env.GOOGLE_CLIENT_ID,
+      hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
+    });
   }
 
-  const nodemailer = require('nodemailer');
-
   try {
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: 'glow.sf.santafe@gmail.com',
-        pass: appPassword,
-      },
-    });
+    const { google } = require('googleapis');
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI
+    );
+    oauth2Client.setCredentials({ refresh_token: refreshToken });
 
-    await transporter.sendMail({
-      from: '"Glow SF" <glow.sf.santafe@gmail.com>',
-      to: customerEmail,
-      subject: 'Welcome to Glow SF!',
-      html: emailBody,
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+    const messageParts = [
+      'From: "Glow SF" <glow.sf.santafe@gmail.com>',
+      `To: ${customerEmail}`,
+      'Subject: Welcome to Glow SF!',
+      'Content-Type: text/html; charset=utf-8',
+      'MIME-Version: 1.0',
+      '',
+      emailBody,
+    ];
+    const rawMessage = messageParts.join('\r\n');
+    const encodedMessage = Buffer.from(rawMessage)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+
+    await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: { raw: encodedMessage },
     });
 
     res.json({ success: true, message: 'Email sent successfully' });
   } catch (err) {
-    console.error('[welcome] Error sending email:', err);
+    console.error('[welcome] Error sending email:', err.message);
     res.status(500).json({ error: 'Failed to send email: ' + err.message });
   }
 });
