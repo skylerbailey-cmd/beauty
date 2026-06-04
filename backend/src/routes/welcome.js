@@ -55,6 +55,17 @@ const PRODUCTS = {
       image: '',
     },
     {
+      id: 'avologi-eneo-totale-blu',
+      name: 'Eneo Totalé Blu',
+      brand: 'Avologi',
+      description: 'A professional, FDA certified hand-held medical device that utilizes a combined 415 nm wavelength within the blue light spectrum — the most effectively absorbed wavelength for skin imperfections and acne treatments. Features a hypoallergenic, medical-grade metal applicator tip that can be used with any skincare. Clinically tested, safe, zero side effects, dermatologist recommended, suitable for all skin types and tones.',
+      benefits: 'FDA certified, blue light phototherapy (415 nm), targets acne and skin imperfections, non-invasive, pain-free 4–6 minute sessions, no chemicals required, hypoallergenic tip, compatible with all skincare, suitable for all skin types, lifetime warranty',
+      ingredients: '',
+      howToUse: 'Use the device on clean skin for 4–6 minute sessions. Glide the hypoallergenic tip over areas with acne or skin imperfections. Can be used with any skincare product. For enhanced results, follow with red light therapy. Visible improvement may be noticed after the first session.',
+      step: 'device treatment',
+      image: 'https://avologi.com/wp-content/uploads/2022/12/Eneo-Total-Blu-AV20-3-2.jpg',
+    },
+    {
       id: 'avologi-enas-mask',
       name: 'ENAS Youth Activating Mask',
       brand: 'Avologi',
