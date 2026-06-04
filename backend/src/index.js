@@ -44,7 +44,11 @@ app.use(session({
 // ─── Routes ────────────────────────────────────────────────────────────────────
 
 // Serve the welcome email generator web UI
-app.use(express.static(path.join(__dirname, '../../web')));
+// In Docker: /app/web; in local dev: ../../web
+const webDir = path.join(__dirname, '../web');
+const webDirAlt = path.join(__dirname, '../../web');
+const fs = require('fs');
+app.use(express.static(fs.existsSync(webDir) ? webDir : webDirAlt));
 
 app.use('/auth', authRoutes);
 app.use('/api/emails', emailRoutes);

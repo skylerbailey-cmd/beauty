@@ -14,6 +14,9 @@ RUN npm ci --omit=dev
 # Copy source files
 COPY src/ ./src/
 
+# Copy web UI
+COPY web/ ./web/
+
 # Create data directory for SQLite database
 RUN mkdir -p /app/data
 

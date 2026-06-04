@@ -304,12 +304,12 @@ ${otherProducts}
 
 The email must include:
 1. A warm, genuine welcome as a Glow SF customer — address them as "${customerName.trim()}"
-2. For each purchased product: a brief, enthusiastic description of what it does, highlight its hero ingredients if provided, and explain why they'll love it
-3. A step-by-step daily skincare routine incorporating ALL purchased products in correct order (cleanser, toner, serum, eye treatment, moisturizer, SPF in the morning; masks 1-3x/week; devices as directed)
-4. The exact how-to-use directions for each purchased product, phrased naturally
-5. If any important routine steps are missing (e.g. they bought serums but no cleanser, or no SPF), gently suggest a specific product from our catalog that would complement their routine. Frame it as a friendly recommendation, not a hard sell.
+2. For each purchased product: 1-2 sentences max — what it does and why they'll love it. Keep it concise and exciting, do NOT list out all ingredients or go into lengthy detail.
+3. A COMPLETE step-by-step daily skincare routine incorporating ALL purchased products in correct order. Include BOTH a full morning routine (cleanser, toner, serum, eye treatment, moisturizer, SPF) AND a full evening routine (cleanser, toner, serum, eye treatment, night cream/moisturizer). Also include weekly treatments (masks 1-3x/week, exfoliants 1-2x/week, devices as directed). Do NOT cut the routine short — list every step for both AM and PM.
+4. The how-to-use directions for each purchased product, phrased naturally and concisely
+5. If any important routine steps are missing (e.g. they bought serums but no cleanser, or no SPF), gently suggest a specific product from our catalog that would complement their routine. Frame it as a friendly recommendation, not a hard sell. For each recommended product, mention that they can reply to this email to ask about current specials we may be running on that product, and let them know we offer free shipping.
 6. IMPORTANT: Clearly differentiate purchased products from suggestions. For purchased products, prefix with "YOUR PRODUCT:" or similar. For suggested products, prefix with "RECOMMENDED FOR YOU:" or similar — so the customer can easily see what they already own vs. what we're recommending.
-7. After the routine section, include a short encouraging paragraph with helpful tips — introduce new products one at a time, always patch test, be patient and consistent, and any product-specific advice. Make it feel supportive and exciting about their skincare journey.
+7. After the routine section, include a short encouraging paragraph with helpful tips — introduce new products one at a time, always patch test, be patient and consistent. Keep it brief.
 8. An invitation to reach out with questions and to visit the store in Santa Fe
 
 Tone: warm, knowledgeable, and excited — like a trusted beauty friend, not a corporate newsletter.
@@ -317,9 +317,10 @@ Tone: warm, knowledgeable, and excited — like a trusted beauty friend, not a c
 IMPORTANT FORMATTING RULES:
 - Write the email as HTML. Use simple, email-safe HTML tags: <p>, <br>, <b>, <a>, <span>.
 - Use emojis at the start of section titles to visually break up the content (e.g. "✨ Your New Products" or "🌿 Your Daily Routine").
-- Separate sections with paragraph tags for readability.
+- Add generous spacing between sections. Use <p style="margin-bottom:16px"> for paragraphs and <p style="margin-bottom:24px"> between major sections. Add <br> between routine steps for readability.
 - In the routine section, use a checkmark emoji (✅) before steps that use their purchased products, and a pointing emoji (👉) before steps where you're suggesting a product they don't own yet.
-- IMPORTANT: Every time you mention a product name, wrap it in an <a> tag linking to its product page URL. For example: <a href="https://hydrasphereplus.com/product/vitamin-c-serum/">Vitamin C Serum</a>. This applies to both purchased products and suggested products.
+- When a product is first introduced by name (its title/heading), wrap it in an <a> tag with pink color linking to its product page URL. For example: <a href="https://hydrasphereplus.com/product/vitamin-c-serum/" style="color:#c97d8a;text-decoration:underline">Vitamin C Serum</a>. You do NOT need to hyperlink every subsequent mention — just the first title appearance.
+- All hyperlinks MUST use style="color:#c97d8a;text-decoration:underline" for our brand pink color.
 - Do NOT include a subject line, <html>, <head>, or <body> tags — just write the email content starting with the greeting.
 - Do NOT use markdown formatting.
 
@@ -328,7 +329,7 @@ End the email with a warm closing paragraph that thanks them for choosing Glow S
   try {
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 2500,
+      max_tokens: 4000,
       messages: [{ role: 'user', content: prompt }],
     });
 

@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Glow SF — Welcome Email Generator</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --rose:    #c97d8a;
+      --rose-lt: #f2dde2;
+      --rose-dk: #9e5567;
+      --gold:    #c9a96e;
+      --gold-lt: #f5edd9;
+      --cream:   #fdf9f5;
+      --dark:    #2c2022;
+      --mid:     #6b5057;
+      --border:  #e8d5d9;
+      --white:   #ffffff;
+      --shadow:  0 4px 24px rgba(44,32,34,.08);
+      --radius:  14px;
+    }
+
+    body {
+      font-family: 'Georgia', serif;
+      background: var(--cream);
+      color: var(--dark);
+      min-height: 100vh;
+    }
+
+    /* ── Header ───────────────────────────────────────────────────────── */
+    header {
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 40px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .logo-mark {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--rose), var(--gold));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 18px;
+      font-weight: bold;
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: 1.4rem;
+      color: var(--rose-dk);
+      letter-spacing: .5px;
+    }
+
+    header p {
+      font-size: .8rem;
+      color: var(--mid);
+      font-family: system-ui, sans-serif;
+      margin-top: 2px;
+    }
+
+    /* ── Layout ───────────────────────────────────────────────────────── */
+    main {
+      max-width: 860px;
+      margin: 40px auto;
+      padding: 0 20px 60px;
+    }
+
+    /* ── Steps indicator ──────────────────────────────────────────────── */
+    .steps {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin-bottom: 36px;
+    }
+
+    .step-dot {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: system-ui, sans-serif;
+      font-size: .85rem;
+      color: var(--mid);
+    }
+
+    .step-dot .num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      background: var(--white);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: .8rem;
+      transition: all .3s;
+    }
+
+    .step-dot.active .num {
+      background: var(--rose);
+      border-color: var(--rose);
+      color: white;
+    }
+
+    .step-dot.done .num {
+      background: var(--gold);
+      border-color: var(--gold);
+      color: white;
+    }
+
+    .step-line {
+      flex: 1;
+      height: 2px;
+      background: var(--border);
+      margin: 0 12px;
+    }
+
+    /* ── Card ─────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--white);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      border: 1px solid var(--border);
+      padding: 36px 40px;
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      color: var(--rose-dk);
+      margin-bottom: 6px;
+    }
+
+    .card-sub {
+      font-size: .85rem;
+      font-family: system-ui, sans-serif;
+      color: var(--mid);
+      margin-bottom: 28px;
+    }
+
+    /* ── Email input ──────────────────────────────────────────────────── */
+    .field {
+      margin-bottom: 28px;
+    }
+
+    .field label {
+      display: block;
+      font-family: system-ui, sans-serif;
+      font-size: .8rem;
+      font-weight: 600;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+      color: var(--mid);
+      margin-bottom: 8px;
+    }
+
+    .field input[type="text"],
+    .field input[type="email"] {
+      width: 100%;
+      padding: 13px 16px;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      font-size: 1rem;
+      font-family: system-ui, sans-serif;
+      color: var(--dark);
+      background: var(--cream);
+      outline: none;
+      transition: border-color .2s;
+    }
+
+    .field input[type="text"]:focus,
+    .field input[type="email"]:focus {
+      border-color: var(--rose);
+      background: var(--white);
+    }
+
+    /* ── Brand section ────────────────────────────────────────────────── */
+    .brand-section {
+      margin-bottom: 28px;
+    }
+
+    .brand-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .brand-badge {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-family: system-ui, sans-serif;
+      font-size: .75rem;
+      font-weight: 700;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+    }
+
+    .brand-badge.avologi {
+      background: #ede9fb;
+      color: #5b45b0;
+    }
+
+    .brand-badge.hydrasphere {
+      background: #e0f2f8;
+      color: #1a6e8a;
+    }
+
+    .brand-name {
+      font-size: 1rem;
+      color: var(--dark);
+    }
+
+    .brand-url {
+      font-family: system-ui, sans-serif;
+      font-size: .75rem;
+      color: var(--mid);
+      margin-left: auto;
+      text-decoration: none;
+    }
+
+    .brand-url:hover { color: var(--rose); }
+
+    /* ── Product grid ─────────────────────────────────────────────────── */
+    .product-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    @media (max-width: 600px) {
+      .product-grid { grid-template-columns: 1fr; }
+      .card { padding: 24px 20px; }
+    }
+
+    .product-card {
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      cursor: pointer;
+      transition: all .2s;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      background: var(--white);
+      user-select: none;
+    }
+
+    .product-thumb {
+      width: 56px;
+      height: 56px;
+      border-radius: 8px;
+      object-fit: cover;
+      flex-shrink: 0;
+      background: var(--rose-lt);
+      border: 1px solid var(--border);
+    }
+
+    .product-thumb-placeholder {
+      width: 56px;
+      height: 56px;
+      border-radius: 8px;
+      flex-shrink: 0;
+      background: linear-gradient(135deg, var(--rose-lt), var(--gold-lt));
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      color: var(--rose);
+    }
+
+    .product-card:hover {
+      border-color: var(--rose);
+      background: var(--rose-lt);
+    }
+
+    .product-card.selected {
+      border-color: var(--rose);
+      background: var(--rose-lt);
+    }
+
+    .product-card input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--rose);
+      cursor: pointer;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .product-info { flex: 1; }
+
+    .product-name {
+      font-size: .9rem;
+      font-weight: 600;
+      color: var(--dark);
+      line-height: 1.3;
+      margin-bottom: 3px;
+    }
+
+    .product-desc {
+      font-size: .75rem;
+      font-family: system-ui, sans-serif;
+      color: var(--mid);
+      line-height: 1.4;
+    }
+
+    /* ── Select all ───────────────────────────────────────────────────── */
+    .select-all-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .select-all-btn {
+      font-family: system-ui, sans-serif;
+      font-size: .78rem;
+      color: var(--rose-dk);
+      background: none;
+      border: none;
+      cursor: pointer;
+      text-decoration: underline;
+      padding: 0;
+    }
+
+    .select-all-btn:hover { color: var(--rose); }
+
+    /* ── Buttons ──────────────────────────────────────────────────────── */
+    .btn-row {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 32px;
+    }
+
+    .btn {
+      padding: 13px 32px;
+      border-radius: 10px;
+      font-family: system-ui, sans-serif;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all .2s;
+    }
+
+    .btn-primary {
+      background: var(--rose);
+      color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) { background: var(--rose-dk); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+
+    .btn-secondary {
+      background: var(--white);
+      color: var(--mid);
+      border: 1.5px solid var(--border);
+    }
+
+    .btn-secondary:hover { border-color: var(--rose); color: var(--rose-dk); }
+
+    .btn-send {
+      background: var(--gold);
+      color: white;
+    }
+
+    .btn-send:hover:not(:disabled) { background: #b8943d; }
+    .btn-send:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-send.sent { background: #81c784; }
+
+    /* ── Loading ──────────────────────────────────────────────────────── */
+    .loading-wrap {
+      text-align: center;
+      padding: 60px 20px;
+    }
+
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 3px solid var(--border);
+      border-top-color: var(--rose);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      margin: 0 auto 16px;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-wrap p {
+      font-family: system-ui, sans-serif;
+      font-size: .9rem;
+      color: var(--mid);
+    }
+
+    /* ── Email preview ────────────────────────────────────────────────── */
+    .email-meta {
+      background: var(--gold-lt);
+      border: 1px solid #e8d8b0;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      font-family: system-ui, sans-serif;
+      font-size: .85rem;
+    }
+
+    .email-meta-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .email-meta-row:last-child { margin-bottom: 0; }
+
+    .email-meta-row strong { color: var(--mid); min-width: 50px; }
+
+    .email-body-wrap {
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+
+    .email-body-toolbar {
+      background: #f5f0f1;
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .email-body-toolbar span {
+      font-family: system-ui, sans-serif;
+      font-size: .78rem;
+      color: var(--mid);
+    }
+
+    .copy-btn {
+      font-family: system-ui, sans-serif;
+      font-size: .78rem;
+      padding: 5px 14px;
+      border-radius: 6px;
+      background: var(--white);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      color: var(--mid);
+      transition: all .2s;
+    }
+
+    .copy-btn:hover { border-color: var(--rose); color: var(--rose-dk); }
+    .copy-btn.copied { background: #e8f5e9; border-color: #81c784; color: #388e3c; }
+
+    textarea#emailBody {
+      width: 100%;
+      min-height: 400px;
+      padding: 20px;
+      font-family: system-ui, sans-serif;
+      font-size: .9rem;
+      line-height: 1.7;
+      color: var(--dark);
+      border: none;
+      outline: none;
+      resize: vertical;
+      background: var(--white);
+    }
+
+    /* ── Products used pills ──────────────────────────────────────────── */
+    .products-used {
+      margin-bottom: 24px;
+    }
+
+    .products-used h4 {
+      font-family: system-ui, sans-serif;
+      font-size: .78rem;
+      font-weight: 700;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+      color: var(--mid);
+      margin-bottom: 10px;
+    }
+
+    .pill-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .pill {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-family: system-ui, sans-serif;
+      font-size: .75rem;
+      background: var(--rose-lt);
+      color: var(--rose-dk);
+      border: 1px solid #e0b8bf;
+    }
+
+    /* ── Error ────────────────────────────────────────────────────────── */
+    .error-box {
+      background: #fff5f5;
+      border: 1px solid #f5c6c6;
+      border-radius: 10px;
+      padding: 16px 20px;
+      font-family: system-ui, sans-serif;
+      font-size: .87rem;
+      color: #c0392b;
+      margin-bottom: 20px;
+    }
+
+    /* ── Hidden ───────────────────────────────────────────────────────── */
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo-mark">G</div>
+  <div>
+    <h1>Glow SF</h1>
+    <p>Welcome Email Generator</p>
+  </div>
+</header>
+
+<main>
+
+  <!-- Steps -->
+  <div class="steps">
+    <div class="step-dot active" id="step1-dot">
+      <div class="num">1</div>
+      <span>Select Products</span>
+    </div>
+    <div class="step-line"></div>
+    <div class="step-dot" id="step2-dot">
+      <div class="num">2</div>
+      <span>Preview Email</span>
+    </div>
+  </div>
+
+  <!-- ── Step 1: Form ─────────────────────────────────────────────────── -->
+  <div id="step1">
+    <div class="card">
+      <h2 class="card-title">New Customer Welcome</h2>
+      <p class="card-sub">Enter the customer's email and select the products they purchased. We'll generate a personalized welcome email with usage instructions.</p>
+
+      <!-- Customer Name -->
+      <div class="field">
+        <label for="customerName">Customer First Name</label>
+        <input type="text" id="customerName" placeholder="e.g. Sarah" autocomplete="off" />
+      </div>
+
+      <!-- Email -->
+      <div class="field">
+        <label for="customerEmail">Customer Email Address</label>
+        <input type="email" id="customerEmail" placeholder="customer@example.com" autocomplete="off" />
+      </div>
+
+      <!-- Avologi -->
+      <div class="brand-section">
+        <div class="brand-header">
+          <span class="brand-badge avologi">Avologi</span>
+          <span class="brand-name">Advanced Youth Restoring Technology</span>
+          <a class="brand-url" href="https://avologi.com/all-products/" target="_blank">avologi.com ↗</a>
+        </div>
+        <div class="select-all-row">
+          <button class="select-all-btn" onclick="selectAll('avologi')">Select all</button>
+          <button class="select-all-btn" onclick="clearAll('avologi')">Clear all</button>
+        </div>
+        <div class="product-grid" id="grid-avologi"></div>
+      </div>
+
+      <!-- HydraSphere -->
+      <div class="brand-section">
+        <div class="brand-header">
+          <span class="brand-badge hydrasphere">HydraSphere+</span>
+          <span class="brand-name">Hydrogen-Infused Skincare</span>
+          <a class="brand-url" href="https://hydrasphereplus.com/" target="_blank">hydrasphereplus.com ↗</a>
+        </div>
+        <div class="select-all-row">
+          <button class="select-all-btn" onclick="selectAll('hydrasphere')">Select all</button>
+          <button class="select-all-btn" onclick="clearAll('hydrasphere')">Clear all</button>
+        </div>
+        <div class="product-grid" id="grid-hydrasphere"></div>
+      </div>
+
+      <div id="formError" class="error-box" hidden></div>
+
+      <div class="btn-row">
+        <button class="btn btn-primary" id="nextBtn" onclick="handleNext()">Generate Welcome Email →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 2: Loading ──────────────────────────────────────────────── -->
+  <div id="step-loading" hidden>
+    <div class="card">
+      <div class="loading-wrap">
+        <div class="spinner"></div>
+        <p>Crafting your personalized welcome email…</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 2: Email preview ────────────────────────────────────────── -->
+  <div id="step2" hidden>
+    <div class="card">
+      <h2 class="card-title">Welcome Email Preview</h2>
+      <p class="card-sub">Review and edit the email below before sending.</p>
+
+      <div class="email-meta">
+        <div class="email-meta-row">
+          <strong>To:</strong>
+          <span id="previewTo"></span>
+        </div>
+      </div>
+
+      <div class="products-used">
+        <h4>Products included</h4>
+        <div class="pill-list" id="productPills"></div>
+      </div>
+
+      <div class="email-body-wrap">
+        <div class="email-body-toolbar">
+          <span>Email body</span>
+          <button class="copy-btn" onclick="toggleSource()" id="toggleBtn">View source</button>
+          <button class="copy-btn" id="copyBtn" onclick="copyEmail()">Copy to clipboard</button>
+        </div>
+        <div id="emailPreview" style="padding:20px;background:#fff;border:1px solid var(--border);border-radius:10px;min-height:200px;font-family:system-ui,sans-serif;font-size:0.95rem;line-height:1.6;color:#2c2022;overflow-y:auto;max-height:600px"></div>
+        <textarea id="emailBody" spellcheck="true" style="display:none"></textarea>
+      </div>
+
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="goBack()">&larr; Start over</button>
+        <button class="btn btn-primary" onclick="copyEmail()">Copy Email</button>
+        <button class="btn btn-send" id="sendBtn" onclick="sendEmail()">Send Email</button>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+  // ── Product catalog (mirrors the backend; kept in sync manually) ────────────
+
+  const PRODUCTS = {
+    avologi: [
+      { id: 'avologi-lumnen', name: 'LUMNEN', description: 'World\'s first FDA-certified home-use bio-stimulator laser — Nobel Prize-winning technology that stimulates collagen and hyaluronic acid for increased facial volume, firmness, and wrinkle reduction.', image: 'https://avologi.com/wp-content/uploads/2024/03/Avologi-lumen-548x731-BG-1.jpg' },
+      { id: 'avologi-eneo-totale', name: 'Eneo Totalé', description: 'FDA-certified 510K anti-aging medical device — Nobel prize-winning technology for smoother, more radiant skin with visible wrinkle reduction through personalized rejuvenation sessions.', image: 'https://avologi.com/wp-content/uploads/2018/07/Eneo-Total-AV19-1.jpg' },
+      { id: 'avologi-eneo-totale-blu', name: 'Eneo Totalé Blu', description: 'FDA certified blue light (415 nm) medical device — targets acne and skin imperfections with pain-free 4–6 min sessions, zero side effects, no chemicals, suitable for all skin types.', image: 'https://avologi.com/wp-content/uploads/2022/12/Eneo-Total-Blu-AV20-3-2.jpg' },
+      { id: 'avologi-eneo-blu', name: 'Eneo Blu', description: 'Advanced handheld FDA-approved blue light (415 nm) device — targets acne-causing bacteria with zero side effects, no chemicals, and 4–6 minute sessions. Effective for face, back, and body acne on all skin types.', image: 'https://avologi.com/wp-content/uploads/2018/08/Eneo-Blu-AV182.jpg' },
+      { id: 'avologi-eneo-advanced', name: 'Eneo Advanced', description: 'FDA-certified anti-aging device — dual wavelengths (633nm + 830nm), micro-pulse therapy, 24k gold, and detox blue light for immediate and long-lasting results on fine lines, wrinkles, pigmentation, and enlarged pores.', image: 'https://avologi.com/wp-content/uploads/2018/08/Eneo-Advanced-AV13-1.jpg' },
+      { id: 'avologi-eneo-eye-concentrator', name: 'Eneo Eye Concentrator', description: 'FDA-cleared anti-aging device — 24k gold applicator with preset-integrated fractional light energy to stimulate collagen, reduce puffiness, discoloration, and fine lines around the eye area in 4-minute sessions.', image: 'https://avologi.com/wp-content/uploads/2018/08/av14.jpg' },
+      { id: 'avologi-eneo-classic', name: 'Eneo Classic', description: 'FDA-cleared anti-aging device — dual wavelengths (633nm + 830nm), 925 silver, and detox blue light for immediate and long-lasting results on fine lines, wrinkles, pigmentation, and enlarged pores.', image: 'https://avologi.com/wp-content/uploads/2018/08/Eneo-Classic-AV15-1.jpg' },
+    ],
+    hydrasphere: [
+      { id: 'hydrasphere-advanced-foaming-cleanser', name: 'Advanced Foaming Cleanser', description: 'Alcohol-free luxury foaming cleanser that retextures, lightly exfoliates, and preps skin for moisturizing — powered by hemp extract for a radiant, conditioned complexion.', image: 'https://hydrasphereplus.com/wp-content/uploads/2023/10/1-2.png' },
+      { id: 'hydrasphere-hydra-toning-solution', name: 'Hydra Toning Solution', description: 'Revitalizing toner that refreshes and balances skin\'s natural pH, preparing it to absorb the full benefits of subsequent skincare products.', image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/25-1024x1024.png' },
+      { id: 'hydrasphere-vitamin-c-serum', name: 'Vitamin C Serum', description: 'Concentrated anti-aging serum packed with Vitamin C to diminish fine lines, promote collagen production, brighten, and even skin tone.', image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/73.png' },
+      { id: 'hydrasphere-mineralift-thermal-serum', name: 'MineralLift Thermal Serum', description: 'Scientifically proven to promote a firmer, more lifted appearance by stimulating collagen production and enhancing elasticity.', image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/59.png' },
+      { id: 'hydrasphere-deep-moisturizing-cream', name: 'Deep Moisturizing Cream', description: 'A firming elixir blending botanical wonders and cutting-edge science — deeply nourishes the face, neck, and under-eye area beyond basic hydration.', image: 'https://hydrasphereplus.com/wp-content/uploads/2023/10/13-1-1024x1024.png' },
+      { id: 'hydrasphere-mineralift-thermal-cream', name: 'MineralLift Thermal Cream', description: 'Luxurious thermal cream that firms and lifts, stimulates collagen, and enhances elasticity for tighter, more youthful-looking skin.', image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/51.png' },
+      { id: 'hydrasphere-anti-wrinkle-30g', name: 'Anti Wrinkle Correction & Prevention 30g', description: 'Clinically advanced cream powered by Hyaluronic Acid, Retinol, Stem Cells, and Peptides to visibly reduce deep lines, puffiness, and dark circles for firmer, smoother skin.', image: 'https://hydrasphereplus.com/wp-content/uploads/2025/06/87-1024x1024.png' },
+      { id: 'hydrasphere-anti-wrinkle-15g', name: 'Anti Wrinkle Correction & Prevention 15g', description: 'Travel-size version of the Anti Wrinkle Correction & Prevention cream — same clinically advanced formula with Retinol, Stem Cells, and Peptides in a convenient smaller size.', image: 'https://hydrasphereplus.com/wp-content/uploads/2025/06/82-1024x1024.png' },
+      { id: 'hydrasphere-spf50-shield-cream', name: 'SPF 50 Shield Cream', description: 'Lightweight mineral SPF 50 with non-nano Zinc Oxide and Titanium Dioxide — broad-spectrum UVA/UVB defense with Niacinamide, Hyaluronic Acid, and antioxidants. No white cast.', image: 'https://hydrasphereplus.com/wp-content/uploads/2025/11/77-1.png' },
+      { id: 'hydrasphere-facial-peeling-gel', name: 'Facial Peeling Gel', description: 'Revolutionary exfoliating gel powered by mandelic acid that gently eliminates dead skin cells while addressing sunspots, pigmentation, acne, redness, and rosacea.', image: 'https://hydrasphereplus.com/wp-content/uploads/2023/10/21-1024x1024.png' },
+      { id: 'hydrasphere-mineralift-thermal-mask', name: 'MineralLift Thermal Mask', description: 'Self-warming mineral mask enhanced with mineral water that stimulates facial muscles, boosts circulation, and provides multifaceted facial rejuvenation.', image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/55-1024x1024.png' },
+      { id: 'hydrasphere-hydrocharcoal-silk-mask', name: 'HydroCharcoal Silk Mask', description: 'Leave-on luxury mask with bioengineered delivery systems — activated charcoal, hyaluronic acid, and signal peptides detoxify, refine pores, and smooth texture for a radiant glow.', image: 'https://hydrasphereplus.com/wp-content/uploads/2025/11/14-scaled.png' },
+    ],
+  };
+
+  // ── Render product grids ────────────────────────────────────────────────────
+
+  function renderGrid(brand) {
+    const grid = document.getElementById('grid-' + brand);
+    grid.innerHTML = '';
+    PRODUCTS[brand].forEach(product => {
+      const card = document.createElement('label');
+      card.className = 'product-card';
+      const imgHtml = product.image
+        ? `<img class="product-thumb" src="${product.image}" alt="${product.name}" loading="lazy" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" /><div class="product-thumb-placeholder" style="display:none">✦</div>`
+        : `<div class="product-thumb-placeholder">✦</div>`;
+      card.innerHTML = `
+        <input type="checkbox" value="${product.id}" data-brand="${brand}" onchange="syncCardState(this)" />
+        ${imgHtml}
+        <div class="product-info">
+          <div class="product-name">${product.name}</div>
+          <div class="product-desc">${product.description}</div>
+        </div>
+      `;
+      grid.appendChild(card);
+    });
+  }
+
+  renderGrid('avologi');
+  renderGrid('hydrasphere');
+
+  function syncCardState(checkbox) {
+    checkbox.closest('.product-card').classList.toggle('selected', checkbox.checked);
+  }
+
+  function selectAll(brand) {
+    document.querySelectorAll(`[data-brand="${brand}"]`).forEach(cb => {
+      cb.checked = true;
+      syncCardState(cb);
+    });
+  }
+
+  function clearAll(brand) {
+    document.querySelectorAll(`[data-brand="${brand}"]`).forEach(cb => {
+      cb.checked = false;
+      syncCardState(cb);
+    });
+  }
+
+  function getSelectedIds() {
+    return [...document.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
+  }
+
+  // ── Navigation ──────────────────────────────────────────────────────────────
+
+  function showError(msg) {
+    const el = document.getElementById('formError');
+    el.textContent = msg;
+    el.hidden = false;
+  }
+
+  function hideError() {
+    document.getElementById('formError').hidden = true;
+  }
+
+  let currentCustomerEmail = '';
+
+  async function handleNext() {
+    hideError();
+    const name = document.getElementById('customerName').value.trim();
+    const email = document.getElementById('customerEmail').value.trim();
+    const selectedIds = getSelectedIds();
+
+    if (!name) {
+      showError('Please enter the customer\'s first name.');
+      return;
+    }
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showError('Please enter a valid customer email address.');
+      return;
+    }
+
+    if (selectedIds.length === 0) {
+      showError('Please select at least one product.');
+      return;
+    }
+
+    currentCustomerEmail = email;
+
+    // Show loading
+    document.getElementById('step1').hidden = true;
+    document.getElementById('step-loading').hidden = false;
+    document.getElementById('step1-dot').classList.remove('active');
+    document.getElementById('step1-dot').classList.add('done');
+    document.getElementById('step2-dot').classList.add('active');
+
+    try {
+      const res = await fetch('/api/welcome/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerEmail: email, customerName: name, selectedProductIds: selectedIds }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || 'Unknown error');
+
+      // Populate preview
+      document.getElementById('previewTo').textContent = email;
+      document.getElementById('emailBody').value = data.emailBody;
+      document.getElementById('emailPreview').innerHTML = data.emailBody;
+
+      // Populate product pills
+      const pillList = document.getElementById('productPills');
+      pillList.innerHTML = '';
+      data.selectedProducts.forEach(p => {
+        const pill = document.createElement('span');
+        pill.className = 'pill';
+        pill.textContent = p.name;
+        pillList.appendChild(pill);
+      });
+
+      document.getElementById('step-loading').hidden = true;
+      document.getElementById('step2').hidden = false;
+    } catch (err) {
+      document.getElementById('step-loading').hidden = true;
+      document.getElementById('step1').hidden = false;
+      document.getElementById('step1-dot').classList.add('active');
+      document.getElementById('step1-dot').classList.remove('done');
+      document.getElementById('step2-dot').classList.remove('active');
+      showError('Failed to generate email: ' + err.message);
+    }
+  }
+
+  function goBack() {
+    document.getElementById('step2').hidden = true;
+    document.getElementById('step1').hidden = false;
+    document.getElementById('step1-dot').classList.add('active');
+    document.getElementById('step1-dot').classList.remove('done');
+    document.getElementById('step2-dot').classList.remove('active');
+    hideError();
+  }
+
+  function toggleSource() {
+    const preview = document.getElementById('emailPreview');
+    const source = document.getElementById('emailBody');
+    const btn = document.getElementById('toggleBtn');
+    if (source.style.display === 'none') {
+      source.style.display = '';
+      preview.style.display = 'none';
+      btn.textContent = 'View preview';
+    } else {
+      source.style.display = 'none';
+      preview.style.display = '';
+      btn.textContent = 'View source';
+    }
+  }
+
+  async function copyEmail() {
+    const text = document.getElementById('emailBody').value;
+    try {
+      await navigator.clipboard.writeText(text);
+      const btn = document.getElementById('copyBtn');
+      btn.textContent = 'Copied!';
+      btn.classList.add('copied');
+      setTimeout(() => {
+        btn.textContent = 'Copy to clipboard';
+        btn.classList.remove('copied');
+      }, 2000);
+    } catch {
+      // Fallback for older browsers
+      document.getElementById('emailBody').select();
+      document.execCommand('copy');
+    }
+  }
+
+  async function sendEmail() {
+    const emailBody = document.getElementById('emailBody').value;
+    const btn = document.getElementById('sendBtn');
+
+    if (!currentCustomerEmail) {
+      showError('No customer email set.');
+      return;
+    }
+
+    if (!confirm(`Send this welcome email to ${currentCustomerEmail}?`)) {
+      return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    try {
+      const res = await fetch('/api/welcome/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerEmail: currentCustomerEmail, emailBody }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || 'Unknown error');
+
+      btn.textContent = 'Sent!';
+      btn.classList.add('sent');
+      setTimeout(() => {
+        btn.textContent = 'Send Email';
+        btn.classList.remove('sent');
+        btn.disabled = false;
+      }, 3000);
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = 'Send Email';
+      alert('Failed to send: ' + err.message);
+    }
+  }
+</script>
+
+</body>
+</html>
