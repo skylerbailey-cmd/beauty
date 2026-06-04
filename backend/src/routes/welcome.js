@@ -99,6 +99,17 @@ const PRODUCTS = {
       image: 'https://avologi.com/wp-content/uploads/2018/08/Eneo-Blu-AV182.jpg',
     },
     {
+      id: 'avologi-eneo-advanced',
+      name: 'Eneo Advanced',
+      brand: 'Avologi',
+      description: 'An FDA-certified class II anti-aging medical device that provides immediate improvements with long-lasting results on face and body. Uses dual wavelengths of 633 and 830 nm with precise penetration to the dermis, enhanced by micro-pulse therapy, 24-karat gold, and detox blue light. Non-invasive, clinically tested, dermatologist recommended, suitable for all skin types and tones.',
+      benefits: 'FDA certified, dual wavelength LED (633nm + 830nm), micro-pulse therapy, 24k gold applicator, detox blue light, immediate and long-lasting anti-aging results, treats fine lines, wrinkles, pigmentation, enlarged pores, and discoloration, zero side effects, no allergies, suitable for all skin types, lifetime limited warranty',
+      ingredients: '',
+      howToUse: 'Cleanse skin with oil-free cleanser, remove all makeup and impurities, dry skin. Apply device with mild pressure, glide in small circular motions from bottom to top. Treat each area for 4 minutes. Apply moisturizer after each session. Use 3 times per week for the first month, then once per week to maintain results.',
+      step: 'device treatment',
+      image: 'https://avologi.com/wp-content/uploads/2018/08/Eneo-Advanced-AV13-1.jpg',
+    },
+    {
       id: 'avologi-enas-mask',
       name: 'ENAS Youth Activating Mask',
       brand: 'Avologi',
