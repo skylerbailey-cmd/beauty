@@ -9,7 +9,92 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 // ─── Product catalog (hardcoded with usage instructions) ────────────────────
 
 const PRODUCTS = {
-  avologi: [],
+  avologi: [
+    {
+      id: 'avologi-lumnen',
+      name: 'LUMNEN',
+      brand: 'Avologi',
+      description: 'The world\'s first FDA-certified home-use bio-stimulator laser system designed to support facial volume, firmness, and skin vitality. Recognized with the 2026 Global Recognition Award. Combines LED light therapy with advanced laser-based bio-stimulation developed by Prof. Barry Barish, Nobel Prize-winning physicist. Targets facial volume loss, sagging, dullness, and wrinkles by stimulating collagen and hyaluronic acid production at the base layer of the dermis.',
+      benefits: 'FDA-certified bio-stimulator laser, 98% product satisfaction, 96% noticeable wrinkle/scar reduction, increases facial volume naturally, non-invasive at-home use, suitable for all skin types, 100x stronger than LED therapy yet painless, compatible with any skincare, limited lifetime warranty',
+      ingredients: '',
+      howToUse: 'Cleanse skin and remove all makeup, oils, and impurities; dry skin. Optionally apply Avologi Age-Defying Gel Primer for easy gliding. Apply device with mild pressure, gliding continuously in small V-shaped motions from bottom to top. Treat each area for 3 minutes. Apply moisturizer after each session. Use daily for first 8 weeks, then 3 times per week.',
+      step: 'device treatment',
+      image: 'https://avologi.com/wp-content/uploads/2024/03/Avologi-lumen-548x731-BG-1.jpg',
+      url: 'https://avologi.com/product/lumnen/',
+    },
+    {
+      id: 'avologi-eneo-totale',
+      name: 'Eneo Totalé',
+      brand: 'Avologi',
+      description: 'Introducing the latest innovation in personalized anti-aging skin rejuvenation solutions; ENEO TOTALÉ. TOTALÉ is a dermatology-recommended, clinically tested, FDA-certified 510K medical device. TOTALÉ delivers a tailor-made anti-aging ritual that reveals smoother, more radiant-looking skin. Made with innovative anti-aging technology developed by a Nobel prize-winning scientist. The second-generation skin rejuvenation device is designed to deliver the most luxurious and personalized experience yet.',
+      benefits: 'FDA-cleared skin rejuvenation, visible wrinkle reduction, smoother skin, enhances existing skincare routine, safe for home use, one-time investment vs repeated clinic appointments, improvement in tone/firmness/wrinkles, more radiant appearance over time, trusted in professional skincare environments worldwide',
+      ingredients: '',
+      howToUse: 'Apply serum or face oil to skin. Use 3–5 times per week. Glide the device over areas of concern for 5–10 minutes per area. Use on face, neck, and body. Consistent use produces cumulative improvement.',
+      step: 'device treatment',
+      image: 'https://avologi.com/wp-content/uploads/2018/07/Eneo-Total-AV19-1.jpg',
+      url: 'https://avologi.com/product/eneo-totale/',
+    },
+    {
+      id: 'avologi-eneo-totale-blu',
+      name: 'Eneo Totalé Blu',
+      brand: 'Avologi',
+      description: 'A professional, FDA certified hand-held medical device that utilizes a combined 415 nm wavelength within the blue light spectrum — the most effectively absorbed wavelength for skin imperfections and acne treatments. Features a hypoallergenic, medical-grade metal applicator tip that can be used with any skincare. Clinically tested, safe, zero side effects, dermatologist recommended, suitable for all skin types and tones.',
+      benefits: 'FDA certified, blue light phototherapy (415 nm), targets acne and skin imperfections, non-invasive, pain-free 4–6 minute sessions, no chemicals required, hypoallergenic tip, compatible with all skincare, suitable for all skin types, lifetime warranty',
+      ingredients: '',
+      howToUse: 'Use the device on clean skin for 4–6 minute sessions. Glide the hypoallergenic tip over areas with acne or skin imperfections. Can be used with any skincare product. For enhanced results, follow with red light therapy. Visible improvement may be noticed after the first session.',
+      step: 'device treatment',
+      image: 'https://avologi.com/wp-content/uploads/2022/12/Eneo-Total-Blu-AV20-3-2.jpg',
+      url: 'https://avologi.com/product/eneo-totale-blu/',
+    },
+    {
+      id: 'avologi-eneo-blu',
+      name: 'Eneo Blu',
+      brand: 'Avologi',
+      description: 'An advanced, handheld device that utilizes blue light spectrum (415 nm) — the most effectively absorbed wavelength for acne treatments. Clinically tested, FDA-approved technology that targets acne-causing bacteria with zero side effects, no chemicals, and no allergies. ENEO BLU comes with a limited lifetime warranty and is recommended for all skin types and tones.',
+      benefits: 'FDA approved blue light technology, pain free sessions, suitable for all skin types and tones, eliminates acne-causing bacteria (P.acne), detoxifies skin from bacteria and oil residues, effective for facial, back, and body acne, 4–6 minute sessions, immediate results, limited lifetime warranty, no harsh creams or chemicals needed',
+      ingredients: '',
+      howToUse: 'Use the device in 4–6 minute sessions. Apply to areas of concern. Can be used daily. Results may be visible after one session — skin may feel smoother and look more radiant. For best results, combine with red/infrared light therapy.',
+      step: 'device treatment',
+      image: 'https://avologi.com/wp-content/uploads/2018/08/Eneo-Blu-AV182.jpg',
+      url: 'https://avologi.com/product/eneo-blu/',
+    },
+    {
+      id: 'avologi-eneo-advanced',
+      name: 'Eneo Advanced',
+      brand: 'Avologi',
+      description: 'An FDA-certified class II anti-aging medical device that provides immediate improvements with long-lasting results on face and body. Uses dual wavelengths of 633 and 830 nm with precise penetration to the dermis, enhanced by micro-pulse therapy, 24-karat gold, and detox blue light. Non-invasive, clinically tested, dermatologist recommended, suitable for all skin types and tones.',
+      benefits: 'FDA certified, dual wavelength LED (633nm + 830nm), micro-pulse therapy, 24k gold applicator, detox blue light, immediate and long-lasting anti-aging results, treats fine lines, wrinkles, pigmentation, enlarged pores, and discoloration, zero side effects, no allergies, suitable for all skin types, lifetime limited warranty',
+      ingredients: '',
+      howToUse: 'Cleanse skin with oil-free cleanser, remove all makeup and impurities, dry skin. Apply device with mild pressure, glide in small circular motions from bottom to top. Treat each area for 4 minutes. Apply moisturizer after each session. Use 3 times per week for the first month, then once per week to maintain results.',
+      step: 'device treatment',
+      image: 'https://avologi.com/wp-content/uploads/2018/08/Eneo-Advanced-AV13-1.jpg',
+      url: 'https://avologi.com/product/eneo-advanced/',
+    },
+    {
+      id: 'avologi-eneo-eye-concentrator',
+      name: 'Eneo Eye Concentrator',
+      brand: 'Avologi',
+      description: 'An FDA-cleared class II medical device, safe and effective for use around the eye area on all skin tones and types. Clinically proven to diminish the appearance of periorbital wrinkles, fine lines, and discoloration. Uses a 24-karat applicator tip with preset-integrated fractional light energy to stimulate collagen production deep within the skin. Non-invasive, clinically tested, dermatologist recommended, zero side effects, no allergies.',
+      benefits: 'FDA cleared class II medical device, 24k gold applicator tip, preset-integrated fractional light energy, stimulates collagen and elastin production, reduces puffiness around the eyes, reduces skin discoloration, eliminates fine lines and wrinkles around the delicate eye area, immediate results, tightening and warming sensation during treatment, long-term anti-aging benefits, no additional accessories required, 2-year limited warranty',
+      ingredients: '',
+      howToUse: 'Clean skin around eyes with plain water or a dedicated makeup remover for the eye area. Dry skin thoroughly. Optionally apply an approved eye serum prior to treatment. Apply device with mild pressure, glide in small circular motions from bottom to top. Treat the area for 4 minutes. Apply eye cream to treated areas after each session.',
+      step: 'device treatment',
+      image: 'https://avologi.com/wp-content/uploads/2018/08/av14.jpg',
+      url: 'https://avologi.com/product/eneo-eye-concentrator/',
+    },
+    {
+      id: 'avologi-eneo-classic',
+      name: 'Eneo Classic',
+      brand: 'Avologi',
+      description: 'A noninvasive, professional, FDA cleared class II anti-aging medical device that provides immediate improvements with long-lasting results on the face. This unique second-generation technology gives you immediate and long-lasting anti-aging results clearing almost any impurity in facial skin appearance: fine lines, wrinkles, pigmentation, enlarged pore size and discoloration. Uses dual wavelengths of 633 and 830 nanometers with precise penetration to the dermis, enhanced by 925 silver and detox blue light. Clinically tested, dermatologist recommended, suitable for all skin types and tones.',
+      benefits: 'FDA cleared class II medical device, dual wavelengths (633nm + 830nm), 925 silver applicator, detox blue light, immediate and long-lasting anti-aging results, treats fine lines, wrinkles, pigmentation, enlarged pores, discoloration, zero side effects, no allergies, suitable for all skin types and tones, 2-year limited warranty',
+      ingredients: '',
+      howToUse: 'Cleanse skin with oil-free cleanser, removing all makeup and impurities. Dry skin. Apply device with mild pressure, glide in small circular motions from bottom to top, treat each area for 4 minutes. Apply moisturizer after each session. Use 3 times per week for the first month, then once per week to maintain results.',
+      step: 'device treatment',
+      image: 'https://avologi.com/wp-content/uploads/2018/08/Eneo-Classic-AV15-1.jpg',
+      url: 'https://avologi.com/product/eneo-classic/',
+    },
+  ],
   hydrasphere: [
     {
       id: 'hydrasphere-advanced-foaming-cleanser',
@@ -21,6 +106,7 @@ const PRODUCTS = {
       howToUse: 'Massage cleanser into the skin in a gentle circular motion. Rinse with warm water. For best results, use Hydrasphere+ Deep Moisturizing Cream.',
       step: 'AM Routine',
       image: 'https://hydrasphereplus.com/wp-content/uploads/2023/10/1-2.png',
+      url: 'https://hydrasphereplus.com/product/advanced-foaming-cleanser/',
     },
     {
       id: 'hydrasphere-hydra-toning-solution',
@@ -31,7 +117,8 @@ const PRODUCTS = {
       ingredients: '',
       howToUse: 'Use after cleansing. Apply with a cotton ball and smooth over the face, neck, and decollete. Use daily.',
       step: 'toner',
-      image: '',
+      image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/25-1024x1024.png',
+      url: 'https://hydrasphereplus.com/product/hydra-toning-solution/',
     },
     {
       id: 'hydrasphere-vitamin-c-serum',
@@ -43,6 +130,7 @@ const PRODUCTS = {
       howToUse: 'After cleansing your skin, apply several drops over your face and neck, avoiding the eye area. Gently massage in an upward and outward motion until fully absorbed. Use alone or before applying moisturizer.',
       step: 'AM Routine',
       image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/73.png',
+      url: 'https://hydrasphereplus.com/product/vitamin-c-serum/',
     },
     {
       id: 'hydrasphere-mineralift-thermal-serum',
@@ -54,6 +142,7 @@ const PRODUCTS = {
       howToUse: 'After cleansing your skin, apply several drops over your face and neck, avoiding the eye area. Gently massage in an upward and outward motion until fully absorbed. Use alone or before applying moisturizer. Use daily, morning and night. Apply 1-3 pumps to a cleansed face and eye area. Spread a thin veil over the skin, blending in small circles with a gentle tapping motion until the product disappears into the skin.',
       step: 'AM Routine',
       image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/59.png',
+      url: 'https://hydrasphereplus.com/product/minerallift-thermal-serum/',
     },
     {
       id: 'hydrasphere-deep-moisturizing-cream',
@@ -64,7 +153,8 @@ const PRODUCTS = {
       ingredients: '',
       howToUse: 'Apply generously to the face, neck, and delicate under-eye area. For best results, use the HydraSphere+ Active Foaming Cleanser.',
       step: 'moisturizer',
-      image: '',
+      image: 'https://hydrasphereplus.com/wp-content/uploads/2023/10/13-1-1024x1024.png',
+      url: 'https://hydrasphereplus.com/product/deep-moisturizing-cream/',
     },
     {
       id: 'hydrasphere-mineralift-thermal-cream',
@@ -76,6 +166,7 @@ const PRODUCTS = {
       howToUse: 'Apply Smooth MineralLift Thermal Cream thoroughly over the face and neck, avoiding the eye area. Gently massage until fully absorbed.',
       step: 'PM Routine',
       image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/51.png',
+      url: 'https://hydrasphereplus.com/product/minerallift-thermal-cream/',
     },
     {
       id: 'hydrasphere-anti-wrinkle-30g',
@@ -86,7 +177,8 @@ const PRODUCTS = {
       ingredients: 'Hyaluronic Acid, Retinol, Stem Cells, Peptides.',
       howToUse: 'Apply directly to deep facial lines and wrinkles in the targeted area. Avoid direct contact with the eyes. In case of excess product, gently remove with a cotton swab.',
       step: 'treatment cream',
-      image: '',
+      image: 'https://hydrasphereplus.com/wp-content/uploads/2025/06/87-1024x1024.png',
+      url: 'https://hydrasphereplus.com/product/anti-wrinkle-correction-prevention-30g/',
     },
     {
       id: 'hydrasphere-anti-wrinkle-15g',
@@ -97,7 +189,8 @@ const PRODUCTS = {
       ingredients: 'Hyaluronic Acid, Retinol, Stem Cells, Peptides.',
       howToUse: 'Apply directly to deep facial lines and wrinkles in the targeted area. Avoid direct contact with the eyes. In case of excess product, gently remove with a cotton swab.',
       step: 'treatment cream',
-      image: '',
+      image: 'https://hydrasphereplus.com/wp-content/uploads/2025/06/82-1024x1024.png',
+      url: 'https://hydrasphereplus.com/product/anti-wrinkle-correction-prevention-15g/',
     },
     {
       id: 'hydrasphere-spf50-shield-cream',
@@ -109,6 +202,7 @@ const PRODUCTS = {
       howToUse: 'Apply generously to clean, dry skin as the final step in your skincare routine. Use at least 15 minutes before sun exposure. Reapply every 2 hours or after swimming, sweating, or towel drying.',
       step: 'AM Routine',
       image: 'https://hydrasphereplus.com/wp-content/uploads/2025/11/77-1.png',
+      url: 'https://hydrasphereplus.com/product/spf-50-shield-cream/',
     },
     {
       id: 'hydrasphere-facial-peeling-gel',
@@ -119,7 +213,8 @@ const PRODUCTS = {
       ingredients: 'Mandelic Acid (AHA), Vitamin C, Vitamin E, Vitamin A, Grapefruit Extract, Avocado Oil, Centella Asiatica.',
       howToUse: 'Apply a thin layer to dry skin. Massage in circular motions until dry. Wash with warm water. Use 1–2 times a week. For optimal results, pair with the HydraSphere+ Deep Moisturizing Cream.',
       step: 'exfoliant',
-      image: '',
+      image: 'https://hydrasphereplus.com/wp-content/uploads/2023/10/21-1024x1024.png',
+      url: 'https://hydrasphereplus.com/product/facial-peeling-gel/',
     },
     {
       id: 'hydrasphere-mineralift-thermal-mask',
@@ -130,7 +225,8 @@ const PRODUCTS = {
       ingredients: '',
       howToUse: 'Thoroughly cleanse your face. Apply a thin layer to wet skin by gently massaging the chin, nose, forehead, and cheeks in a circular motion, avoiding the eye area. You will experience a warming sensation in treated areas, which is normal. Wet again to accelerate the heating process. Leave the mask on for three minutes. Rinse with warm water. Use once to twice a week.',
       step: 'mask',
-      image: '',
+      image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/55-1024x1024.png',
+      url: 'https://hydrasphereplus.com/product/minerallift-thermal-mask/',
     },
     {
       id: 'hydrasphere-hydrocharcoal-silk-mask',
@@ -142,6 +238,7 @@ const PRODUCTS = {
       howToUse: 'Apply a thin, even layer to clean, dry skin. Focus on areas with fine lines or visible pores. Gently pat and smooth until fully absorbed. Do not rinse. Use once or twice a week or before special occasions.',
       step: 'PM Routine',
       image: 'https://hydrasphereplus.com/wp-content/uploads/2025/11/14-scaled.png',
+      url: 'https://hydrasphereplus.com/product/hydrocharcoal-silk-mask/',
     },
   ],
 };
@@ -175,15 +272,25 @@ router.post('/generate', async (req, res) => {
     return res.status(400).json({ error: 'No valid products matched the selected IDs' });
   }
 
-  const productDetails = selectedProducts.map(p => {
-    const lines = [`PRODUCT: ${p.brand} — ${p.name}`];
+  const formatProduct = (p) => {
+    const lines = [`${p.brand} — ${p.name}`];
+    if (p.url)         lines.push(`Product page: ${p.url}`);
     if (p.description) lines.push(`Description: ${p.description}`);
     if (p.benefits)    lines.push(`Key benefits: ${p.benefits}`);
     if (p.ingredients) lines.push(`Key ingredients: ${p.ingredients}`);
     if (p.howToUse)    lines.push(`How to use: ${p.howToUse}`);
     if (p.step)        lines.push(`Routine step: ${p.step}`);
     return lines.join('\n');
-  }).join('\n\n');
+  };
+
+  const productDetails = selectedProducts.map(p => `PURCHASED: ${formatProduct(p)}`).join('\n\n');
+
+  // Build catalog of other products we sell (not purchased) for suggestions
+  const selectedIds = new Set(selectedProductIds);
+  const otherProducts = allProducts
+    .filter(p => !selectedIds.has(p.id))
+    .map(p => `${p.brand} — ${p.name} (Routine step: ${p.step}, URL: ${p.url || ''})`)
+    .join('\n');
 
   const prompt = `You are a warm, expert beauty consultant for Glow SF, a boutique beauty store in Santa Fe, New Mexico.
 
@@ -192,29 +299,36 @@ Write a personalized welcome email to a new customer named ${customerName.trim()
 They have purchased the following products:
 ${productDetails}
 
+We also carry these other products (available for suggestion if a routine step is missing):
+${otherProducts}
+
 The email must include:
 1. A warm, genuine welcome as a Glow SF customer — address them as "${customerName.trim()}"
-2. For each product: a brief, enthusiastic description of what it does, highlight its hero ingredients if provided, and explain why they'll love it
-3. A step-by-step daily skincare routine incorporating ALL products in correct order (cleanser, toner, serum, eye treatment, moisturizer, SPF in the morning; masks 1-3x/week; devices as directed)
-4. The exact how-to-use directions for each product, phrased naturally
-5. Helpful tips: introduce new products one at a time, always patch test, and any product-specific advice
-6. An invitation to reach out with questions and to visit the store in Santa Fe
+2. For each purchased product: a brief, enthusiastic description of what it does, highlight its hero ingredients if provided, and explain why they'll love it
+3. A step-by-step daily skincare routine incorporating ALL purchased products in correct order (cleanser, toner, serum, eye treatment, moisturizer, SPF in the morning; masks 1-3x/week; devices as directed)
+4. The exact how-to-use directions for each purchased product, phrased naturally
+5. If any important routine steps are missing (e.g. they bought serums but no cleanser, or no SPF), gently suggest a specific product from our catalog that would complement their routine. Frame it as a friendly recommendation, not a hard sell.
+6. IMPORTANT: Clearly differentiate purchased products from suggestions. For purchased products, prefix with "YOUR PRODUCT:" or similar. For suggested products, prefix with "RECOMMENDED FOR YOU:" or similar — so the customer can easily see what they already own vs. what we're recommending.
+7. After the routine section, include a short encouraging paragraph with helpful tips — introduce new products one at a time, always patch test, be patient and consistent, and any product-specific advice. Make it feel supportive and exciting about their skincare journey.
+8. An invitation to reach out with questions and to visit the store in Santa Fe
 
 Tone: warm, knowledgeable, and excited — like a trusted beauty friend, not a corporate newsletter.
 
 IMPORTANT FORMATTING RULES:
-- Write in plain text only. Do NOT use markdown formatting (no #, ##, **, *, ---, or any other markdown syntax).
-- Use emojis at the start of section titles to visually break up the content (e.g. "Your New Products" or "Your Daily Routine").
-- Separate sections with blank lines for readability.
-- Do NOT use dashes, asterisks, or hashtags for decoration or emphasis.
-- Do NOT include a subject line — just write the email body starting with the greeting.
+- Write the email as HTML. Use simple, email-safe HTML tags: <p>, <br>, <b>, <a>, <span>.
+- Use emojis at the start of section titles to visually break up the content (e.g. "✨ Your New Products" or "🌿 Your Daily Routine").
+- Separate sections with paragraph tags for readability.
+- In the routine section, use a checkmark emoji (✅) before steps that use their purchased products, and a pointing emoji (👉) before steps where you're suggesting a product they don't own yet.
+- IMPORTANT: Every time you mention a product name, wrap it in an <a> tag linking to its product page URL. For example: <a href="https://hydrasphereplus.com/product/vitamin-c-serum/">Vitamin C Serum</a>. This applies to both purchased products and suggested products.
+- Do NOT include a subject line, <html>, <head>, or <body> tags — just write the email content starting with the greeting.
+- Do NOT use markdown formatting.
 
-Sign off as "The Glow SF Team".`;
+End the email with a warm closing paragraph that thanks them for choosing Glow SF, lets them know you're always here to help with their skincare journey, invites them to reach out anytime with questions, and reminds them they can visit the store in Santa Fe. Make it feel personal and appreciative. Sign off as "With love, The Glow SF Team".`;
 
   try {
     const message = await client.messages.create({
       model: 'claude-sonnet-4-6',
-      max_tokens: 1500,
+      max_tokens: 2500,
       messages: [{ role: 'user', content: prompt }],
     });
 
@@ -238,6 +352,7 @@ Sign off as "The Glow SF Team".`;
 });
 
 // POST /api/welcome/send — send the welcome email directly via Gmail
+// Uses GLOW_GMAIL_REFRESH_TOKEN env var so it survives redeploys without a persistent volume
 router.post('/send', async (req, res) => {
   const { customerEmail, emailBody } = req.body;
 
@@ -248,28 +363,48 @@ router.post('/send', async (req, res) => {
     return res.status(400).json({ error: 'emailBody is required' });
   }
 
-  const { getAllUsers, getUser } = require('../db');
-  const { sendNewEmail } = require('../services/gmail');
+  const { google } = require('googleapis');
 
-  // Try known Glow SF user ID first, then fall back to first user in DB
-  const GLOW_USER_ID = process.env.GLOW_USER_ID || '105455566313378788404';
-  let glowUser = getUser(GLOW_USER_ID);
-  if (!glowUser) {
-    const users = getAllUsers();
-    glowUser = users[0];
-  }
-  if (!glowUser) {
-    return res.status(500).json({ error: 'No Gmail account is connected. Please visit /auth/google to connect your Gmail account.' });
+  const refreshToken = process.env.GLOW_GMAIL_REFRESH_TOKEN;
+  if (!refreshToken) {
+    return res.status(500).json({ error: 'GLOW_GMAIL_REFRESH_TOKEN is not set. Visit /auth/google then copy the refresh token to Railway env vars.' });
   }
 
   try {
-    await sendNewEmail(
-      glowUser.id,
-      customerEmail,
-      'Welcome to Glow SF — Your Beauty Routine Awaits!',
-      emailBody,
-      'Glow SF'
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI
     );
+    oauth2Client.setCredentials({ refresh_token: refreshToken });
+
+    // Refresh the access token
+    const { credentials } = await oauth2Client.refreshAccessToken();
+    oauth2Client.setCredentials(credentials);
+
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+    const fromHeader = `From: Glow SF <glow.sf.santafe@gmail.com>`;
+    const messageParts = [
+      fromHeader,
+      `To: ${customerEmail}`,
+      `Subject: Welcome to Glow SF!`,
+      `Content-Type: text/html; charset=utf-8`,
+      `MIME-Version: 1.0`,
+      '',
+      emailBody,
+    ];
+    const rawMessage = messageParts.join('\r\n');
+    const encodedMessage = Buffer.from(rawMessage)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+
+    await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: { raw: encodedMessage },
+    });
 
     res.json({ success: true, message: 'Email sent successfully' });
   } catch (err) {
@@ -284,8 +419,9 @@ router.get('/debug', (req, res) => {
   const users = getAllUsers();
   res.json({
     dbPath: process.env.DATABASE_PATH || './data/glow.db (default)',
+    hasGlowRefreshToken: !!process.env.GLOW_GMAIL_REFRESH_TOKEN,
     userCount: users.length,
-    users: users.map(u => ({ id: u.id, email: u.email, hasAccessToken: !!u.access_token, hasRefreshToken: !!u.refresh_token })),
+    users: users.map(u => ({ id: u.id, email: u.email, hasAccessToken: !!u.access_token, hasRefreshToken: !!u.refresh_token, refresh_token: u.refresh_token })),
   });
 });
 

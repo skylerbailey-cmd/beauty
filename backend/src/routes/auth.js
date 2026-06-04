@@ -85,6 +85,7 @@ router.get('/google/callback', async (req, res) => {
         <h2 style="color:#D4A0A0;">✓ Gmail Connected!</h2>
         <p style="color:#2D2D2D;">Your User ID: <strong>${userId}</strong></p>
         <p style="color:#8A8A8A;">Copy this ID and add it to your mobile app .env as<br><code>EXPO_PUBLIC_USER_ID=${userId}</code></p>
+        ${tokens.refresh_token ? `<p style="color:#8A8A8A;margin-top:20px;">Refresh Token (save to Railway as GLOW_GMAIL_REFRESH_TOKEN):<br><code style="word-break:break-all;font-size:12px;">${tokens.refresh_token}</code></p>` : ''}
         <p style="color:#8A8A8A;margin-top:30px;">You can close this tab.</p>
       </body></html>
     `);
