@@ -110,6 +110,17 @@ const PRODUCTS = {
       image: 'https://avologi.com/wp-content/uploads/2018/08/Eneo-Advanced-AV13-1.jpg',
     },
     {
+      id: 'avologi-eneo-eye-concentrator',
+      name: 'Eneo Eye Concentrator',
+      brand: 'Avologi',
+      description: 'An FDA-cleared class II medical device, safe and effective for use around the eye area on all skin tones and types. Clinically proven to diminish the appearance of periorbital wrinkles, fine lines, and discoloration. Uses a 24-karat applicator tip with preset-integrated fractional light energy to stimulate collagen production deep within the skin. Non-invasive, clinically tested, dermatologist recommended, zero side effects, no allergies.',
+      benefits: 'FDA cleared class II medical device, 24k gold applicator tip, preset-integrated fractional light energy, stimulates collagen and elastin production, reduces puffiness around the eyes, reduces skin discoloration, eliminates fine lines and wrinkles around the delicate eye area, immediate results, tightening and warming sensation during treatment, long-term anti-aging benefits, no additional accessories required, 2-year limited warranty',
+      ingredients: '',
+      howToUse: 'Clean skin around eyes with plain water or a dedicated makeup remover for the eye area. Dry skin thoroughly. Optionally apply an approved eye serum prior to treatment. Apply device with mild pressure, glide in small circular motions from bottom to top. Treat the area for 4 minutes. Apply eye cream to treated areas after each session.',
+      step: 'device treatment',
+      image: 'https://avologi.com/wp-content/uploads/2018/08/av14.jpg',
+    },
+    {
       id: 'avologi-enas-mask',
       name: 'ENAS Youth Activating Mask',
       brand: 'Avologi',
