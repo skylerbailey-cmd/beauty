@@ -494,4 +494,15 @@ router.post('/send', async (req, res) => {
   }
 });
 
+// GET /api/welcome/debug — check DB and connected users (temporary)
+router.get('/debug', (req, res) => {
+  const { getAllUsers } = require('../db');
+  const users = getAllUsers();
+  res.json({
+    dbPath: process.env.DATABASE_PATH || './data/glow.db (default)',
+    userCount: users.length,
+    users: users.map(u => ({ id: u.id, email: u.email, hasAccessToken: !!u.access_token, hasRefreshToken: !!u.refresh_token })),
+  });
+});
+
 module.exports = { router, PRODUCTS };
