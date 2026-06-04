@@ -1,10 +1,8 @@
 'use strict';
 
 const express = require('express');
-const Anthropic = require('@anthropic-ai/sdk');
 
 const router = express.Router();
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ─── Product catalog (hardcoded with usage instructions) ────────────────────
 
@@ -248,8 +246,208 @@ router.get('/products', (req, res) => {
   res.json({ products: PRODUCTS });
 });
 
-// POST /api/welcome/generate — generate a welcome email
-router.post('/generate', async (req, res) => {
+// ─── Helpers for templated email generation ───────────────────────────────────
+
+const LINK_STYLE = 'color:#c97d8a;text-decoration:underline';
+
+function productLink(p) {
+  if (p.url) return `<a href="${p.url}" style="${LINK_STYLE}">${p.name}</a>`;
+  return `<b>${p.name}</b>`;
+}
+
+// Short descriptions for the "Your New Products" section (1-2 sentences)
+function shortDescription(p) {
+  // Use first sentence or two of description, capped for brevity
+  if (!p.description) return '';
+  const sentences = p.description.match(/[^.!]+[.!]+/g) || [p.description];
+  return sentences.slice(0, 2).join(' ').trim();
+}
+
+// Routine step ordering and categorization
+const ROUTINE_STEPS = {
+  am: [
+    { key: 'cleanser', label: 'Cleanse', matches: ['cleanser', 'AM Routine'] },
+    { key: 'toner', label: 'Tone', matches: ['toner'] },
+    { key: 'serum', label: 'Serum', matches: ['serum', 'AM Routine'] },
+    { key: 'eye', label: 'Eye Treatment', matches: ['eye serum', 'eye cream', 'eye treatment'] },
+    { key: 'moisturizer', label: 'Moisturize', matches: ['moisturizer'] },
+    { key: 'spf', label: 'Sun Protection', matches: ['AM Routine'] },
+  ],
+  pm: [
+    { key: 'cleanser', label: 'Cleanse', matches: ['cleanser', 'PM Routine'] },
+    { key: 'toner', label: 'Tone', matches: ['toner'] },
+    { key: 'serum', label: 'Serum', matches: ['serum', 'PM Routine'] },
+    { key: 'eye', label: 'Eye Treatment', matches: ['eye serum', 'eye cream', 'eye treatment'] },
+    { key: 'moisturizer', label: 'Moisturize', matches: ['moisturizer', 'PM Routine', 'night treatment'] },
+  ],
+  weekly: [
+    { key: 'exfoliant', label: 'Exfoliate (1-2x/week)', matches: ['exfoliant', 'exfoliant/scrub'] },
+    { key: 'mask', label: 'Mask (1-3x/week)', matches: ['mask', 'body mask'] },
+    { key: 'device', label: 'Device Treatment', matches: ['device treatment'] },
+    { key: 'treatment', label: 'Targeted Treatment', matches: ['treatment cream'] },
+  ],
+};
+
+// Match a product to a routine step key
+function matchStep(product, stepDef) {
+  const pStep = (product.step || '').toLowerCase();
+  return stepDef.matches.some(m => pStep.includes(m.toLowerCase()));
+}
+
+// Special matching for AM-specific products (cleanser, serum, SPF)
+function isAmProduct(p) {
+  const step = (p.step || '').toLowerCase();
+  return step.includes('am routine') || p.id.includes('spf') || p.id.includes('shield');
+}
+
+function isPmProduct(p) {
+  const step = (p.step || '').toLowerCase();
+  return step.includes('pm routine') || step.includes('night');
+}
+
+function isCleanser(p) {
+  const step = (p.step || '').toLowerCase();
+  return step.includes('cleanser') || (step.includes('am routine') && p.name.toLowerCase().includes('cleanser'));
+}
+
+function isToner(p) {
+  return (p.step || '').toLowerCase().includes('toner');
+}
+
+function isSerum(p) {
+  const step = (p.step || '').toLowerCase();
+  const name = p.name.toLowerCase();
+  return step.includes('serum') || (step.includes('am routine') && (name.includes('serum') || name.includes('vitamin c')));
+}
+
+function isEye(p) {
+  const step = (p.step || '').toLowerCase();
+  return step.includes('eye');
+}
+
+function isMoisturizer(p) {
+  const step = (p.step || '').toLowerCase();
+  const name = p.name.toLowerCase();
+  return step.includes('moisturizer') || (name.includes('cream') && !name.includes('spf') && !name.includes('shield') && !name.includes('wrinkle') && !name.includes('peeling'));
+}
+
+function isSpf(p) {
+  const name = p.name.toLowerCase();
+  return name.includes('spf') || name.includes('shield') || name.includes('sunscreen');
+}
+
+function isExfoliant(p) {
+  const step = (p.step || '').toLowerCase();
+  return step.includes('exfoliant') || step.includes('scrub');
+}
+
+function isMask(p) {
+  const step = (p.step || '').toLowerCase();
+  return step.includes('mask');
+}
+
+function isDevice(p) {
+  const step = (p.step || '').toLowerCase();
+  return step.includes('device');
+}
+
+function isTreatment(p) {
+  const step = (p.step || '').toLowerCase();
+  return step.includes('treatment cream');
+}
+
+// Find a suggestion from unselected products for a missing step
+function findSuggestion(matchFn, selectedIds, allProducts) {
+  return allProducts.find(p => !selectedIds.has(p.id) && matchFn(p)) || null;
+}
+
+// Build a routine step HTML line
+// Why-you-need-it reasons for each routine step when suggesting
+const STEP_REASONS = {
+  Cleanse: 'Cleansing is the foundation of every routine — it removes dirt, oil, and impurities so your other products can actually absorb and do their job.',
+  Tone: 'A toner rebalances your skin\'s pH after cleansing and preps it to absorb your serums and moisturizers more effectively.',
+  Serum: 'Serums deliver concentrated active ingredients deep into your skin — they\'re where the real transformation happens.',
+  'Eye Treatment': 'The skin around your eyes is the thinnest and most delicate on your face. A dedicated eye treatment targets fine lines, puffiness, and dark circles that regular moisturizers can\'t address.',
+  Moisturize: 'Moisturizer locks in hydration and creates a protective barrier to keep your skin plump, smooth, and healthy all day.',
+  'Sun Protection': 'SPF is the single most important anti-aging step. Without it, UV damage undoes the benefits of every other product in your routine.',
+};
+
+function routineStepHtml(label, product, suggestion) {
+  if (product) {
+    return `<p style="margin-bottom:8px">✅ <b>${label}:</b> ${productLink(product)} — ${product.howToUse || ''}</p>`;
+  }
+  if (suggestion) {
+    const reason = STEP_REASONS[label] || '';
+    return `<p style="margin-bottom:8px">👉 <b>${label} (not in your collection yet):</b> ${reason ? reason + ' ' : ''}We recommend ${productLink(suggestion)} — ${shortDescription(suggestion)} Reply to this email to ask about current specials and our free shipping!</p>`;
+  }
+  return '';
+}
+
+// ─── Tips bank — selected based on what the customer purchased ────────────────
+
+// Enthusiastic "why you'll love it" lines for each product
+const LOVE_LINES = {
+  // Avologi devices
+  'avologi-lumnen': 'You\'re going to be amazed by this one! The LUMNEN is the world\'s first FDA-certified home-use bio-stimulator laser — it actually stimulates your skin\'s own collagen and hyaluronic acid production for real, visible volume and firmness. This is next-level skincare!',
+  'avologi-eneo-totale': 'This is like having a professional skin rejuvenation clinic in your hands! The Eneo Totalé uses Nobel Prize-winning technology to smooth, firm, and reveal genuinely radiant skin — and the results just keep getting better with every session.',
+  'avologi-eneo-totale-blu': 'Say goodbye to breakouts! This FDA-certified blue light device targets acne and skin imperfections in just 4-6 minutes per session — no chemicals, no side effects, just clearer skin. Your skin is going to thank you!',
+  'avologi-eneo-blu': 'This little powerhouse is your secret weapon against acne — FDA-approved blue light technology that eliminates acne-causing bacteria in minutes. It works on your face, back, and body, and you can see results from the very first session!',
+  'avologi-eneo-advanced': 'Get ready for a game-changer! The Eneo Advanced combines dual-wavelength LED, micro-pulse therapy, and 24k gold to tackle fine lines, wrinkles, and pigmentation all at once. Your skin will feel instantly firmer and more radiant.',
+  'avologi-eneo-eye-concentrator': 'Your eyes deserve special attention, and this device delivers! The 24k gold applicator tip uses fractional light energy to visibly reduce puffiness, dark circles, and fine lines around your eyes in just 4 minutes. You\'re going to love what you see!',
+  'avologi-eneo-classic': 'A true classic for a reason! Dual-wavelength LED therapy with 925 silver tackles fine lines, wrinkles, pigmentation, and enlarged pores — giving you immediate results that only get better over time.',
+
+  // HydraSphere products
+  'hydrasphere-advanced-foaming-cleanser': 'This isn\'t just a cleanser — it\'s the perfect start to your routine! The hemp-extract formula gently retextures and exfoliates while prepping your skin to absorb everything that comes next. Your skin will feel so soft and fresh!',
+  'hydrasphere-hydra-toning-solution': 'Your skin is going to drink this up! This toner rebalances your pH and gets your skin perfectly prepped to soak in all the goodness from your serums and moisturizers. It\'s the step that makes every other step work better.',
+  'hydrasphere-vitamin-c-serum': 'Get ready to glow! This Vitamin C powerhouse brightens, fades dark spots, and fights fine lines while boosting your skin\'s collagen production. It\'s like sunshine in a bottle for your complexion!',
+  'hydrasphere-mineralift-thermal-serum': 'You\'re going to feel this one working! This serum penetrates deep to stimulate collagen and tighten your skin from within. Firmer, lifted, more youthful-looking skin — yes please!',
+  'hydrasphere-deep-moisturizing-cream': 'This is so much more than a moisturizer — it\'s a firming elixir! The botanical-rich formula deeply nourishes and firms your skin with a luxurious feel that goes way beyond basic hydration. Your skin will look plump and gorgeous!',
+  'hydrasphere-mineralift-thermal-cream': 'You\'re going to love how this feels! It glides on like silk, absorbs instantly with zero greasiness, and works to firm and lift your skin with every use. Collagen-boosting luxury at its finest!',
+  'hydrasphere-anti-wrinkle-30g': 'This is targeted power right where you need it! Packed with Hyaluronic Acid, Retinol, Stem Cells, and Peptides, it visibly smooths deep lines and firms your skin. It\'s like an eraser for wrinkles!',
+  'hydrasphere-anti-wrinkle-15g': 'All the wrinkle-fighting power of our Anti Wrinkle cream in a perfect travel size! Retinol, Stem Cells, and Peptides work together to smooth and firm — so your skin looks amazing wherever you go.',
+  'hydrasphere-spf50-shield-cream': 'This is your daily armor! Lightweight, non-greasy mineral SPF 50 that protects against UVA and UVB rays while brightening with Niacinamide — no white cast, just beautiful protected skin. Your future self will thank you!',
+  'hydrasphere-facial-peeling-gel': 'Get ready for baby-soft skin! This gentle mandelic acid peel sweeps away dead skin cells, fades dark spots, and smooths texture — revealing the fresh, glowing skin hiding underneath. You\'ll be obsessed!',
+  'hydrasphere-mineralift-thermal-mask': 'This is your weekly spa moment at home! The self-warming formula stimulates your facial muscles and boosts circulation while detoxifying and firming. You\'ll feel the tingle and see the glow — so good!',
+  'hydrasphere-hydrocharcoal-silk-mask': 'Treat yourself to this luxurious leave-on mask! Activated charcoal and hyaluronic acid work together to purify pores, smooth texture, and give you an instant radiant glow. Perfect before a special occasion or anytime you want to look your absolute best!',
+};
+
+const TIPS_BANK = [
+  {
+    match: (products) => products.some(p => p.name.toLowerCase().includes('anti wrinkle') || p.ingredients.toLowerCase().includes('retinol')),
+    tip: 'Since you have a retinol-based product, start by using it every other evening and gradually increase to nightly. Always follow with SPF in the morning — retinol can make skin more sun-sensitive.',
+  },
+  {
+    match: (products) => products.some(p => p.name.toLowerCase().includes('vitamin c')),
+    tip: 'Your Vitamin C Serum works best in the morning — it pairs beautifully with SPF for extra antioxidant protection. Store it in a cool, dark place to keep it potent.',
+  },
+  {
+    match: (products) => products.some(p => isExfoliant(p)),
+    tip: 'With your exfoliating product, start with once a week and work up to twice a week as your skin adjusts. Avoid using it on the same night as retinol products.',
+  },
+  {
+    match: (products) => products.some(p => isDevice(p)),
+    tip: 'For your device, consistency is key! Follow the recommended schedule and always start with clean skin. Wipe down your device after each use to keep it in top shape.',
+  },
+  {
+    match: (products) => products.some(p => isSpf(p)),
+    tip: 'Remember to reapply your SPF every 2 hours when you\'re spending time outdoors — even on cloudy days!',
+  },
+  {
+    match: (products) => products.some(p => isMask(p)),
+    tip: 'Masks are a wonderful weekly treat for your skin. Use them after cleansing on a night when you can relax and let the ingredients really work their magic.',
+  },
+  {
+    match: (products) => products.length >= 3,
+    tip: 'Since you\'re building out a full routine, introduce one new product at a time over a week or two. This way you can see how your skin responds to each one individually.',
+  },
+  {
+    match: () => true, // Always include
+    tip: 'Always patch test a new product on a small area first, and give your routine at least 4-6 weeks to see full results. Beautiful skin is a journey, not an overnight destination!',
+  },
+];
+
+// POST /api/welcome/generate — build a templated welcome email (no AI)
+router.post('/generate', (req, res) => {
   const { customerEmail, customerName, selectedProductIds } = req.body;
 
   if (!customerEmail || typeof customerEmail !== 'string') {
@@ -262,8 +460,8 @@ router.post('/generate', async (req, res) => {
     return res.status(400).json({ error: 'At least one product must be selected' });
   }
 
-  // Resolve selected products
   const allProducts = [...PRODUCTS.avologi, ...PRODUCTS.hydrasphere];
+  const selectedIds = new Set(selectedProductIds);
   const selectedProducts = selectedProductIds
     .map(id => allProducts.find(p => p.id === id))
     .filter(Boolean);
@@ -272,88 +470,114 @@ router.post('/generate', async (req, res) => {
     return res.status(400).json({ error: 'No valid products matched the selected IDs' });
   }
 
-  const formatProduct = (p) => {
-    const lines = [`${p.brand} — ${p.name}`];
-    if (p.url)         lines.push(`Product page: ${p.url}`);
-    if (p.description) lines.push(`Description: ${p.description}`);
-    if (p.benefits)    lines.push(`Key benefits: ${p.benefits}`);
-    if (p.ingredients) lines.push(`Key ingredients: ${p.ingredients}`);
-    if (p.howToUse)    lines.push(`How to use: ${p.howToUse}`);
-    if (p.step)        lines.push(`Routine step: ${p.step}`);
-    return lines.join('\n');
-  };
+  const name = customerName.trim();
 
-  const productDetails = selectedProducts.map(p => `PURCHASED: ${formatProduct(p)}`).join('\n\n');
+  // ── 1. Welcome paragraph ──────────────────────────────────────────────
+  const welcomeHtml = `<p style="margin-bottom:16px">Hi ${name}! 👋</p>
+<p style="margin-bottom:24px">Welcome to the Glow SF family! We're so excited you've chosen us as part of your beauty journey. We handpick every product in our store because we genuinely believe in what they can do for your skin — and we can't wait for you to experience the results.</p>`;
 
-  // Build catalog of other products we sell (not purchased) for suggestions
-  const selectedIds = new Set(selectedProductIds);
-  const otherProducts = allProducts
-    .filter(p => !selectedIds.has(p.id))
-    .map(p => `${p.brand} — ${p.name} (Routine step: ${p.step}, URL: ${p.url || ''})`)
-    .join('\n');
+  // ── 2. Your New Products ──────────────────────────────────────────────
+  const productsHtml = selectedProducts.map(p =>
+    `<p style="margin-bottom:12px">✨ ${productLink(p)} — ${LOVE_LINES[p.id] || shortDescription(p)}</p>`
+  ).join('\n');
 
-  const prompt = `You are a warm, expert beauty consultant for Glow SF, a boutique beauty store in Santa Fe, New Mexico.
+  const newProductsSection = `<p style="margin-bottom:8px"><b>🛍️ Your New Products</b></p>\n${productsHtml}`;
 
-Write a personalized welcome email to a new customer named ${customerName.trim()}.
+  // ── 3. Skincare Routine ───────────────────────────────────────────────
+  // Find purchased products for each step, or suggest alternatives
+  const findPurchased = (matchFn) => selectedProducts.find(matchFn) || null;
+  const findSug = (matchFn) => findSuggestion(matchFn, selectedIds, allProducts);
 
-They have purchased the following products:
-${productDetails}
+  // AM Routine
+  const amCleanser = findPurchased(isCleanser) || null;
+  const amToner = findPurchased(isToner) || null;
+  const amSerum = findPurchased(p => isSerum(p) && !isPmProduct(p)) || findPurchased(isSerum) || null;
+  const amEye = findPurchased(isEye) || null;
+  const amMoisturizer = findPurchased(p => isMoisturizer(p) && !isPmProduct(p)) || findPurchased(isMoisturizer) || null;
+  const amSpf = findPurchased(isSpf) || null;
 
-We also carry these other products (available for suggestion if a routine step is missing):
-${otherProducts}
+  let amHtml = `<p style="margin-bottom:8px"><b>☀️ Morning Routine</b></p>\n`;
+  amHtml += routineStepHtml('Cleanse', amCleanser, amCleanser ? null : findSug(isCleanser));
+  amHtml += routineStepHtml('Tone', amToner, amToner ? null : findSug(isToner));
+  amHtml += routineStepHtml('Serum', amSerum, amSerum ? null : findSug(isSerum));
+  amHtml += routineStepHtml('Eye Treatment', amEye, amEye ? null : findSug(isEye));
+  amHtml += routineStepHtml('Moisturize', amMoisturizer, amMoisturizer ? null : findSug(isMoisturizer));
+  amHtml += routineStepHtml('Sun Protection', amSpf, amSpf ? null : findSug(isSpf));
 
-The email must include:
-1. A warm, genuine welcome as a Glow SF customer — address them as "${customerName.trim()}"
-2. For each purchased product: 1-2 sentences max — what it does and why they'll love it. Keep it concise and exciting, do NOT list out all ingredients or go into lengthy detail.
-3. A COMPLETE step-by-step daily skincare routine incorporating ALL purchased products in correct order. Include BOTH a full morning routine (cleanser, toner, serum, eye treatment, moisturizer, SPF) AND a full evening routine (cleanser, toner, serum, eye treatment, night cream/moisturizer). Also include weekly treatments (masks 1-3x/week, exfoliants 1-2x/week, devices as directed). Do NOT cut the routine short — list every step for both AM and PM.
-4. The how-to-use directions for each purchased product, phrased naturally and concisely
-5. If any important routine steps are missing (e.g. they bought serums but no cleanser, or no SPF), gently suggest a specific product from our catalog that would complement their routine. Frame it as a friendly recommendation, not a hard sell. For each recommended product, mention that they can reply to this email to ask about current specials we may be running on that product, and let them know we offer free shipping.
-6. IMPORTANT: Clearly differentiate purchased products from suggestions. For purchased products, prefix with "YOUR PRODUCT:" or similar. For suggested products, prefix with "RECOMMENDED FOR YOU:" or similar — so the customer can easily see what they already own vs. what we're recommending.
-7. After the routine section, include a short encouraging paragraph with helpful tips — introduce new products one at a time, always patch test, be patient and consistent. Keep it brief.
-8. An invitation to reach out with questions and to visit the store in Santa Fe
+  // PM Routine
+  const pmSerum = findPurchased(p => isSerum(p) && isPmProduct(p)) || findPurchased(p => isSerum(p) && p !== amSerum) || amSerum;
+  const pmMoisturizer = findPurchased(p => isMoisturizer(p) && isPmProduct(p)) || findPurchased(p => isMoisturizer(p) && p !== amMoisturizer) || amMoisturizer;
 
-Tone: warm, knowledgeable, and excited — like a trusted beauty friend, not a corporate newsletter.
+  let pmHtml = `<p style="margin-top:20px;margin-bottom:8px"><b>🌙 Evening Routine</b></p>\n`;
+  pmHtml += routineStepHtml('Cleanse', amCleanser, amCleanser ? null : findSug(isCleanser));
+  pmHtml += routineStepHtml('Tone', amToner, amToner ? null : findSug(isToner));
+  pmHtml += routineStepHtml('Serum', pmSerum, pmSerum ? null : findSug(isSerum));
+  pmHtml += routineStepHtml('Eye Treatment', amEye, amEye ? null : findSug(isEye));
+  pmHtml += routineStepHtml('Moisturize', pmMoisturizer, pmMoisturizer ? null : findSug(isMoisturizer));
 
-IMPORTANT FORMATTING RULES:
-- Write the email as HTML. Use simple, email-safe HTML tags: <p>, <br>, <b>, <a>, <span>.
-- Use emojis at the start of section titles to visually break up the content (e.g. "✨ Your New Products" or "🌿 Your Daily Routine").
-- Add generous spacing between sections. Use <p style="margin-bottom:16px"> for paragraphs and <p style="margin-bottom:24px"> between major sections. Add <br> between routine steps for readability.
-- In the routine section, use a checkmark emoji (✅) before steps that use their purchased products, and a pointing emoji (👉) before steps where you're suggesting a product they don't own yet.
-- When a product is first introduced by name (its title/heading), wrap it in an <a> tag with pink color linking to its product page URL. For example: <a href="https://hydrasphereplus.com/product/vitamin-c-serum/" style="color:#c97d8a;text-decoration:underline">Vitamin C Serum</a>. You do NOT need to hyperlink every subsequent mention — just the first title appearance.
-- All hyperlinks MUST use style="color:#c97d8a;text-decoration:underline" for our brand pink color.
-- Do NOT include a subject line, <html>, <head>, or <body> tags — just write the email content starting with the greeting.
-- Do NOT use markdown formatting.
-
-End the email with a warm closing paragraph that thanks them for choosing Glow SF, lets them know you're always here to help with their skincare journey, invites them to reach out anytime with questions, and reminds them they can visit the store in Santa Fe. Make it feel personal and appreciative. Sign off as "With love, The Glow SF Team".`;
-
-  try {
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 4000,
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const emailBody = message.content
-      .filter(b => b.type === 'text')
-      .map(b => b.text)
-      .join('')
-      .trim();
-
-    res.json({
-      success: true,
-      customerEmail,
-      customerName: customerName.trim(),
-      selectedProducts: selectedProducts.map(p => ({ id: p.id, name: p.name, brand: p.brand })),
-      emailBody,
-    });
-  } catch (err) {
-    console.error('[welcome] Error generating email:', err);
-    res.status(500).json({ error: 'Failed to generate email: ' + err.message });
+  // Treatment cream (if purchased)
+  const treatment = findPurchased(isTreatment);
+  if (treatment) {
+    pmHtml += routineStepHtml('Targeted Treatment', treatment, null);
   }
+
+  // Weekly
+  const weeklyProducts = selectedProducts.filter(p => isExfoliant(p) || isMask(p) || isDevice(p));
+  let weeklyHtml = '';
+  if (weeklyProducts.length > 0) {
+    weeklyHtml = `<p style="margin-top:20px;margin-bottom:8px"><b>📅 Weekly Treatments</b></p>\n`;
+    weeklyProducts.forEach(p => {
+      const freq = isExfoliant(p) ? '1-2x/week' : isMask(p) ? '1-3x/week' : 'as directed';
+      weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${p.name}</b> (${freq}) — ${p.howToUse || ''}</p>`;
+    });
+  }
+
+  // Suggest weekly treatments if none purchased
+  if (!weeklyProducts.some(isExfoliant)) {
+    const sugExfoliant = findSug(isExfoliant);
+    if (sugExfoliant) {
+      if (!weeklyHtml) weeklyHtml = `<p style="margin-top:20px;margin-bottom:8px"><b>📅 Weekly Treatments</b></p>\n`;
+      weeklyHtml += `<p style="margin-bottom:8px">👉 <b>Exfoliate (not in your collection yet):</b> Regular exfoliation removes dead skin cells that build up and make your complexion look dull — it's the secret to that fresh, glowing look. We recommend ${productLink(sugExfoliant)} — ${shortDescription(sugExfoliant)} Reply to this email to ask about current specials and our free shipping!</p>`;
+    }
+  }
+  if (!weeklyProducts.some(isMask)) {
+    const sugMask = findSug(isMask);
+    if (sugMask) {
+      if (!weeklyHtml) weeklyHtml = `<p style="margin-top:20px;margin-bottom:8px"><b>📅 Weekly Treatments</b></p>\n`;
+      weeklyHtml += `<p style="margin-bottom:8px">👉 <b>Mask (not in your collection yet):</b> A weekly mask gives your skin a concentrated boost of nourishment that your daily routine can't match — think of it as a spa treatment at home. We recommend ${productLink(sugMask)} — ${shortDescription(sugMask)} Reply to this email to ask about current specials and our free shipping!</p>`;
+    }
+  }
+
+  const routineSection = `<p style="margin-top:24px;margin-bottom:8px"><b>🌿 Your Personalized Skincare Routine</b></p>\n${amHtml}\n${pmHtml}\n${weeklyHtml}`;
+
+  // ── 4. Tips (customized based on products) ────────────────────────────
+  const relevantTips = TIPS_BANK
+    .filter(t => t.match(selectedProducts))
+    .slice(0, 3) // Max 3 tips to keep it concise
+    .map(t => t.tip);
+
+  const tipsHtml = `<p style="margin-top:24px;margin-bottom:8px"><b>💡 Tips for Your Routine</b></p>\n` +
+    relevantTips.map(t => `<p style="margin-bottom:8px">• ${t}</p>`).join('\n');
+
+  // ── 5. Sign-off ──────────────────────────────────────────────────────
+  const signOffHtml = `<p style="margin-top:24px;margin-bottom:16px">Thank you so much for choosing Glow SF, ${name}. We're truly honored to be part of your skincare journey. If you ever have questions about your products, your routine, or just want personalized advice — don't hesitate to reply to this email. We're always here for you!</p>
+<p style="margin-bottom:16px">We'd also love to see you in person at our store in Santa Fe. Come say hi anytime — we're always happy to help you find your next favorite product. 💕</p>
+<p style="margin-bottom:8px">With love,<br><b>The Glow SF Team</b></p>`;
+
+  // ── Assemble ──────────────────────────────────────────────────────────
+  const emailBody = [welcomeHtml, newProductsSection, routineSection, tipsHtml, signOffHtml].join('\n\n');
+
+  res.json({
+    success: true,
+    customerEmail,
+    customerName: name,
+    selectedProducts: selectedProducts.map(p => ({ id: p.id, name: p.name, brand: p.brand })),
+    emailBody,
+  });
 });
 
-// POST /api/welcome/send — send the welcome email directly via Gmail
-// Uses GLOW_GMAIL_REFRESH_TOKEN env var so it survives redeploys without a persistent volume
+// POST /api/welcome/send — send the welcome email via Gmail SMTP (Nodemailer)
+// Requires GMAIL_APP_PASSWORD env var (Google App Password for glow.sf.santafe@gmail.com)
 router.post('/send', async (req, res) => {
   const { customerEmail, emailBody } = req.body;
 
@@ -364,47 +588,27 @@ router.post('/send', async (req, res) => {
     return res.status(400).json({ error: 'emailBody is required' });
   }
 
-  const { google } = require('googleapis');
-
-  const refreshToken = process.env.GLOW_GMAIL_REFRESH_TOKEN;
-  if (!refreshToken) {
-    return res.status(500).json({ error: 'GLOW_GMAIL_REFRESH_TOKEN is not set. Visit /auth/google then copy the refresh token to Railway env vars.' });
+  const appPassword = process.env.GMAIL_APP_PASSWORD;
+  if (!appPassword) {
+    return res.status(500).json({ error: 'GMAIL_APP_PASSWORD is not set. Generate one at https://myaccount.google.com/apppasswords and add it to Railway env vars.' });
   }
 
+  const nodemailer = require('nodemailer');
+
   try {
-    const oauth2Client = new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      process.env.GOOGLE_REDIRECT_URI
-    );
-    oauth2Client.setCredentials({ refresh_token: refreshToken });
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: 'glow.sf.santafe@gmail.com',
+        pass: appPassword,
+      },
+    });
 
-    // Refresh the access token
-    const { credentials } = await oauth2Client.refreshAccessToken();
-    oauth2Client.setCredentials(credentials);
-
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-
-    const fromHeader = `From: Glow SF <glow.sf.santafe@gmail.com>`;
-    const messageParts = [
-      fromHeader,
-      `To: ${customerEmail}`,
-      `Subject: Welcome to Glow SF!`,
-      `Content-Type: text/html; charset=utf-8`,
-      `MIME-Version: 1.0`,
-      '',
-      emailBody,
-    ];
-    const rawMessage = messageParts.join('\r\n');
-    const encodedMessage = Buffer.from(rawMessage)
-      .toString('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=+$/, '');
-
-    await gmail.users.messages.send({
-      userId: 'me',
-      requestBody: { raw: encodedMessage },
+    await transporter.sendMail({
+      from: '"Glow SF" <glow.sf.santafe@gmail.com>',
+      to: customerEmail,
+      subject: 'Welcome to Glow SF!',
+      html: emailBody,
     });
 
     res.json({ success: true, message: 'Email sent successfully' });

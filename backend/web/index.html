@@ -772,6 +772,7 @@
     document.getElementById('step1-dot').classList.add('done');
     document.getElementById('step2-dot').classList.add('active');
 
+    const loadStart = Date.now();
     try {
       const res = await fetch('/api/welcome/generate', {
         method: 'POST',
@@ -797,6 +798,11 @@
         pill.textContent = p.name;
         pillList.appendChild(pill);
       });
+
+      // Show loading for at least 3 seconds so it doesn't feel instant
+      const elapsed = Date.now() - loadStart;
+      const remaining = Math.max(0, 3000 - elapsed);
+      await new Promise(r => setTimeout(r, remaining));
 
       document.getElementById('step-loading').hidden = true;
       document.getElementById('step2').hidden = false;
