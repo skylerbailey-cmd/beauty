@@ -9,63 +9,7 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 // ─── Product catalog (hardcoded with usage instructions) ────────────────────
 
 const PRODUCTS = {
-  avologi: [
-    {
-      id: 'avologi-enas-serum',
-      name: 'ENAS Advanced Youth Restoring Serum',
-      brand: 'Avologi',
-      description: 'A powerful anti-aging serum powered by ENAS technology to visibly reduce fine lines and restore youthful radiance.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Apply 2–3 drops to clean, dry skin morning and evening. Gently press into face, neck, and décolleté. Allow to absorb fully before applying moisturizer.',
-      step: 'serum',
-      image: '',
-    },
-    {
-      id: 'avologi-enas-face-cream',
-      name: 'ENAS Face Cream',
-      brand: 'Avologi',
-      description: 'A rich, nourishing face cream that deeply hydrates and firms skin while delivering ENAS anti-aging peptides.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Apply a pea-sized amount to face and neck morning and evening after your serum. Use upward, circular motions until fully absorbed.',
-      step: 'moisturizer',
-      image: '',
-    },
-    {
-      id: 'avologi-enas-eye-cream',
-      name: 'ENAS Eye Cream',
-      brand: 'Avologi',
-      description: 'Targets crow\'s feet, puffiness, and dark circles with concentrated ENAS peptides and hydrating actives.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Using your ring finger, gently tap a small amount around the orbital bone (avoid the lash line) morning and evening. Never rub or pull the delicate eye area.',
-      step: 'eye treatment',
-      image: '',
-    },
-    {
-      id: 'avologi-elight-device',
-      name: 'eLight LED Device',
-      brand: 'Avologi',
-      description: 'Professional-grade LED light therapy device that stimulates collagen production and accelerates the absorption of serums.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Cleanse your skin. Apply serum. Turn on the eLight device and slowly glide it over the face in upward motions for 10 minutes, 3–5 times per week. Follow with moisturizer.',
-      step: 'device treatment',
-      image: '',
-    },
-    {
-      id: 'avologi-enas-mask',
-      name: 'ENAS Youth Activating Mask',
-      brand: 'Avologi',
-      description: 'An intensive treatment mask that delivers a concentrated dose of ENAS peptides and hyaluronic acid for instant plumping.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Apply an even layer to clean skin, avoiding eyes and lips. Leave on for 15–20 minutes. Remove with a damp cloth or rinse off. Use 2–3 times per week before your serum.',
-      step: 'mask',
-      image: '',
-    },
-  ],
+  avologi: [],
   hydrasphere: [
     {
       id: 'hydrasphere-advanced-foaming-cleanser',
@@ -79,17 +23,6 @@ const PRODUCTS = {
       image: 'https://hydrasphereplus.com/wp-content/uploads/2023/10/1-2.png',
     },
     {
-      id: 'hydrasphere-bio-milk-cleanser',
-      name: 'Bio Milk Cleanser',
-      brand: 'HydraSphere Plus',
-      description: 'A nourishing milk cleanser enriched with bio-active ingredients that gently dissolves impurities while softening and conditioning the skin.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Apply to dry or damp skin and massage gently. Rinse with warm water or remove with a soft damp cloth. Use morning and evening as the first step of your skincare routine.',
-      step: 'cleanser',
-      image: '',
-    },
-    {
       id: 'hydrasphere-hydra-toning-solution',
       name: 'Hydra Toning Solution',
       brand: 'HydraSphere Plus',
@@ -98,39 +31,6 @@ const PRODUCTS = {
       ingredients: '',
       howToUse: 'Use after cleansing. Apply with a cotton ball and smooth over the face, neck, and decollete. Use daily.',
       step: 'toner',
-      image: '',
-    },
-    {
-      id: 'hydrasphere-advanced-eye-lifting-serum',
-      name: 'Advanced Eye Lifting Serum',
-      brand: 'HydraSphere Plus',
-      description: 'A targeted lifting serum for the delicate eye area that firms, brightens, and reduces the appearance of fine lines and puffiness.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Apply 1–3 pumps to a cleansed face and eye area. Spread a thin veil over the skin, blending in small circles with a gentle tapping motion until the product disappears into the skin.',
-      step: 'eye serum',
-      image: '',
-    },
-    {
-      id: 'hydrasphere-advanced-peptides-eye-cream',
-      name: 'Advanced Peptides Eye Cream',
-      brand: 'HydraSphere Plus',
-      description: 'A rich, peptide-powered eye cream that targets dark circles, fine lines, and crow\'s feet while deeply hydrating the delicate under-eye skin.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Using your ring finger, gently tap a small amount around the orbital bone morning and evening. Pat (do not rub) until fully absorbed. Apply after your serum.',
-      step: 'eye cream',
-      image: '',
-    },
-    {
-      id: 'hydrasphere-cucumber-seaweed-eye-lift',
-      name: 'Cucumber & Seaweed Eye Lift',
-      brand: 'HydraSphere Plus',
-      description: 'A cooling, soothing eye treatment combining cucumber extract and marine seaweed to depuff, brighten, and lift the under-eye area.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Apply a small amount around the eye area using your ring finger with gentle tapping motions. Use morning and evening after serum. Store in the fridge for an extra cooling effect.',
-      step: 'eye treatment',
       image: '',
     },
     {
@@ -156,17 +56,6 @@ const PRODUCTS = {
       image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/59.png',
     },
     {
-      id: 'hydrasphere-oxygen-brightening-cream',
-      name: 'Oxygen Brightening Cream',
-      brand: 'HydraSphere Plus',
-      description: 'An oxygen-infused brightening moisturizer that illuminates dull skin, evens tone, and delivers a visible radiance boost with each use.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Apply to face and neck morning and evening after serum. Use gentle upward strokes until fully absorbed. Can be worn alone or under SPF during the day.',
-      step: 'moisturizer',
-      image: '',
-    },
-    {
       id: 'hydrasphere-deep-moisturizing-cream',
       name: 'Deep Moisturizing Cream',
       brand: 'HydraSphere Plus',
@@ -174,17 +63,6 @@ const PRODUCTS = {
       benefits: 'Deep hydration and firming, nourishes facial tissue and neck, strengthens skin barrier, suitable for face, neck, and under-eye area.',
       ingredients: '',
       howToUse: 'Apply generously to the face, neck, and delicate under-eye area. For best results, use the HydraSphere+ Active Foaming Cleanser.',
-      step: 'moisturizer',
-      image: '',
-    },
-    {
-      id: 'hydrasphere-mineral-facial-deep-moisturizer',
-      name: 'Mineral Facial Deep Moisturizer',
-      brand: 'HydraSphere Plus',
-      description: 'A mineral-enriched deep moisturizer that nourishes, protects, and restores vitality to dry and stressed skin.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Apply to clean face and neck, morning and evening. Massage in gentle upward circles until absorbed. Follow after serum for best results.',
       step: 'moisturizer',
       image: '',
     },
@@ -233,17 +111,6 @@ const PRODUCTS = {
       image: 'https://hydrasphereplus.com/wp-content/uploads/2025/11/77-1.png',
     },
     {
-      id: 'hydrasphere-advanced-night-repair',
-      name: 'Advanced Night Repair',
-      brand: 'HydraSphere Plus',
-      description: 'An intensive overnight repair cream that works with your skin\'s natural renewal cycle to restore, firm, and deeply nourish while you sleep.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Apply a thin layer to clean dry skin on your face and neck before bedtime. Massage in small upward circles over the face and neck. Allow the cream to fully absorb before heading to bed. Use 1–2 times a week.',
-      step: 'night treatment',
-      image: '',
-    },
-    {
       id: 'hydrasphere-facial-peeling-gel',
       name: 'Facial Peeling Gel',
       brand: 'HydraSphere Plus',
@@ -252,28 +119,6 @@ const PRODUCTS = {
       ingredients: 'Mandelic Acid (AHA), Vitamin C, Vitamin E, Vitamin A, Grapefruit Extract, Avocado Oil, Centella Asiatica.',
       howToUse: 'Apply a thin layer to dry skin. Massage in circular motions until dry. Wash with warm water. Use 1–2 times a week. For optimal results, pair with the HydraSphere+ Deep Moisturizing Cream.',
       step: 'exfoliant',
-      image: '',
-    },
-    {
-      id: 'hydrasphere-mineral-facial-peeling-gel',
-      name: 'Mineral Facial Peeling Gel',
-      brand: 'HydraSphere Plus',
-      description: 'A mineral-enriched peeling gel that exfoliates and detoxifies simultaneously, leaving skin polished, purified, and mineral-nourished.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Apply to dry, clean skin. Massage in circular motions until the gel rolls away dead skin cells. Rinse well with lukewarm water. Use 1–2 times per week.',
-      step: 'exfoliant',
-      image: '',
-    },
-    {
-      id: 'hydrasphere-mineral-salt-scrub',
-      name: 'Mineral Salt Scrub',
-      brand: 'HydraSphere Plus',
-      description: 'A detoxifying mineral salt scrub that buffs away dead skin cells and purifies pores, leaving skin silky smooth and refreshed.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Apply to damp skin and massage in gentle circular motions. Rinse thoroughly. Use 1–2 times per week in place of your regular cleanser. Follow with toner and moisturizer.',
-      step: 'exfoliant/scrub',
       image: '',
     },
     {
@@ -288,39 +133,6 @@ const PRODUCTS = {
       image: '',
     },
     {
-      id: 'hydrasphere-hydrocharcoal-face-eye-mask',
-      name: 'HydroCharcoal Collagen Face & Eye Mask',
-      brand: 'HydraSphere Plus',
-      description: 'A powerful sheet mask combining activated charcoal, collagen, and hydrogen water to deeply cleanse, plump, and revitalize the face and eye area.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Cleanse face thoroughly. Unfold the mask and apply to face, pressing gently to adhere. Leave on for 15–20 minutes. Remove and gently pat remaining serum into skin. Use 2–3 times per week.',
-      step: 'mask',
-      image: '',
-    },
-    {
-      id: 'hydrasphere-hydrocharcoal-neck-decollete-mask',
-      name: 'HydroCharcoal Collagen Neck and Décolleté Mask',
-      brand: 'HydraSphere Plus',
-      description: 'A targeted sheet mask for the neck and décolleté that firms, hydrates, and smooths this often-neglected area using charcoal and collagen.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Apply to clean neck and décolleté. Press gently to adhere. Leave on for 15–20 minutes, then remove and pat remaining serum into skin. Use 2–3 times per week.',
-      step: 'mask',
-      image: '',
-    },
-    {
-      id: 'hydrasphere-hydrocharcoal-tummy-body-mask',
-      name: 'HydroCharcoal Tummy & Lower Body Mask',
-      brand: 'HydraSphere Plus',
-      description: 'A detoxifying charcoal mask designed for the tummy and lower body to tone, hydrate, and smooth skin in areas prone to dryness and uneven texture.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Apply to clean skin on the tummy and lower body. Wrap or press gently to adhere. Leave on for 20–30 minutes. Remove and massage any remaining product into skin.',
-      step: 'body mask',
-      image: '',
-    },
-    {
       id: 'hydrasphere-hydrocharcoal-silk-mask',
       name: 'HydroCharcoal Silk Mask',
       brand: 'HydraSphere Plus',
@@ -330,39 +142,6 @@ const PRODUCTS = {
       howToUse: 'Apply a thin, even layer to clean, dry skin. Focus on areas with fine lines or visible pores. Gently pat and smooth until fully absorbed. Do not rinse. Use once or twice a week or before special occasions.',
       step: 'PM Routine',
       image: 'https://hydrasphereplus.com/wp-content/uploads/2025/11/14-scaled.png',
-    },
-    {
-      id: 'hydrasphere-organic-shea-butter',
-      name: 'Organic Shea Butter',
-      brand: 'HydraSphere Plus',
-      description: 'Pure, unrefined organic shea butter that provides intense nourishment for face, body, hair, and lips — a multi-use natural skincare staple.',
-      benefits: '',
-      ingredients: 'Pure unrefined organic shea butter.',
-      howToUse: 'Warm a small amount between your palms and apply to face, body, hair, or lips as needed. Can be used as a daily moisturizer, overnight treatment, or to soothe dry patches.',
-      step: 'body/multi-use moisturizer',
-      image: '',
-    },
-    {
-      id: 'hydrasphere-hand-body-cream',
-      name: 'Hand & Body Cream',
-      brand: 'HydraSphere Plus',
-      description: 'A rich, fast-absorbing hand and body cream that deeply hydrates and softens skin throughout the day without leaving a greasy residue.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Apply to hands and body as needed throughout the day. Massage in until fully absorbed. Pay extra attention to dry areas like elbows, knees, and heels. Use after bathing for best results.',
-      step: 'body moisturizer',
-      image: '',
-    },
-    {
-      id: 'hydrasphere-chroma-manicure-set',
-      name: 'Chroma Manicure Set',
-      brand: 'HydraSphere Plus',
-      description: 'A complete at-home manicure set with everything needed to achieve salon-quality nails, including treatment products to strengthen and beautify.',
-      benefits: '',
-      ingredients: '',
-      howToUse: 'Follow the included step-by-step manicure guide. Begin with the nail prep, apply treatments as directed, and finish with color if included. Use weekly or as desired for well-maintained nails.',
-      step: 'nail/manicure',
-      image: '',
     },
   ],
 };
@@ -469,13 +248,18 @@ router.post('/send', async (req, res) => {
     return res.status(400).json({ error: 'emailBody is required' });
   }
 
-  const { getAllUsers } = require('../db');
+  const { getAllUsers, getUser } = require('../db');
   const { sendNewEmail } = require('../services/gmail');
 
-  const users = getAllUsers();
-  const glowUser = users[0];
+  // Try known Glow SF user ID first, then fall back to first user in DB
+  const GLOW_USER_ID = process.env.GLOW_USER_ID || '105455566313378788404';
+  let glowUser = getUser(GLOW_USER_ID);
   if (!glowUser) {
-    return res.status(500).json({ error: 'No Gmail account is connected. Please connect via OAuth first.' });
+    const users = getAllUsers();
+    glowUser = users[0];
+  }
+  if (!glowUser) {
+    return res.status(500).json({ error: 'No Gmail account is connected. Please visit /auth/google to connect your Gmail account.' });
   }
 
   try {
@@ -494,7 +278,7 @@ router.post('/send', async (req, res) => {
   }
 });
 
-// GET /api/welcome/debug — check DB and connected users (temporary)
+// GET /api/welcome/debug — check DB and connected users
 router.get('/debug', (req, res) => {
   const { getAllUsers } = require('../db');
   const users = getAllUsers();
