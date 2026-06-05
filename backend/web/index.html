@@ -1846,6 +1846,20 @@
             <div class="product-grid" id="grid-avologi"></div>
           </div>
 
+          <!-- Avinichi -->
+          <div class="brand-section">
+            <div class="brand-header">
+              <span class="brand-badge" style="background:#f5ede0;color:#8b6914;">Avinichi</span>
+              <span class="brand-name">Noni-Infused Luxury Skincare</span>
+              <a class="brand-url" href="https://www.avinichi.com/" target="_blank">avinichi.com &#8599;</a>
+            </div>
+            <div class="select-all-row">
+              <button class="select-all-btn" onclick="selectAll('avinichi')">Select all</button>
+              <button class="select-all-btn" onclick="clearAll('avinichi')">Clear all</button>
+            </div>
+            <div class="product-grid" id="grid-avinichi"></div>
+          </div>
+
           <div id="formError" class="error-box" hidden></div>
 
           <div class="btn-row">
@@ -2439,6 +2453,17 @@
       { id: 'avologi-eneo-eye-concentrator', name: 'Eneo Eye Concentrator', description: 'FDA-cleared anti-aging device — 24k gold applicator with preset-integrated fractional light energy to stimulate collagen, reduce puffiness, discoloration, and fine lines around the eye area in 4-minute sessions.', image: 'https://avologi.com/wp-content/uploads/2018/08/av14.jpg' },
       { id: 'avologi-eneo-classic', name: 'Eneo Classic', description: 'FDA-cleared anti-aging device — dual wavelengths (633nm + 830nm), 925 silver, and detox blue light for immediate and long-lasting results on fine lines, wrinkles, pigmentation, and enlarged pores.', image: 'https://avologi.com/wp-content/uploads/2018/08/Eneo-Classic-AV15-1.jpg' },
     ],
+    avinichi: [
+      { id: 'avinichi-phyto-thermal-collection', name: 'Phyto Thermal Collection', description: 'Luxurious 3-piece collection: self-heating thermal mask, hydrating antioxidant serum, and firming moisture infusion cream with jade roller.', image: 'https://www.avinichi.com/wp-content/uploads/Phyto-Thermal-Collection-1.png' },
+      { id: 'avinichi-liquid-lift-overnight-melting-mask', name: 'Liquid Lift Overnight Melting Mask', description: 'Overnight moisture mask with superfruit extracts, vitamins, and peptides for deeply restored, rehydrated skin by morning.', image: 'https://www.avinichi.com/wp-content/uploads/Liquid-Lift-Overnight-Melting-Mask-1.png' },
+      { id: 'avinichi-hydrating-multifruit-c-serum', name: 'Hydrating Multifruit C-Serum', description: 'Dual vitamin C serum with mulberry extract — brightens, tightens, and targets wrinkles for a glowing complexion.', image: 'https://www.avinichi.com/wp-content/uploads/Hydrating-Multifruit-C-Serum-1.png' },
+      { id: 'avinichi-noni-morning-glow', name: 'Noni Morning Glow', description: 'Lightweight daytime moisturizer with Noni, vitamins, and antioxidants. Fast-absorbing, non-greasy, great makeup base.', image: 'https://www.avinichi.com/wp-content/uploads/Noni-Morning-Glow-1.png' },
+      { id: 'avinichi-noni-mousse-cleanser', name: 'Noni Mousse Cleanser', description: 'Gentle daily cleanser with coconut-derived agents and Noni for a fresh, radiant finish.', image: 'https://www.avinichi.com/wp-content/uploads/Noni-Mousse-Cleanser-1.png' },
+      { id: 'avinichi-noni-pore-purifying-toner', name: 'Noni Pore Purifying Toner', description: 'Alcohol-free toner with Noni and plant extracts that preps skin after cleansing.', image: 'https://www.avinichi.com/wp-content/uploads/Noni-Pore-Purifying-Toner-1.png' },
+      { id: 'avinichi-eye-rescue-phyto-serum', name: 'Eye Rescue Phyto-Serum', description: 'Antioxidant-rich botanical eye serum for plumper, firmer, more lifted skin around the eyes.', image: 'https://www.avinichi.com/wp-content/uploads/Eye-Rescue-Phyto-Serum-1.png' },
+      { id: 'avinichi-noni-polishing-peel', name: 'Noni Polishing Peel', description: 'Gentle exfoliator with Noni, botanical oils, vitamin C, and mandelic acid for brighter, smoother skin.', image: 'https://www.avinichi.com/wp-content/uploads/Noni-Polishing-Peel-1.png' },
+      { id: 'avinichi-wrinkle-reversal-solution', name: 'Wrinkle Reversal Solution', description: 'Quick-acting syringe formula that instantly smooths fine lines and wrinkles for a taut, firm appearance.', image: 'https://www.avinichi.com/wp-content/uploads/Wrinkle-Reversal-Solution-1.png' },
+    ],
     hydrasphere: [
       { id: 'hydrasphere-advanced-foaming-cleanser', name: 'Advanced Foaming Cleanser', description: 'Alcohol-free luxury foaming cleanser that retextures, lightly exfoliates, and preps skin for moisturizing — powered by hemp extract for a radiant, conditioned complexion.', image: 'https://hydrasphereplus.com/wp-content/uploads/2023/10/1-2.png' },
       { id: 'hydrasphere-hydra-toning-solution', name: 'Hydra Toning Solution', description: 'Revitalizing toner that refreshes and balances skin\'s natural pH, preparing it to absorb the full benefits of subsequent skincare products.', image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/25-1024x1024.png' },
@@ -2480,6 +2505,7 @@
 
   renderGrid('hydrasphere');
   renderGrid('avologi');
+  renderGrid('avinichi');
 
   function syncCardState(checkbox) {
     checkbox.closest('.product-card').classList.toggle('selected', checkbox.checked);
@@ -2653,7 +2679,7 @@
 
     try {
       const selectedIds = getSelectedIds();
-      const allProds = [...PRODUCTS.avologi, ...PRODUCTS.hydrasphere];
+      const allProds = [...PRODUCTS.avologi, ...(PRODUCTS.avinichi || []), ...PRODUCTS.hydrasphere];
       const productNames = selectedIds
         .map(id => allProds.find(p => p.id === id))
         .filter(Boolean)

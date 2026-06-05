@@ -239,6 +239,108 @@ const PRODUCTS = {
       url: 'https://hydrasphereplus.com/product/hydrocharcoal-silk-mask/',
     },
   ],
+  avinichi: [
+    {
+      id: 'avinichi-phyto-thermal-collection',
+      name: 'Phyto Thermal Collection',
+      brand: 'Avinichi',
+      description: 'A luxurious 3-piece collection including the Phyto Remedy Thermal Mask (self-heating, reduces fine lines, wrinkles, and dark spots with a vitamin-rich formula), the Hydrating Antioxidant Serum (feather-light blend of fruit and berry extracts, peptides, and humectants for plump, hydrated skin), and the Mulberr-E Moisture Infusion Cream (vitamin E and fruit extracts for lifting, firming, and redefining the complexion). Includes a jade roller for enhanced product absorption.',
+      benefits: 'Self-heating thermal mask, reduces fine lines and wrinkles, brightens dark spots, deep hydration with peptides and hyaluronic acid, lifts and firms with vitamin E and fruit extracts, includes jade roller for lymphatic drainage and absorption',
+      ingredients: 'Phyto Remedy Thermal Mask – PEG-8, Zeolite, Kaolin, Methyl Gluceth-20, Retinyl Palmitate, Ascorbic Acid, Tocopheryl Acetate, Organic Arnica Montana Flower Extract, Organic Aloe Barbadensis Leaf Extract, Organic Prunus Amygdalus Dulcis Seed Extract, Organic Coffee Arabica Seed Extract, Organic Citrus Limon Fruit Extract, Organic Angelica Archangelica Root Extract, Ganoderma Lucidum (Mushroom) Extract, Phenoxyethanol, Ethylhexylglycerin, Mica, Titanium Dioxide CI-77891, Iron Oxide CI-77499.',
+      howToUse: 'Apply the Phyto Remedy Thermal Mask to cleansed skin. Gently massage onto the face in a circular motion. To intensify heating treatment, massage 2-3 drops of the Hydrating Antioxidant Serum over the mask. Allow the mask to rest for 10-15 minutes, then rinse with warm water. Apply the Mulberr-E Moisture Infusion Cream evenly to the face after. Massage gently into skin.',
+      step: 'mask + serum + moisturizer',
+      image: 'https://www.avinichi.com/wp-content/uploads/Phyto-Thermal-Collection-1.png',
+    },
+    {
+      id: 'avinichi-liquid-lift-overnight-melting-mask',
+      name: 'Liquid Lift Overnight Melting Mask',
+      brand: 'Avinichi',
+      description: 'Transform the look of your skin overnight with the Liquid Lift Overnight Melting Mask. This moisture mask delivers a concentrated cocktail of superfruit extracts, vitamins, and peptides to target the appearance of dullness, dryness, and an uneven skin texture. Wake up to skin that feels deeply restored and rehydrated!',
+      benefits: 'Overnight hydration, reduces fine lines, melting formula with superfruit extracts and peptides, lifts and tightens, refines and resurfaces, brightens and hydrates',
+      ingredients: 'Aqua, Caprylyl Methicone, PEG-12 Dimethicone/PPG Crosspolymer, Glycerin, Caprylic/Capric Triglyceride, Onopordum Acanthium Flower Leaf/Stem Extract, Acetyl Hexapeptide-8, Sodium Hyaluronate, Squalane, Morus Nigra Fruit Extract, Retinyl Palmitate, Tocopheryl Acetate, Organic Lavandula Angustifolia Flower Extract, Organic Chamomilla Recutita Flower Extract, Organic Aloe Barbadensis Leaf Extract, Vaccinium Myrtillus Fruit Extract, Euterpe Oleracea Fruit Extract, Lycium Barbarum Extract, Aristotelia Chilensis Fruit Extract, Aronia Melanocarpa Fruit Extract, Garcinia Mongostana Fruit Extract, Punica Granatum Fruit Extract.',
+      howToUse: 'Apply a thin layer evenly on skin and leave on for ten minutes. Gently massage into skin and watch droplets form on the surface. Let the droplets disappear. Don\'t wash off. Use this overnight mask weekly.',
+      step: 'mask',
+      image: 'https://www.avinichi.com/wp-content/uploads/Liquid-Lift-Overnight-Melting-Mask-1.png',
+    },
+    {
+      id: 'avinichi-hydrating-multifruit-c-serum',
+      name: 'Hydrating Multifruit C-Serum',
+      brand: 'Avinichi',
+      description: 'A must-have vitamin C serum that leaves your skin looking and feeling brighter and tighter. Infused with two potent forms of vitamin C plus mulberry extract to target the appearance of wrinkles, along with multiple vitamins and antioxidants to promote a complexion that glows from within.',
+      benefits: 'Brightens and tightens, two potent forms of vitamin C, mulberry extract targets wrinkles, multiple vitamins and antioxidants, promotes glowing complexion, hydrates and lifts',
+      ingredients: 'Cyclopentasiloxane, Cyclotetrasiloxane, Dimethiconol, Isopropyl Palmitate, Glyceryl Dibehenate, Tribehenin, Glyceryl Behenate, Tetrahexyldecyl Ascorbate (Vitamin C), Ascorbyl Palmitate (Vitamin C), Retinyl Palmitate, Tocopheryl Acetate, Organic Simmondsia Chinensis Seed Oil, Organic Persea Gratissima Oil, Organic Olea Europaea Fruit Oil, Organic Cocos Nucifera Oil, Morus Nigra Fruit Extract.',
+      howToUse: 'After cleansing, massage onto face & neck using gentle upward motions. Once fully absorbed, follow with your moisturizer.',
+      step: 'serum',
+      image: 'https://www.avinichi.com/wp-content/uploads/Hydrating-Multifruit-C-Serum-1.png',
+    },
+    {
+      id: 'avinichi-noni-morning-glow',
+      name: 'Noni Morning Glow',
+      brand: 'Avinichi',
+      description: 'A go-to day cream infused with vitamins, antioxidants, and Noni. This daytime moisturizer leaves skin feeling firmer and smoother after each use. Its lightweight, fast-absorbing, non-greasy formula deeply hydrates throughout the day and makes an excellent base for makeup.',
+      benefits: 'Lightweight daytime moisturizer, infused with vitamins, antioxidants, and Noni, firms and smooths skin, fast-absorbing and non-greasy, hydrates all day, makes a great makeup base',
+      ingredients: 'Aqua, Glycerin, Propylene Glycol, Carthamus Tinctorius Seed Oil, Isopropyl Palmitate, Caprylic/Capric Triglyceride, PEG-100 Stearate, Glyceryl Stearate, Cetearyl Alcohol, Cetearyl Glucoside, Dimethicone, Butyrospermum Parkii, Tocopheryl Acetate, Retinyl Palmitate, Morinda Citrifolia (Noni) Fruit Extract.',
+      howToUse: 'After cleansing, massage moisturizer over the entire face and neck. Use daily, in the morning.',
+      step: 'moisturizer',
+      image: 'https://www.avinichi.com/wp-content/uploads/Noni-Morning-Glow-1.png',
+      url: 'https://www.avinichi.com/product/noni-morning-glow/',
+    },
+    {
+      id: 'avinichi-noni-mousse-cleanser',
+      name: 'Noni Mousse Cleanser',
+      brand: 'Avinichi',
+      description: 'The perfect start to every skincare routine. Formulated with gentle, coconut-derived cleansing agents and infused with plant extracts and Noni, this lush cleanser removes dirt, makeup, and impurities while giving your skin a fresh and radiant finish.',
+      benefits: 'Daily cleanser, removes dirt and makeup, gentle coconut-derived cleansing agents, plant extracts and Noni, fresh and radiant finish, suitable for sensitive skin',
+      ingredients: 'Aqua, Sodium Cocoyl Isethionate, Sodium Methyl Cocoyl Taurate, Sodium Lauroyl Methyl Isethionate, Glycol Distearate, PEG-120 Methyl Glucose Dioleate, Cocamidopropyl Betaine, Glycerin, Morinda Citrifolia (Noni) Fruit Extract.',
+      howToUse: 'Gently lather a small amount of mousse in hands and then apply to damp face. Rinse thoroughly with water.',
+      step: 'cleanser',
+      image: 'https://www.avinichi.com/wp-content/uploads/Noni-Mousse-Cleanser-1.png',
+    },
+    {
+      id: 'avinichi-noni-pore-purifying-toner',
+      name: 'Noni Pore Purifying Toner',
+      brand: 'Avinichi',
+      description: 'An alcohol-free toner packed with plant extracts and Noni. Designed to remove traces of oil, dirt, and impurities, leaving skin perfectly prepped for the next step of your skincare routine.',
+      benefits: 'Alcohol-free toner, removes traces of oil and dirt, packed with plant extracts and Noni, preps skin for next skincare step, suitable for daily use',
+      ingredients: 'Aqua, Aloe Barbadensis Leaf Juice, Cucumis Sativus Fruit Extract, Chamomilla Recutita Flower/Leaf Extract, Polysorbate-20, Pentylene Glycol, Propanediol, Sodium PCA, Morinda Citrifolia (Noni) Fruit Extract, Allantoin, Citric Acid.',
+      howToUse: 'Apply after cleansing with a cotton ball or pad. Can be used morning or night daily.',
+      step: 'toner',
+      image: 'https://www.avinichi.com/wp-content/uploads/Noni-Pore-Purifying-Toner-1.png',
+    },
+    {
+      id: 'avinichi-eye-rescue-phyto-serum',
+      name: 'Eye Rescue Phyto-Serum',
+      brand: 'Avinichi',
+      description: 'Featuring a botanical buffet of flower, leaf, root, and fruit extracts, this antioxidant-rich formula deeply hydrates and restores the skin around your eyes, leaving you with a plumper, fuller, firmer, and more lifted look.',
+      benefits: 'Antioxidant-rich botanical formula, deeply hydrates and restores, plumper and fuller appearance around eyes, firmer and more lifted look, Camu Camu Vitamin C, Sodium Hyaluronate',
+      ingredients: 'Aqua, Propylene Glycol, Polysorbate 20, Palmitoyl Tripeptide-1, Palmitoyl Tetrapeptide-7, Sodium Hyaluronate, Pueraria Lobata Root Extract, Organic Camelia Sinensis Leaf Extract, Organic Calendula Officinalis Flower Extract, Organic Aloe Barbadensis Leaf Extract, Organic Ginkgo Biloba Leaf Extract, Myrciaria Dubia Fruit Extract, Ascorbic Acid.',
+      howToUse: 'After cleansing, apply around the entire eye area. Gently pat serum from the inner corner, under the eye, outer corner, and over the eyelid. Avoid contact with eyes.',
+      step: 'eye-serum',
+      image: 'https://www.avinichi.com/wp-content/uploads/Eye-Rescue-Phyto-Serum-1.png',
+    },
+    {
+      id: 'avinichi-noni-polishing-peel',
+      name: 'Noni Polishing Peel',
+      brand: 'Avinichi',
+      description: 'A multi-tasker that gently yet thoroughly buffs away dull and dead skin cells while hydrating with Noni and lush botanical oils. Expect brighter, smoother, and softer-looking skin after each use.',
+      benefits: 'Gently exfoliates dead skin cells, hydrating formula with Noni and botanical oils, brightens and smooths skin, Vitamin C, Mandelic Acid, Walnut Shell Powder, Bamboo Extract',
+      ingredients: 'Aqua, SD Alcohol 40B, Propylene Glycol, Glyceryl Acrylates/Acrylic Acid Copolymer, Cetrimonium Chloride, Glycerin, Juglans Regia Shell Powder, Bambusa Arundinacea Stem Extract Powder, Cocos Nucifera Oil, Ascorbic Acid, Mandelic Acid, Camellia Sinensis Leaf Extract, Morinda Citrifolia (Noni) Fruit Extract.',
+      howToUse: 'Apply to dry, clean skin. Gently massage in upward circular motions for 30 seconds. Wash peel off with cool water. Use twice a week.',
+      step: 'exfoliant',
+      image: 'https://www.avinichi.com/wp-content/uploads/Noni-Polishing-Peel-1.png',
+    },
+    {
+      id: 'avinichi-wrinkle-reversal-solution',
+      name: 'Wrinkle Reversal Solution',
+      brand: 'Avinichi',
+      description: 'Effortlessly diminish the visibility of fine lines and wrinkles. Whether for treating fine lines on your forehead, around your eyes, or around your mouth, this quick-acting formula instantly creates a smooth, taut, and firm appearance.',
+      benefits: 'Diminishes fine lines and wrinkles, quick-acting formula, smooth taut and firm appearance, Acetyl Hexapeptide-8 peptide complex, Sodium Hyaluronate, Mulberry extract',
+      ingredients: 'Aqua, Sodium Silicate, Magnesium Aluminum Silicate, Sodium Polystyrene Sulfonate, Acetyl Hexapeptide-8, Sodium Hyaluronate, Tocopheryl Acetate, Retinyl Palmitate, Organic Cucumis Sativus Fruit Extract, Organic Persea Gratissima Oil, Morus Nigra Fruit Extract, Squalane.',
+      howToUse: 'Twist bottom of syringe and push to dispense formula on finger or directly on fine lines and wrinkles. Pat formula into skin gently. If necessary, remove excess solution with a cotton swab.',
+      step: 'wrinkle-treatment',
+      image: 'https://www.avinichi.com/wp-content/uploads/Wrinkle-Reversal-Solution-1.png',
+    },
+  ],
 };
 
 // GET /api/welcome/products — returns the product catalog
@@ -537,7 +639,7 @@ router.post('/generate', (req, res) => {
   }
   const tc = EMAIL_THEMES[userTheme] || EMAIL_THEMES.rose;
 
-  const allProducts = [...PRODUCTS.avologi, ...PRODUCTS.hydrasphere];
+  const allProducts = [...PRODUCTS.avologi, ...(PRODUCTS.avinichi || []), ...PRODUCTS.hydrasphere];
   const selectedIds = new Set(selectedProductIds);
   const selectedProducts = selectedProductIds
     .map(id => allProducts.find(p => p.id === id))
@@ -834,7 +936,7 @@ router.post('/send', async (req, res) => {
     const customer = findOrCreateCustomer(customerName || '', customerEmail);
     if (products && products.length > 0) {
       // Resolve product IDs from names
-      const allProds = [...PRODUCTS.avologi, ...PRODUCTS.hydrasphere];
+      const allProds = [...PRODUCTS.avologi, ...(PRODUCTS.avinichi || []), ...PRODUCTS.hydrasphere];
       const productRecords = products
         .map(name => allProds.find(p => p.name === name))
         .filter(Boolean)
@@ -1033,7 +1135,7 @@ router.post('/customers/from-email', (req, res) => {
 
 // GET /api/welcome/products/list — list all product IDs/names for filtering
 router.get('/products/list', (req, res) => {
-  const allProducts = [...PRODUCTS.avologi, ...PRODUCTS.hydrasphere];
+  const allProducts = [...PRODUCTS.avologi, ...(PRODUCTS.avinichi || []), ...PRODUCTS.hydrasphere];
   res.json({
     products: allProducts.map(p => ({ id: p.id, name: p.name, brand: p.brand })),
   });
