@@ -335,8 +335,9 @@ router.post('/:id/generate-draft', async (req, res) => {
       };
     }
 
-    // Generate the draft with Claude
-    const draftText = await generateEmailResponse(thread);
+    // Generate the draft with Claude, using the user's company name
+    const companyName = req.user?.company_name || '';
+    const draftText = await generateEmailResponse(thread, '', companyName);
 
     if (!draftText) {
       return res.status(500).json({ error: 'AI failed to generate a draft' });

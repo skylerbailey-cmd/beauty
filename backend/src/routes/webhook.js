@@ -141,7 +141,7 @@ async function processNewMessage(user, messageId, threadId) {
     // Generate a draft response with Claude
     let draftText;
     try {
-      draftText = await generateEmailResponse(thread, productContext);
+      draftText = await generateEmailResponse(thread, productContext, user.company_name || '');
     } catch (claudeErr) {
       console.error(`[webhook] Claude generation failed for message ${messageId}:`, claudeErr.message);
       draftText = null;
