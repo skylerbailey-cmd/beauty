@@ -806,6 +806,114 @@ router.get('/history', (req, res) => {
   });
 });
 
+// GET /api/welcome/campaigns — list past campaigns
+router.get('/campaigns', (req, res) => {
+  const { getCampaigns } = require('../db');
+  const campaigns = getCampaigns();
+  res.json({
+    campaigns: campaigns.map(c => ({
+      id: c.id,
+      subject: c.subject,
+      body: c.body,
+      recipientCount: c.recipient_count,
+      sentAt: c.sent_at,
+    })),
+  });
+});
+
+// POST /api/welcome/campaign — send a marketing campaign to all customers
+router.post('/campaign', async (req, res) => {
+  const { subject, body } = req.body;
+
+  if (!subject || typeof subject !== 'string' || !subject.trim()) {
+    return res.status(400).json({ error: 'Subject is required' });
+  }
+  if (!body || typeof body !== 'string' || !body.trim()) {
+    return res.status(400).json({ error: 'Email body is required' });
+  }
+
+  const userId = req.session?.userId;
+  if (!userId) {
+    return res.status(401).json({ error: 'Not logged in. Please sign in first.' });
+  }
+
+  const { getUser, getUniqueCustomerEmails, saveCampaign } = require('../db');
+  const user = getUser(userId);
+  if (!user) {
+    return res.status(401).json({ error: 'User not found. Please sign in again.' });
+  }
+  if (!user.refresh_token) {
+    return res.status(403).json({ error: 'Gmail not connected. Please connect your Gmail first.', needsGmailConnect: true });
+  }
+
+  const customerEmails = getUniqueCustomerEmails();
+  if (customerEmails.length === 0) {
+    return res.status(400).json({ error: 'No customer emails found. Send some welcome emails first to build your contact list.' });
+  }
+
+  try {
+    const { google } = require('googleapis');
+    const oauth2Client = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      process.env.GOOGLE_REDIRECT_URI
+    );
+    oauth2Client.setCredentials({ refresh_token: user.refresh_token });
+
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+    const fromName = user.company_name || user.email;
+
+    let sentCount = 0;
+    const errors = [];
+
+    for (const email of customerEmails) {
+      try {
+        const messageParts = [
+          `From: "${fromName}" <${user.email}>`,
+          `To: ${email}`,
+          `Subject: ${subject.trim()}`,
+          'Content-Type: text/html; charset=utf-8',
+          'MIME-Version: 1.0',
+          '',
+          body,
+        ];
+        const rawMessage = messageParts.join('\r\n');
+        const encodedMessage = Buffer.from(rawMessage)
+          .toString('base64')
+          .replace(/\+/g, '-')
+          .replace(/\//g, '_')
+          .replace(/=+$/, '');
+
+        await gmail.users.messages.send({
+          userId: 'me',
+          requestBody: { raw: encodedMessage },
+        });
+        sentCount++;
+      } catch (err) {
+        console.error(`[campaign] Failed to send to ${email}:`, err.message);
+        errors.push({ email, error: err.message });
+      }
+    }
+
+    // Save campaign record
+    saveCampaign({
+      subject: subject.trim(),
+      body,
+      recipient_count: sentCount,
+    });
+
+    res.json({
+      success: true,
+      sentCount,
+      totalRecipients: customerEmails.length,
+      errors: errors.length > 0 ? errors : undefined,
+    });
+  } catch (err) {
+    console.error('[campaign] Error:', err.message);
+    res.status(500).json({ error: 'Failed to send campaign: ' + err.message });
+  }
+});
+
 // GET /api/welcome/debug — check DB and connected users
 router.get('/debug', (req, res) => {
   const { getAllUsers } = require('../db');

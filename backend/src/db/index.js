@@ -201,6 +201,32 @@ function getWelcomeEmails(limit = 50) {
   `).all(limit);
 }
 
+// ─── Campaigns ──────────────────────────────────────────────────────────────
+
+function saveCampaign({ subject, body, recipient_count }) {
+  const stmt = db.prepare(`
+    INSERT INTO campaigns (subject, body, recipient_count)
+    VALUES (?, ?, ?)
+  `);
+  const result = stmt.run(subject, body, recipient_count);
+  return result.lastInsertRowid;
+}
+
+function getCampaigns(limit = 50) {
+  return db.prepare(`
+    SELECT * FROM campaigns
+    ORDER BY sent_at DESC
+    LIMIT ?
+  `).all(limit);
+}
+
+function getUniqueCustomerEmails() {
+  return db.prepare(`
+    SELECT DISTINCT customer_email FROM welcome_emails
+    ORDER BY customer_email
+  `).all().map(row => row.customer_email);
+}
+
 function findOrCreateUserByEmail(email, companyName) {
   let user = getUserByEmail(email);
   let isNew = false;
@@ -249,4 +275,7 @@ module.exports = {
   updateUserTheme,
   saveWelcomeEmail,
   getWelcomeEmails,
+  saveCampaign,
+  getCampaigns,
+  getUniqueCustomerEmails,
 };

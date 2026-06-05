@@ -716,6 +716,238 @@
       color: var(--mid);
       margin-top: 2px;
     }
+
+    /* ── Sidebar Navigation ──────────────────────────────────────────── */
+    .app-layout {
+      display: flex;
+      min-height: calc(100vh - 73px);
+    }
+
+    .sidebar {
+      width: 220px;
+      flex-shrink: 0;
+      background: var(--white);
+      border-right: 1px solid var(--border);
+      padding: 20px 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-nav {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .sidebar-nav li {
+      margin-bottom: 2px;
+    }
+
+    .sidebar-nav a {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 20px;
+      text-decoration: none;
+      font-family: system-ui, sans-serif;
+      font-size: .88rem;
+      font-weight: 500;
+      color: var(--mid);
+      transition: all .2s;
+      border-left: 3px solid transparent;
+      cursor: pointer;
+    }
+
+    .sidebar-nav a:hover {
+      background: var(--cream);
+      color: var(--dark);
+    }
+
+    .sidebar-nav a.active {
+      background: var(--rose-lt);
+      color: var(--rose-dk);
+      border-left-color: var(--rose);
+      font-weight: 600;
+    }
+
+    .sidebar-nav a .nav-icon {
+      font-size: 1.2rem;
+      width: 24px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .sidebar-version {
+      margin-top: auto;
+      padding: 16px 20px;
+      font-family: system-ui, sans-serif;
+      font-size: .72rem;
+      color: var(--border);
+    }
+
+    .app-main {
+      flex: 1;
+      min-width: 0;
+      overflow-y: auto;
+    }
+
+    .app-main main {
+      max-width: 860px;
+      margin: 40px auto;
+      padding: 0 20px 60px;
+    }
+
+    /* ── Mobile sidebar → top bar ────────────────────────────────────── */
+    .mobile-nav {
+      display: none;
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .mobile-nav-inner {
+      display: flex;
+      gap: 0;
+      min-width: max-content;
+    }
+
+    .mobile-nav a {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 18px;
+      text-decoration: none;
+      font-family: system-ui, sans-serif;
+      font-size: .82rem;
+      font-weight: 500;
+      color: var(--mid);
+      white-space: nowrap;
+      border-bottom: 3px solid transparent;
+      transition: all .2s;
+      cursor: pointer;
+    }
+
+    .mobile-nav a:hover {
+      color: var(--dark);
+      background: var(--cream);
+    }
+
+    .mobile-nav a.active {
+      color: var(--rose-dk);
+      border-bottom-color: var(--rose);
+      font-weight: 600;
+    }
+
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .mobile-nav { display: block; }
+      .app-layout { flex-direction: column; }
+      .app-main main { margin: 20px auto; padding: 0 12px 40px; }
+    }
+
+    /* ── Sent Emails tab table ───────────────────────────────────────── */
+    .history-full-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: system-ui, sans-serif;
+      font-size: .9rem;
+    }
+
+    .history-full-table thead tr {
+      border-bottom: 2px solid var(--border);
+      text-align: left;
+    }
+
+    .history-full-table th {
+      padding: 12px 14px;
+      color: var(--mid);
+      font-weight: 600;
+      font-size: .8rem;
+      text-transform: uppercase;
+      letter-spacing: .3px;
+    }
+
+    .history-full-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .history-full-table tbody tr:hover {
+      background: var(--cream);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--mid);
+      font-family: system-ui, sans-serif;
+    }
+
+    .empty-state .empty-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+    }
+
+    .empty-state h3 {
+      font-size: 1.1rem;
+      color: var(--dark);
+      margin-bottom: 6px;
+    }
+
+    .empty-state p {
+      font-size: .88rem;
+    }
+
+    /* ── Campaign compose ────────────────────────────────────────────── */
+    .campaign-compose .field textarea {
+      width: 100%;
+      min-height: 250px;
+      padding: 16px;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      font-size: .95rem;
+      font-family: system-ui, sans-serif;
+      color: var(--dark);
+      background: var(--cream);
+      outline: none;
+      resize: vertical;
+      line-height: 1.6;
+      transition: border-color .2s;
+    }
+
+    .campaign-compose .field textarea:focus {
+      border-color: var(--rose);
+      background: var(--white);
+    }
+
+    .campaign-list-item {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-bottom: 12px;
+      background: var(--white);
+      transition: all .2s;
+    }
+
+    .campaign-list-item:hover {
+      border-color: var(--rose);
+      box-shadow: var(--shadow);
+    }
+
+    .campaign-list-item h4 {
+      font-size: .95rem;
+      color: var(--dark);
+      margin-bottom: 4px;
+    }
+
+    .campaign-list-item .campaign-meta {
+      font-family: system-ui, sans-serif;
+      font-size: .78rem;
+      color: var(--mid);
+      display: flex;
+      gap: 16px;
+    }
   </style>
 </head>
 <body>
@@ -825,7 +1057,8 @@
   </div>
 </div>
 
-<main>
+<!-- ── Full-width screens (login, company, Gmail) ──────────────────── -->
+<main id="fullWidthMain">
 
   <!-- ── Login Screen: Step 1 — Email ──────────────────────────────────── -->
   <div id="loginScreen">
@@ -871,159 +1104,280 @@
     </div>
   </div>
 
-  <!-- ── App Content (hidden until logged in) ──────────────────────────── -->
-  <div id="appContent" hidden>
-
-  <!-- Steps -->
-  <div class="steps">
-    <div class="step-dot active" id="step1-dot">
-      <div class="num">1</div>
-      <span>Select Products</span>
-    </div>
-    <div class="step-line"></div>
-    <div class="step-dot" id="step2-dot">
-      <div class="num">2</div>
-      <span>Preview Email</span>
-    </div>
-    <div class="step-line"></div>
-    <div class="step-dot" id="step3-dot">
-      <div class="num">3</div>
-      <span>Sent</span>
-    </div>
-  </div>
-
-  <!-- ── Step 1: Form ─────────────────────────────────────────────────── -->
-  <div id="step1">
-    <div class="card">
-      <h2 class="card-title">New Customer Welcome</h2>
-      <p class="card-sub">Enter the customer's email and select the products they purchased. We'll generate a personalized welcome email with usage instructions.</p>
-
-      <!-- Customer Name -->
-      <div class="field">
-        <label for="customerName">Customer First Name</label>
-        <input type="text" id="customerName" placeholder="e.g. Sarah" autocomplete="off" />
-      </div>
-
-      <!-- Email -->
-      <div class="field">
-        <label for="customerEmail">Customer Email Address</label>
-        <input type="email" id="customerEmail" placeholder="customer@example.com" autocomplete="off" />
-      </div>
-
-      <!-- Avologi -->
-      <div class="brand-section">
-        <div class="brand-header">
-          <span class="brand-badge avologi">Avologi</span>
-          <span class="brand-name">Advanced Youth Restoring Technology</span>
-          <a class="brand-url" href="https://avologi.com/all-products/" target="_blank">avologi.com ↗</a>
-        </div>
-        <div class="select-all-row">
-          <button class="select-all-btn" onclick="selectAll('avologi')">Select all</button>
-          <button class="select-all-btn" onclick="clearAll('avologi')">Clear all</button>
-        </div>
-        <div class="product-grid" id="grid-avologi"></div>
-      </div>
-
-      <!-- HydraSphere -->
-      <div class="brand-section">
-        <div class="brand-header">
-          <span class="brand-badge hydrasphere">HydraSphere+</span>
-          <span class="brand-name">Hydrogen-Infused Skincare</span>
-          <a class="brand-url" href="https://hydrasphereplus.com/" target="_blank">hydrasphereplus.com ↗</a>
-        </div>
-        <div class="select-all-row">
-          <button class="select-all-btn" onclick="selectAll('hydrasphere')">Select all</button>
-          <button class="select-all-btn" onclick="clearAll('hydrasphere')">Clear all</button>
-        </div>
-        <div class="product-grid" id="grid-hydrasphere"></div>
-      </div>
-
-      <div id="formError" class="error-box" hidden></div>
-
-      <div class="btn-row">
-        <button class="btn btn-primary" id="nextBtn" onclick="handleNext()">Generate Welcome Email →</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── Step 2: Loading ──────────────────────────────────────────────── -->
-  <div id="step-loading" hidden>
-    <div class="card">
-      <div class="loading-wrap">
-        <div class="spinner"></div>
-        <p>Crafting your personalized welcome email…</p>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── Step 2: Email preview ────────────────────────────────────────── -->
-  <div id="step2" hidden>
-    <div class="card">
-      <h2 class="card-title">Welcome Email Preview</h2>
-      <p class="card-sub">Review and edit the email below before sending.</p>
-
-      <div class="email-meta">
-        <div class="email-meta-row">
-          <strong>To:</strong>
-          <span id="previewTo"></span>
-        </div>
-      </div>
-
-      <div class="products-used">
-        <h4>Products included</h4>
-        <div class="pill-list" id="productPills"></div>
-      </div>
-
-      <div class="email-body-wrap">
-        <div class="email-body-toolbar">
-          <span>Email body</span>
-          <button class="copy-btn" id="copyBtn" onclick="copyEmail()">Copy to clipboard</button>
-        </div>
-        <div id="emailPreview" style="padding:20px;background:#fff;border:1px solid var(--border);border-radius:10px;min-height:200px;font-family:system-ui,sans-serif;font-size:0.95rem;line-height:1.6;color:#2c2022;overflow-y:auto;max-height:600px"></div>
-        <textarea id="emailBody" spellcheck="true" style="display:none"></textarea>
-      </div>
-
-      <div class="btn-row">
-        <button class="btn btn-secondary" onclick="goBack()">&larr; Start over</button>
-        <button class="btn btn-primary" onclick="copyEmail()">Copy Email</button>
-        <button class="btn btn-send" id="sendBtn" onclick="sendEmail()">Send Email</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── Step 3: Success + History ──────────────────────────────────────── -->
-  <div id="step3" hidden>
-    <div class="card" style="text-align:center;padding:40px 30px">
-      <div style="font-size:48px;margin-bottom:12px">✅</div>
-      <h2 class="card-title">Email Sent Successfully!</h2>
-      <p class="card-sub" id="sentToMsg">Your welcome email has been sent.</p>
-      <div class="btn-row" style="justify-content:center;margin-top:20px">
-        <button class="btn btn-primary" onclick="resetToStart()">Send Another</button>
-      </div>
-    </div>
-
-    <div class="card" style="margin-top:24px">
-      <h2 class="card-title">📋 Sent Welcome Emails</h2>
-      <div style="overflow-x:auto">
-        <table id="historyTable" style="width:100%;border-collapse:collapse;font-family:system-ui,sans-serif;font-size:0.9rem">
-          <thead>
-            <tr style="border-bottom:2px solid var(--border);text-align:left">
-              <th style="padding:10px 12px;color:var(--mid);font-weight:600">Customer</th>
-              <th style="padding:10px 12px;color:var(--mid);font-weight:600">Email</th>
-              <th style="padding:10px 12px;color:var(--mid);font-weight:600">Products</th>
-              <th style="padding:10px 12px;color:var(--mid);font-weight:600">Sent</th>
-            </tr>
-          </thead>
-          <tbody id="historyBody">
-            <tr><td colspan="4" style="padding:20px;text-align:center;color:var(--mid)">Loading...</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  </div><!-- /appContent -->
 </main>
+
+<!-- ── App Content (hidden until logged in) — with sidebar ────────────── -->
+<div id="appContent" class="app-layout" hidden>
+
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebarNav">
+    <ul class="sidebar-nav">
+      <li><a class="active" data-tab="welcome" onclick="switchTab('welcome')">
+        <span class="nav-icon">&#9993;</span> Welcome Emails
+      </a></li>
+      <li><a data-tab="sent" onclick="switchTab('sent')">
+        <span class="nav-icon">&#128203;</span> Sent Emails
+      </a></li>
+      <li><a data-tab="campaigns" onclick="switchTab('campaigns')">
+        <span class="nav-icon">&#128227;</span> Marketing Campaigns
+      </a></li>
+    </ul>
+    <div class="sidebar-version">Glow Email Suite</div>
+  </nav>
+
+  <!-- Mobile nav bar -->
+  <div class="mobile-nav" id="mobileNav">
+    <div class="mobile-nav-inner">
+      <a class="active" data-tab="welcome" onclick="switchTab('welcome')">
+        <span>&#9993;</span> Welcome Emails
+      </a>
+      <a data-tab="sent" onclick="switchTab('sent')">
+        <span>&#128203;</span> Sent Emails
+      </a>
+      <a data-tab="campaigns" onclick="switchTab('campaigns')">
+        <span>&#128227;</span> Campaigns
+      </a>
+    </div>
+  </div>
+
+  <!-- Main content area -->
+  <div class="app-main">
+
+    <!-- ════════ TAB: Welcome Emails ════════ -->
+    <div id="tab-welcome">
+      <main>
+
+      <!-- Steps -->
+      <div class="steps">
+        <div class="step-dot active" id="step1-dot">
+          <div class="num">1</div>
+          <span>Select Products</span>
+        </div>
+        <div class="step-line"></div>
+        <div class="step-dot" id="step2-dot">
+          <div class="num">2</div>
+          <span>Preview Email</span>
+        </div>
+        <div class="step-line"></div>
+        <div class="step-dot" id="step3-dot">
+          <div class="num">3</div>
+          <span>Sent</span>
+        </div>
+      </div>
+
+      <!-- ── Step 1: Form ─────────────────────────────────────────────────── -->
+      <div id="step1">
+        <div class="card">
+          <h2 class="card-title">New Customer Welcome</h2>
+          <p class="card-sub">Enter the customer's email and select the products they purchased. We'll generate a personalized welcome email with usage instructions.</p>
+
+          <!-- Customer Name -->
+          <div class="field">
+            <label for="customerName">Customer First Name</label>
+            <input type="text" id="customerName" placeholder="e.g. Sarah" autocomplete="off" />
+          </div>
+
+          <!-- Email -->
+          <div class="field">
+            <label for="customerEmail">Customer Email Address</label>
+            <input type="email" id="customerEmail" placeholder="customer@example.com" autocomplete="off" />
+          </div>
+
+          <!-- Avologi -->
+          <div class="brand-section">
+            <div class="brand-header">
+              <span class="brand-badge avologi">Avologi</span>
+              <span class="brand-name">Advanced Youth Restoring Technology</span>
+              <a class="brand-url" href="https://avologi.com/all-products/" target="_blank">avologi.com &#8599;</a>
+            </div>
+            <div class="select-all-row">
+              <button class="select-all-btn" onclick="selectAll('avologi')">Select all</button>
+              <button class="select-all-btn" onclick="clearAll('avologi')">Clear all</button>
+            </div>
+            <div class="product-grid" id="grid-avologi"></div>
+          </div>
+
+          <!-- HydraSphere -->
+          <div class="brand-section">
+            <div class="brand-header">
+              <span class="brand-badge hydrasphere">HydraSphere+</span>
+              <span class="brand-name">Hydrogen-Infused Skincare</span>
+              <a class="brand-url" href="https://hydrasphereplus.com/" target="_blank">hydrasphereplus.com &#8599;</a>
+            </div>
+            <div class="select-all-row">
+              <button class="select-all-btn" onclick="selectAll('hydrasphere')">Select all</button>
+              <button class="select-all-btn" onclick="clearAll('hydrasphere')">Clear all</button>
+            </div>
+            <div class="product-grid" id="grid-hydrasphere"></div>
+          </div>
+
+          <div id="formError" class="error-box" hidden></div>
+
+          <div class="btn-row">
+            <button class="btn btn-primary" id="nextBtn" onclick="handleNext()">Generate Welcome Email &#8594;</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Step 2: Loading ──────────────────────────────────────────────── -->
+      <div id="step-loading" hidden>
+        <div class="card">
+          <div class="loading-wrap">
+            <div class="spinner"></div>
+            <p>Crafting your personalized welcome email...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Step 2: Email preview ────────────────────────────────────────── -->
+      <div id="step2" hidden>
+        <div class="card">
+          <h2 class="card-title">Welcome Email Preview</h2>
+          <p class="card-sub">Review and edit the email below before sending.</p>
+
+          <div class="email-meta">
+            <div class="email-meta-row">
+              <strong>To:</strong>
+              <span id="previewTo"></span>
+            </div>
+          </div>
+
+          <div class="products-used">
+            <h4>Products included</h4>
+            <div class="pill-list" id="productPills"></div>
+          </div>
+
+          <div class="email-body-wrap">
+            <div class="email-body-toolbar">
+              <span>Email body</span>
+              <button class="copy-btn" id="copyBtn" onclick="copyEmail()">Copy to clipboard</button>
+            </div>
+            <div id="emailPreview" style="padding:20px;background:#fff;border:1px solid var(--border);border-radius:10px;min-height:200px;font-family:system-ui,sans-serif;font-size:0.95rem;line-height:1.6;color:#2c2022;overflow-y:auto;max-height:600px"></div>
+            <textarea id="emailBody" spellcheck="true" style="display:none"></textarea>
+          </div>
+
+          <div class="btn-row">
+            <button class="btn btn-secondary" onclick="goBack()">&larr; Start over</button>
+            <button class="btn btn-primary" onclick="copyEmail()">Copy Email</button>
+            <button class="btn btn-send" id="sendBtn" onclick="sendEmail()">Send Email</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Step 3: Success ──────────────────────────────────────────────── -->
+      <div id="step3" hidden>
+        <div class="card" style="text-align:center;padding:40px 30px">
+          <div style="font-size:48px;margin-bottom:12px">&#9989;</div>
+          <h2 class="card-title">Email Sent Successfully!</h2>
+          <p class="card-sub" id="sentToMsg">Your welcome email has been sent.</p>
+          <div class="btn-row" style="justify-content:center;margin-top:20px">
+            <button class="btn btn-primary" onclick="resetToStart()">Send Another</button>
+          </div>
+        </div>
+      </div>
+
+      </main>
+    </div><!-- /tab-welcome -->
+
+    <!-- ════════ TAB: Sent Emails ════════ -->
+    <div id="tab-sent" hidden>
+      <main>
+        <div class="card">
+          <h2 class="card-title">Sent Welcome Emails</h2>
+          <p class="card-sub">History of all welcome emails sent to customers.</p>
+          <div style="overflow-x:auto">
+            <table class="history-full-table">
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Email</th>
+                  <th>Products</th>
+                  <th>Date Sent</th>
+                </tr>
+              </thead>
+              <tbody id="sentHistoryBody">
+                <tr><td colspan="4" style="padding:20px;text-align:center;color:var(--mid)">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </div><!-- /tab-sent -->
+
+    <!-- ════════ TAB: Marketing Campaigns ════════ -->
+    <div id="tab-campaigns" hidden>
+      <main>
+
+        <!-- Campaign List View -->
+        <div id="campaignListView">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
+            <div>
+              <h2 class="card-title" style="margin-bottom:4px">Marketing Campaigns</h2>
+              <p class="card-sub" style="margin-bottom:0">Send marketing emails to all your customers at once.</p>
+            </div>
+            <button class="btn btn-primary" onclick="showCampaignCompose()">+ New Campaign</button>
+          </div>
+
+          <div id="campaignList">
+            <div class="card">
+              <div class="empty-state">
+                <div class="empty-icon">&#128233;</div>
+                <h3>No campaigns yet</h3>
+                <p>Create your first marketing campaign to reach all your customers.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Campaign Compose View -->
+        <div id="campaignComposeView" hidden>
+          <div class="card campaign-compose">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+              <button class="btn btn-secondary" onclick="showCampaignList()" style="padding:8px 16px">&larr; Back</button>
+              <h2 class="card-title" style="margin-bottom:0">New Campaign</h2>
+            </div>
+
+            <div id="campaignRecipientInfo" style="background:var(--gold-lt);border:1px solid #e8d8b0;border-radius:10px;padding:14px 18px;margin-bottom:24px;font-family:system-ui,sans-serif;font-size:.85rem">
+              <strong>Recipients:</strong> <span id="campaignRecipientCount">Loading...</span> unique customer emails from your welcome email history.
+            </div>
+
+            <div class="field">
+              <label for="campaignSubject">Subject Line</label>
+              <input type="text" id="campaignSubject" placeholder="e.g. Exciting news from our store!" />
+            </div>
+
+            <div class="field">
+              <label for="campaignBody">Email Body (HTML supported)</label>
+              <textarea id="campaignBody" placeholder="Write your campaign email here. You can use HTML for formatting."></textarea>
+            </div>
+
+            <div id="campaignError" class="error-box" hidden></div>
+
+            <div class="btn-row">
+              <button class="btn btn-secondary" onclick="showCampaignList()">Cancel</button>
+              <button class="btn btn-send" id="sendCampaignBtn" onclick="sendCampaign()">Send to All Customers</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Campaign Sent Success -->
+        <div id="campaignSentView" hidden>
+          <div class="card" style="text-align:center;padding:40px 30px">
+            <div style="font-size:48px;margin-bottom:12px">&#128640;</div>
+            <h2 class="card-title">Campaign Sent!</h2>
+            <p class="card-sub" id="campaignSentMsg">Your campaign has been sent.</p>
+            <div class="btn-row" style="justify-content:center;margin-top:20px">
+              <button class="btn btn-primary" onclick="showCampaignList()">Back to Campaigns</button>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div><!-- /tab-campaigns -->
+
+  </div><!-- /app-main -->
+
+</div><!-- /appContent -->
 
 <script>
   // ── Theme / Settings ────────────────────────────────────────────────────────
@@ -1093,11 +1447,13 @@
     document.getElementById('companyScreen').hidden = true;
     document.getElementById('gmailBanner').hidden = true;
     document.getElementById('appContent').hidden = true;
+    document.getElementById('fullWidthMain').hidden = true;
     document.getElementById('headerUser').style.display = 'none';
   }
 
   function showLogin() {
     hideAllScreens();
+    document.getElementById('fullWidthMain').hidden = false;
     document.getElementById('loginScreen').hidden = false;
     const savedEmail = localStorage.getItem('glowEmail');
     if (savedEmail) document.getElementById('loginEmail').value = savedEmail;
@@ -1114,6 +1470,7 @@
 
   function showGmailBanner() {
     hideAllScreens();
+    document.getElementById('fullWidthMain').hidden = false;
     document.getElementById('gmailBanner').hidden = false;
     updateHeader();
   }
@@ -1125,6 +1482,39 @@
     // Keep settings company name in sync
     if (currentUser?.companyName) {
       document.getElementById('settingsCompanyName').value = currentUser.companyName;
+    }
+  }
+
+  // ── Sidebar tab switching ───────────────────────────────────────────────────
+
+  let currentTab = 'welcome';
+
+  function switchTab(tab) {
+    currentTab = tab;
+
+    // Hide all tab panels
+    document.getElementById('tab-welcome').hidden = true;
+    document.getElementById('tab-sent').hidden = true;
+    document.getElementById('tab-campaigns').hidden = true;
+
+    // Show selected tab
+    document.getElementById('tab-' + tab).hidden = false;
+
+    // Update sidebar active state
+    document.querySelectorAll('.sidebar-nav a').forEach(a => {
+      a.classList.toggle('active', a.dataset.tab === tab);
+    });
+
+    // Update mobile nav active state
+    document.querySelectorAll('.mobile-nav a').forEach(a => {
+      a.classList.toggle('active', a.dataset.tab === tab);
+    });
+
+    // Load data for the tab
+    if (tab === 'sent') {
+      loadSentHistory();
+    } else if (tab === 'campaigns') {
+      loadCampaigns();
     }
   }
 
@@ -1158,6 +1548,7 @@
         // New user or missing company name — show company step
         pendingEmail = email;
         hideAllScreens();
+        document.getElementById('fullWidthMain').hidden = false;
         document.getElementById('companyScreen').hidden = false;
         document.getElementById('loginCompany').focus();
       } else {
@@ -1178,6 +1569,7 @@
 
   function backToEmail() {
     hideAllScreens();
+    document.getElementById('fullWidthMain').hidden = false;
     document.getElementById('loginScreen').hidden = false;
   }
 
@@ -1528,8 +1920,6 @@
 
       btn.disabled = false;
       btn.textContent = 'Send Email';
-
-      loadHistory();
     } catch (err) {
       btn.disabled = false;
       btn.textContent = 'Send Email';
@@ -1537,14 +1927,16 @@
     }
   }
 
-  async function loadHistory() {
+  // ── Sent Emails tab ──────────────────────────────────────────────────────────
+
+  async function loadSentHistory() {
     try {
       const res = await fetch('/api/welcome/history');
       const data = await res.json();
-      const tbody = document.getElementById('historyBody');
+      const tbody = document.getElementById('sentHistoryBody');
 
       if (!data.emails || data.emails.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--mid)">No welcome emails sent yet.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" style="padding:40px;text-align:center;color:var(--mid)">No welcome emails sent yet. Go to the Welcome Emails tab to send your first one!</td></tr>';
         return;
       }
 
@@ -1553,16 +1945,148 @@
         const date = new Date(e.sentAt).toLocaleDateString('en-US', {
           month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
         });
-        return `<tr style="border-bottom:1px solid var(--border)">
-          <td style="padding:10px 12px">${e.customerName || '—'}</td>
-          <td style="padding:10px 12px">${e.customerEmail}</td>
-          <td style="padding:10px 12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${products}">${products || '—'}</td>
-          <td style="padding:10px 12px;white-space:nowrap">${date}</td>
+        return `<tr>
+          <td>${escapeHtml(e.customerName || '\u2014')}</td>
+          <td>${escapeHtml(e.customerEmail)}</td>
+          <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(products)}">${escapeHtml(products) || '\u2014'}</td>
+          <td style="white-space:nowrap">${date}</td>
         </tr>`;
       }).join('');
     } catch (err) {
-      document.getElementById('historyBody').innerHTML =
+      document.getElementById('sentHistoryBody').innerHTML =
         '<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--mid)">Failed to load history.</td></tr>';
+    }
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Campaign functions ──────────────────────────────────────────────────────
+
+  async function loadCampaigns() {
+    try {
+      const res = await fetch('/api/welcome/campaigns');
+      const data = await res.json();
+      const container = document.getElementById('campaignList');
+
+      if (!data.campaigns || data.campaigns.length === 0) {
+        container.innerHTML = `<div class="card">
+          <div class="empty-state">
+            <div class="empty-icon">&#128233;</div>
+            <h3>No campaigns yet</h3>
+            <p>Create your first marketing campaign to reach all your customers.</p>
+          </div>
+        </div>`;
+        return;
+      }
+
+      container.innerHTML = data.campaigns.map(c => {
+        const date = new Date(c.sentAt).toLocaleDateString('en-US', {
+          month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+        });
+        return `<div class="campaign-list-item">
+          <h4>${escapeHtml(c.subject)}</h4>
+          <div class="campaign-meta">
+            <span>Sent to ${c.recipientCount} recipient${c.recipientCount !== 1 ? 's' : ''}</span>
+            <span>${date}</span>
+          </div>
+        </div>`;
+      }).join('');
+    } catch (err) {
+      document.getElementById('campaignList').innerHTML =
+        '<div class="card"><p style="padding:20px;text-align:center;color:var(--mid)">Failed to load campaigns.</p></div>';
+    }
+  }
+
+  function showCampaignCompose() {
+    document.getElementById('campaignListView').hidden = true;
+    document.getElementById('campaignSentView').hidden = true;
+    document.getElementById('campaignComposeView').hidden = false;
+    document.getElementById('campaignSubject').value = '';
+    document.getElementById('campaignBody').value = '';
+    document.getElementById('campaignError').hidden = true;
+
+    // Load recipient count
+    loadRecipientCount();
+  }
+
+  function showCampaignList() {
+    document.getElementById('campaignComposeView').hidden = true;
+    document.getElementById('campaignSentView').hidden = true;
+    document.getElementById('campaignListView').hidden = false;
+    loadCampaigns();
+  }
+
+  async function loadRecipientCount() {
+    try {
+      const res = await fetch('/api/welcome/history');
+      const data = await res.json();
+      const uniqueEmails = new Set((data.emails || []).map(e => e.customerEmail));
+      document.getElementById('campaignRecipientCount').textContent =
+        uniqueEmails.size > 0 ? uniqueEmails.size : 'No';
+    } catch {
+      document.getElementById('campaignRecipientCount').textContent = '?';
+    }
+  }
+
+  async function sendCampaign() {
+    const subject = document.getElementById('campaignSubject').value.trim();
+    const body = document.getElementById('campaignBody').value.trim();
+    const errEl = document.getElementById('campaignError');
+    errEl.hidden = true;
+
+    if (!subject) {
+      errEl.textContent = 'Please enter a subject line.';
+      errEl.hidden = false;
+      return;
+    }
+    if (!body) {
+      errEl.textContent = 'Please enter an email body.';
+      errEl.hidden = false;
+      return;
+    }
+
+    if (!confirm('Send this campaign email to all your customers?')) {
+      return;
+    }
+
+    const btn = document.getElementById('sendCampaignBtn');
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    try {
+      const res = await fetch('/api/welcome/campaign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ subject, body }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        if (res.status === 401) {
+          showLogin();
+          throw new Error('Session expired. Please sign in again.');
+        }
+        throw new Error(data.error || 'Failed to send campaign');
+      }
+
+      // Show success
+      document.getElementById('campaignComposeView').hidden = true;
+      document.getElementById('campaignSentView').hidden = false;
+      document.getElementById('campaignSentMsg').textContent =
+        `Campaign sent to ${data.sentCount} of ${data.totalRecipients} recipients.` +
+        (data.errors ? ` ${data.errors.length} failed.` : '');
+
+      btn.disabled = false;
+      btn.textContent = 'Send to All Customers';
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.hidden = false;
+      btn.disabled = false;
+      btn.textContent = 'Send to All Customers';
     }
   }
 
