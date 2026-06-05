@@ -300,7 +300,24 @@
 
     @media (max-width: 600px) {
       .product-grid { grid-template-columns: 1fr; }
-      .card { padding: 24px 20px; }
+      .card { padding: 20px 16px; }
+      header { padding: 14px 16px; }
+      header h1 { font-size: 1.1rem; }
+      header p { font-size: .72rem; }
+      main { padding: 16px 12px; }
+      .steps { gap: 8px; margin-bottom: 20px; padding: 0 4px; }
+      .step-dot span { font-size: .65rem; }
+      .brand-header { flex-wrap: wrap; gap: 6px; }
+      .brand-name { font-size: .8rem; }
+      .brand-url { font-size: .7rem; }
+      .btn-row { flex-wrap: wrap; }
+      .btn { font-size: .82rem; padding: 11px 18px; }
+      .email-body-wrap { margin: 0 -8px; }
+      #emailPreview { padding: 14px; font-size: .88rem; max-height: 400px; }
+      .field label { font-size: .75rem; }
+      .field input { font-size: .9rem; padding: 11px 14px; }
+      .select-all-row { gap: 6px; }
+      .select-all-btn { font-size: .68rem; padding: 4px 8px; }
     }
 
     .product-card {
@@ -708,6 +725,20 @@
   <div style="flex:1">
     <h1>Welcome Email Generator</h1>
     <p>Personalized product onboarding emails</p>
+  </div>
+  <!-- App Switcher -->
+  <div style="position:relative;margin-right:12px" id="appSwitcherWrap">
+    <button onclick="toggleAppSwitcher()" title="Switch app" style="background:none;border:none;cursor:pointer;font-size:20px;padding:6px 8px;border-radius:8px;color:var(--mid);transition:background .2s" onmouseover="this.style.background='var(--rose-lt)'" onmouseout="this.style.background='none'">⊞</button>
+    <div id="appSwitcherMenu" style="display:none;position:absolute;right:0;top:40px;background:var(--white);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(44,32,34,.12);min-width:200px;z-index:999;overflow:hidden">
+      <a href="/" style="display:flex;align-items:center;gap:10px;padding:14px 16px;text-decoration:none;color:var(--dark);font-family:system-ui,sans-serif;font-size:.88rem;background:var(--rose-lt);border-left:3px solid var(--rose)">
+        <span style="font-size:18px">✉️</span>
+        <div><b>Welcome Emails</b><br><span style="font-size:.75rem;color:var(--mid)">Customer onboarding</span></div>
+      </a>
+      <a href="/inbox.html" style="display:flex;align-items:center;gap:10px;padding:14px 16px;text-decoration:none;color:var(--dark);font-family:system-ui,sans-serif;font-size:.88rem;border-left:3px solid transparent" onmouseover="this.style.background='var(--cream)'" onmouseout="this.style.background='none'">
+        <span style="font-size:18px">📨</span>
+        <div><b>Smart Inbox</b><br><span style="font-size:.75rem;color:var(--mid)">AI-powered email replies</span></div>
+      </a>
+    </div>
   </div>
   <div id="headerUser" style="display:none; font-family:system-ui,sans-serif; font-size:.82rem; text-align:right;">
     <button class="settings-btn" id="settingsToggle" onclick="toggleSettings()" title="Settings">&#9881;</button>
@@ -1534,6 +1565,18 @@
         '<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--mid)">Failed to load history.</td></tr>';
     }
   }
+
+  // App Switcher
+  function toggleAppSwitcher() {
+    const menu = document.getElementById('appSwitcherMenu');
+    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  }
+  document.addEventListener('click', (e) => {
+    const wrap = document.getElementById('appSwitcherWrap');
+    if (wrap && !wrap.contains(e.target)) {
+      document.getElementById('appSwitcherMenu').style.display = 'none';
+    }
+  });
 
   function resetToStart() {
     document.getElementById('step3').hidden = true;
