@@ -200,6 +200,17 @@ const PRODUCTS = {
       step: 'cleanser',
       image: 'https://www.avinichi.com/wp-content/uploads/Noni-Mousse-Cleanser-1.png',
     },
+    {
+      id: 'avinichi-noni-pore-purifying-toner',
+      name: 'Noni Pore Purifying Toner',
+      brand: 'Avinichi',
+      description: 'Elevate your cleansing regime with the exquisite Noni Pore Purifying Toner. Designed to remove traces of oil, dirt, and other impurities, this alcohol-free toner, which is packed with plant extracts and Noni, will finish off what your cleanser started, leaving your skin perfectly prepped for the next step of your skincare routine.',
+      benefits: 'Alcohol-free toner, removes traces of oil and dirt, packed with plant extracts and Noni, preps skin for next skincare step, suitable for daily use morning or night, refines and resurfaces skin',
+      ingredients: 'Aqua/Water/Eau, Aloe Barbadensis (Aloe Vera) Leaf Juice, Cucumis Sativus (Cucumber) Fruit Extract, Chamomilla Recutita Flower/Leaf (ORGANIC Chamomile) Extract, Polysorbate-20, Pentylene Glycol, Propanediol, Sodium PCA, Fragrance (Parfum), Phenoxyethanol, Allantoin, Ethylhexylglycerin, Morinda Citrifolia (Noni) Fruit Extract, Citric Acid.',
+      howToUse: 'Apply after cleansing with a cotton ball or pad. Can be used morning or night daily.',
+      step: 'toner',
+      image: 'https://www.avinichi.com/wp-content/uploads/Noni-Pore-Purifying-Toner-1.png',
+    },
   ],
   hydrasphere: [
     {
