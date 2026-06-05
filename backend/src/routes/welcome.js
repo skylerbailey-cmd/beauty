@@ -155,6 +155,17 @@ const PRODUCTS = {
       step: 'mask + serum + moisturizer',
       image: 'https://www.avinichi.com/wp-content/uploads/Phyto-Thermal-Collection-1.png',
     },
+    {
+      id: 'avinichi-liquid-lift-overnight-melting-mask',
+      name: 'Liquid Lift Overnight Melting Mask',
+      brand: 'Avinichi',
+      description: 'Transform the look of your skin overnight with the Liquid Lift Overnight Melting Mask. This moisture mask delivers a concentrated cocktail of superfruit extracts, vitamins, and peptides to target the appearance of dullness, dryness, and an uneven skin texture. Wake up to skin that feels deeply restored and rehydrated!',
+      benefits: 'Overnight hydration, reduces fine lines, melting formula with superfruit extracts and peptides, lifts and tightens, refines and resurfaces, brightens and hydrates with Mulberry and vitamin-rich ingredients',
+      ingredients: 'Aqua, Caprylyl Methicone, PEG-12 Dimethicone/PPG Crosspolymer, Glycerin, Caprylic/Capric Triglyceride, Onopordum Acanthium Flower Leaf/Stem Extract, Acetyl Hexapeptide-8, Sodium Hyaluronate, Squalane, Morus Nigra Fruit Extract, Retinyl Palmitate (Vitamin A), Tocopheryl Acetate (Vitamin E), Organic Lavandula Angustifolia Flower Extract, Organic Chamomilla Recutita (Matricaria) Flower Extract, Organic Aloe Barbadensis Leaf Extract, Vaccinium Myrtillus (Bilberry) Fruit Extract, Euterpe Oleracea (Acai Berry) Fruit Extract, Lycium Barbarum (Goji) Extract, Aristotelia Chilensis (Maqui) Fruit Extract, Aronia Melanocarpa (Chokeberry) Fruit Extract, Garcinia Mongostana (Mangosteen) Fruit Extract, Punica Granatum (Pomegranate) Fruit Extract, Alcohol, Potassium Sorbate, Dehydroacetic Acid, Benzyl Alcohol, Fragrance.',
+      howToUse: 'Apply a thin layer evenly on skin and leave on for ten minutes. Gently massage into skin and watch droplets form on the surface of your skin. Let the droplets disappear. Don\'t wash off. Use this overnight mask weekly.',
+      step: 'mask',
+      image: 'https://www.avinichi.com/wp-content/uploads/Liquid-Lift-Overnight-Melting-Mask-1.png',
+    },
   ],
   hydrasphere: [
     {
