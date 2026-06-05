@@ -74,20 +74,31 @@ function updateUserPushToken(userId, pushToken) {
 // ─── Emails ───────────────────────────────────────────────────────────────────
 
 function getEmails(userId, status = null, limit = 50, offset = 0) {
+  // Deduplicate by thread — only return the latest email per thread
   if (status) {
     return db.prepare(`
-      SELECT * FROM emails
-      WHERE user_id = ? AND status = ?
-      ORDER BY received_at DESC
+      SELECT e.* FROM emails e
+      INNER JOIN (
+        SELECT gmail_thread_id, MAX(received_at) as max_received
+        FROM emails WHERE user_id = ? AND status = ?
+        GROUP BY gmail_thread_id
+      ) latest ON e.gmail_thread_id = latest.gmail_thread_id AND e.received_at = latest.max_received
+      WHERE e.user_id = ? AND e.status = ?
+      ORDER BY e.received_at DESC
       LIMIT ? OFFSET ?
-    `).all(userId, status, limit, offset);
+    `).all(userId, status, userId, status, limit, offset);
   }
   return db.prepare(`
-    SELECT * FROM emails
-    WHERE user_id = ?
-    ORDER BY received_at DESC
+    SELECT e.* FROM emails e
+    INNER JOIN (
+      SELECT gmail_thread_id, MAX(received_at) as max_received
+      FROM emails WHERE user_id = ?
+      GROUP BY gmail_thread_id
+    ) latest ON e.gmail_thread_id = latest.gmail_thread_id AND e.received_at = latest.max_received
+    WHERE e.user_id = ?
+    ORDER BY e.received_at DESC
     LIMIT ? OFFSET ?
-  `).all(userId, limit, offset);
+  `).all(userId, userId, limit, offset);
 }
 
 function getEmail(id) {

@@ -40,17 +40,40 @@ router.use(requireAuth);
 router.post('/sync', async (req, res) => {
   const { v4: uuidv4 } = require('uuid');
   const { listRecentInbox } = require('../services/gmail');
-  const { saveEmail, getEmailByMessageId } = require('../db');
+  const { saveEmail, getEmailByMessageId, getEmailsByThreadId } = require('../db');
 
   try {
     const maxResults = parseInt(req.query.max) || 25;
     const messages = await listRecentInbox(req.userId, maxResults);
 
-    let imported = 0;
+    // Group messages by thread — only keep the latest message per thread
+    const threadLatest = new Map();
     for (const msg of messages) {
-      // Skip if we already have this message
-      const existing = getEmailByMessageId(msg.messageId);
-      if (existing) continue;
+      const existing = threadLatest.get(msg.threadId);
+      if (!existing || new Date(msg.receivedAt) > new Date(existing.receivedAt)) {
+        threadLatest.set(msg.threadId, msg);
+      }
+    }
+
+    let imported = 0;
+    for (const msg of threadLatest.values()) {
+      // Skip if we already have this thread
+      const existingThread = getEmailsByThreadId(req.userId, msg.threadId);
+      if (existingThread.length > 0) {
+        // Update the existing record with the latest message content
+        const existing = existingThread[0];
+        const { db } = require('../db');
+        db.prepare(`
+          UPDATE emails SET
+            subject = ?, from_email = ?, from_name = ?,
+            snippet = ?, body = ?, received_at = ?,
+            gmail_message_id = ?
+          WHERE id = ?
+        `).run(msg.subject, msg.fromEmail, msg.fromName,
+               msg.snippet, msg.body, msg.receivedAt,
+               msg.messageId, existing.id);
+        continue;
+      }
 
       saveEmail({
         id: uuidv4(),
@@ -70,7 +93,7 @@ router.post('/sync', async (req, res) => {
       imported++;
     }
 
-    res.json({ success: true, imported, total: messages.length });
+    res.json({ success: true, imported, total: threadLatest.size });
   } catch (err) {
     console.error('[emails] Sync error:', err.message);
     res.status(500).json({ error: 'Failed to sync inbox: ' + err.message });

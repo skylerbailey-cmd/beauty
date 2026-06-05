@@ -78,6 +78,27 @@ function extractProductQuestions(emailBody) {
 /**
  * Format email thread into a readable conversation for Claude.
  */
+/**
+ * Strip HTML tags from email body for Claude context.
+ */
+function stripHtml(html) {
+  if (!html) return '';
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n\n')
+    .replace(/<\/div>/gi, '\n')
+    .replace(/<\/li>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function formatThreadForClaude(emailThread) {
   if (!emailThread || !emailThread.messages || emailThread.messages.length === 0) {
     return 'No thread context available.';
@@ -86,13 +107,14 @@ function formatThreadForClaude(emailThread) {
   return emailThread.messages
     .map((msg, i) => {
       const label = i === emailThread.messages.length - 1 ? 'LATEST MESSAGE' : `PREVIOUS MESSAGE ${i + 1}`;
+      const body = stripHtml(msg.body || msg.snippet || '(no body)');
       return [
         `--- ${label} ---`,
         `From: ${msg.fromName ? `${msg.fromName} <${msg.fromEmail}>` : msg.fromEmail}`,
         `Date: ${msg.receivedAt}`,
         `Subject: ${msg.subject}`,
         '',
-        msg.body || msg.snippet || '(no body)',
+        body,
       ].join('\n');
     })
     .join('\n\n');
