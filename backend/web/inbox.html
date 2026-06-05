@@ -908,14 +908,28 @@
     }
 
     .message-bubble {
-      max-width: 85%;
-      padding: 12px 16px;
+      max-width: 90%;
+      width: 90%;
+      padding: 16px 20px;
       border-radius: 16px;
       font-size: 14px;
       font-family: system-ui, sans-serif;
       line-height: 1.5;
-      white-space: pre-wrap;
       word-wrap: break-word;
+    }
+
+    .message-bubble .message-body {
+      overflow: hidden;
+    }
+
+    .message-bubble .message-body iframe {
+      width: 100%;
+      border: none;
+      min-height: 60px;
+    }
+
+    .message-bubble .message-body-text {
+      white-space: pre-wrap;
     }
 
     .message-inbound {
@@ -1555,6 +1569,23 @@
     return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  function isHtmlContent(str) {
+    return /<(div|p|br|table|html|body|span|a|img|h[1-6])\b/i.test(str);
+  }
+
+  function renderEmailBody(body) {
+    if (!body) return '<div class="message-body-text">(no content)</div>';
+    if (isHtmlContent(body)) {
+      // Render HTML email in a sandboxed iframe
+      const encoded = btoa(unescape(encodeURIComponent(
+        '<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:system-ui,sans-serif;font-size:14px;line-height:1.6;color:#333;margin:0;padding:0;word-wrap:break-word;}a{color:inherit;}img{max-width:100%;height:auto;}</style></head><body>' + body + '</body></html>'
+      )));
+      return '<iframe class="email-frame" sandbox="allow-same-origin" srcdoc="" src="data:text/html;base64,' + encoded + '" style="width:100%;border:none;min-height:80px;"></iframe>';
+    }
+    // Plain text — preserve line breaks
+    return '<div class="message-body-text">' + escHtml(body) + '</div>';
+  }
+
   // ── Auth Flow ──────────────────────────────────────────────────
   function hideAllScreens() {
     $('loginScreen').hidden = true;
@@ -1742,9 +1773,10 @@
 
       // Inbound message (the customer email)
       if (email.body || email.snippet) {
+        const body = email.body || email.snippet;
         html += '<div class="message-bubble message-inbound">' +
             '<div class="message-label">' + escHtml(email.from_name || email.from_email || 'Customer') + '</div>' +
-            '<div>' + escHtml(email.body || email.snippet) + '</div>' +
+            '<div class="message-body">' + renderEmailBody(body) + '</div>' +
             '<div class="message-time">' + timeAgo(email.received_at) + '</div>' +
           '</div>';
       }
@@ -1753,12 +1785,23 @@
       if (email.status === 'sent' && email.draft_content) {
         html += '<div class="message-bubble message-outbound">' +
             '<div class="message-label">Sent</div>' +
-            '<div>' + escHtml(email.draft_content) + '</div>' +
+            '<div class="message-body">' + renderEmailBody(email.draft_content) + '</div>' +
             '<div class="message-time">' + timeAgo(email.sent_at) + '</div>' +
           '</div>';
       }
 
       threadMessages.innerHTML = html || '<div class="empty-state"><p>No messages</p></div>';
+
+      // Auto-resize iframes after they load
+      threadMessages.querySelectorAll('iframe.email-frame').forEach(frame => {
+        frame.addEventListener('load', () => {
+          try {
+            const h = frame.contentDocument.body.scrollHeight;
+            frame.style.height = (h + 20) + 'px';
+          } catch(_) {}
+        });
+      });
+
       threadMessages.scrollTop = threadMessages.scrollHeight;
 
       // Draft area

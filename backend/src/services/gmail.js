@@ -146,31 +146,31 @@ function decodeBody(data) {
 }
 
 /**
- * Recursively extract the plain-text (or HTML fallback) body from MIME parts.
+ * Recursively extract body from MIME parts.
+ * Returns { text, html } — prefers HTML for display, text as fallback.
  */
 function extractBody(payload) {
   if (!payload) return '';
 
-  // Direct body
+  // Direct body — check mimeType to decide format
   if (payload.body && payload.body.data) {
-    return decodeBody(payload.body.data);
+    const decoded = decodeBody(payload.body.data);
+    if (payload.mimeType === 'text/html') return decoded;
+    return decoded;
   }
 
   if (!payload.parts || payload.parts.length === 0) return '';
 
-  // Prefer text/plain
-  const plainPart = payload.parts.find(p => p.mimeType === 'text/plain');
-  if (plainPart) {
-    if (plainPart.body && plainPart.body.data) {
-      return decodeBody(plainPart.body.data);
-    }
-  }
-
-  // Fall back to text/html, strip tags
+  // Prefer text/html for rich display
   const htmlPart = payload.parts.find(p => p.mimeType === 'text/html');
   if (htmlPart && htmlPart.body && htmlPart.body.data) {
-    const html = decodeBody(htmlPart.body.data);
-    return html.replace(/<[^>]+>/g, ' ').replace(/\s{2,}/g, '\n').trim();
+    return decodeBody(htmlPart.body.data);
+  }
+
+  // Fall back to text/plain
+  const plainPart = payload.parts.find(p => p.mimeType === 'text/plain');
+  if (plainPart && plainPart.body && plainPart.body.data) {
+    return decodeBody(plainPart.body.data);
   }
 
   // Recurse into multipart
