@@ -405,7 +405,7 @@ async function sendNewEmail(userId, to, subject, body, fromName) {
  * @param {number} maxResults - how many messages to fetch (default 25)
  * @returns {Array} parsed message objects
  */
-async function listRecentInbox(userId, maxResults = 25) {
+async function listRecentInbox(userId, maxResults = 100) {
   const user = getUser(userId);
   if (!user) throw new Error(`User ${userId} not found`);
 
