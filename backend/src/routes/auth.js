@@ -35,6 +35,19 @@ router.post('/web-login', (req, res) => {
 
   req.session.userId = user.id;
 
+  // Set long-lived signed cookies so login persists across Railway redeploys
+  const cookieOpts = {
+    maxAge: 365 * 24 * 60 * 60 * 1000, // 1 year
+    httpOnly: true,
+    signed: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+  };
+  res.cookie('glow_user_email', user.email, cookieOpts);
+  if (user.company_name) {
+    res.cookie('glow_company_name', user.company_name, cookieOpts);
+  }
+
   res.json({
     success: true,
     isNew,
@@ -143,6 +156,21 @@ router.get('/google/callback', async (req, res) => {
     // Store userId in session
     req.session.userId = userId;
     delete req.session.oauthFrom;
+
+    // Set persistent signed cookie with email so login survives redeploys
+    const cookieOpts = {
+      maxAge: 365 * 24 * 60 * 60 * 1000,
+      httpOnly: true,
+      signed: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+    };
+    res.cookie('glow_user_email', profile.email, cookieOpts);
+
+    // Also persist the refresh token in a cookie so Gmail stays connected across redeploys
+    if (tokens.refresh_token) {
+      res.cookie('glow_gmail_refresh', tokens.refresh_token, cookieOpts);
+    }
 
     if (isWebLogin) {
       // Redirect back to the web UI
@@ -257,6 +285,8 @@ router.post('/logout', (req, res) => {
       return res.status(500).json({ error: 'Logout failed' });
     }
     res.clearCookie('connect.sid');
+    res.clearCookie('glow_user_email');
+    res.clearCookie('glow_company_name');
     res.json({ success: true });
   });
 });

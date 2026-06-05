@@ -25,13 +25,15 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(cookieParser());
-
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+const SESSION_SECRET = process.env.SESSION_SECRET || 'glow-sf-dev-secret-change-in-prod';
+
+app.use(cookieParser(SESSION_SECRET)); // signed cookies use the same secret
+
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'glow-sf-dev-secret-change-in-prod',
+  secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
@@ -40,6 +42,36 @@ app.use(session({
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
   },
 }));
+
+// ─── Persistent auth: restore session from signed cookie after redeploy ───────
+// The session store is in-memory and SQLite is ephemeral on Railway,
+// so we store the user's email in a long-lived signed cookie.
+// On each request, if the session is gone but the cookie exists,
+// we recreate the user and restore the session automatically.
+
+app.use((req, res, next) => {
+  // Skip if already authenticated
+  if (req.session?.userId) return next();
+
+  const savedEmail = req.signedCookies?.glow_user_email;
+  const savedCompany = req.signedCookies?.glow_company_name;
+  const savedRefresh = req.signedCookies?.glow_gmail_refresh;
+  if (savedEmail) {
+    const { findOrCreateUserByEmail } = require('./db');
+    try {
+      const { user } = findOrCreateUserByEmail(savedEmail, savedCompany || null);
+      // Restore Gmail refresh token if we have it in cookie but not in DB
+      if (savedRefresh && !user.refresh_token) {
+        const { updateUserTokens } = require('./db');
+        updateUserTokens(user.id, null, savedRefresh);
+      }
+      req.session.userId = user.id;
+    } catch (e) {
+      // Cookie is stale or DB issue — ignore, user will need to log in again
+    }
+  }
+  next();
+});
 
 // ─── Routes ────────────────────────────────────────────────────────────────────
 
