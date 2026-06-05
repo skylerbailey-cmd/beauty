@@ -56,13 +56,13 @@ router.post('/sync', async (req, res) => {
     }
 
     let imported = 0;
+    const { db } = require('../db');
     for (const msg of threadLatest.values()) {
-      // Skip if we already have this thread
+      // Check if we already have this thread
       const existingThread = getEmailsByThreadId(req.userId, msg.threadId);
       if (existingThread.length > 0) {
-        // Update the existing record with the latest message content
-        const existing = existingThread[0];
-        const { db } = require('../db');
+        // Keep only one record per thread — update the latest and delete duplicates
+        const latest = existingThread[existingThread.length - 1]; // last = latest by received_at ASC
         db.prepare(`
           UPDATE emails SET
             subject = ?, from_email = ?, from_name = ?,
@@ -71,7 +71,17 @@ router.post('/sync', async (req, res) => {
           WHERE id = ?
         `).run(msg.subject, msg.fromEmail, msg.fromName,
                msg.snippet, msg.body, msg.receivedAt,
-               msg.messageId, existing.id);
+               msg.messageId, latest.id);
+
+        // Delete duplicate rows for this thread
+        if (existingThread.length > 1) {
+          const dupeIds = existingThread
+            .filter(e => e.id !== latest.id)
+            .map(e => e.id);
+          for (const dupeId of dupeIds) {
+            db.prepare('DELETE FROM emails WHERE id = ?').run(dupeId);
+          }
+        }
         continue;
       }
 

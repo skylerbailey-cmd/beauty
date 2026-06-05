@@ -74,29 +74,29 @@ function updateUserPushToken(userId, pushToken) {
 // ─── Emails ───────────────────────────────────────────────────────────────────
 
 function getEmails(userId, status = null, limit = 50, offset = 0) {
-  // Deduplicate by thread — only return the latest email per thread
+  // Deduplicate by thread — only return one email per thread (the one with the latest rowid)
   if (status) {
     return db.prepare(`
-      SELECT e.* FROM emails e
-      INNER JOIN (
-        SELECT gmail_thread_id, MAX(received_at) as max_received
-        FROM emails WHERE user_id = ? AND status = ?
-        GROUP BY gmail_thread_id
-      ) latest ON e.gmail_thread_id = latest.gmail_thread_id AND e.received_at = latest.max_received
-      WHERE e.user_id = ? AND e.status = ?
-      ORDER BY e.received_at DESC
+      SELECT * FROM emails
+      WHERE user_id = ? AND status = ?
+        AND rowid IN (
+          SELECT MAX(rowid) FROM emails
+          WHERE user_id = ? AND status = ?
+          GROUP BY gmail_thread_id
+        )
+      ORDER BY received_at DESC
       LIMIT ? OFFSET ?
     `).all(userId, status, userId, status, limit, offset);
   }
   return db.prepare(`
-    SELECT e.* FROM emails e
-    INNER JOIN (
-      SELECT gmail_thread_id, MAX(received_at) as max_received
-      FROM emails WHERE user_id = ?
-      GROUP BY gmail_thread_id
-    ) latest ON e.gmail_thread_id = latest.gmail_thread_id AND e.received_at = latest.max_received
-    WHERE e.user_id = ?
-    ORDER BY e.received_at DESC
+    SELECT * FROM emails
+    WHERE user_id = ?
+      AND rowid IN (
+        SELECT MAX(rowid) FROM emails
+        WHERE user_id = ?
+        GROUP BY gmail_thread_id
+      )
+    ORDER BY received_at DESC
     LIMIT ? OFFSET ?
   `).all(userId, userId, limit, offset);
 }
@@ -238,6 +238,66 @@ function getUniqueCustomerEmails() {
   `).all().map(row => row.customer_email);
 }
 
+// ─── CRM: Customers ─────────────────────────────────────────────────────────
+
+function findOrCreateCustomer(name, email) {
+  let customer = db.prepare('SELECT * FROM customers WHERE email = ?').get(email);
+  if (customer) {
+    // Update name if it changed
+    if (name && name !== customer.name) {
+      db.prepare('UPDATE customers SET name = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(name, customer.id);
+      customer.name = name;
+    }
+    return customer;
+  }
+  const result = db.prepare('INSERT INTO customers (name, email) VALUES (?, ?)').run(name || '', email);
+  return db.prepare('SELECT * FROM customers WHERE id = ?').get(result.lastInsertRowid);
+}
+
+function addCustomerProducts(customerId, products) {
+  const stmt = db.prepare(`
+    INSERT OR IGNORE INTO customer_products (customer_id, product_id, product_name)
+    VALUES (?, ?, ?)
+  `);
+  for (const p of products) {
+    stmt.run(customerId, p.id, p.name);
+  }
+}
+
+function getCustomers() {
+  const customers = db.prepare('SELECT * FROM customers ORDER BY updated_at DESC').all();
+  const productStmt = db.prepare('SELECT * FROM customer_products WHERE customer_id = ? ORDER BY purchased_at DESC');
+  return customers.map(c => ({
+    ...c,
+    products: productStmt.all(c.id),
+  }));
+}
+
+function getCustomersByProduct(productId) {
+  const rows = db.prepare(`
+    SELECT DISTINCT c.* FROM customers c
+    JOIN customer_products cp ON c.id = cp.customer_id
+    WHERE cp.product_id = ?
+    ORDER BY c.updated_at DESC
+  `).all(productId);
+  const productStmt = db.prepare('SELECT * FROM customer_products WHERE customer_id = ? ORDER BY purchased_at DESC');
+  return rows.map(c => ({
+    ...c,
+    products: productStmt.all(c.id),
+  }));
+}
+
+function getCustomer(id) {
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
+  if (!customer) return null;
+  customer.products = db.prepare('SELECT * FROM customer_products WHERE customer_id = ? ORDER BY purchased_at DESC').all(id);
+  return customer;
+}
+
+function updateCustomerNotes(id, notes) {
+  db.prepare('UPDATE customers SET notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(notes, id);
+}
+
 function findOrCreateUserByEmail(email, companyName) {
   let user = getUserByEmail(email);
   let isNew = false;
@@ -289,4 +349,10 @@ module.exports = {
   saveCampaign,
   getCampaigns,
   getUniqueCustomerEmails,
+  findOrCreateCustomer,
+  addCustomerProducts,
+  getCustomers,
+  getCustomersByProduct,
+  getCustomer,
+  updateCustomerNotes,
 };

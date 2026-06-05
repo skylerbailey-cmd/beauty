@@ -1496,7 +1496,7 @@
     async get(url) {
       const res = await fetch(url, { credentials: 'include' });
       if (res.status === 401) { showLogin(); return null; }
-      if (!res.ok) throw new Error('API error ' + res.status);
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'API error ' + res.status); }
       return res.json();
     },
     async post(url, body) {
@@ -1857,8 +1857,8 @@
         draftArea.classList.add('hidden');
       }
     } catch (err) {
-      threadMessages.innerHTML = '<div class="empty-state"><p>Failed to load email</p></div>';
-      console.error(err);
+      threadMessages.innerHTML = '<div class="empty-state"><p>Failed to load email: ' + escHtml(err.message || 'Unknown error') + '</p></div>';
+      console.error('[openThread] Error:', err);
     }
   }
 
