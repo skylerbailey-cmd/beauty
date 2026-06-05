@@ -250,46 +250,34 @@ router.get('/products', (req, res) => {
 
 const EMAIL_THEMES = {
   rose: {
-    // Product links
     linkColor: '#c97d8a',
-    // Products callout
+    // Products callout (theme color)
     productsBg: '#fdf2f4',
     productsBorder: '#c97d8a',
-    // AM routine callout
-    amBg: '#fef9ee',
-    amBorder: '#c9a96e',
-    // PM routine callout
-    pmBg: '#f3f0fa',
-    pmBorder: '#9b8ec4',
-    // Weekly callout
-    weeklyBg: '#eef7f3',
-    weeklyBorder: '#6dab8e',
-    // Tips callout
-    tipsBg: '#eef4fb',
-    tipsBorder: '#6a9fd8',
-    // Consultation callout
+    // Routine section accents (not full callouts — just top-border headers)
+    amAccent: '#d4a24e',       // warm sun gold
+    pmAccent: '#8b7bb8',       // dusk purple
+    weeklyAccent: '#c97d8a',   // theme color
+    // Tips callout (always yellow)
+    tipsBg: '#fef9ee',
+    tipsBorder: '#d4a24e',
+    // Consultation callout (theme color)
     consultBg: '#fdf2f4',
     consultBorder: '#c97d8a',
   },
   earth: {
-    // Product links
     linkColor: '#5a8a7d',
-    // Products callout
+    // Products callout (theme color)
     productsBg: '#eef5f3',
     productsBorder: '#5a8a7d',
-    // AM routine callout
-    amBg: '#f5f0e8',
-    amBorder: '#a0855b',
-    // PM routine callout
-    pmBg: '#e8f0f0',
-    pmBorder: '#4a8b8b',
-    // Weekly callout
-    weeklyBg: '#f2ede6',
-    weeklyBorder: '#8b7355',
-    // Tips callout
-    tipsBg: '#edf2ef',
-    tipsBorder: '#6b9080',
-    // Consultation callout
+    // Routine section accents
+    amAccent: '#c9a04e',       // warm sun gold
+    pmAccent: '#7b6fa8',       // dusk purple
+    weeklyAccent: '#5a8a7d',   // theme color
+    // Tips callout (always yellow)
+    tipsBg: '#fef9ee',
+    tipsBorder: '#c9a04e',
+    // Consultation callout (theme color)
     consultBg: '#eef5f3',
     consultBorder: '#5a8a7d',
   },
@@ -590,19 +578,24 @@ router.post('/generate', (req, res) => {
   const sugSpf = !amSpf ? findSug(isSpf) : null;
 
   const themeOpts = { theme: userTheme };
-  let amHtml = `<div style="margin-top:16px;padding:20px;background:${tc.amBg};border-left:4px solid ${tc.amBorder};border-radius:8px"><p style="margin-bottom:8px;font-size:17px"><b>☀️ Morning Routine</b></p>\n`;
+
+  // Routine sub-sections use a colored top-border header strip (not full callout)
+  let amHtml = `<div style="margin-top:16px;border-top:3px solid ${tc.amAccent};padding-top:12px">
+<p style="margin-bottom:10px;font-size:17px;color:${tc.amAccent}"><b>☀️ Morning Routine</b></p>\n`;
   amHtml += routineStepHtml('Cleanse', amCleanser, sugCleanser, themeOpts);
   amHtml += routineStepHtml('Tone', amToner, sugToner, themeOpts);
   amHtml += routineStepHtml('Serum', amSerum, sugSerum, themeOpts);
   amHtml += routineStepHtml('Eye Treatment', amEye, sugEye, themeOpts);
   amHtml += routineStepHtml('Moisturize', amMoisturizer, sugMoisturizer, themeOpts);
   amHtml += routineStepHtml('Sun Protection', amSpf, sugSpf, themeOpts);
+  amHtml += '</div>';
 
   // PM Routine
   const pmSerum = findPurchased(p => isSerum(p) && isPmProduct(p)) || findPurchased(p => isSerum(p) && p !== amSerum) || amSerum;
   const pmMoisturizer = findPurchased(p => isMoisturizer(p) && isPmProduct(p)) || findPurchased(p => isMoisturizer(p) && p !== amMoisturizer) || amMoisturizer;
 
-  let pmHtml = `</div><div style="margin-top:16px;padding:20px;background:${tc.pmBg};border-left:4px solid ${tc.pmBorder};border-radius:8px"><p style="margin-bottom:8px;font-size:17px"><b>🌙 Evening Routine</b></p>\n`;
+  let pmHtml = `<div style="margin-top:16px;border-top:3px solid ${tc.pmAccent};padding-top:12px">
+<p style="margin-bottom:10px;font-size:17px;color:${tc.pmAccent}"><b>🌙 Evening Routine</b></p>\n`;
   pmHtml += routineStepHtml('Cleanse', amCleanser, sugCleanser, { alreadySuggested: !!sugCleanser, theme: userTheme });
   pmHtml += routineStepHtml('Tone', amToner, sugToner, { alreadySuggested: !!sugToner, theme: userTheme });
   pmHtml += routineStepHtml('Serum', pmSerum, pmSerum ? null : sugSerum, { alreadySuggested: !!sugSerum, theme: userTheme });
@@ -619,7 +612,7 @@ router.post('/generate', (req, res) => {
   const weeklyProducts = selectedProducts.filter(p => isExfoliant(p) || isMask(p) || isDevice(p));
   let weeklyHtml = '';
   if (weeklyProducts.length > 0) {
-    weeklyHtml = `<p style="margin-top:20px;margin-bottom:8px;font-size:17px"><b>📅 Weekly Treatments</b></p>\n`;
+    weeklyHtml = `<p style="margin-bottom:10px;font-size:17px;color:${tc.weeklyAccent}"><b>📅 Weekly Treatments</b></p>\n`;
     weeklyProducts.forEach(p => {
       const freq = isExfoliant(p) ? '1-2x/week' : isMask(p) ? '1-3x/week' : 'as directed';
       weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${p.name}</b> (${freq}) — ${p.howToUse || ''}</p>`;
@@ -630,14 +623,14 @@ router.post('/generate', (req, res) => {
   if (!weeklyProducts.some(isExfoliant)) {
     const sugExfoliant = findSug(isExfoliant);
     if (sugExfoliant) {
-      if (!weeklyHtml) weeklyHtml = `<p style="margin-top:20px;margin-bottom:8px;font-size:17px"><b>📅 Weekly Treatments</b></p>\n`;
+      if (!weeklyHtml) weeklyHtml = `<p style="margin-bottom:10px;font-size:17px;color:${tc.weeklyAccent}"><b>📅 Weekly Treatments</b></p>\n`;
       weeklyHtml += `<p style="margin-bottom:8px">👉 <b>Exfoliate (not in your collection yet):</b> Regular exfoliation removes dead skin cells that build up and make your complexion look dull — it's the secret to that fresh, glowing look. We recommend ${productLink(sugExfoliant, userTheme)} — ${shortDescription(sugExfoliant)} Reply to this email to ask about current specials and our free shipping!</p>`;
     }
   }
   if (!weeklyProducts.some(isMask)) {
     const sugMask = findSug(isMask);
     if (sugMask) {
-      if (!weeklyHtml) weeklyHtml = `<p style="margin-top:20px;margin-bottom:8px;font-size:17px"><b>📅 Weekly Treatments</b></p>\n`;
+      if (!weeklyHtml) weeklyHtml = `<p style="margin-bottom:10px;font-size:17px;color:${tc.weeklyAccent}"><b>📅 Weekly Treatments</b></p>\n`;
       weeklyHtml += `<p style="margin-bottom:8px">👉 <b>Mask (not in your collection yet):</b> A weekly mask gives your skin a concentrated boost of nourishment that your daily routine can't match — think of it as a spa treatment at home. We recommend ${productLink(sugMask, userTheme)} — ${shortDescription(sugMask)} Reply to this email to ask about current specials and our free shipping!</p>`;
     }
   }
@@ -645,9 +638,9 @@ router.post('/generate', (req, res) => {
   // Close the PM div
   pmHtml += '</div>';
 
-  // Wrap weekly in its own callout if it has content
+  // Wrap weekly in its own top-border section
   if (weeklyHtml) {
-    weeklyHtml = `<div style="margin-top:16px;padding:20px;background:${tc.weeklyBg};border-left:4px solid ${tc.weeklyBorder};border-radius:8px">${weeklyHtml}</div>`;
+    weeklyHtml = `<div style="margin-top:16px;border-top:3px solid ${tc.weeklyAccent};padding-top:12px">${weeklyHtml}</div>`;
   }
 
   const routineSection = `<p style="margin-top:24px;margin-bottom:12px;font-size:20px"><b>🌿 Your Personalized Skincare Routine</b></p>\n${amHtml}\n${pmHtml}\n${weeklyHtml}`;
