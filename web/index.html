@@ -962,7 +962,7 @@
 
 <header>
   <div style="position:relative" id="appSwitcherWrap">
-    <button onclick="toggleAppSwitcher()" title="Switch app" class="logo-mark" style="border:none;cursor:pointer;font-size:18px;letter-spacing:2px;line-height:1;transition:opacity .2s;" onmouseover="this.style.opacity='.75'" onmouseout="this.style.opacity='1'">⋮⋮⋮</button>
+    <button onclick="toggleAppSwitcher()" title="Switch app" style="width:40px;height:40px;border-radius:10px;border:1.5px solid var(--border);background:var(--white);cursor:pointer;display:grid;grid-template-columns:repeat(3,6px);gap:4px;align-content:center;justify-content:center;transition:all .2s;padding:0" onmouseover="this.style.borderColor='var(--rose)';this.style.background='var(--rose-lt)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--white)'"><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span></button>
     <div id="appSwitcherMenu" style="display:none;position:absolute;left:0;top:52px;background:var(--white);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(44,32,34,.12);min-width:200px;z-index:999;overflow:hidden">
       <a href="/" style="display:flex;align-items:center;gap:10px;padding:14px 16px;text-decoration:none;color:var(--dark);font-family:system-ui,sans-serif;font-size:.88rem;background:var(--rose-lt);border-left:3px solid var(--rose)">
         <span style="font-size:18px">✉️</span>
@@ -978,14 +978,14 @@
     <h1>Welcome Email Generator</h1>
     <p>Personalized product onboarding emails</p>
   </div>
-  <div id="headerUser" style="display:none; font-family:system-ui,sans-serif; font-size:.82rem; text-align:right;">
-    <button class="settings-btn" id="settingsToggle" onclick="toggleSettings()" title="Settings">&#9881;</button>
-    <div>
-      <span id="headerCompany" style="color:var(--dark); font-weight:600;"></span>
-      <br>
-      <span id="headerEmail" style="color:var(--mid); font-size:.75rem;"></span>
-      <span style="color:var(--border); margin:0 4px;">|</span>
-      <a href="#" onclick="logout(); return false;" style="color:var(--rose-dk); text-decoration:underline; font-size:.75rem;">Sign out</a>
+  <div id="headerUser" style="display:none; font-family:system-ui,sans-serif; font-size:.82rem; text-align:right; cursor:pointer;" onclick="toggleSettings()">
+    <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:10px;transition:background .2s" onmouseover="this.style.background='var(--rose-lt)'" onmouseout="this.style.background='none'">
+      <div>
+        <span id="headerCompany" style="color:var(--dark); font-weight:600;"></span>
+        <br>
+        <span id="headerEmail" style="color:var(--mid); font-size:.75rem;"></span>
+      </div>
+      <span style="font-size:18px;color:var(--mid);flex-shrink:0" title="Settings">&#9881;</span>
     </div>
   </div>
 </header>
@@ -1061,6 +1061,12 @@
       </div>
     </div>
   </div>
+
+  <div style="margin-top:32px;padding-top:20px;border-top:1px solid var(--border)">
+    <a href="#" onclick="logout(); return false;" style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.85rem;color:var(--rose-dk);text-decoration:none" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+      <span style="font-size:16px">&#8594;</span> Sign out
+    </a>
+  </div>
 </div>
 
 <!-- ── Full-width screens (login, company, Gmail) ──────────────────── -->
@@ -1124,6 +1130,9 @@
       <li><a data-tab="sent" onclick="switchTab('sent')">
         <span class="nav-icon">&#128203;</span> Sent Emails
       </a></li>
+      <li><a data-tab="customers" onclick="switchTab('customers')">
+        <span class="nav-icon">&#128101;</span> Customers
+      </a></li>
       <li><a data-tab="campaigns" onclick="switchTab('campaigns')">
         <span class="nav-icon">&#128227;</span> Marketing Campaigns
       </a></li>
@@ -1139,6 +1148,9 @@
       </a>
       <a data-tab="sent" onclick="switchTab('sent')">
         <span>&#128203;</span> Sent Emails
+      </a>
+      <a data-tab="customers" onclick="switchTab('customers')">
+        <span>&#128101;</span> Customers
       </a>
       <a data-tab="campaigns" onclick="switchTab('campaigns')">
         <span>&#128227;</span> Campaigns
@@ -1381,6 +1393,47 @@
       </main>
     </div><!-- /tab-campaigns -->
 
+    <!-- ════════ TAB: Customers (CRM) ════════ -->
+    <div id="tab-customers" hidden>
+      <main>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
+          <div>
+            <h2 class="card-title" style="margin-bottom:4px">Customers</h2>
+            <p class="card-sub" style="margin-bottom:0">Track your customers and the products they've purchased.</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <select id="crmProductFilter" onchange="loadCustomers()" style="padding:9px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;background:var(--white);color:var(--dark);outline:none;cursor:pointer">
+              <option value="">All Products</option>
+            </select>
+            <input type="text" id="crmSearch" placeholder="Search name or email..." oninput="filterCustomerTable()" style="padding:9px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;background:var(--white);color:var(--dark);outline:none;width:200px" />
+          </div>
+        </div>
+
+        <div class="card" style="padding:0;overflow:hidden">
+          <div style="overflow-x:auto">
+            <table class="history-full-table" id="crmTable">
+              <thead>
+                <tr>
+                  <th>Customer</th>
+                  <th>Email</th>
+                  <th>Products</th>
+                  <th>Notes</th>
+                  <th>Added</th>
+                </tr>
+              </thead>
+              <tbody id="crmBody">
+                <tr><td colspan="5" class="empty-state" style="padding:40px"><div class="empty-icon">&#128101;</div><h3>No customers yet</h3><p>Customers are automatically added when you send welcome emails.</p></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <p style="margin-top:16px;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid)">
+          <span id="crmCount">0</span> customers &middot; Customers are automatically added when you send a welcome email
+        </p>
+      </main>
+    </div><!-- /tab-customers -->
+
   </div><!-- /app-main -->
 
 </div><!-- /appContent -->
@@ -1501,6 +1554,7 @@
     // Hide all tab panels
     document.getElementById('tab-welcome').hidden = true;
     document.getElementById('tab-sent').hidden = true;
+    document.getElementById('tab-customers').hidden = true;
     document.getElementById('tab-campaigns').hidden = true;
 
     // Show selected tab
@@ -1519,6 +1573,8 @@
     // Load data for the tab
     if (tab === 'sent') {
       loadSentHistory();
+    } else if (tab === 'customers') {
+      loadCustomers();
     } else if (tab === 'campaigns') {
       loadCampaigns();
     }
@@ -2107,6 +2163,138 @@
       document.getElementById('appSwitcherMenu').style.display = 'none';
     }
   });
+
+  // ── CRM: Customers ──────────────────────────────────────────────────────────
+
+  let crmCustomers = [];
+  let crmProductsLoaded = false;
+
+  async function loadCrmProductFilter() {
+    if (crmProductsLoaded) return;
+    try {
+      const res = await fetch('/api/welcome/products/list', { credentials: 'include' });
+      const data = await res.json();
+      const select = document.getElementById('crmProductFilter');
+      data.products.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = `${p.name} (${p.brand})`;
+        select.appendChild(opt);
+      });
+      crmProductsLoaded = true;
+    } catch (e) { /* ignore */ }
+  }
+
+  async function loadCustomers() {
+    await loadCrmProductFilter();
+    const productFilter = document.getElementById('crmProductFilter').value;
+    const url = productFilter
+      ? `/api/welcome/customers?product=${encodeURIComponent(productFilter)}`
+      : '/api/welcome/customers';
+
+    try {
+      const res = await fetch(url, { credentials: 'include' });
+      const data = await res.json();
+      crmCustomers = data.customers || [];
+      renderCustomerTable(crmCustomers);
+    } catch (e) {
+      document.getElementById('crmBody').innerHTML =
+        '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--mid)">Failed to load customers.</td></tr>';
+    }
+  }
+
+  function filterCustomerTable() {
+    const q = document.getElementById('crmSearch').value.toLowerCase();
+    if (!q) return renderCustomerTable(crmCustomers);
+    const filtered = crmCustomers.filter(c =>
+      c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q)
+    );
+    renderCustomerTable(filtered);
+  }
+
+  function renderCustomerTable(customers) {
+    const tbody = document.getElementById('crmBody');
+    document.getElementById('crmCount').textContent = customers.length;
+
+    if (customers.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-state" style="padding:40px"><div class="empty-icon">&#128101;</div><h3>No customers found</h3><p>Try adjusting your filters or send some welcome emails to start building your customer list.</p></td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = customers.map(c => {
+      const products = (c.products || []).map(p => p.product_name).join(', ');
+      const date = new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+      const notesPreview = c.notes ? c.notes.substring(0, 40) + (c.notes.length > 40 ? '...' : '') : '<span style="color:var(--border)">—</span>';
+      return `<tr style="cursor:pointer" onclick="openCustomerDetail(${c.id})" onmouseover="this.style.background='var(--cream)'" onmouseout="this.style.background=''">
+        <td style="padding:12px 14px;font-weight:600">${escapeHtml(c.name) || '—'}</td>
+        <td style="padding:12px 14px">${escapeHtml(c.email)}</td>
+        <td style="padding:12px 14px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(products)}">${products || '—'}</td>
+        <td style="padding:12px 14px;font-size:.82rem">${notesPreview}</td>
+        <td style="padding:12px 14px;white-space:nowrap;font-size:.82rem">${date}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  async function openCustomerDetail(id) {
+    try {
+      const res = await fetch(`/api/welcome/customers/${id}`, { credentials: 'include' });
+      const data = await res.json();
+      const c = data.customer;
+      const products = (c.products || []).map(p => {
+        const date = new Date(p.purchased_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return `<div style="display:inline-block;background:var(--rose-lt);color:var(--rose-dk);padding:4px 10px;border-radius:6px;font-size:.78rem;margin:3px 4px 3px 0">${escapeHtml(p.product_name)} <span style="color:var(--mid);font-size:.7rem">${date}</span></div>`;
+      }).join('');
+
+      const modal = document.createElement('div');
+      modal.style.cssText = 'position:fixed;inset:0;background:rgba(44,32,34,.4);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px';
+      modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+      modal.innerHTML = `
+        <div style="background:var(--white);border-radius:16px;max-width:500px;width:100%;max-height:80vh;overflow-y:auto;box-shadow:0 16px 48px rgba(44,32,34,.15);padding:28px">
+          <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:16px">
+            <div>
+              <h3 style="font-size:1.2rem;margin-bottom:4px">${escapeHtml(c.name)}</h3>
+              <p style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid)">${escapeHtml(c.email)}</p>
+            </div>
+            <button onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--mid);padding:0 4px">&times;</button>
+          </div>
+          <div style="margin-bottom:20px">
+            <div style="font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:8px">Products Purchased</div>
+            ${products || '<span style="color:var(--mid);font-family:system-ui,sans-serif;font-size:.85rem">No products recorded</span>'}
+          </div>
+          <div>
+            <div style="font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:8px">Notes</div>
+            <textarea id="customerNotes-${c.id}" style="width:100%;min-height:80px;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;resize:vertical;outline:none;background:var(--cream);color:var(--dark)">${escapeHtml(c.notes || '')}</textarea>
+            <button class="btn btn-primary" style="margin-top:8px;font-size:.82rem;padding:8px 18px" onclick="saveCustomerNotes(${c.id})">Save Notes</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+    } catch (e) {
+      alert('Failed to load customer details');
+    }
+  }
+
+  async function saveCustomerNotes(id) {
+    const notes = document.getElementById('customerNotes-' + id).value;
+    try {
+      await fetch(`/api/welcome/customers/${id}/notes`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ notes }),
+      });
+      // Close modal and reload
+      document.querySelector('div[style*="position:fixed"][style*="z-index:1000"]')?.remove();
+      loadCustomers();
+    } catch (e) {
+      alert('Failed to save notes');
+    }
+  }
 
   function resetToStart() {
     document.getElementById('step3').hidden = true;

@@ -784,6 +784,21 @@ router.post('/send', async (req, res) => {
       products: products || [],
     });
 
+    // Save to CRM
+    const { findOrCreateCustomer, addCustomerProducts } = require('../db');
+    const customer = findOrCreateCustomer(customerName || '', customerEmail);
+    if (products && products.length > 0) {
+      // Resolve product IDs from names
+      const allProds = [...PRODUCTS.avologi, ...PRODUCTS.hydrasphere];
+      const productRecords = products
+        .map(name => allProds.find(p => p.name === name))
+        .filter(Boolean)
+        .map(p => ({ id: p.id, name: p.name }));
+      if (productRecords.length > 0) {
+        addCustomerProducts(customer.id, productRecords);
+      }
+    }
+
     res.json({ success: true, message: 'Email sent successfully' });
   } catch (err) {
     console.error('[welcome] Error sending email:', err.message);
@@ -912,6 +927,42 @@ router.post('/campaign', async (req, res) => {
     console.error('[campaign] Error:', err.message);
     res.status(500).json({ error: 'Failed to send campaign: ' + err.message });
   }
+});
+
+// ─── CRM: Customer endpoints ──────────────────────────────────────────────────
+
+// GET /api/welcome/customers — list all customers with their products
+router.get('/customers', (req, res) => {
+  const { getCustomers, getCustomersByProduct } = require('../db');
+  const { product } = req.query;
+
+  const customers = product ? getCustomersByProduct(product) : getCustomers();
+  res.json({ customers });
+});
+
+// GET /api/welcome/customers/:id — get single customer
+router.get('/customers/:id', (req, res) => {
+  const { getCustomer } = require('../db');
+  const customer = getCustomer(parseInt(req.params.id));
+  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+  res.json({ customer });
+});
+
+// PATCH /api/welcome/customers/:id/notes — update customer notes
+router.patch('/customers/:id/notes', (req, res) => {
+  const { updateCustomerNotes, getCustomer } = require('../db');
+  const { notes } = req.body;
+  if (typeof notes !== 'string') return res.status(400).json({ error: 'notes is required' });
+  updateCustomerNotes(parseInt(req.params.id), notes);
+  res.json({ success: true });
+});
+
+// GET /api/welcome/products/list — list all product IDs/names for filtering
+router.get('/products/list', (req, res) => {
+  const allProducts = [...PRODUCTS.avologi, ...PRODUCTS.hydrasphere];
+  res.json({
+    products: allProducts.map(p => ({ id: p.id, name: p.name, brand: p.brand })),
+  });
 });
 
 // GET /api/welcome/debug — check DB and connected users
