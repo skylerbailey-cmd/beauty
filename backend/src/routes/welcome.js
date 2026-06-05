@@ -189,6 +189,17 @@ const PRODUCTS = {
       image: 'https://www.avinichi.com/wp-content/uploads/Noni-Morning-Glow-1.png',
       url: 'https://www.avinichi.com/product/noni-morning-glow/',
     },
+    {
+      id: 'avinichi-noni-mousse-cleanser',
+      name: 'Noni Mousse Cleanser',
+      brand: 'Avinichi',
+      description: 'The perfect start to every skincare routine, the Noni Mousse Cleanser can be used daily to remove dirt, makeup, and other impurities from the skin. Formulated with gentle, coconut-derived cleansing agents and infused with plant extracts and Noni, this lush cleanser will give your skin a fresh and radiant finish.',
+      benefits: 'Daily cleanser, removes dirt and makeup, gentle coconut-derived cleansing agents, plant extracts and Noni, fresh and radiant finish, suitable for sensitive skin',
+      ingredients: 'Aqua, Sodium Cocoyl Isethionate, Sodium Methyl Cocoyl Taurate, Sodium Lauroyl Methyl Isethionate, Glycol Distearate, PEG-120 Methyl Glucose Dioleate, Cocamidopropyl Betaine, Glycerin, Stearic Acid, Polyacrylate-1 Crosspolymer, Organic Aloe Barbadensis Leaf Extract, Organic Lavandula Angustifolia Extract, Organic Chamomilla Recutita Flower Extract, Organic Calendula Officinalis Flower Extract, Propanediol*Zemea*, Sodium PCA, Organic Argania Spinosa Kernel (Argan) Oil, Moringa Oleifera Seed Oil, Citric Acid, Tetrasodium EDTA, Phenoxyethanol, Ethylhexylglycerin, Morinda Citrifolia (Noni) Fruit Extract, Fragrance.',
+      howToUse: 'Gently lather a small amount of mousse in hands and then apply to damp face. Rinse thoroughly with water.',
+      step: 'cleanser',
+      image: 'https://www.avinichi.com/wp-content/uploads/Noni-Mousse-Cleanser-1.png',
+    },
   ],
   hydrasphere: [
     {
