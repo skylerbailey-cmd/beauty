@@ -1798,8 +1798,17 @@
       threadSubject.textContent = email.subject || '(no subject)';
       threadEmail.textContent = email.from_email || '';
 
-      // Build messages
+      // Build messages — most recent first
       let html = '';
+
+      // Outbound (sent reply) — shown first since it's most recent
+      if (email.status === 'sent' && email.draft_content) {
+        html += '<div class="message-bubble message-outbound">' +
+            '<div class="message-label">Sent</div>' +
+            '<div class="message-body">' + renderEmailBody(email.draft_content) + '</div>' +
+            '<div class="message-time">' + timeAgo(email.sent_at) + '</div>' +
+          '</div>';
+      }
 
       // Inbound message (the customer email)
       if (email.body || email.snippet) {
@@ -1811,19 +1820,10 @@
           '</div>';
       }
 
-      // Outbound (sent reply)
-      if (email.status === 'sent' && email.draft_content) {
-        html += '<div class="message-bubble message-outbound">' +
-            '<div class="message-label">Sent</div>' +
-            '<div class="message-body">' + renderEmailBody(email.draft_content) + '</div>' +
-            '<div class="message-time">' + timeAgo(email.sent_at) + '</div>' +
-          '</div>';
-      }
-
       threadMessages.innerHTML = html || '<div class="empty-state"><p>No messages</p></div>';
 
 
-      threadMessages.scrollTop = threadMessages.scrollHeight;
+      threadMessages.scrollTop = 0;
 
       // Draft area
       if (email.draft_content && email.status !== 'sent' && email.status !== 'archived') {
