@@ -348,9 +348,16 @@ router.post('/:id/generate-draft', async (req, res) => {
       return lines.join('\n');
     }).join('\n\n');
 
-    // Generate the draft with Claude, using the user's company name and product catalog
+    // Add website context
+    const websites = JSON.parse(req.user?.websites || '[]');
+    let fullContext = productContext;
+    if (websites.length > 0) {
+      fullContext += '\n\nCOMPANY WEBSITES:\n' + websites.map(w => `- ${w}`).join('\n');
+    }
+
+    // Generate the draft with Claude, using the user's company name, products, and websites
     const companyName = req.user?.company_name || '';
-    const draftText = await generateEmailResponse(thread, productContext, companyName);
+    const draftText = await generateEmailResponse(thread, fullContext, companyName);
 
     if (!draftText) {
       return res.status(500).json({ error: 'AI failed to generate a draft' });

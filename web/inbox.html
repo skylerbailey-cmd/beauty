@@ -1204,6 +1204,11 @@
     <button class="btn btn-primary" style="padding:10px 18px;font-size:.82rem;" onclick="saveCompanyName()">Save</button>
   </div>
 
+  <div class="settings-section-label">Websites</div>
+  <p style="font-size:.78rem;color:var(--mid);margin-bottom:10px;">Add your company websites. The AI will reference these when customers ask about your website or questions that can be answered online.</p>
+  <div id="websitesList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;"></div>
+  <button onclick="addWebsiteField()" style="background:none;border:1.5px dashed var(--border);border-radius:8px;padding:8px 14px;cursor:pointer;color:var(--mid);font-family:system-ui,sans-serif;font-size:.82rem;width:100%;transition:all .2s;margin-bottom:24px;" onmouseover="this.style.borderColor='var(--rose)';this.style.color='var(--rose-dk)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--mid)'">+ Add Website</button>
+
   <div class="settings-section-label">Theme</div>
   <div class="theme-options">
     <div class="theme-option active" data-theme="rose" onclick="selectTheme('rose')">
@@ -1479,6 +1484,57 @@
     }
   };
 
+  // ── Websites management ──────────────────────────────────────
+  function renderWebsites(websites) {
+    const list = $('websitesList');
+    list.innerHTML = '';
+    (websites || []).forEach((url, i) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;gap:6px;align-items:center;';
+      row.innerHTML = `<input type="url" value="${url.replace(/"/g, '&quot;')}" placeholder="https://yoursite.com" style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark);" onchange="saveWebsites()" />` +
+        `<button onclick="removeWebsite(${i})" style="background:none;border:none;cursor:pointer;color:var(--mid);font-size:16px;padding:4px 8px;" title="Remove">&times;</button>`;
+      list.appendChild(row);
+    });
+  }
+
+  window.addWebsiteField = function() {
+    const list = $('websitesList');
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:6px;align-items:center;';
+    const idx = list.children.length;
+    row.innerHTML = `<input type="url" value="" placeholder="https://yoursite.com" style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark);" onchange="saveWebsites()" />` +
+      `<button onclick="removeWebsite(${idx})" style="background:none;border:none;cursor:pointer;color:var(--mid);font-size:16px;padding:4px 8px;" title="Remove">&times;</button>`;
+    list.appendChild(row);
+    row.querySelector('input').focus();
+  };
+
+  window.removeWebsite = function(index) {
+    const websites = getWebsiteValues();
+    websites.splice(index, 1);
+    renderWebsites(websites);
+    saveWebsites();
+  };
+
+  function getWebsiteValues() {
+    const inputs = document.querySelectorAll('#websitesList input');
+    return [...inputs].map(inp => inp.value.trim()).filter(v => v.length > 0);
+  }
+
+  window.saveWebsites = async function() {
+    const websites = getWebsiteValues();
+    try {
+      await fetch('/auth/websites', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ websites }),
+      });
+      if (currentUser) currentUser.websites = websites;
+    } catch (err) {
+      console.warn('Failed to save websites:', err);
+    }
+  };
+
   // ── App Switcher ──────────────────────────────────────────────
   window.toggleAppSwitcher = function() {
     const menu = $('appSwitcherMenu');
@@ -1636,6 +1692,7 @@
     if (currentUser?.companyName) {
       $('settingsCompanyName').value = currentUser.companyName;
     }
+    renderWebsites(currentUser?.websites || []);
     loadTab();
   }
 

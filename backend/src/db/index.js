@@ -25,6 +25,7 @@ db.exec(schema);
 // Migrations — add columns that may not exist in older DBs
 try { db.exec('ALTER TABLE users ADD COLUMN company_name TEXT'); } catch (_) { /* already exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN theme TEXT DEFAULT 'rose'"); } catch (_) { /* already exists */ }
+try { db.exec("ALTER TABLE users ADD COLUMN websites TEXT DEFAULT '[]'"); } catch (_) { /* already exists */ }
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 
@@ -321,6 +322,10 @@ function updateUserTheme(userId, theme) {
   db.prepare('UPDATE users SET theme = ? WHERE id = ?').run(theme, userId);
 }
 
+function updateUserWebsites(userId, websites) {
+  db.prepare('UPDATE users SET websites = ? WHERE id = ?').run(JSON.stringify(websites), userId);
+}
+
 module.exports = {
   db,
   getUser,
@@ -344,6 +349,7 @@ module.exports = {
   findOrCreateUserByEmail,
   updateCompanyName,
   updateUserTheme,
+  updateUserWebsites,
   saveWelcomeEmail,
   getWelcomeEmails,
   saveCampaign,

@@ -56,6 +56,7 @@ router.post('/web-login', (req, res) => {
       email: user.email,
       companyName: user.company_name,
       theme: user.theme || 'rose',
+      websites: JSON.parse(user.websites || '[]'),
       hasGmail: !!user.refresh_token,
     },
   });
@@ -211,6 +212,7 @@ router.get('/me', (req, res) => {
     email: user.email,
     companyName: user.company_name,
     theme: user.theme || 'rose',
+    websites: JSON.parse(user.websites || '[]'),
     hasGmail: !!user.refresh_token,
     push_token: user.push_token,
     gmail_history_id: user.gmail_history_id,
@@ -273,6 +275,30 @@ router.post('/company-name', (req, res) => {
   const { updateCompanyName } = require('../db');
   updateCompanyName(userId, companyName.trim());
   res.json({ success: true, companyName: companyName.trim() });
+});
+
+// ─── POST /auth/websites ──────────────────────────────────────────────────────
+// Save user's website list
+
+router.post('/websites', (req, res) => {
+  const userId = req.session?.userId || req.headers['x-user-id'];
+  if (!userId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const { websites } = req.body;
+  if (!Array.isArray(websites)) {
+    return res.status(400).json({ error: 'websites must be an array' });
+  }
+
+  // Validate and clean URLs
+  const cleaned = websites
+    .map(w => (typeof w === 'string' ? w.trim() : ''))
+    .filter(w => w.length > 0);
+
+  const { updateUserWebsites } = require('../db');
+  updateUserWebsites(userId, cleaned);
+  res.json({ success: true, websites: cleaned });
 });
 
 // ─── POST /auth/logout ─────────────────────────────────────────────────────────

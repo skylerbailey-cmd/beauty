@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE,
   company_name TEXT,
   theme TEXT DEFAULT 'rose',
+  websites TEXT DEFAULT '[]',
   access_token TEXT,
   refresh_token TEXT,
   push_token TEXT,
