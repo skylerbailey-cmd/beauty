@@ -1039,6 +1039,27 @@ router.get('/products/list', (req, res) => {
   });
 });
 
+// POST /api/welcome/customers/import — import a single customer from CSV
+router.post('/customers/import', (req, res) => {
+  const { email, name, phone, address, notes } = req.body;
+  if (!email) return res.status(400).json({ error: 'email is required' });
+
+  const { findOrCreateCustomer, updateCustomer } = require('../db');
+  const customer = findOrCreateCustomer(name || '', email);
+
+  // Update fields if provided
+  const updates = {};
+  if (name) updates.name = name;
+  if (phone) updates.phone = phone;
+  if (address) updates.address = address;
+  if (notes) updates.notes = notes;
+  if (Object.keys(updates).length > 0) {
+    updateCustomer(customer.id, updates);
+  }
+
+  res.json({ success: true, id: customer.id });
+});
+
 // GET /api/welcome/debug — check DB and connected users
 router.get('/debug', (req, res) => {
   const { getAllUsers } = require('../db');

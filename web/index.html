@@ -2023,6 +2023,11 @@
               <option value="">All Products</option>
             </select>
             <input type="text" id="crmSearch" placeholder="Search name or email..." oninput="filterCustomerTable()" style="padding:9px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;background:var(--white);color:var(--dark);outline:none;width:200px" />
+            <button class="btn btn-secondary" style="font-size:.82rem;padding:8px 16px" onclick="exportCustomers()">Export CSV</button>
+            <label class="btn btn-secondary" style="font-size:.82rem;padding:8px 16px;cursor:pointer;margin:0">
+              Import CSV
+              <input type="file" accept=".csv" onchange="importCustomers(this)" style="display:none" />
+            </label>
           </div>
         </div>
 
@@ -2893,6 +2898,109 @@
     } catch (e) { /* ignore */ }
   }
 
+  function exportCustomers() {
+    const rows = window._crmCustomers || [];
+    if (rows.length === 0) { alert('No customers to export'); return; }
+
+    const headers = ['Name', 'Email', 'Phone', 'Address', 'Notes', 'Products', 'Added'];
+    const csvRows = [headers.join(',')];
+    rows.forEach(c => {
+      const products = (c.products || []).map(p => p.product_name).join('; ');
+      const added = new Date(c.created_at).toLocaleDateString('en-US');
+      csvRows.push([
+        csvEscape(c.name),
+        csvEscape(c.email),
+        csvEscape(c.phone || ''),
+        csvEscape(c.address || ''),
+        csvEscape(c.notes || ''),
+        csvEscape(products),
+        csvEscape(added),
+      ].join(','));
+    });
+
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'customers_' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function csvEscape(str) {
+    if (!str) return '';
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return '"' + str.replace(/"/g, '""') + '"';
+    }
+    return str;
+  }
+
+  async function importCustomers(input) {
+    const file = input.files[0];
+    if (!file) return;
+
+    const text = await file.text();
+    const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if (lines.length < 2) { alert('CSV file is empty or has no data rows'); input.value = ''; return; }
+
+    // Parse header
+    const header = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim());
+    const nameIdx = header.findIndex(h => h === 'name' || h === 'customer name' || h === 'full name');
+    const emailIdx = header.findIndex(h => h === 'email' || h === 'email address');
+    const phoneIdx = header.findIndex(h => h === 'phone' || h === 'phone number');
+    const addressIdx = header.findIndex(h => h === 'address');
+    const notesIdx = header.findIndex(h => h === 'notes');
+
+    if (emailIdx === -1) { alert('CSV must have an "Email" column'); input.value = ''; return; }
+
+    let imported = 0;
+    for (let i = 1; i < lines.length; i++) {
+      const cols = parseCSVLine(lines[i]);
+      const email = (cols[emailIdx] || '').trim();
+      if (!email) continue;
+
+      const payload = { email };
+      if (nameIdx >= 0 && cols[nameIdx]) payload.name = cols[nameIdx].trim();
+      if (phoneIdx >= 0 && cols[phoneIdx]) payload.phone = cols[phoneIdx].trim();
+      if (addressIdx >= 0 && cols[addressIdx]) payload.address = cols[addressIdx].trim();
+      if (notesIdx >= 0 && cols[notesIdx]) payload.notes = cols[notesIdx].trim();
+
+      try {
+        await fetch('/api/welcome/customers/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(payload),
+        });
+        imported++;
+      } catch (e) { /* skip failed rows */ }
+    }
+
+    alert(`Imported ${imported} customer(s)`);
+    input.value = '';
+    loadCustomers();
+  }
+
+  function parseCSVLine(line) {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"' && line[i + 1] === '"') { current += '"'; i++; }
+        else if (ch === '"') { inQuotes = false; }
+        else { current += ch; }
+      } else {
+        if (ch === '"') { inQuotes = true; }
+        else if (ch === ',') { result.push(current); current = ''; }
+        else { current += ch; }
+      }
+    }
+    result.push(current);
+    return result;
+  }
+
   async function loadCustomers() {
     await loadCrmProductFilter();
     const productFilter = document.getElementById('crmProductFilter').value;
@@ -2904,6 +3012,7 @@
       const res = await fetch(url, { credentials: 'include' });
       const data = await res.json();
       crmCustomers = data.customers || [];
+      window._crmCustomers = crmCustomers;
       renderCustomerTable(crmCustomers);
     } catch (e) {
       document.getElementById('crmBody').innerHTML =
