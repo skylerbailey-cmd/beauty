@@ -335,9 +335,22 @@ router.post('/:id/generate-draft', async (req, res) => {
       };
     }
 
-    // Generate the draft with Claude, using the user's company name
+    // Build product context from the catalog
+    const { PRODUCTS } = require('./welcome');
+    const allProducts = [...(PRODUCTS.avologi || []), ...(PRODUCTS.hydrasphere || [])];
+    const productContext = allProducts.map(p => {
+      const lines = [`${p.brand} — ${p.name}`];
+      if (p.description) lines.push(`Description: ${p.description}`);
+      if (p.benefits) lines.push(`Benefits: ${p.benefits}`);
+      if (p.ingredients) lines.push(`Ingredients: ${p.ingredients}`);
+      if (p.howToUse) lines.push(`How to use: ${p.howToUse}`);
+      if (p.url) lines.push(`Product page: ${p.url}`);
+      return lines.join('\n');
+    }).join('\n\n');
+
+    // Generate the draft with Claude, using the user's company name and product catalog
     const companyName = req.user?.company_name || '';
-    const draftText = await generateEmailResponse(thread, '', companyName);
+    const draftText = await generateEmailResponse(thread, productContext, companyName);
 
     if (!draftText) {
       return res.status(500).json({ error: 'AI failed to generate a draft' });
