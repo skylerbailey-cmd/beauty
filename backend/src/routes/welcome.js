@@ -222,6 +222,17 @@ const PRODUCTS = {
       step: 'eye-serum',
       image: 'https://www.avinichi.com/wp-content/uploads/Eye-Rescue-Phyto-Serum-1.png',
     },
+    {
+      id: 'avinichi-noni-polishing-peel',
+      name: 'Noni Polishing Peel',
+      brand: 'Avinichi',
+      description: 'Get ready to meet your new favorite way to exfoliate; the Noni Polishing Peel. This multi-tasker not only gently yet thoroughly buffs away dull and dead skin cells, but it\'s also brimming with a hive of hydrating ingredients, from Noni to lush botanical oils. Expect brighter, smoother, and softer-looking skin after each use.',
+      benefits: 'Gently exfoliates dead skin cells, hydrating formula with Noni and botanical oils, brightens and smooths skin, Vitamin C, Mandelic Acid, Walnut Shell Powder, Bamboo Extract, Organic Coconut Oil, Green Tea',
+      ingredients: 'Aqua, SD Alcohol 40B (Ethyl Alcohol), Propylene Glycol, Glyceryl Acrylates/Acrylic Acid Copolymer, Cetrimonium Chloride, Glycerin, Microcrystalline Cellulose, Citrus Aurantium Amara (Bitter Orange/Petitgrain) Oil, Juglans Regia (Walnut) Shell Powder, Phenoxyethanol, Bambusa Arundinacea Stem (Bamboo) Extract Powder, Ethylhexylglycerin, Cocos Nucifera (ORGANIC Coconut) Oil, Ascorbic Acid (Vitamin C), Phospholipids, Mandelic Acid, Camellia Sinensis (Green Tea) Leaf Extract, Yellow 6 (CI#15985), Yellow 5 (CI#19140), Tocopheryl Acetate (Vitamin E Acetate), Retinyl Palmitate (Vitamin A Palmitate), Ascorbyl Palmitate (Vitamin C Palmitate), Morinda Citrifolia (Noni) Fruit Extract.',
+      howToUse: 'Apply to dry, clean skin. Gently massage in upward circular motions for 30 seconds. Wash peel off with cool water. Use twice a week.',
+      step: 'exfoliant',
+      image: 'https://www.avinichi.com/wp-content/uploads/Noni-Polishing-Peel-1.png',
+    },
   ],
   hydrasphere: [
     {
