@@ -251,11 +251,9 @@ router.get('/products', (req, res) => {
 const EMAIL_THEMES = {
   rose: {
     linkColor: '#c97d8a',
+    routineAccent: '#c9a96e',   // gold — used for all routine titles/borders
     productsBg: '#fdf2f4',
     productsBorder: '#c97d8a',
-    amAccent: '#c9a96e',
-    pmAccent: '#9e5567',
-    weeklyAccent: '#c97d8a',
     tipsBg: '#fef9ee',
     tipsBorder: '#d4a24e',
     consultBg: '#fdf2f4',
@@ -263,11 +261,9 @@ const EMAIL_THEMES = {
   },
   earth: {
     linkColor: '#5a8a7d',
+    routineAccent: '#a0855b',   // warm brown
     productsBg: '#eef5f3',
     productsBorder: '#5a8a7d',
-    amAccent: '#a0855b',
-    pmAccent: '#3d6b60',
-    weeklyAccent: '#5a8a7d',
     tipsBg: '#fef9ee',
     tipsBorder: '#c9a04e',
     consultBg: '#eef5f3',
@@ -275,11 +271,9 @@ const EMAIL_THEMES = {
   },
   lavender: {
     linkColor: '#8b7bb5',
+    routineAccent: '#b0a0d0',   // soft lilac
     productsBg: '#f3f0fa',
     productsBorder: '#8b7bb5',
-    amAccent: '#b0a0d0',
-    pmAccent: '#6b5a9e',
-    weeklyAccent: '#8b7bb5',
     tipsBg: '#fef9ee',
     tipsBorder: '#d4a24e',
     consultBg: '#f3f0fa',
@@ -287,11 +281,9 @@ const EMAIL_THEMES = {
   },
   ocean: {
     linkColor: '#3d7a8a',
+    routineAccent: '#5a9aaa',   // lighter aqua
     productsBg: '#e8f4f7',
     productsBorder: '#3d7a8a',
-    amAccent: '#5a9aaa',
-    pmAccent: '#2c5f6e',
-    weeklyAccent: '#3d7a8a',
     tipsBg: '#fef9ee',
     tipsBorder: '#d4a24e',
     consultBg: '#e8f4f7',
@@ -299,11 +291,10 @@ const EMAIL_THEMES = {
   },
   sage: {
     linkColor: '#6b8f71',
+    routineAccent: '#8aaa8e',   // lighter sage
     productsBg: '#edf3ee',
     productsBorder: '#6b8f71',
-    amAccent: '#8aaa8e',
-    pmAccent: '#4d6e52',
-    weeklyAccent: '#6b8f71',
+    routineAccent: '#8aaa8e',   // lighter sage
     tipsBg: '#fef9ee',
     tipsBorder: '#c9a04e',
     consultBg: '#edf3ee',
@@ -608,8 +599,8 @@ router.post('/generate', (req, res) => {
   const themeOpts = { theme: userTheme };
 
   // Routine sub-sections use a colored top-border header strip (not full callout)
-  let amHtml = `<div style="margin-top:16px;border-top:3px solid ${tc.amAccent};padding-top:12px">
-<p style="margin-bottom:10px;font-size:17px;color:${tc.amAccent}"><b>☀️ Morning Routine</b></p>\n`;
+  let amHtml = `<div style="margin-top:16px;border-top:3px solid ${tc.routineAccent};padding-top:12px">
+<p style="margin-bottom:10px;font-size:17px;color:${tc.routineAccent}"><b>☀️ Morning Routine</b></p>\n`;
   amHtml += routineStepHtml('Cleanse', amCleanser, sugCleanser, themeOpts);
   amHtml += routineStepHtml('Tone', amToner, sugToner, themeOpts);
   amHtml += routineStepHtml('Serum', amSerum, sugSerum, themeOpts);
@@ -622,8 +613,8 @@ router.post('/generate', (req, res) => {
   const pmSerum = findPurchased(p => isSerum(p) && isPmProduct(p)) || findPurchased(p => isSerum(p) && p !== amSerum) || amSerum;
   const pmMoisturizer = findPurchased(p => isMoisturizer(p) && isPmProduct(p)) || findPurchased(p => isMoisturizer(p) && p !== amMoisturizer) || amMoisturizer;
 
-  let pmHtml = `<div style="margin-top:16px;border-top:3px solid ${tc.pmAccent};padding-top:12px">
-<p style="margin-bottom:10px;font-size:17px;color:${tc.pmAccent}"><b>🌙 Evening Routine</b></p>\n`;
+  let pmHtml = `<div style="margin-top:16px;border-top:3px solid ${tc.routineAccent};padding-top:12px">
+<p style="margin-bottom:10px;font-size:17px;color:${tc.routineAccent}"><b>🌙 Evening Routine</b></p>\n`;
   pmHtml += routineStepHtml('Cleanse', amCleanser, sugCleanser, { alreadySuggested: !!sugCleanser, theme: userTheme });
   pmHtml += routineStepHtml('Tone', amToner, sugToner, { alreadySuggested: !!sugToner, theme: userTheme });
   pmHtml += routineStepHtml('Serum', pmSerum, pmSerum ? null : sugSerum, { alreadySuggested: !!sugSerum, theme: userTheme });
@@ -640,7 +631,7 @@ router.post('/generate', (req, res) => {
   const weeklyProducts = selectedProducts.filter(p => isExfoliant(p) || isMask(p) || isDevice(p));
   let weeklyHtml = '';
   if (weeklyProducts.length > 0) {
-    weeklyHtml = `<p style="margin-bottom:10px;font-size:17px;color:${tc.weeklyAccent}"><b>📅 Weekly Treatments</b></p>\n`;
+    weeklyHtml = `<p style="margin-bottom:10px;font-size:17px;color:${tc.routineAccent}"><b>📅 Weekly Treatments</b></p>\n`;
     weeklyProducts.forEach(p => {
       const freq = isExfoliant(p) ? '1-2x/week' : isMask(p) ? '1-3x/week' : 'as directed';
       weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${p.name}</b> (${freq}) — ${p.howToUse || ''}</p>`;
@@ -651,14 +642,14 @@ router.post('/generate', (req, res) => {
   if (!weeklyProducts.some(isExfoliant)) {
     const sugExfoliant = findSug(isExfoliant);
     if (sugExfoliant) {
-      if (!weeklyHtml) weeklyHtml = `<p style="margin-bottom:10px;font-size:17px;color:${tc.weeklyAccent}"><b>📅 Weekly Treatments</b></p>\n`;
+      if (!weeklyHtml) weeklyHtml = `<p style="margin-bottom:10px;font-size:17px;color:${tc.routineAccent}"><b>📅 Weekly Treatments</b></p>\n`;
       weeklyHtml += `<p style="margin-bottom:8px">👉 <b>Exfoliate (not in your collection yet):</b> Regular exfoliation removes dead skin cells that build up and make your complexion look dull — it's the secret to that fresh, glowing look. We recommend ${productLink(sugExfoliant, userTheme)} — ${shortDescription(sugExfoliant)} Reply to this email to ask about current specials and our free shipping!</p>`;
     }
   }
   if (!weeklyProducts.some(isMask)) {
     const sugMask = findSug(isMask);
     if (sugMask) {
-      if (!weeklyHtml) weeklyHtml = `<p style="margin-bottom:10px;font-size:17px;color:${tc.weeklyAccent}"><b>📅 Weekly Treatments</b></p>\n`;
+      if (!weeklyHtml) weeklyHtml = `<p style="margin-bottom:10px;font-size:17px;color:${tc.routineAccent}"><b>📅 Weekly Treatments</b></p>\n`;
       weeklyHtml += `<p style="margin-bottom:8px">👉 <b>Mask (not in your collection yet):</b> A weekly mask gives your skin a concentrated boost of nourishment that your daily routine can't match — think of it as a spa treatment at home. We recommend ${productLink(sugMask, userTheme)} — ${shortDescription(sugMask)} Reply to this email to ask about current specials and our free shipping!</p>`;
     }
   }
@@ -668,7 +659,7 @@ router.post('/generate', (req, res) => {
 
   // Wrap weekly in its own top-border section
   if (weeklyHtml) {
-    weeklyHtml = `<div style="margin-top:16px;border-top:3px solid ${tc.weeklyAccent};padding-top:12px">${weeklyHtml}</div>`;
+    weeklyHtml = `<div style="margin-top:16px;border-top:3px solid ${tc.routineAccent};padding-top:12px">${weeklyHtml}</div>`;
   }
 
   const routineSection = `<p style="margin-top:24px;margin-bottom:12px;font-size:20px"><b>🌿 Your Personalized Skincare Routine</b></p>\n${amHtml}\n${pmHtml}\n${weeklyHtml}`;
