@@ -254,10 +254,10 @@ const EMAIL_THEMES = {
     // Products callout (theme color)
     productsBg: '#fdf2f4',
     productsBorder: '#c97d8a',
-    // Routine section accents (not full callouts — just top-border headers)
-    amAccent: '#d4a24e',       // warm sun gold
-    pmAccent: '#8b7bb8',       // dusk purple
-    weeklyAccent: '#c97d8a',   // theme color
+    // Routine section accents — themed
+    amAccent: '#c9a96e',       // rose gold
+    pmAccent: '#9e5567',       // deeper rose
+    weeklyAccent: '#c97d8a',   // rose
     // Tips callout (always yellow)
     tipsBg: '#fef9ee',
     tipsBorder: '#d4a24e',
@@ -270,10 +270,10 @@ const EMAIL_THEMES = {
     // Products callout (theme color)
     productsBg: '#eef5f3',
     productsBorder: '#5a8a7d',
-    // Routine section accents
-    amAccent: '#c9a04e',       // warm sun gold
-    pmAccent: '#7b6fa8',       // dusk purple
-    weeklyAccent: '#5a8a7d',   // theme color
+    // Routine section accents — themed
+    amAccent: '#a0855b',       // warm brown
+    pmAccent: '#3d6b60',       // deep teal
+    weeklyAccent: '#5a8a7d',   // teal
     // Tips callout (always yellow)
     tipsBg: '#fef9ee',
     tipsBorder: '#c9a04e',
