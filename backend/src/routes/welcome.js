@@ -1042,12 +1042,43 @@ router.get('/products/list', (req, res) => {
 // GET /api/welcome/debug — check DB and connected users
 router.get('/debug', (req, res) => {
   const { getAllUsers } = require('../db');
+  const fs = require('fs');
+  const path = require('path');
   const users = getAllUsers();
+
+  // Check filesystem to verify volume mount
+  const dbFile = path.resolve(process.env.DATABASE_PATH || './data/glow.db');
+  const dbDir = path.dirname(dbFile);
+  let fsInfo = {};
+  try {
+    const stats = fs.statSync(dbFile);
+    fsInfo = {
+      dbFileExists: true,
+      dbFileSize: stats.size,
+      dbFilePath: dbFile,
+      dbDir: dbDir,
+      dbDirContents: fs.readdirSync(dbDir),
+      cwd: process.cwd(),
+    };
+  } catch (e) {
+    fsInfo = { dbFileExists: false, error: e.message, dbFilePath: dbFile, cwd: process.cwd() };
+  }
+
+  // Check if /app/data is a mount point (different device from /app)
+  try {
+    const appStat = fs.statSync('/app');
+    const dataStat = fs.statSync('/app/data');
+    fsInfo.isMountPoint = appStat.dev !== dataStat.dev;
+  } catch (e) {
+    fsInfo.isMountPoint = 'unknown: ' + e.message;
+  }
+
   res.json({
     dbPath: process.env.DATABASE_PATH || './data/glow.db (default)',
     hasGlowRefreshToken: !!process.env.GLOW_GMAIL_REFRESH_TOKEN,
     userCount: users.length,
-    users: users.map(u => ({ id: u.id, email: u.email, hasAccessToken: !!u.access_token, hasRefreshToken: !!u.refresh_token, refresh_token: u.refresh_token })),
+    users: users.map(u => ({ id: u.id, email: u.email, hasAccessToken: !!u.access_token, hasRefreshToken: !!u.refresh_token })),
+    fs: fsInfo,
   });
 });
 
