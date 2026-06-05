@@ -2,14 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <title>Smart Inbox — Glow SF</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Inbox</title>
   <style>
+    /* ── Reset & Base ─────────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    :root {
+    :root, [data-theme="rose"] {
       --rose:    #c97d8a;
       --rose-lt: #f2dde2;
       --rose-dk: #9e5567;
@@ -26,143 +25,487 @@
       --radius:  14px;
     }
 
-    html, body {
-      height: 100%;
-      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    [data-theme="earth"] {
+      --rose:    #5a8a7d;
+      --rose-lt: #dceee9;
+      --rose-dk: #3d6b60;
+      --gold:    #a0855b;
+      --gold-lt: #f0e8da;
+      --cream:   #f7f5f0;
+      --dark:    #2a2620;
+      --mid:     #5e5648;
+      --border:  #d4cdc2;
+      --white:   #ffffff;
+      --success: #6B9E6B;
+      --danger:  #C96C6C;
+      --shadow:  0 4px 24px rgba(42,38,32,.08);
+      --radius:  14px;
+    }
+
+    [data-theme="lavender"] {
+      --rose:    #8b7bb5;
+      --rose-lt: #eee9f7;
+      --rose-dk: #6b5a9e;
+      --gold:    #b0a0d0;
+      --gold-lt: #f0ecf7;
+      --cream:   #f8f6fc;
+      --dark:    #2a2535;
+      --mid:     #6b6080;
+      --border:  #d8d0e8;
+      --white:   #ffffff;
+      --success: #6B9E6B;
+      --danger:  #C96C6C;
+      --shadow:  0 4px 24px rgba(42,37,53,.08);
+      --radius:  14px;
+    }
+
+    [data-theme="ocean"] {
+      --rose:    #3d7a8a;
+      --rose-lt: #daeef3;
+      --rose-dk: #2c5f6e;
+      --gold:    #5a9aaa;
+      --gold-lt: #e0f0f5;
+      --cream:   #f4f9fb;
+      --dark:    #1e2e33;
+      --mid:     #4a6a72;
+      --border:  #c5dce2;
+      --white:   #ffffff;
+      --success: #6B9E6B;
+      --danger:  #C96C6C;
+      --shadow:  0 4px 24px rgba(30,46,51,.08);
+      --radius:  14px;
+    }
+
+    [data-theme="sage"] {
+      --rose:    #6b8f71;
+      --rose-lt: #e2ede4;
+      --rose-dk: #4d6e52;
+      --gold:    #8aaa8e;
+      --gold-lt: #e8f0e9;
+      --cream:   #f5f8f5;
+      --dark:    #232e24;
+      --mid:     #556b58;
+      --border:  #c8d8ca;
+      --white:   #ffffff;
+      --success: #6B9E6B;
+      --danger:  #C96C6C;
+      --shadow:  0 4px 24px rgba(35,46,36,.08);
+      --radius:  14px;
+    }
+
+    body {
+      font-family: 'Georgia', serif;
       background: var(--cream);
       color: var(--dark);
-      -webkit-font-smoothing: antialiased;
-      overflow: hidden;
+      min-height: 100vh;
     }
 
-    h1, h2, h3, h4 {
-      font-family: Georgia, 'Times New Roman', serif;
-      font-weight: normal;
-    }
-
-    /* ── App Shell ─────────────────────────────────────────────────── */
-    #app {
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      max-width: 480px;
-      margin: 0 auto;
-      background: var(--cream);
-      position: relative;
-    }
-
-    @media (min-width: 481px) {
-      #app {
-        border-left: 1px solid var(--border);
-        border-right: 1px solid var(--border);
-      }
-    }
-
-    /* ── Header ────────────────────────────────────────────────────── */
-    .header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 20px 12px;
+    /* ── Header ───────────────────────────────────────────────────────── */
+    header {
       background: var(--white);
       border-bottom: 1px solid var(--border);
-      position: relative;
-      z-index: 100;
-    }
-
-    .header-left {
+      padding: 20px 40px;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 16px;
     }
 
-    .header-logo {
-      width: 32px;
-      height: 32px;
-      background: var(--rose);
-      border-radius: 10px;
+    .logo-mark {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--rose), var(--gold));
       display: flex;
       align-items: center;
       justify-content: center;
-      color: var(--white);
-      font-family: Georgia, serif;
-      font-size: 16px;
+      color: white;
+      font-size: 18px;
       font-weight: bold;
+      flex-shrink: 0;
     }
 
-    .header-title {
-      font-family: Georgia, serif;
-      font-size: 18px;
+    header h1 {
+      font-size: 1.4rem;
+      color: var(--rose-dk);
+      letter-spacing: .5px;
+    }
+
+    header p {
+      font-size: .8rem;
+      color: var(--mid);
+      font-family: system-ui, sans-serif;
+      margin-top: 2px;
+    }
+
+    /* ── Settings panel ──────────────────────────────────────────────── */
+    .settings-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+      color: var(--mid);
+      font-size: 1.1rem;
+      line-height: 1;
+      transition: all .2s;
+      margin-right: 8px;
+    }
+    .settings-btn:hover { border-color: var(--rose); color: var(--rose-dk); }
+
+    .settings-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.3);
+      z-index: 999;
+      display: none;
+    }
+    .settings-overlay.open { display: block; }
+
+    .settings-panel {
+      position: fixed;
+      top: 0;
+      right: -380px;
+      width: 360px;
+      max-width: 90vw;
+      height: 100vh;
+      background: var(--white);
+      box-shadow: -4px 0 24px rgba(0,0,0,.12);
+      z-index: 1000;
+      transition: right .3s ease;
+      padding: 32px 28px;
+      overflow-y: auto;
+      font-family: system-ui, sans-serif;
+    }
+    .settings-panel.open { right: 0; }
+
+    .settings-panel h3 {
+      font-size: 1.1rem;
+      color: var(--dark);
+      margin-bottom: 6px;
+    }
+    .settings-panel .settings-sub {
+      font-size: .82rem;
+      color: var(--mid);
+      margin-bottom: 24px;
+    }
+
+    .settings-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: none;
+      border: none;
+      font-size: 1.3rem;
+      cursor: pointer;
+      color: var(--mid);
+      padding: 4px 8px;
+    }
+    .settings-close:hover { color: var(--dark); }
+
+    .settings-section-label {
+      font-size: .75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--mid);
+      margin-bottom: 12px;
+    }
+
+    .theme-options {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .theme-option {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all .2s;
+      background: var(--white);
+    }
+    .theme-option:hover { border-color: var(--mid); }
+    .theme-option.active { border-color: var(--rose); background: var(--rose-lt); }
+
+    .theme-swatch {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .theme-swatch span {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 1px solid rgba(0,0,0,.08);
+    }
+
+    .theme-label {
+      font-size: .88rem;
+      font-weight: 600;
+      color: var(--dark);
+    }
+    .theme-desc {
+      font-size: .75rem;
+      color: var(--mid);
+      margin-top: 2px;
+    }
+
+    /* ── Sidebar Navigation ──────────────────────────────────────────── */
+    .app-layout {
+      display: flex;
+      min-height: calc(100vh - 73px);
+    }
+
+    .sidebar {
+      width: 220px;
+      flex-shrink: 0;
+      background: var(--white);
+      border-right: 1px solid var(--border);
+      padding: 20px 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-nav {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .sidebar-nav li {
+      margin-bottom: 2px;
+    }
+
+    .sidebar-nav a {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 20px;
+      text-decoration: none;
+      font-family: system-ui, sans-serif;
+      font-size: .88rem;
+      font-weight: 500;
+      color: var(--mid);
+      transition: all .2s;
+      border-left: 3px solid transparent;
+      cursor: pointer;
+    }
+
+    .sidebar-nav a:hover {
+      background: var(--cream);
       color: var(--dark);
     }
 
-    .header-subtitle {
-      font-size: 11px;
-      color: var(--mid);
-      margin-top: -2px;
+    .sidebar-nav a.active {
+      background: var(--rose-lt);
+      color: var(--rose-dk);
+      border-left-color: var(--rose);
+      font-weight: 600;
     }
 
-    .menu-btn {
-      width: 36px;
-      height: 36px;
-      border: 1px solid var(--border);
+    .sidebar-nav a .nav-icon {
+      font-size: 1.2rem;
+      width: 24px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .sidebar-nav .nav-badge {
+      margin-left: auto;
+      min-width: 20px;
+      height: 20px;
+      background: var(--danger);
+      color: var(--white);
+      font-size: .7rem;
+      font-weight: 700;
       border-radius: 10px;
-      background: var(--white);
       display: flex;
       align-items: center;
       justify-content: center;
-      cursor: pointer;
-      font-size: 16px;
-      color: var(--mid);
-      transition: background .15s;
+      padding: 0 6px;
     }
 
-    .menu-btn:active { background: var(--cream); }
+    .sidebar-nav .nav-badge:empty { display: none; }
 
-    .menu-dropdown {
+    .sidebar-version {
+      margin-top: auto;
+      padding: 16px 20px;
+      font-family: system-ui, sans-serif;
+      font-size: .72rem;
+      color: var(--border);
+    }
+
+    .app-main {
+      flex: 1;
+      min-width: 0;
+      overflow-y: auto;
+    }
+
+    .app-main main {
+      max-width: 860px;
+      margin: 40px auto;
+      padding: 0 20px 60px;
+    }
+
+    /* ── Mobile sidebar → top bar ────────────────────────────────────── */
+    .mobile-nav {
       display: none;
-      position: absolute;
-      top: 56px;
-      right: 20px;
       background: var(--white);
-      border: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .mobile-nav-inner {
+      display: flex;
+      gap: 0;
+      min-width: max-content;
+    }
+
+    .mobile-nav a {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 18px;
+      text-decoration: none;
+      font-family: system-ui, sans-serif;
+      font-size: .82rem;
+      font-weight: 500;
+      color: var(--mid);
+      white-space: nowrap;
+      border-bottom: 3px solid transparent;
+      transition: all .2s;
+      cursor: pointer;
+    }
+
+    .mobile-nav a:hover {
+      color: var(--dark);
+      background: var(--cream);
+    }
+
+    .mobile-nav a.active {
+      color: var(--rose-dk);
+      border-bottom-color: var(--rose);
+      font-weight: 600;
+    }
+
+    /* ── Login / Card ─────────────────────────────────────────────────── */
+    .card {
+      background: var(--white);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
-      min-width: 190px;
-      z-index: 200;
-      overflow: hidden;
+      border: 1px solid var(--border);
+      padding: 36px 40px;
     }
 
-    .menu-dropdown.open { display: block; }
+    .card-title {
+      font-size: 1.25rem;
+      color: var(--rose-dk);
+      margin-bottom: 6px;
+    }
 
-    .menu-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 12px 16px;
-      font-size: 14px;
+    .card-sub {
+      font-size: .85rem;
+      font-family: system-ui, sans-serif;
+      color: var(--mid);
+      margin-bottom: 28px;
+    }
+
+    .field {
+      margin-bottom: 28px;
+    }
+
+    .field label {
+      display: block;
+      font-family: system-ui, sans-serif;
+      font-size: .8rem;
+      font-weight: 600;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+      color: var(--mid);
+      margin-bottom: 8px;
+    }
+
+    .field input[type="text"],
+    .field input[type="email"] {
+      width: 100%;
+      padding: 13px 16px;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      font-size: 1rem;
+      font-family: system-ui, sans-serif;
       color: var(--dark);
-      text-decoration: none;
-      transition: background .15s;
+      background: var(--cream);
+      outline: none;
+      transition: border-color .2s;
     }
 
-    .menu-item:active, .menu-item:hover { background: var(--cream); }
-    .menu-item.active { color: var(--rose); font-weight: 600; }
-    .menu-item + .menu-item { border-top: 1px solid var(--border); }
+    .field input[type="text"]:focus,
+    .field input[type="email"]:focus {
+      border-color: var(--rose);
+      background: var(--white);
+    }
 
-    .menu-icon { font-size: 16px; width: 20px; text-align: center; }
+    .btn-row {
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      margin-top: 32px;
+    }
 
-    /* ── Content Area ──────────────────────────────────────────────── */
-    .content {
-      flex: 1;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-      padding-bottom: 8px;
+    .btn {
+      padding: 13px 32px;
+      border-radius: 10px;
+      font-family: system-ui, sans-serif;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all .2s;
+    }
+
+    .btn-primary {
+      background: var(--rose);
+      color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) { background: var(--rose-dk); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+
+    .btn-secondary {
+      background: var(--white);
+      color: var(--mid);
+      border: 1.5px solid var(--border);
+    }
+
+    .btn-secondary:hover { border-color: var(--rose); color: var(--rose-dk); }
+
+    .error-box {
+      background: #fff5f5;
+      border: 1px solid #f5c6c6;
+      border-radius: 10px;
+      padding: 16px 20px;
+      font-family: system-ui, sans-serif;
+      font-size: .87rem;
+      color: #c0392b;
+      margin-bottom: 20px;
+    }
+
+    [hidden] { display: none !important; }
+
+    /* ── Inbox content area ───────────────────────────────────────────── */
+    .inbox-content {
+      background: var(--cream);
+      min-height: 300px;
     }
 
     /* ── Section Headers ───────────────────────────────────────────── */
     .section-header {
-      padding: 16px 20px 8px;
+      padding: 16px 0 8px;
       font-family: Georgia, serif;
       font-size: 14px;
       color: var(--mid);
@@ -200,6 +543,7 @@
       align-items: center;
       gap: 6px;
       transition: all .15s;
+      font-family: system-ui, sans-serif;
     }
 
     .refresh-btn:active { background: var(--white); }
@@ -217,7 +561,7 @@
       display: flex;
       align-items: flex-start;
       gap: 12px;
-      margin: 4px 12px;
+      margin: 4px 0;
       padding: 14px 16px;
       background: var(--white);
       border-radius: var(--radius);
@@ -226,6 +570,12 @@
       transition: transform .1s, box-shadow .15s;
       position: relative;
       overflow: hidden;
+      border: 1px solid var(--border);
+    }
+
+    .email-card:hover {
+      border-color: var(--rose);
+      box-shadow: var(--shadow);
     }
 
     .email-card:active {
@@ -245,6 +595,7 @@
       font-weight: 600;
       font-size: 15px;
       flex-shrink: 0;
+      font-family: system-ui, sans-serif;
     }
 
     .email-body {
@@ -262,6 +613,7 @@
     .email-name {
       font-weight: 600;
       font-size: 14px;
+      font-family: system-ui, sans-serif;
       color: var(--dark);
       white-space: nowrap;
       overflow: hidden;
@@ -270,6 +622,7 @@
 
     .email-time {
       font-size: 12px;
+      font-family: system-ui, sans-serif;
       color: var(--mid);
       white-space: nowrap;
       flex-shrink: 0;
@@ -277,6 +630,7 @@
 
     .email-subject {
       font-size: 13px;
+      font-family: system-ui, sans-serif;
       color: var(--dark);
       margin-top: 2px;
       white-space: nowrap;
@@ -286,6 +640,7 @@
 
     .email-snippet {
       font-size: 12px;
+      font-family: system-ui, sans-serif;
       color: var(--mid);
       margin-top: 3px;
       white-space: nowrap;
@@ -302,6 +657,7 @@
     .badge {
       font-size: 10px;
       font-weight: 600;
+      font-family: system-ui, sans-serif;
       padding: 2px 8px;
       border-radius: 8px;
       text-transform: uppercase;
@@ -348,12 +704,19 @@
 
     /* ── Follow-up Cards ───────────────────────────────────────────── */
     .followup-card {
-      margin: 4px 12px;
+      margin: 4px 0;
       padding: 14px 16px;
       background: var(--white);
       border-radius: var(--radius);
       box-shadow: 0 1px 4px rgba(44,32,34,.04);
+      border: 1px solid var(--border);
       cursor: pointer;
+      transition: all .2s;
+    }
+
+    .followup-card:hover {
+      border-color: var(--rose);
+      box-shadow: var(--shadow);
     }
 
     .followup-card.urgent {
@@ -369,10 +732,12 @@
     .followup-name {
       font-weight: 600;
       font-size: 14px;
+      font-family: system-ui, sans-serif;
     }
 
     .followup-days {
       font-size: 12px;
+      font-family: system-ui, sans-serif;
       color: var(--mid);
     }
 
@@ -380,6 +745,7 @@
 
     .followup-subject {
       font-size: 13px;
+      font-family: system-ui, sans-serif;
       color: var(--mid);
       margin-top: 4px;
       white-space: nowrap;
@@ -395,6 +761,7 @@
 
     .btn-sm {
       font-size: 12px;
+      font-family: system-ui, sans-serif;
       padding: 6px 14px;
       border-radius: 8px;
       border: 1px solid var(--border);
@@ -429,11 +796,17 @@
       text-align: center;
     }
 
-    .empty-emoji { font-size: 40px; margin-bottom: 12px; }
+    .empty-state .empty-icon { font-size: 48px; margin-bottom: 12px; }
 
-    .empty-text {
-      font-family: Georgia, serif;
-      font-size: 16px;
+    .empty-state h3 {
+      font-size: 1.1rem;
+      color: var(--dark);
+      margin-bottom: 6px;
+    }
+
+    .empty-state p {
+      font-size: .88rem;
+      font-family: system-ui, sans-serif;
       color: var(--mid);
     }
 
@@ -453,69 +826,30 @@
       animation: spin .7s linear infinite;
     }
 
-    /* ── Tab Bar ───────────────────────────────────────────────────── */
-    .tab-bar {
-      display: flex;
-      border-top: 1px solid var(--border);
-      background: var(--white);
-      padding-bottom: env(safe-area-inset-bottom, 0);
-      z-index: 100;
-    }
-
-    .tab {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 2px;
-      padding: 10px 0 8px;
-      background: none;
-      border: none;
-      font-size: 10px;
-      color: var(--mid);
-      cursor: pointer;
-      transition: color .15s;
-      position: relative;
-    }
-
-    .tab.active { color: var(--rose); }
-
-    .tab-icon { font-size: 20px; }
-
-    .tab-label { font-weight: 500; }
-
-    .tab-badge {
-      position: absolute;
-      top: 6px;
-      right: calc(50% - 20px);
-      min-width: 16px;
-      height: 16px;
-      background: var(--danger);
-      color: var(--white);
-      font-size: 9px;
-      font-weight: 700;
-      border-radius: 8px;
-      display: flex;
+    /* ── Thread View (full-screen overlay) ────────────────────────── */
+    .thread-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.3);
+      z-index: 500;
+      display: none;
       align-items: center;
       justify-content: center;
-      padding: 0 4px;
     }
+    .thread-overlay.open { display: flex; }
 
-    .tab-badge:empty { display: none; }
-
-    /* ── Thread View ───────────────────────────────────────────────── */
-    .thread-view {
-      position: absolute;
-      inset: 0;
+    .thread-panel {
       background: var(--cream);
-      z-index: 150;
+      width: 600px;
+      max-width: 95vw;
+      height: 80vh;
+      max-height: 700px;
+      border-radius: var(--radius);
+      box-shadow: 0 8px 40px rgba(0,0,0,.15);
       display: flex;
       flex-direction: column;
-      transform: translateX(100%);
-      transition: transform .25s ease;
+      overflow: hidden;
     }
-
-    .thread-view.open { transform: translateX(0); }
 
     .thread-header {
       display: flex;
@@ -558,6 +892,7 @@
 
     .thread-email {
       font-size: 12px;
+      font-family: system-ui, sans-serif;
       color: var(--mid);
       margin-top: 1px;
     }
@@ -577,6 +912,7 @@
       padding: 12px 16px;
       border-radius: 16px;
       font-size: 14px;
+      font-family: system-ui, sans-serif;
       line-height: 1.5;
       white-space: pre-wrap;
       word-wrap: break-word;
@@ -618,12 +954,12 @@
       background: var(--white);
       border-top: 1px solid var(--border);
       padding: 12px 16px 16px;
-      padding-bottom: calc(16px + env(safe-area-inset-bottom, 0));
     }
 
     .draft-label {
       font-size: 11px;
       font-weight: 600;
+      font-family: system-ui, sans-serif;
       text-transform: uppercase;
       letter-spacing: .5px;
       color: var(--gold);
@@ -658,6 +994,7 @@
 
     .char-count {
       font-size: 11px;
+      font-family: system-ui, sans-serif;
       color: var(--mid);
     }
 
@@ -668,40 +1005,41 @@
       gap: 8px;
     }
 
-    .btn {
+    .btn-action {
       padding: 10px 20px;
       border-radius: 10px;
       border: none;
       font-size: 14px;
       font-weight: 600;
+      font-family: system-ui, sans-serif;
       cursor: pointer;
       transition: all .15s;
     }
 
-    .btn:disabled {
+    .btn-action:disabled {
       opacity: .5;
       cursor: not-allowed;
     }
 
-    .btn-send {
+    .btn-send-action {
       background: var(--rose);
       color: var(--white);
     }
 
-    .btn-send:active:not(:disabled) { background: var(--rose-dk); }
+    .btn-send-action:active:not(:disabled) { background: var(--rose-dk); }
 
-    .btn-archive {
+    .btn-archive-action {
       background: var(--white);
       color: var(--mid);
       border: 1px solid var(--border);
     }
 
-    .btn-archive:active { background: var(--cream); }
+    .btn-archive-action:active { background: var(--cream); }
 
     /* ── Toast ──────────────────────────────────────────────────────── */
     .toast {
       position: fixed;
-      bottom: 80px;
+      bottom: 40px;
       left: 50%;
       transform: translateX(-50%) translateY(20px);
       background: var(--dark);
@@ -709,10 +1047,11 @@
       padding: 10px 20px;
       border-radius: 10px;
       font-size: 13px;
+      font-family: system-ui, sans-serif;
       font-weight: 500;
       opacity: 0;
       transition: all .3s ease;
-      z-index: 500;
+      z-index: 2000;
       white-space: nowrap;
     }
 
@@ -722,33 +1061,29 @@
     }
 
     /* ── Confirm Dialog ────────────────────────────────────────────── */
-    .overlay {
+    .confirm-overlay {
       position: fixed;
       inset: 0;
       background: rgba(44,32,34,.4);
-      z-index: 300;
+      z-index: 1500;
       display: flex;
-      align-items: flex-end;
+      align-items: center;
       justify-content: center;
       opacity: 0;
       pointer-events: none;
       transition: opacity .2s;
     }
 
-    .overlay.open { opacity: 1; pointer-events: auto; }
+    .confirm-overlay.open { opacity: 1; pointer-events: auto; }
 
     .confirm-sheet {
       background: var(--white);
-      border-radius: 20px 20px 0 0;
-      padding: 24px 20px;
-      padding-bottom: calc(24px + env(safe-area-inset-bottom, 0));
-      width: 100%;
-      max-width: 480px;
-      transform: translateY(100%);
-      transition: transform .25s ease;
+      border-radius: var(--radius);
+      padding: 28px 24px;
+      width: 380px;
+      max-width: 90vw;
+      box-shadow: 0 8px 40px rgba(0,0,0,.15);
     }
-
-    .overlay.open .confirm-sheet { transform: translateY(0); }
 
     .confirm-title {
       font-family: Georgia, serif;
@@ -758,6 +1093,7 @@
 
     .confirm-text {
       font-size: 14px;
+      font-family: system-ui, sans-serif;
       color: var(--mid);
       margin-bottom: 20px;
     }
@@ -779,45 +1115,228 @@
       color: var(--white);
     }
 
-    /* ── Utility ───────────────────────────────────────────────────── */
-    .hidden { display: none !important; }
+    /* ── Responsive ────────────────────────────────────────────────── */
+    @media (max-width: 600px) {
+      .card { padding: 20px 16px; }
+      header { padding: 14px 16px; }
+      header h1 { font-size: 1.1rem; }
+      header p { font-size: .72rem; }
+    }
+
+    /* Mobile detection is JS-based; these classes are toggled by script */
+    body.is-mobile .sidebar { display: none; }
+    body.is-mobile .mobile-nav { display: block; }
+    body.is-mobile .app-layout { flex-direction: column; }
+    body.is-mobile .app-main main { margin: 20px auto; padding: 0 12px 40px; }
+
+    body:not(.is-mobile) .sidebar { display: flex; }
+    body:not(.is-mobile) .mobile-nav { display: none; }
   </style>
 </head>
 <body>
 
-<div id="app">
-  <!-- Header -->
-  <div class="header">
-    <div class="header-left">
-      <div class="header-logo">G</div>
+<header>
+  <div style="position:relative" id="appSwitcherWrap">
+    <button onclick="toggleAppSwitcher()" title="Switch app" class="logo-mark" style="border:none;cursor:pointer;font-size:18px;letter-spacing:2px;line-height:1;transition:opacity .2s;" onmouseover="this.style.opacity='.75'" onmouseout="this.style.opacity='1'">&#8942;&#8942;&#8942;</button>
+    <div id="appSwitcherMenu" style="display:none;position:absolute;left:0;top:52px;background:var(--white);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(44,32,34,.12);min-width:200px;z-index:999;overflow:hidden">
+      <a href="/" style="display:flex;align-items:center;gap:10px;padding:14px 16px;text-decoration:none;color:var(--dark);font-family:system-ui,sans-serif;font-size:.88rem;border-left:3px solid transparent" onmouseover="this.style.background='var(--cream)'" onmouseout="this.style.background='none'">
+        <span style="font-size:18px">&#9993;&#65039;</span>
+        <div><b>Welcome Emails</b><br><span style="font-size:.75rem;color:var(--mid)">Customer onboarding</span></div>
+      </a>
+      <a href="/inbox.html" style="display:flex;align-items:center;gap:10px;padding:14px 16px;text-decoration:none;color:var(--dark);font-family:system-ui,sans-serif;font-size:.88rem;background:var(--rose-lt);border-left:3px solid var(--rose)">
+        <span style="font-size:18px">&#128232;</span>
+        <div><b>Smart Inbox</b><br><span style="font-size:.75rem;color:var(--mid)">AI-powered email replies</span></div>
+      </a>
+    </div>
+  </div>
+  <div style="flex:1">
+    <h1>Smart Inbox</h1>
+    <p>AI-powered email management</p>
+  </div>
+  <div id="headerUser" style="display:none; font-family:system-ui,sans-serif; font-size:.82rem; text-align:right;">
+    <button class="settings-btn" id="settingsToggle" onclick="toggleSettings()" title="Settings">&#9881;</button>
+    <div>
+      <span id="headerCompany" style="color:var(--dark); font-weight:600;"></span>
+      <br>
+      <span id="headerEmail" style="color:var(--mid); font-size:.75rem;"></span>
+      <span style="color:var(--border); margin:0 4px;">|</span>
+      <a href="#" onclick="logout(); return false;" style="color:var(--rose-dk); text-decoration:underline; font-size:.75rem;">Sign out</a>
+    </div>
+  </div>
+</header>
+
+<!-- Settings Panel -->
+<div class="settings-overlay" id="settingsOverlay" onclick="toggleSettings()"></div>
+<div class="settings-panel" id="settingsPanel">
+  <button class="settings-close" onclick="toggleSettings()">&times;</button>
+  <h3>Settings</h3>
+  <p class="settings-sub">Customize your experience</p>
+
+  <div class="settings-section-label">Company</div>
+  <div style="display:flex;gap:8px;margin-bottom:24px;">
+    <input type="text" id="settingsCompanyName" placeholder="Company name" style="flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark);" />
+    <button class="btn btn-primary" style="padding:10px 18px;font-size:.82rem;" onclick="saveCompanyName()">Save</button>
+  </div>
+
+  <div class="settings-section-label">Theme</div>
+  <div class="theme-options">
+    <div class="theme-option active" data-theme="rose" onclick="selectTheme('rose')">
+      <div class="theme-swatch">
+        <span style="background:#c97d8a"></span>
+        <span style="background:#f2dde2"></span>
+        <span style="background:#c9a96e"></span>
+      </div>
       <div>
-        <div class="header-title">Smart Inbox</div>
-        <div class="header-subtitle">Glow SF</div>
+        <div class="theme-label">Rose &amp; Gold</div>
+        <div class="theme-desc">Classic pink, rose, and gold tones</div>
       </div>
     </div>
-    <button class="menu-btn" id="menuBtn" aria-label="Menu">
-      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-        <rect x="2" y="2" width="5" height="5" rx="1"/><rect x="11" y="2" width="5" height="5" rx="1"/>
-        <rect x="2" y="11" width="5" height="5" rx="1"/><rect x="11" y="11" width="5" height="5" rx="1"/>
-      </svg>
-    </button>
-    <div class="menu-dropdown" id="menuDropdown">
-      <a href="/inbox.html" class="menu-item active">
-        <span class="menu-icon">&#x1F4E8;</span> Smart Inbox
+    <div class="theme-option" data-theme="earth" onclick="selectTheme('earth')">
+      <div class="theme-swatch">
+        <span style="background:#5a8a7d"></span>
+        <span style="background:#dceee9"></span>
+        <span style="background:#a0855b"></span>
+      </div>
+      <div>
+        <div class="theme-label">Earth &amp; Turquoise</div>
+        <div class="theme-desc">Brown, teal, and natural earth tones</div>
+      </div>
+    </div>
+    <div class="theme-option" data-theme="lavender" onclick="selectTheme('lavender')">
+      <div class="theme-swatch">
+        <span style="background:#8b7bb5"></span>
+        <span style="background:#eee9f7"></span>
+        <span style="background:#b0a0d0"></span>
+      </div>
+      <div>
+        <div class="theme-label">Lavender Spa</div>
+        <div class="theme-desc">Soft purple, lilac, and calming violet tones</div>
+      </div>
+    </div>
+    <div class="theme-option" data-theme="ocean" onclick="selectTheme('ocean')">
+      <div class="theme-swatch">
+        <span style="background:#3d7a8a"></span>
+        <span style="background:#daeef3"></span>
+        <span style="background:#5a9aaa"></span>
+      </div>
+      <div>
+        <div class="theme-label">Ocean Breeze</div>
+        <div class="theme-desc">Deep teal, aqua, and coastal blue tones</div>
+      </div>
+    </div>
+    <div class="theme-option" data-theme="sage" onclick="selectTheme('sage')">
+      <div class="theme-swatch">
+        <span style="background:#6b8f71"></span>
+        <span style="background:#e2ede4"></span>
+        <span style="background:#8aaa8e"></span>
+      </div>
+      <div>
+        <div class="theme-label">Sage Garden</div>
+        <div class="theme-desc">Muted green, herbal, and botanical tones</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Full-width screens (login, company, Gmail) ──────────────────── -->
+<main id="fullWidthMain">
+
+  <!-- ── Login Screen: Step 1 — Email ──────────────────────────────────── -->
+  <div id="loginScreen">
+    <div class="card" style="max-width:460px; margin:60px auto;">
+      <h2 class="card-title">Sign In</h2>
+      <p class="card-sub">Enter your email address to get started.</p>
+      <div class="field">
+        <label for="loginEmail">Email Address</label>
+        <input type="email" id="loginEmail" placeholder="you@yourcompany.com" autocomplete="email" />
+      </div>
+      <div id="loginError" class="error-box" hidden></div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="handleEmailStep()">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Login Screen: Step 2 — Company Name (new users only) ──────────── -->
+  <div id="companyScreen" hidden>
+    <div class="card" style="max-width:460px; margin:60px auto;">
+      <h2 class="card-title">Set Up Your Account</h2>
+      <p class="card-sub">Welcome! Enter your company name -- it will appear throughout the app.</p>
+      <div class="field">
+        <label for="loginCompany">Company Name</label>
+        <input type="text" id="loginCompany" placeholder="e.g. Your Company" autocomplete="organization" />
+      </div>
+      <div id="companyError" class="error-box" hidden></div>
+      <div class="btn-row">
+        <button class="btn btn-secondary" onclick="backToEmail()">&larr; Back</button>
+        <button class="btn btn-primary" onclick="handleCompanyStep()">Create Account</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Gmail Connect Banner ──────────────────────────────────────────── -->
+  <div id="gmailBanner" hidden>
+    <div class="card" style="max-width:560px; margin:60px auto; text-align:center;">
+      <h2 class="card-title">Connect Your Gmail</h2>
+      <p class="card-sub">To use Smart Inbox, you need to connect your Gmail account. This allows us to manage emails on your behalf.</p>
+      <div class="btn-row" style="justify-content:center;">
+        <button class="btn btn-primary" onclick="window.location.href='/auth/google?from=web'">Connect Gmail</button>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<!-- ── App Content (hidden until logged in) — with sidebar ────────────── -->
+<div id="appContent" class="app-layout" hidden>
+
+  <!-- Sidebar -->
+  <nav class="sidebar" id="sidebarNav">
+    <ul class="sidebar-nav">
+      <li><a class="active" data-tab="inbox" onclick="switchTab('inbox')">
+        <span class="nav-icon">&#128229;</span> Inbox
+        <span class="nav-badge" id="sidebarInboxBadge"></span>
+      </a></li>
+      <li><a data-tab="followups" onclick="switchTab('followups')">
+        <span class="nav-icon">&#128260;</span> Follow-ups
+        <span class="nav-badge" id="sidebarFollowupBadge"></span>
+      </a></li>
+      <li><a data-tab="archived" onclick="switchTab('archived')">
+        <span class="nav-icon">&#128193;</span> Archived
+      </a></li>
+    </ul>
+    <div class="sidebar-version">Email Suite</div>
+  </nav>
+
+  <!-- Mobile nav bar -->
+  <div class="mobile-nav" id="mobileNav">
+    <div class="mobile-nav-inner">
+      <a class="active" data-tab="inbox" onclick="switchTab('inbox')">
+        <span>&#128229;</span> Inbox
       </a>
-      <a href="/" class="menu-item">
-        <span class="menu-icon">&#x1F48C;</span> Welcome Emails
+      <a data-tab="followups" onclick="switchTab('followups')">
+        <span>&#128260;</span> Follow-ups
+      </a>
+      <a data-tab="archived" onclick="switchTab('archived')">
+        <span>&#128193;</span> Archived
       </a>
     </div>
   </div>
 
-  <!-- Content -->
-  <div class="content" id="content"></div>
+  <!-- Main content area -->
+  <div class="app-main">
+    <main>
+      <div class="inbox-content" id="content"></div>
+    </main>
+  </div>
 
-  <!-- Thread View (slides in) -->
-  <div class="thread-view" id="threadView">
+</div><!-- /appContent -->
+
+<!-- Thread Overlay -->
+<div class="thread-overlay" id="threadOverlay">
+  <div class="thread-panel">
     <div class="thread-header">
-      <button class="back-btn" id="backBtn" aria-label="Back">&larr;</button>
+      <button class="back-btn" id="backBtn" aria-label="Close">&times;</button>
       <div class="thread-info">
         <div class="thread-subject" id="threadSubject"></div>
         <div class="thread-email" id="threadEmail"></div>
@@ -830,30 +1349,11 @@
       <div class="draft-footer">
         <span class="char-count" id="charCount">0 / 2,000</span>
         <div class="draft-actions">
-          <button class="btn btn-archive" id="threadArchiveBtn">Archive</button>
-          <button class="btn btn-send" id="threadSendBtn">Send</button>
+          <button class="btn-action btn-archive-action" id="threadArchiveBtn">Archive</button>
+          <button class="btn-action btn-send-action" id="threadSendBtn">Send</button>
         </div>
       </div>
     </div>
-  </div>
-
-  <!-- Tab Bar -->
-  <div class="tab-bar">
-    <button class="tab active" data-tab="inbox" id="tabInbox">
-      <span class="tab-icon">&#x1F4E5;</span>
-      <span class="tab-label">Inbox</span>
-      <span class="tab-badge" id="inboxBadge"></span>
-    </button>
-    <button class="tab" data-tab="followups" id="tabFollowups">
-      <span class="tab-icon">&#x1F504;</span>
-      <span class="tab-label">Follow-ups</span>
-      <span class="tab-badge" id="followupBadge"></span>
-    </button>
-    <button class="tab" data-tab="archived" id="tabArchived">
-      <span class="tab-icon">&#x1F4C1;</span>
-      <span class="tab-label">Archived</span>
-      <span class="tab-badge"></span>
-    </button>
   </div>
 </div>
 
@@ -861,7 +1361,7 @@
 <div class="toast" id="toast"></div>
 
 <!-- Confirm Overlay -->
-<div class="overlay" id="confirmOverlay">
+<div class="confirm-overlay" id="confirmOverlay">
   <div class="confirm-sheet">
     <div class="confirm-title" id="confirmTitle"></div>
     <div class="confirm-text" id="confirmText"></div>
@@ -876,15 +1376,22 @@
 (function() {
   'use strict';
 
+  // ── Mobile detection via user agent ────────────────────────────────
+  const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  if (isMobileDevice) {
+    document.body.classList.add('is-mobile');
+  }
+
   // ── State ───────────────────────────────────────────────────────
   let currentTab = 'inbox';
   let currentEmail = null;
   let confirmCallback = null;
+  let currentUser = null;
 
   // ── DOM refs ────────────────────────────────────────────────────
   const $ = id => document.getElementById(id);
   const content = $('content');
-  const threadView = $('threadView');
+  const threadOverlay = $('threadOverlay');
   const threadSubject = $('threadSubject');
   const threadEmail = $('threadEmail');
   const threadMessages = $('threadMessages');
@@ -892,15 +1399,78 @@
   const draftTextarea = $('draftTextarea');
   const charCount = $('charCount');
   const toast = $('toast');
-  const menuDropdown = $('menuDropdown');
   const confirmOverlay = $('confirmOverlay');
+
+  // ── Theme / Settings ────────────────────────────────────────────
+  window.toggleSettings = function() {
+    const panel = $('settingsPanel');
+    const overlay = $('settingsOverlay');
+    panel.classList.toggle('open');
+    overlay.classList.toggle('open');
+  };
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.querySelectorAll('.theme-option').forEach(el => {
+      el.classList.toggle('active', el.dataset.theme === theme);
+    });
+  }
+
+  window.selectTheme = async function(theme) {
+    applyTheme(theme);
+    localStorage.setItem('glowTheme', theme);
+    try {
+      await fetch('/auth/theme', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme }),
+      });
+    } catch (err) {
+      console.warn('Failed to save theme preference:', err);
+    }
+  };
+
+  window.saveCompanyName = async function() {
+    const input = $('settingsCompanyName');
+    const name = input.value.trim();
+    if (!name) return;
+
+    try {
+      const res = await fetch('/auth/company-name', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyName: name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      currentUser.companyName = data.companyName;
+      $('headerCompany').textContent = data.companyName;
+      input.style.borderColor = '#81c784';
+      setTimeout(() => { input.style.borderColor = ''; }, 1500);
+    } catch (err) {
+      alert('Failed to save: ' + err.message);
+    }
+  };
+
+  // ── App Switcher ──────────────────────────────────────────────
+  window.toggleAppSwitcher = function() {
+    const menu = $('appSwitcherMenu');
+    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+  };
+  document.addEventListener('click', (e) => {
+    const wrap = $('appSwitcherWrap');
+    if (wrap && !wrap.contains(e.target)) {
+      $('appSwitcherMenu').style.display = 'none';
+    }
+  });
 
   // ── API ─────────────────────────────────────────────────────────
   const api = {
     async get(url) {
       const res = await fetch(url, { credentials: 'include' });
-      if (res.status === 401) { window.location.href = '/'; return null; }
-      if (!res.ok) throw new Error(`API error ${res.status}`);
+      if (res.status === 401) { showLogin(); return null; }
+      if (!res.ok) throw new Error('API error ' + res.status);
       return res.json();
     },
     async post(url, body) {
@@ -910,8 +1480,8 @@
         headers: { 'Content-Type': 'application/json' },
         body: body ? JSON.stringify(body) : undefined,
       });
-      if (res.status === 401) { window.location.href = '/'; return null; }
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `API error ${res.status}`); }
+      if (res.status === 401) { showLogin(); return null; }
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'API error ' + res.status); }
       return res.json();
     },
     async put(url, body) {
@@ -921,8 +1491,8 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
-      if (res.status === 401) { window.location.href = '/'; return null; }
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `API error ${res.status}`); }
+      if (res.status === 401) { showLogin(); return null; }
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || 'API error ' + res.status); }
       return res.json();
     },
   };
@@ -980,36 +1550,181 @@
     content.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
   }
 
-  // ── Menu ────────────────────────────────────────────────────────
-  $('menuBtn').addEventListener('click', e => {
-    e.stopPropagation();
-    menuDropdown.classList.toggle('open');
-  });
+  function escHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
 
-  document.addEventListener('click', () => menuDropdown.classList.remove('open'));
+  // ── Auth Flow ──────────────────────────────────────────────────
+  function hideAllScreens() {
+    $('loginScreen').hidden = true;
+    $('companyScreen').hidden = true;
+    $('gmailBanner').hidden = true;
+    $('appContent').hidden = true;
+    $('fullWidthMain').hidden = true;
+    $('headerUser').style.display = 'none';
+  }
 
-  // ── Tabs ────────────────────────────────────────────────────────
-  document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      if (tab.dataset.tab === currentTab) return;
-      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      currentTab = tab.dataset.tab;
-      closeThread();
-      loadTab();
+  function showLogin() {
+    hideAllScreens();
+    $('fullWidthMain').hidden = false;
+    $('loginScreen').hidden = false;
+    const savedEmail = localStorage.getItem('glowEmail');
+    if (savedEmail) $('loginEmail').value = savedEmail;
+  }
+
+  function updateHeader() {
+    const el = $('headerUser');
+    el.style.display = 'flex';
+    el.style.alignItems = 'center';
+    el.style.gap = '8px';
+    $('headerCompany').textContent = currentUser.companyName || '';
+    $('headerEmail').textContent = currentUser.email;
+  }
+
+  function showGmailBanner() {
+    hideAllScreens();
+    $('fullWidthMain').hidden = false;
+    $('gmailBanner').hidden = false;
+    updateHeader();
+  }
+
+  function showApp() {
+    hideAllScreens();
+    $('appContent').hidden = false;
+    updateHeader();
+    if (currentUser?.companyName) {
+      $('settingsCompanyName').value = currentUser.companyName;
+    }
+    loadTab();
+  }
+
+  let pendingEmail = '';
+
+  window.handleEmailStep = async function() {
+    const email = $('loginEmail').value.trim();
+    const errEl = $('loginError');
+    errEl.hidden = true;
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errEl.textContent = 'Please enter a valid email address.';
+      errEl.hidden = false;
+      return;
+    }
+
+    try {
+      const res = await fetch('/auth/web-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Login failed');
+
+      localStorage.setItem('glowEmail', email);
+      currentUser = data.user;
+
+      if (data.isNew || !currentUser.companyName) {
+        pendingEmail = email;
+        hideAllScreens();
+        $('fullWidthMain').hidden = false;
+        $('companyScreen').hidden = false;
+        $('loginCompany').focus();
+      } else {
+        const theme = currentUser.theme || 'rose';
+        applyTheme(theme);
+        if (!currentUser.hasGmail) {
+          showGmailBanner();
+        } else {
+          showApp();
+        }
+      }
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.hidden = false;
+    }
+  };
+
+  window.backToEmail = function() {
+    hideAllScreens();
+    $('fullWidthMain').hidden = false;
+    $('loginScreen').hidden = false;
+  };
+
+  window.handleCompanyStep = async function() {
+    const companyName = $('loginCompany').value.trim();
+    const errEl = $('companyError');
+    errEl.hidden = true;
+
+    if (!companyName) {
+      errEl.textContent = 'Please enter your company name.';
+      errEl.hidden = false;
+      return;
+    }
+
+    try {
+      const res = await fetch('/auth/company-name', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companyName }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save company name');
+
+      currentUser.companyName = data.companyName;
+      localStorage.setItem('glowCompany', data.companyName);
+
+      const theme = currentUser.theme || 'rose';
+      applyTheme(theme);
+
+      if (!currentUser.hasGmail) {
+        showGmailBanner();
+      } else {
+        showApp();
+      }
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.hidden = false;
+    }
+  };
+
+  window.logout = async function() {
+    await fetch('/auth/logout', { method: 'POST' });
+    currentUser = null;
+    showLogin();
+  };
+
+  // ── Sidebar Tab Switching ──────────────────────────────────────
+  window.switchTab = function(tab) {
+    currentTab = tab;
+    closeThread();
+
+    // Update sidebar active state
+    document.querySelectorAll('.sidebar-nav a').forEach(a => {
+      a.classList.toggle('active', a.dataset.tab === tab);
     });
-  });
+
+    // Update mobile nav active state
+    document.querySelectorAll('.mobile-nav a').forEach(a => {
+      a.classList.toggle('active', a.dataset.tab === tab);
+    });
+
+    loadTab();
+  };
 
   // ── Thread View ─────────────────────────────────────────────────
   $('backBtn').addEventListener('click', closeThread);
+  threadOverlay.addEventListener('click', function(e) {
+    if (e.target === threadOverlay) closeThread();
+  });
 
   function closeThread() {
-    threadView.classList.remove('open');
+    threadOverlay.classList.remove('open');
     currentEmail = null;
   }
 
   async function openThread(emailId) {
-    threadView.classList.add('open');
+    threadOverlay.classList.add('open');
     threadMessages.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
     draftArea.classList.add('hidden');
 
@@ -1027,25 +1742,23 @@
 
       // Inbound message (the customer email)
       if (email.body || email.snippet) {
-        html += `
-          <div class="message-bubble message-inbound">
-            <div class="message-label">${escHtml(email.from_name || email.from_email || 'Customer')}</div>
-            <div>${escHtml(email.body || email.snippet)}</div>
-            <div class="message-time">${timeAgo(email.received_at)}</div>
-          </div>`;
+        html += '<div class="message-bubble message-inbound">' +
+            '<div class="message-label">' + escHtml(email.from_name || email.from_email || 'Customer') + '</div>' +
+            '<div>' + escHtml(email.body || email.snippet) + '</div>' +
+            '<div class="message-time">' + timeAgo(email.received_at) + '</div>' +
+          '</div>';
       }
 
       // Outbound (sent reply)
       if (email.status === 'sent' && email.draft_content) {
-        html += `
-          <div class="message-bubble message-outbound">
-            <div class="message-label">Sent</div>
-            <div>${escHtml(email.draft_content)}</div>
-            <div class="message-time">${timeAgo(email.sent_at)}</div>
-          </div>`;
+        html += '<div class="message-bubble message-outbound">' +
+            '<div class="message-label">Sent</div>' +
+            '<div>' + escHtml(email.draft_content) + '</div>' +
+            '<div class="message-time">' + timeAgo(email.sent_at) + '</div>' +
+          '</div>';
       }
 
-      threadMessages.innerHTML = html || '<div class="empty-state"><div class="empty-text">No messages</div></div>';
+      threadMessages.innerHTML = html || '<div class="empty-state"><p>No messages</p></div>';
       threadMessages.scrollTop = threadMessages.scrollHeight;
 
       // Draft area
@@ -1054,7 +1767,6 @@
         draftTextarea.value = email.draft_content;
         updateCharCount();
       } else if (email.status === 'pending') {
-        // No draft yet, but show editor for pending items
         draftArea.classList.add('hidden');
       } else {
         draftArea.classList.add('hidden');
@@ -1066,7 +1778,6 @@
         draftTextarea.classList.add('hidden');
         $('threadSendBtn').classList.add('hidden');
         charCount.classList.add('hidden');
-        $('draft-label-el')?.remove();
         const lbl = draftArea.querySelector('.draft-label');
         if (lbl) lbl.textContent = 'Awaiting AI draft...';
       } else if (email.draft_content && email.status !== 'sent' && email.status !== 'archived') {
@@ -1082,14 +1793,9 @@
         draftArea.classList.add('hidden');
       }
     } catch (err) {
-      threadMessages.innerHTML = '<div class="empty-state"><div class="empty-text">Failed to load email</div></div>';
+      threadMessages.innerHTML = '<div class="empty-state"><p>Failed to load email</p></div>';
       console.error(err);
     }
-  }
-
-  function escHtml(str) {
-    if (!str) return '';
-    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
   // ── Draft Editor Events ─────────────────────────────────────────
@@ -1166,12 +1872,12 @@
       const pending = pendingData.emails || [];
       const total = drafts.length + pending.length;
 
-      // Update badge
-      $('inboxBadge').textContent = total > 0 ? total : '';
+      // Update badges
+      $('sidebarInboxBadge').textContent = total > 0 ? total : '';
 
       if (total === 0) {
         content.innerHTML = renderRefreshBar() +
-          '<div class="empty-state"><div class="empty-emoji">&#x2728;</div><div class="empty-text">You\'re all caught up!</div></div>';
+          '<div class="empty-state"><div class="empty-icon">&#x2728;</div><h3>You\'re all caught up!</h3><p>No emails need your attention right now.</p></div>';
         bindRefresh();
         return;
       }
@@ -1179,12 +1885,12 @@
       let html = renderRefreshBar();
 
       if (drafts.length) {
-        html += `<div class="section-header">Drafts Ready <span class="section-count">${drafts.length}</span></div>`;
+        html += '<div class="section-header">Drafts Ready <span class="section-count">' + drafts.length + '</span></div>';
         drafts.forEach(e => { html += renderEmailCard(e, true); });
       }
 
       if (pending.length) {
-        html += `<div class="section-header">New <span class="section-count">${pending.length}</span></div>`;
+        html += '<div class="section-header">New <span class="section-count">' + pending.length + '</span></div>';
         pending.forEach(e => { html += renderEmailCard(e, false); });
       }
 
@@ -1192,7 +1898,7 @@
       bindRefresh();
       bindCards();
     } catch (err) {
-      content.innerHTML = '<div class="empty-state"><div class="empty-text">Failed to load inbox</div></div>';
+      content.innerHTML = '<div class="empty-state"><p>Failed to load inbox</p></div>';
       console.error(err);
     }
   }
@@ -1203,40 +1909,39 @@
       if (!data) return;
       const emails = data.emails || [];
 
-      $('followupBadge').textContent = emails.length > 0 ? emails.length : '';
+      $('sidebarFollowupBadge').textContent = emails.length > 0 ? emails.length : '';
 
       if (emails.length === 0) {
         content.innerHTML = renderRefreshBar() +
-          '<div class="empty-state"><div class="empty-emoji">&#x1F31F;</div><div class="empty-text">No follow-ups needed!</div></div>';
+          '<div class="empty-state"><div class="empty-icon">&#x1F31F;</div><h3>No follow-ups needed!</h3><p>All sent emails have been replied to.</p></div>';
         bindRefresh();
         return;
       }
 
       let html = renderRefreshBar();
-      html += `<div class="section-header">Awaiting Reply <span class="section-count">${emails.length}</span></div>`;
+      html += '<div class="section-header">Awaiting Reply <span class="section-count">' + emails.length + '</span></div>';
 
       emails.forEach(e => {
         const days = daysSince(e.sent_at);
         const urgent = days >= 3;
-        html += `
-          <div class="followup-card${urgent ? ' urgent' : ''}" data-id="${e.id}">
-            <div class="followup-top">
-              <div class="followup-name">${escHtml(e.from_name || e.from_email)}</div>
-              <div class="followup-days${urgent ? ' urgent' : ''}">${days === 0 ? 'Today' : days + 'd ago'}</div>
-            </div>
-            <div class="followup-subject">${escHtml(e.subject)}</div>
-            <div class="followup-actions">
-              <button class="btn-sm" onclick="event.stopPropagation(); window.__viewThread('${e.id}')">View</button>
-              <button class="btn-sm primary" onclick="event.stopPropagation(); window.__archiveEmail('${e.id}')">Mark Resolved</button>
-            </div>
-          </div>`;
+        html += '<div class="followup-card' + (urgent ? ' urgent' : '') + '" data-id="' + e.id + '">' +
+            '<div class="followup-top">' +
+              '<div class="followup-name">' + escHtml(e.from_name || e.from_email) + '</div>' +
+              '<div class="followup-days' + (urgent ? ' urgent' : '') + '">' + (days === 0 ? 'Today' : days + 'd ago') + '</div>' +
+            '</div>' +
+            '<div class="followup-subject">' + escHtml(e.subject) + '</div>' +
+            '<div class="followup-actions">' +
+              '<button class="btn-sm" onclick="event.stopPropagation(); window.__viewThread(\'' + e.id + '\')">View</button>' +
+              '<button class="btn-sm primary" onclick="event.stopPropagation(); window.__archiveEmail(\'' + e.id + '\')">Mark Resolved</button>' +
+            '</div>' +
+          '</div>';
       });
 
       content.innerHTML = html;
       bindRefresh();
       bindFollowupCards();
     } catch (err) {
-      content.innerHTML = '<div class="empty-state"><div class="empty-text">Failed to load follow-ups</div></div>';
+      content.innerHTML = '<div class="empty-state"><p>Failed to load follow-ups</p></div>';
       console.error(err);
     }
   }
@@ -1249,23 +1954,23 @@
 
       if (emails.length === 0) {
         content.innerHTML = renderRefreshBar() +
-          '<div class="empty-state"><div class="empty-emoji">&#x1F5C2;</div><div class="empty-text">No archived emails</div></div>';
+          '<div class="empty-state"><div class="empty-icon">&#x1F5C2;</div><h3>No archived emails</h3><p>Archived emails will appear here.</p></div>';
         bindRefresh();
         return;
       }
 
       let html = renderRefreshBar();
-      html += `<div class="section-header">Archived <span class="section-count">${emails.length}</span></div>`;
+      html += '<div class="section-header">Archived <span class="section-count">' + emails.length + '</span></div>';
 
       emails.forEach(e => {
-        html += `<div class="archived-card">${renderEmailCard(e, false)}</div>`;
+        html += '<div class="archived-card">' + renderEmailCard(e, false) + '</div>';
       });
 
       content.innerHTML = html;
       bindRefresh();
       bindCards();
     } catch (err) {
-      content.innerHTML = '<div class="empty-state"><div class="empty-text">Failed to load archived emails</div></div>';
+      content.innerHTML = '<div class="empty-state"><p>Failed to load archived emails</p></div>';
       console.error(err);
     }
   }
@@ -1280,20 +1985,19 @@
     if (email.status === 'pending') badges.push('<span class="badge badge-pending">New</span>');
     if (email.status === 'sent') badges.push('<span class="badge badge-sent">Sent</span>');
 
-    return `
-      <div class="email-card" data-id="${email.id}">
-        <div class="email-avatar">${ini}</div>
-        <div class="email-body">
-          <div class="email-top">
-            <div class="email-name">${escHtml(name)}</div>
-            <div class="email-time">${time}</div>
-          </div>
-          <div class="email-subject">${escHtml(email.subject || '(no subject)')}</div>
-          <div class="email-snippet">${escHtml(email.snippet || '')}</div>
-          ${badges.length ? '<div class="email-badges">' + badges.join('') + '</div>' : ''}
-        </div>
-        <button class="archive-btn-inline" onclick="event.stopPropagation(); window.__archiveEmail('${email.id}')" title="Archive">&#x1F4E6;</button>
-      </div>`;
+    return '<div class="email-card" data-id="' + email.id + '">' +
+        '<div class="email-avatar">' + ini + '</div>' +
+        '<div class="email-body">' +
+          '<div class="email-top">' +
+            '<div class="email-name">' + escHtml(name) + '</div>' +
+            '<div class="email-time">' + time + '</div>' +
+          '</div>' +
+          '<div class="email-subject">' + escHtml(email.subject || '(no subject)') + '</div>' +
+          '<div class="email-snippet">' + escHtml(email.snippet || '') + '</div>' +
+          (badges.length ? '<div class="email-badges">' + badges.join('') + '</div>' : '') +
+        '</div>' +
+        '<button class="archive-btn-inline" onclick="event.stopPropagation(); window.__archiveEmail(\'' + email.id + '\')" title="Archive">&#x1F4E6;</button>' +
+      '</div>';
   }
 
   function renderRefreshBar() {
@@ -1338,17 +2042,39 @@
   };
 
   // ── Init ────────────────────────────────────────────────────────
-  async function init() {
+  async function checkAuth() {
     try {
-      const me = await api.get('/auth/me');
-      if (!me) return; // redirected
-      loadTab();
-    } catch (err) {
-      window.location.href = '/';
+      const res = await fetch('/auth/me');
+      if (res.ok) {
+        currentUser = await res.json();
+        const theme = currentUser.theme || localStorage.getItem('glowTheme') || 'rose';
+        applyTheme(theme);
+        if (!currentUser.hasGmail) {
+          showGmailBanner();
+        } else {
+          showApp();
+        }
+      } else {
+        const savedTheme = localStorage.getItem('glowTheme');
+        if (savedTheme) applyTheme(savedTheme);
+        showLogin();
+      }
+    } catch {
+      const savedTheme = localStorage.getItem('glowTheme');
+      if (savedTheme) applyTheme(savedTheme);
+      showLogin();
     }
   }
 
-  init();
+  // Allow Enter key on login
+  $('loginEmail').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleEmailStep();
+  });
+  $('loginCompany').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleCompanyStep();
+  });
+
+  checkAuth();
 })();
 </script>
 </body>

@@ -839,12 +839,14 @@
       font-weight: 600;
     }
 
-    @media (max-width: 768px) {
-      .sidebar { display: none; }
-      .mobile-nav { display: block; }
-      .app-layout { flex-direction: column; }
-      .app-main main { margin: 20px auto; padding: 0 12px 40px; }
-    }
+    /* Mobile detection is JS-based via user agent; these classes are toggled by script */
+    body.is-mobile .sidebar { display: none; }
+    body.is-mobile .mobile-nav { display: block; }
+    body.is-mobile .app-layout { flex-direction: column; }
+    body.is-mobile .app-main main { margin: 20px auto; padding: 0 12px 40px; }
+
+    body:not(.is-mobile) .sidebar { display: flex; }
+    body:not(.is-mobile) .mobile-nav { display: none; }
 
     /* ── Sent Emails tab table ───────────────────────────────────────── */
     .history-full-table {
@@ -951,6 +953,12 @@
   </style>
 </head>
 <body>
+<script>
+  // Mobile detection via user agent — show mobile layout only on actual mobile devices
+  if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+    document.body.classList.add('is-mobile');
+  }
+</script>
 
 <header>
   <div style="position:relative" id="appSwitcherWrap">
@@ -1081,7 +1089,7 @@
       <p class="card-sub">Welcome! Enter your company name — it will appear in the email templates and throughout the app.</p>
       <div class="field">
         <label for="loginCompany">Company Name</label>
-        <input type="text" id="loginCompany" placeholder="e.g. Glow SF" autocomplete="organization" />
+        <input type="text" id="loginCompany" placeholder="e.g. Your Company" autocomplete="organization" />
       </div>
       <div id="companyError" class="error-box" hidden></div>
       <div class="btn-row">
@@ -1120,7 +1128,7 @@
         <span class="nav-icon">&#128227;</span> Marketing Campaigns
       </a></li>
     </ul>
-    <div class="sidebar-version">Glow Email Suite</div>
+    <div class="sidebar-version">Email Suite</div>
   </nav>
 
   <!-- Mobile nav bar -->
