@@ -575,6 +575,51 @@ router.post('/generate', (req, res) => {
 
   const newProductsSection = `<div style="margin-top:24px;padding:20px;background:${tc.productsBg};border-left:4px solid ${tc.productsBorder};border-radius:8px"><p style="margin-bottom:12px;font-size:20px"><b>🛍️ Your New Products</b></p>\n${productsHtml}</div>`;
 
+  // ── 2b. Synergy paragraph (only if 4+ products) ───────────────────────
+  let synergyHtml = '';
+  if (selectedProducts.length > 3) {
+    const hasCleanser = selectedProducts.some(isCleanser);
+    const hasSerum = selectedProducts.some(isSerum);
+    const hasMoist = selectedProducts.some(isMoisturizer);
+    const hasSpfProd = selectedProducts.some(isSpf);
+    const hasDevice = selectedProducts.some(isDevice);
+    const hasExfol = selectedProducts.some(isExfoliant);
+    const hasMaskProd = selectedProducts.some(isMask);
+    const hasTreat = selectedProducts.some(isTreatment);
+
+    const synergies = [];
+
+    if (hasCleanser && hasSerum) {
+      synergies.push('Your cleanser creates the perfect clean canvas for your serums to penetrate deeper and work more effectively.');
+    }
+    if (hasSerum && hasMoist) {
+      synergies.push('Layering your serum under your moisturizer locks in those powerful active ingredients while your moisturizer seals in hydration.');
+    }
+    if (hasSerum && hasSpfProd) {
+      synergies.push('Your antioxidant serum and SPF are the ultimate daytime duo — the serum fights free radical damage while the SPF shields you from UV rays.');
+    }
+    if (hasDevice && hasSerum) {
+      synergies.push('Using your device after applying serum supercharges absorption — the light therapy helps drive those active ingredients deeper into the skin for maximum results.');
+    }
+    if (hasExfol && hasMoist) {
+      synergies.push('Your exfoliant clears away dead skin cells so your moisturizer can absorb fully and hydrate more effectively.');
+    }
+    if (hasMaskProd && hasSerum) {
+      synergies.push('Weekly masks paired with your daily serums give your skin both consistent daily nourishment and an intensive weekly boost.');
+    }
+    if (hasTreat && hasSpfProd) {
+      synergies.push('Your targeted treatment works on specific concerns while your SPF protects those treated areas from sun damage that could undo your progress.');
+    }
+
+    // Fallback if no specific synergies matched
+    if (synergies.length === 0) {
+      synergies.push('Each product in your collection addresses a different aspect of skin health, and together they create a comprehensive routine that covers all your bases.');
+    }
+
+    const productNames = selectedProducts.map(p => p.name).join(', ');
+    synergyHtml = `<p style="margin-top:16px;margin-bottom:0;font-family:system-ui,sans-serif;font-size:.93rem;line-height:1.6;color:#2c2022">You've put together a really powerful combination! ${synergies.slice(0, 3).join(' ')} With ${productNames} working together in your routine, each product amplifies the benefits of the others — your skin is going to love this lineup.</p>`;
+  }
+
   // ── 3. Skincare Routine ───────────────────────────────────────────────
   // Find purchased products for each step, or suggest alternatives
   const findPurchased = (matchFn) => selectedProducts.find(matchFn) || null;
@@ -674,7 +719,7 @@ router.post('/generate', (req, res) => {
     relevantTips.map(t => `<p style="margin-bottom:8px">• ${t}</p>`).join('\n') + '</div>';
 
   // ── 4b. Consultation invite (only if fewer than 3 products) ────────────
-  const consultationHtml = selectedProducts.length < 3
+  const consultationHtml = selectedProducts.length < 5
     ? `<p style="margin-top:24px;margin-bottom:16px;padding:16px;background:${tc.consultBg};border-left:4px solid ${tc.consultBorder};border-radius:8px">💆 <b>Want a personalized skincare plan?</b> Since you're just getting started with your collection, we'd love to invite you in for a complimentary one-on-one consultation with one of our skincare specialists. We'll build a customized routine tailored to your skin type, goals, and lifestyle. Just reply to this email to book your visit — we'd love to see you!</p>`
     : '';
 
@@ -703,7 +748,7 @@ router.post('/generate', (req, res) => {
   const signOffHtml = SIGNOFFS[Math.floor(Math.random() * SIGNOFFS.length)];
 
   // ── Assemble ──────────────────────────────────────────────────────────
-  const emailBody = [welcomeHtml, newProductsSection, routineSection, tipsHtml, consultationHtml, signOffHtml].filter(Boolean).join('\n\n');
+  const emailBody = [welcomeHtml, newProductsSection, synergyHtml, routineSection, tipsHtml, consultationHtml, signOffHtml].filter(Boolean).join('\n\n');
 
   res.json({
     success: true,
