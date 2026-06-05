@@ -22,6 +22,9 @@ db.pragma('foreign_keys = ON');
 const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
 db.exec(schema);
 
+// Migrations — add columns that may not exist in older DBs
+try { db.exec('ALTER TABLE users ADD COLUMN company_name TEXT'); } catch (_) { /* already exists */ }
+
 // ─── Users ────────────────────────────────────────────────────────────────────
 
 function getUser(id) {
@@ -197,17 +200,21 @@ function getWelcomeEmails(limit = 50) {
   `).all(limit);
 }
 
-function findOrCreateUserByEmail(email) {
+function findOrCreateUserByEmail(email, companyName) {
   let user = getUserByEmail(email);
   if (!user) {
     const { v4: uuidv4 } = require('uuid');
     const id = uuidv4();
     db.prepare(`
-      INSERT INTO users (id, email) VALUES (?, ?)
-    `).run(id, email);
+      INSERT INTO users (id, email, company_name) VALUES (?, ?, ?)
+    `).run(id, email, companyName || null);
     user = getUser(id);
   }
   return user;
+}
+
+function updateCompanyName(userId, companyName) {
+  db.prepare('UPDATE users SET company_name = ? WHERE id = ?').run(companyName, userId);
 }
 
 module.exports = {
@@ -231,6 +238,7 @@ module.exports = {
   markEmailSent,
   getFollowUpEmails,
   findOrCreateUserByEmail,
+  updateCompanyName,
   saveWelcomeEmail,
   getWelcomeEmails,
 };

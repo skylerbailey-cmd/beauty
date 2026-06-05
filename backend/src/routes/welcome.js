@@ -464,6 +464,15 @@ router.post('/generate', (req, res) => {
     return res.status(400).json({ error: 'At least one product must be selected' });
   }
 
+  // Get company name from session user
+  let companyName = 'our store';
+  const userId = req.session?.userId;
+  if (userId) {
+    const { getUser } = require('../db');
+    const user = getUser(userId);
+    if (user?.company_name) companyName = user.company_name;
+  }
+
   const allProducts = [...PRODUCTS.avologi, ...PRODUCTS.hydrasphere];
   const selectedIds = new Set(selectedProductIds);
   const selectedProducts = selectedProductIds
@@ -479,19 +488,19 @@ router.post('/generate', (req, res) => {
   // ── 1. Welcome paragraph (randomly selected) ──────────────────────────
   const WELCOMES = [
     `<p style="margin-bottom:16px">Hi ${name}! 👋</p>
-<p style="margin-bottom:24px">Welcome to the Glow SF family! We're so excited you've chosen us as part of your beauty journey. We handpick every product in our store because we genuinely believe in what they can do for your skin — and we can't wait for you to experience the results.</p>`,
+<p style="margin-bottom:24px">Welcome to the ${companyName} family! We're so excited you've chosen us as part of your beauty journey. We handpick every product in our store because we genuinely believe in what they can do for your skin — and we can't wait for you to experience the results.</p>`,
 
     `<p style="margin-bottom:16px">Hey ${name}! 💖</p>
-<p style="margin-bottom:24px">We are thrilled to have you as part of the Glow SF community! Every product we carry has been carefully selected because we've seen the incredible results firsthand — and now it's your turn. Get ready to fall in love with your skin all over again.</p>`,
+<p style="margin-bottom:24px">We are thrilled to have you as part of the ${companyName} community! Every product we carry has been carefully selected because we've seen the incredible results firsthand — and now it's your turn. Get ready to fall in love with your skin all over again.</p>`,
 
     `<p style="margin-bottom:16px">Hi ${name}! ✨</p>
-<p style="margin-bottom:24px">Welcome aboard — you just made an amazing choice for your skin! At Glow SF, we're passionate about helping you look and feel your absolute best. We personally stand behind every product in our collection, and we're so excited to be part of your glow-up journey.</p>`,
+<p style="margin-bottom:24px">Welcome aboard — you just made an amazing choice for your skin! At ${companyName}, we're passionate about helping you look and feel your absolute best. We personally stand behind every product in our collection, and we're so excited to be part of your glow-up journey.</p>`,
 
     `<p style="margin-bottom:16px">Hello ${name}! 🌸</p>
-<p style="margin-bottom:24px">A warm welcome from all of us at Glow SF! We believe great skin starts with great products — and you've just picked some of our favorites. We're here to make sure you get the most out of every single one, so let's dive in!</p>`,
+<p style="margin-bottom:24px">A warm welcome from all of us at ${companyName}! We believe great skin starts with great products — and you've just picked some of our favorites. We're here to make sure you get the most out of every single one, so let's dive in!</p>`,
 
     `<p style="margin-bottom:16px">Hi there, ${name}! 🌿</p>
-<p style="margin-bottom:24px">Welcome to Glow SF — we're so glad you found us! We started this store because we believe everyone deserves access to truly exceptional skincare. Your new products are going to do wonderful things for your skin, and we're here every step of the way.</p>`,
+<p style="margin-bottom:24px">Welcome to ${companyName} — we're so glad you found us! We started this store because we believe everyone deserves access to truly exceptional skincare. Your new products are going to do wonderful things for your skin, and we're here every step of the way.</p>`,
   ];
   const welcomeHtml = WELCOMES[Math.floor(Math.random() * WELCOMES.length)];
 
@@ -593,25 +602,25 @@ router.post('/generate', (req, res) => {
 
   // ── 5. Sign-off (randomly selected) ────────────────────────────────────
   const SIGNOFFS = [
-    `<p style="margin-top:24px;margin-bottom:16px">Thank you so much for choosing Glow SF, ${name}. We're truly honored to be part of your skincare journey. If you ever have questions about your products, your routine, or just want personalized advice — don't hesitate to reply to this email. We're always here for you!</p>
+    `<p style="margin-top:24px;margin-bottom:16px">Thank you so much for choosing ${companyName}, ${name}. We're truly honored to be part of your skincare journey. If you ever have questions about your products, your routine, or just want personalized advice — don't hesitate to reply to this email. We're always here for you!</p>
 <p style="margin-bottom:16px">We'd also love to see you in person at our store in Santa Fe. Come say hi anytime — we're always happy to help you find your next favorite product. 💕</p>
-<p style="margin-bottom:8px">With love,<br><b>The Glow SF Team</b></p>`,
+<p style="margin-bottom:8px">With love,<br><b>The ${companyName} Team</b></p>`,
 
-    `<p style="margin-top:24px;margin-bottom:16px">${name}, we're so grateful you chose Glow SF. Your skin is in great hands! If you ever need help with your routine, have questions about a product, or just want to chat about skincare — we're only an email away.</p>
+    `<p style="margin-top:24px;margin-bottom:16px">${name}, we're so grateful you chose ${companyName}. Your skin is in great hands! If you ever need help with your routine, have questions about a product, or just want to chat about skincare — we're only an email away.</p>
 <p style="margin-bottom:16px">And if you're ever in Santa Fe, come visit us! We'd love to meet you in person and help you discover even more products you'll love. 🌟</p>
-<p style="margin-bottom:8px">Cheers to your glow,<br><b>The Glow SF Team</b></p>`,
+<p style="margin-bottom:8px">Cheers to your glow,<br><b>The ${companyName} Team</b></p>`,
 
     `<p style="margin-top:24px;margin-bottom:16px">We can't wait to hear how you love your new products, ${name}! Remember, beautiful skin is a journey — and we're right here with you every step of the way. Reply anytime with questions or just to share your results!</p>
 <p style="margin-bottom:16px">Don't forget, our doors in Santa Fe are always open. Stop by for a personalized consultation or just to say hello — we love connecting with our customers in person. 💖</p>
-<p style="margin-bottom:8px">Here's to your best skin ever,<br><b>The Glow SF Team</b></p>`,
+<p style="margin-bottom:8px">Here's to your best skin ever,<br><b>The ${companyName} Team</b></p>`,
 
     `<p style="margin-top:24px;margin-bottom:16px">Thank you for trusting us with your skincare, ${name} — it means the world to us! We're always here if you need advice, want to tweak your routine, or are curious about a new product. Just hit reply and we'll get back to you personally.</p>
 <p style="margin-bottom:16px">If you're ever passing through Santa Fe, our store is your home away from home. We'd love to pamper you in person! ✨</p>
-<p style="margin-bottom:8px">Warmly,<br><b>The Glow SF Team</b></p>`,
+<p style="margin-bottom:8px">Warmly,<br><b>The ${companyName} Team</b></p>`,
 
     `<p style="margin-top:24px;margin-bottom:16px">${name}, starting a new skincare routine is exciting — and we're honored to be part of yours! If anything comes up along the way, whether it's a question, a concern, or you just want to share your glow-up progress — please reach out. We genuinely care.</p>
 <p style="margin-bottom:16px">And whenever you're in the Santa Fe area, come see us! There's nothing we love more than helping our customers find their perfect routine in person. 🌸</p>
-<p style="margin-bottom:8px">With love and good vibes,<br><b>The Glow SF Team</b></p>`,
+<p style="margin-bottom:8px">With love and good vibes,<br><b>The ${companyName} Team</b></p>`,
   ];
   const signOffHtml = SIGNOFFS[Math.floor(Math.random() * SIGNOFFS.length)];
 
@@ -664,10 +673,15 @@ router.post('/send', async (req, res) => {
 
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
+    const fromName = user.company_name || user.email;
+    const subject = user.company_name
+      ? `Welcome to ${user.company_name}!`
+      : 'Welcome!';
+
     const messageParts = [
-      `From: "${user.email}" <${user.email}>`,
+      `From: "${fromName}" <${user.email}>`,
       `To: ${customerEmail}`,
-      'Subject: Welcome to Glow SF!',
+      `Subject: ${subject}`,
       'Content-Type: text/html; charset=utf-8',
       'MIME-Version: 1.0',
       '',

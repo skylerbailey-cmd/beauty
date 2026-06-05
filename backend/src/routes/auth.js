@@ -19,13 +19,19 @@ const OAUTH_SCOPES = [
 // Simple email-based login for the web UI (no password)
 
 router.post('/web-login', (req, res) => {
-  const { email } = req.body;
+  const { email, companyName } = req.body;
   if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
     return res.status(400).json({ error: 'Valid email is required' });
   }
 
-  const { findOrCreateUserByEmail } = require('../db');
-  const user = findOrCreateUserByEmail(email.trim().toLowerCase());
+  const { findOrCreateUserByEmail, updateCompanyName } = require('../db');
+  const user = findOrCreateUserByEmail(email.trim().toLowerCase(), companyName?.trim() || null);
+
+  // Update company name if provided and user already existed
+  if (companyName?.trim() && !user.company_name) {
+    updateCompanyName(user.id, companyName.trim());
+    user.company_name = companyName.trim();
+  }
 
   req.session.userId = user.id;
 
@@ -34,6 +40,7 @@ router.post('/web-login', (req, res) => {
     user: {
       id: user.id,
       email: user.email,
+      companyName: user.company_name,
       hasGmail: !!user.refresh_token,
     },
   });
@@ -172,6 +179,7 @@ router.get('/me', (req, res) => {
   res.json({
     id: user.id,
     email: user.email,
+    companyName: user.company_name,
     hasGmail: !!user.refresh_token,
     push_token: user.push_token,
     gmail_history_id: user.gmail_history_id,

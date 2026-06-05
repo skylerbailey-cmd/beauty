@@ -533,8 +533,10 @@
     <p>Personalized product onboarding emails</p>
   </div>
   <div id="headerUser" style="display:none; font-family:system-ui,sans-serif; font-size:.82rem; text-align:right;">
-    <span id="headerEmail" style="color:var(--mid);"></span>
+    <span id="headerCompany" style="color:var(--dark); font-weight:600;"></span>
     <br>
+    <span id="headerEmail" style="color:var(--mid); font-size:.75rem;"></span>
+    <span style="color:var(--border); margin:0 4px;">|</span>
     <a href="#" onclick="logout(); return false;" style="color:var(--rose-dk); text-decoration:underline; font-size:.75rem;">Sign out</a>
   </div>
 </header>
@@ -545,7 +547,11 @@
   <div id="loginScreen">
     <div class="card" style="max-width:460px; margin:60px auto;">
       <h2 class="card-title">Sign In</h2>
-      <p class="card-sub">Enter your email to get started. This email will be used to send welcome emails to your customers.</p>
+      <p class="card-sub">Enter your email and company name to get started. Your company name will appear in the email templates and branding throughout the app.</p>
+      <div class="field">
+        <label for="loginCompany">Company Name</label>
+        <input type="text" id="loginCompany" placeholder="e.g. Glow SF" autocomplete="organization" />
+      </div>
       <div class="field">
         <label for="loginEmail">Your Email Address</label>
         <input type="email" id="loginEmail" placeholder="you@yourcompany.com" autocomplete="email" />
@@ -751,30 +757,43 @@
     document.getElementById('appContent').hidden = true;
     document.getElementById('headerUser').style.display = 'none';
     // Pre-fill from localStorage
-    const saved = localStorage.getItem('glowEmail');
-    if (saved) document.getElementById('loginEmail').value = saved;
+    const savedEmail = localStorage.getItem('glowEmail');
+    const savedCompany = localStorage.getItem('glowCompany');
+    if (savedEmail) document.getElementById('loginEmail').value = savedEmail;
+    if (savedCompany) document.getElementById('loginCompany').value = savedCompany;
+  }
+
+  function updateHeader() {
+    document.getElementById('headerUser').style.display = 'block';
+    document.getElementById('headerCompany').textContent = currentUser.companyName || '';
+    document.getElementById('headerEmail').textContent = currentUser.email;
   }
 
   function showGmailBanner() {
     document.getElementById('loginScreen').hidden = true;
     document.getElementById('gmailBanner').hidden = false;
     document.getElementById('appContent').hidden = true;
-    document.getElementById('headerUser').style.display = 'block';
-    document.getElementById('headerEmail').textContent = currentUser.email;
+    updateHeader();
   }
 
   function showApp() {
     document.getElementById('loginScreen').hidden = true;
     document.getElementById('gmailBanner').hidden = true;
     document.getElementById('appContent').hidden = false;
-    document.getElementById('headerUser').style.display = 'block';
-    document.getElementById('headerEmail').textContent = currentUser.email;
+    updateHeader();
   }
 
   async function handleLogin() {
     const email = document.getElementById('loginEmail').value.trim();
+    const companyName = document.getElementById('loginCompany').value.trim();
     const errEl = document.getElementById('loginError');
     errEl.hidden = true;
+
+    if (!companyName) {
+      errEl.textContent = 'Please enter your company name.';
+      errEl.hidden = false;
+      return;
+    }
 
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       errEl.textContent = 'Please enter a valid email address.';
@@ -786,12 +805,13 @@
       const res = await fetch('/auth/web-login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, companyName }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Login failed');
 
       localStorage.setItem('glowEmail', email);
+      localStorage.setItem('glowCompany', companyName);
       currentUser = data.user;
 
       if (!currentUser.hasGmail) {
@@ -815,6 +835,9 @@
   document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('loginEmail').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') handleLogin();
+    });
+    document.getElementById('loginCompany').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') document.getElementById('loginEmail').focus();
     });
     checkAuth();
   });
