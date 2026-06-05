@@ -217,7 +217,7 @@ router.post('/theme', (req, res) => {
   }
 
   const { theme } = req.body;
-  const VALID_THEMES = ['rose', 'earth'];
+  const VALID_THEMES = ['rose', 'earth', 'lavender', 'ocean', 'sage'];
   if (!theme || !VALID_THEMES.includes(theme)) {
     return res.status(400).json({ error: `Invalid theme. Must be one of: ${VALID_THEMES.join(', ')}` });
   }

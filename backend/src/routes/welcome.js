@@ -251,35 +251,63 @@ router.get('/products', (req, res) => {
 const EMAIL_THEMES = {
   rose: {
     linkColor: '#c97d8a',
-    // Products callout (theme color)
     productsBg: '#fdf2f4',
     productsBorder: '#c97d8a',
-    // Routine section accents — themed
-    amAccent: '#c9a96e',       // rose gold
-    pmAccent: '#9e5567',       // deeper rose
-    weeklyAccent: '#c97d8a',   // rose
-    // Tips callout (always yellow)
+    amAccent: '#c9a96e',
+    pmAccent: '#9e5567',
+    weeklyAccent: '#c97d8a',
     tipsBg: '#fef9ee',
     tipsBorder: '#d4a24e',
-    // Consultation callout (theme color)
     consultBg: '#fdf2f4',
     consultBorder: '#c97d8a',
   },
   earth: {
     linkColor: '#5a8a7d',
-    // Products callout (theme color)
     productsBg: '#eef5f3',
     productsBorder: '#5a8a7d',
-    // Routine section accents — themed
-    amAccent: '#a0855b',       // warm brown
-    pmAccent: '#3d6b60',       // deep teal
-    weeklyAccent: '#5a8a7d',   // teal
-    // Tips callout (always yellow)
+    amAccent: '#a0855b',
+    pmAccent: '#3d6b60',
+    weeklyAccent: '#5a8a7d',
     tipsBg: '#fef9ee',
     tipsBorder: '#c9a04e',
-    // Consultation callout (theme color)
     consultBg: '#eef5f3',
     consultBorder: '#5a8a7d',
+  },
+  lavender: {
+    linkColor: '#8b7bb5',
+    productsBg: '#f3f0fa',
+    productsBorder: '#8b7bb5',
+    amAccent: '#b0a0d0',
+    pmAccent: '#6b5a9e',
+    weeklyAccent: '#8b7bb5',
+    tipsBg: '#fef9ee',
+    tipsBorder: '#d4a24e',
+    consultBg: '#f3f0fa',
+    consultBorder: '#8b7bb5',
+  },
+  ocean: {
+    linkColor: '#3d7a8a',
+    productsBg: '#e8f4f7',
+    productsBorder: '#3d7a8a',
+    amAccent: '#5a9aaa',
+    pmAccent: '#2c5f6e',
+    weeklyAccent: '#3d7a8a',
+    tipsBg: '#fef9ee',
+    tipsBorder: '#d4a24e',
+    consultBg: '#e8f4f7',
+    consultBorder: '#3d7a8a',
+  },
+  sage: {
+    linkColor: '#6b8f71',
+    productsBg: '#edf3ee',
+    productsBorder: '#6b8f71',
+    amAccent: '#8aaa8e',
+    pmAccent: '#4d6e52',
+    weeklyAccent: '#6b8f71',
+    tipsBg: '#fef9ee',
+    tipsBorder: '#c9a04e',
+    consultBg: '#edf3ee',
+    consultBorder: '#6b8f71',
   },
 };
 

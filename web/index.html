@@ -38,6 +38,51 @@
       --radius:  14px;
     }
 
+    [data-theme="lavender"] {
+      --rose:    #8b7bb5;
+      --rose-lt: #eee9f7;
+      --rose-dk: #6b5a9e;
+      --gold:    #b0a0d0;
+      --gold-lt: #f0ecf7;
+      --cream:   #f8f6fc;
+      --dark:    #2a2535;
+      --mid:     #6b6080;
+      --border:  #d8d0e8;
+      --white:   #ffffff;
+      --shadow:  0 4px 24px rgba(42,37,53,.08);
+      --radius:  14px;
+    }
+
+    [data-theme="ocean"] {
+      --rose:    #3d7a8a;
+      --rose-lt: #daeef3;
+      --rose-dk: #2c5f6e;
+      --gold:    #5a9aaa;
+      --gold-lt: #e0f0f5;
+      --cream:   #f4f9fb;
+      --dark:    #1e2e33;
+      --mid:     #4a6a72;
+      --border:  #c5dce2;
+      --white:   #ffffff;
+      --shadow:  0 4px 24px rgba(30,46,51,.08);
+      --radius:  14px;
+    }
+
+    [data-theme="sage"] {
+      --rose:    #6b8f71;
+      --rose-lt: #e2ede4;
+      --rose-dk: #4d6e52;
+      --gold:    #8aaa8e;
+      --gold-lt: #e8f0e9;
+      --cream:   #f5f8f5;
+      --dark:    #232e24;
+      --mid:     #556b58;
+      --border:  #c8d8ca;
+      --white:   #ffffff;
+      --shadow:  0 4px 24px rgba(35,46,36,.08);
+      --radius:  14px;
+    }
+
     body {
       font-family: 'Georgia', serif;
       background: var(--cream);
@@ -705,6 +750,39 @@
       <div>
         <div class="theme-label">Earth &amp; Turquoise</div>
         <div class="theme-desc">Brown, teal, and natural earth tones</div>
+      </div>
+    </div>
+    <div class="theme-option" data-theme="lavender" onclick="selectTheme('lavender')">
+      <div class="theme-swatch">
+        <span style="background:#8b7bb5"></span>
+        <span style="background:#eee9f7"></span>
+        <span style="background:#b0a0d0"></span>
+      </div>
+      <div>
+        <div class="theme-label">Lavender Spa</div>
+        <div class="theme-desc">Soft purple, lilac, and calming violet tones</div>
+      </div>
+    </div>
+    <div class="theme-option" data-theme="ocean" onclick="selectTheme('ocean')">
+      <div class="theme-swatch">
+        <span style="background:#3d7a8a"></span>
+        <span style="background:#daeef3"></span>
+        <span style="background:#5a9aaa"></span>
+      </div>
+      <div>
+        <div class="theme-label">Ocean Breeze</div>
+        <div class="theme-desc">Deep teal, aqua, and coastal blue tones</div>
+      </div>
+    </div>
+    <div class="theme-option" data-theme="sage" onclick="selectTheme('sage')">
+      <div class="theme-swatch">
+        <span style="background:#6b8f71"></span>
+        <span style="background:#e2ede4"></span>
+        <span style="background:#8aaa8e"></span>
+      </div>
+      <div>
+        <div class="theme-label">Sage Garden</div>
+        <div class="theme-desc">Muted green, herbal, and botanical tones</div>
       </div>
     </div>
   </div>
