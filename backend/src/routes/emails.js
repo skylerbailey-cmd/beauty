@@ -34,6 +34,49 @@ function requireAuth(req, res, next) {
 
 router.use(requireAuth);
 
+// ─── POST /api/emails/sync ────────────────────────────────────────────────────
+// Pull recent inbox messages from Gmail and save them to the local DB
+
+router.post('/sync', async (req, res) => {
+  const { v4: uuidv4 } = require('uuid');
+  const { listRecentInbox } = require('../services/gmail');
+  const { saveEmail, getEmailByMessageId } = require('../db');
+
+  try {
+    const maxResults = parseInt(req.query.max) || 25;
+    const messages = await listRecentInbox(req.userId, maxResults);
+
+    let imported = 0;
+    for (const msg of messages) {
+      // Skip if we already have this message
+      const existing = getEmailByMessageId(msg.messageId);
+      if (existing) continue;
+
+      saveEmail({
+        id: uuidv4(),
+        user_id: req.userId,
+        gmail_thread_id: msg.threadId,
+        gmail_message_id: msg.messageId,
+        subject: msg.subject,
+        from_email: msg.fromEmail,
+        from_name: msg.fromName,
+        snippet: msg.snippet,
+        body: msg.body,
+        received_at: msg.receivedAt,
+        status: 'pending',
+        draft_content: null,
+        gmail_draft_id: null,
+      });
+      imported++;
+    }
+
+    res.json({ success: true, imported, total: messages.length });
+  } catch (err) {
+    console.error('[emails] Sync error:', err.message);
+    res.status(500).json({ error: 'Failed to sync inbox: ' + err.message });
+  }
+});
+
 // ─── GET /api/emails/followup ──────────────────────────────────────────────────
 // Must be before /:id to avoid route collision
 

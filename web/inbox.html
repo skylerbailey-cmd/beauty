@@ -1862,6 +1862,13 @@
 
   async function loadInbox() {
     try {
+      // Sync recent emails from Gmail before loading
+      try {
+        await api.post('/api/emails/sync');
+      } catch (syncErr) {
+        console.warn('Gmail sync failed (non-fatal):', syncErr);
+      }
+
       const [draftData, pendingData] = await Promise.all([
         api.get('/api/emails?status=draft_ready'),
         api.get('/api/emails?status=pending'),

@@ -399,6 +399,47 @@ async function sendNewEmail(userId, to, subject, body, fromName) {
   return res.data;
 }
 
+/**
+ * Fetch recent inbox messages from Gmail and return parsed message objects.
+ * @param {string} userId
+ * @param {number} maxResults - how many messages to fetch (default 25)
+ * @returns {Array} parsed message objects
+ */
+async function listRecentInbox(userId, maxResults = 25) {
+  const user = getUser(userId);
+  if (!user) throw new Error(`User ${userId} not found`);
+
+  const auth = await refreshAndGetClient(user);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  // List recent inbox messages
+  const listRes = await gmail.users.messages.list({
+    userId: 'me',
+    labelIds: ['INBOX'],
+    maxResults,
+  });
+
+  const messageRefs = listRes.data.messages || [];
+  if (messageRefs.length === 0) return [];
+
+  // Fetch each message in full
+  const messages = [];
+  for (const ref of messageRefs) {
+    try {
+      const msgRes = await gmail.users.messages.get({
+        userId: 'me',
+        id: ref.id,
+        format: 'full',
+      });
+      messages.push(parseMessage(msgRes.data));
+    } catch (err) {
+      console.warn(`[gmail] Failed to fetch message ${ref.id}:`, err.message);
+    }
+  }
+
+  return messages;
+}
+
 module.exports = {
   createOAuthClient,
   refreshAndGetClient,
@@ -406,6 +447,7 @@ module.exports = {
   getNewMessages,
   getMessage,
   getThread,
+  listRecentInbox,
   createDraft,
   sendDraft,
   sendNewEmail,
