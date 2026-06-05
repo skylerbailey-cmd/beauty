@@ -1753,10 +1753,41 @@
   };
 
   // ── Thread View ─────────────────────────────────────────────────
-  $('backBtn').addEventListener('click', closeThread);
+  $('backBtn').addEventListener('click', tryCloseThread);
   threadOverlay.addEventListener('click', function(e) {
-    if (e.target === threadOverlay) closeThread();
+    if (e.target === threadOverlay) tryCloseThread();
   });
+
+  function tryCloseThread() {
+    // If there's a draft, confirm before closing
+    const hasDraft = draftTextarea.value.trim() && !draftArea.classList.contains('hidden');
+    if (hasDraft) {
+      showConfirmDialog(
+        'You have an unsent draft. Are you sure you want to leave? The draft will be discarded.',
+        function() { closeThread(); }
+      );
+    } else {
+      closeThread();
+    }
+  }
+
+  function showConfirmDialog(message, onConfirm) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(44,32,34,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px';
+    overlay.innerHTML = `
+      <div style="background:var(--white);border-radius:14px;max-width:360px;width:100%;padding:28px;box-shadow:0 16px 48px rgba(44,32,34,.2);text-align:center">
+        <p style="font-family:system-ui,sans-serif;font-size:.95rem;color:var(--dark);margin-bottom:24px;line-height:1.5">${message}</p>
+        <div style="display:flex;gap:10px;justify-content:center">
+          <button id="confirmCancel" style="padding:10px 20px;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--mid);font-family:system-ui,sans-serif;font-size:.88rem;cursor:pointer">Go Back</button>
+          <button id="confirmOk" style="padding:10px 20px;border:none;border-radius:8px;background:var(--rose);color:white;font-family:system-ui,sans-serif;font-size:.88rem;font-weight:600;cursor:pointer">Leave</button>
+        </div>
+      </div>
+    `;
+    overlay.querySelector('#confirmCancel').onclick = () => overlay.remove();
+    overlay.querySelector('#confirmOk').onclick = () => { overlay.remove(); onConfirm(); };
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+    document.body.appendChild(overlay);
+  }
 
   function closeThread() {
     threadOverlay.classList.remove('open');
