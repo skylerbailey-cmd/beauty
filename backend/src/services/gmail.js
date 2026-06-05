@@ -412,10 +412,10 @@ async function listRecentInbox(userId, maxResults = 100) {
   const auth = await refreshAndGetClient(user);
   const gmail = google.gmail({ version: 'v1', auth });
 
-  // List recent inbox messages
+  // List recent inbox messages — only Primary category (skip promotions, social, updates, forums)
   const listRes = await gmail.users.messages.list({
     userId: 'me',
-    labelIds: ['INBOX'],
+    labelIds: ['INBOX', 'CATEGORY_PERSONAL'],
     maxResults,
   });
 
