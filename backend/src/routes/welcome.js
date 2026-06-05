@@ -143,6 +143,19 @@ const PRODUCTS = {
       image: '',
     },
   ],
+  avinichi: [
+    {
+      id: 'avinichi-phyto-thermal-collection',
+      name: 'Phyto Thermal Collection',
+      brand: 'Avinichi',
+      description: 'A luxurious 3-piece collection including the Phyto Remedy Thermal Mask (self-heating, reduces fine lines, wrinkles, and dark spots with a vitamin-rich formula), the Hydrating Antioxidant Serum (feather-light blend of fruit and berry extracts, peptides, and humectants for plump, hydrated skin), and the Mulberr-E Moisture Infusion Cream (vitamin E and fruit extracts for lifting, firming, and redefining the complexion). Includes a jade roller for enhanced product absorption.',
+      benefits: 'Self-heating thermal mask, reduces fine lines and wrinkles, brightens dark spots, deep hydration with peptides and hyaluronic acid, lifts and firms with vitamin E and fruit extracts, includes jade roller for lymphatic drainage and absorption',
+      ingredients: 'Phyto Remedy Thermal Mask – PEG-8, Zeolite, Kaolin, Methyl Gluceth-20, Retinyl Palmitate, Ascorbic Acid, Tocopheryl Acetate, Organic Arnica Montana Flower Extract, Organic Aloe Barbadensis Leaf Extract, Organic Prunus Amygdalus Dulcis Seed Extract, Organic Coffee Arabica Seed Extract, Organic Citrus Limon Fruit Extract, Organic Angelica Archangelica Root Extract, Ganoderma Lucidum (Mushroom) Extract, Phenoxyethanol, Ethylhexylglycerin, Mica, Titanium Dioxide CI-77891, Iron Oxide CI-77499. Hydrating Antioxidant Serum – Aqua, Glycerin, Polysorbate 20, Palmitoyl Tripeptide-1, Palmitoyl Tetrapeptide-7, Sodium Hyaluronate, Sodium Polystyrene Sulfonate, Organic Crataegus Monogyna (Hawthorn Berries) Fruit Extract, Organic Syringa Vulgaris Extract, Organic Pyrus Malus (Apple) Fruit Extract, Acetyl Hexapeptide-8, Ganoderma Lucidum (Mushroom) Extract, Sclerotium Gum, Butylene Glycol, Allantoin, Carbomer, Disodium EDTA, Potassium Sorbate, Aminomethyl Propanediol, Phenoxyethanol, Ethylhexylglycerin, Fragrance. Mulberr-E Moisture Infusion Cream – Aqua, Propylene Glycol, Isopropyl Palmitate, Glyceryl Stearate, Caprylic/Capric Triglyceride, Stearic Acid, Glycerin, Cetearyl Alcohol, Ceteareth-20, Ganoderma Lucidum (Mushroom) Extract, Organic Rosa Canina Fruit Extract, Organic Rosmarinus Officinalis (Rosemary) Leaf Extract, Organic Vitis Vinifera (Grape) Seed Extract, Magnesium Aluminum Silicate, Salicylic Acid, Allantoin, Tocopheryl Acetate (Vitamin E), Retinyl Palmitate (Vitamin A), Disodium EDTA, Xanthan Gum, Dimethicone, Carbomer, Aminomethyl Propanediol, Phenoxyethanol, Ethylhexylglycerin, Fragrance',
+      howToUse: 'Apply the Phyto Remedy Thermal Mask to cleansed skin. Gently massage onto the face in a circular motion. To intensify heating treatment, massage 2-3 drops of the Hydrating Antioxidant Serum over the mask. Allow the mask to rest for 10-15 minutes, then rinse with warm water. Apply the Mulberr-E Moisture Infusion Cream evenly to the face after. Massage gently into skin. To increase product absorption, use the jade roller at the center of the face, under the eyes and cheekbones, moving in short, gentle strokes. Continue to the jawbone, starting at the chin, and moving out. Roll above the eyebrows and forehead in an out and up motion.',
+      step: 'mask + serum + moisturizer',
+      image: 'https://www.avinichi.com/wp-content/uploads/Phyto-Thermal-Collection-1.png',
+    },
+  ],
   hydrasphere: [
     {
       id: 'hydrasphere-advanced-foaming-cleanser',
