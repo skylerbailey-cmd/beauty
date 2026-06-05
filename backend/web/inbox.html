@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <title>Smart Inbox — Glow SF</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --rose:    #c97d8a;
+      --rose-lt: #f2dde2;
+      --rose-dk: #9e5567;
+      --gold:    #c9a96e;
+      --gold-lt: #f5edd9;
+      --cream:   #fdf9f5;
+      --dark:    #2c2022;
+      --mid:     #6b5057;
+      --border:  #e8d5d9;
+      --white:   #ffffff;
+      --success: #6B9E6B;
+      --danger:  #C96C6C;
+      --shadow:  0 4px 24px rgba(44,32,34,.08);
+      --radius:  14px;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      background: var(--cream);
+      color: var(--dark);
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+
+    h1, h2, h3, h4 {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-weight: normal;
+    }
+
+    /* ── App Shell ─────────────────────────────────────────────────── */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      max-width: 480px;
+      margin: 0 auto;
+      background: var(--cream);
+      position: relative;
+    }
+
+    @media (min-width: 481px) {
+      #app {
+        border-left: 1px solid var(--border);
+        border-right: 1px solid var(--border);
+      }
+    }
+
+    /* ── Header ────────────────────────────────────────────────────── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 20px 12px;
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      position: relative;
+      z-index: 100;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .header-logo {
+      width: 32px;
+      height: 32px;
+      background: var(--rose);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--white);
+      font-family: Georgia, serif;
+      font-size: 16px;
+      font-weight: bold;
+    }
+
+    .header-title {
+      font-family: Georgia, serif;
+      font-size: 18px;
+      color: var(--dark);
+    }
+
+    .header-subtitle {
+      font-size: 11px;
+      color: var(--mid);
+      margin-top: -2px;
+    }
+
+    .menu-btn {
+      width: 36px;
+      height: 36px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--white);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 16px;
+      color: var(--mid);
+      transition: background .15s;
+    }
+
+    .menu-btn:active { background: var(--cream); }
+
+    .menu-dropdown {
+      display: none;
+      position: absolute;
+      top: 56px;
+      right: 20px;
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      min-width: 190px;
+      z-index: 200;
+      overflow: hidden;
+    }
+
+    .menu-dropdown.open { display: block; }
+
+    .menu-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      font-size: 14px;
+      color: var(--dark);
+      text-decoration: none;
+      transition: background .15s;
+    }
+
+    .menu-item:active, .menu-item:hover { background: var(--cream); }
+    .menu-item.active { color: var(--rose); font-weight: 600; }
+    .menu-item + .menu-item { border-top: 1px solid var(--border); }
+
+    .menu-icon { font-size: 16px; width: 20px; text-align: center; }
+
+    /* ── Content Area ──────────────────────────────────────────────── */
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 8px;
+    }
+
+    /* ── Section Headers ───────────────────────────────────────────── */
+    .section-header {
+      padding: 16px 20px 8px;
+      font-family: Georgia, serif;
+      font-size: 14px;
+      color: var(--mid);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-count {
+      background: var(--rose-lt);
+      color: var(--rose);
+      font-family: system-ui, sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+
+    /* ── Refresh Button ────────────────────────────────────────────── */
+    .refresh-bar {
+      display: flex;
+      justify-content: center;
+      padding: 8px 0 0;
+    }
+
+    .refresh-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 6px 16px;
+      font-size: 12px;
+      color: var(--mid);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all .15s;
+    }
+
+    .refresh-btn:active { background: var(--white); }
+    .refresh-btn.spinning .refresh-icon { animation: spin .6s linear infinite; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .refresh-icon {
+      display: inline-block;
+      font-size: 13px;
+    }
+
+    /* ── Email Cards ───────────────────────────────────────────────── */
+    .email-card {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin: 4px 12px;
+      padding: 14px 16px;
+      background: var(--white);
+      border-radius: var(--radius);
+      box-shadow: 0 1px 4px rgba(44,32,34,.04);
+      cursor: pointer;
+      transition: transform .1s, box-shadow .15s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .email-card:active {
+      transform: scale(.985);
+      box-shadow: 0 1px 2px rgba(44,32,34,.06);
+    }
+
+    .email-avatar {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: var(--rose-lt);
+      color: var(--rose);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 15px;
+      flex-shrink: 0;
+    }
+
+    .email-body {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .email-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .email-name {
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--dark);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .email-time {
+      font-size: 12px;
+      color: var(--mid);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .email-subject {
+      font-size: 13px;
+      color: var(--dark);
+      margin-top: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .email-snippet {
+      font-size: 12px;
+      color: var(--mid);
+      margin-top: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .email-badges {
+      display: flex;
+      gap: 6px;
+      margin-top: 6px;
+    }
+
+    .badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 8px;
+      text-transform: uppercase;
+      letter-spacing: .3px;
+    }
+
+    .badge-draft {
+      background: var(--gold-lt);
+      color: var(--gold);
+    }
+
+    .badge-pending {
+      background: var(--rose-lt);
+      color: var(--rose);
+    }
+
+    .badge-sent {
+      background: #e4f0e4;
+      color: var(--success);
+    }
+
+    .badge-urgent {
+      background: #fce8e8;
+      color: var(--danger);
+    }
+
+    /* Archive swipe button */
+    .email-card .archive-btn-inline {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      font-size: 18px;
+      color: var(--mid);
+      padding: 8px;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity .15s;
+    }
+
+    .email-card:hover .archive-btn-inline { opacity: 1; }
+
+    /* ── Follow-up Cards ───────────────────────────────────────────── */
+    .followup-card {
+      margin: 4px 12px;
+      padding: 14px 16px;
+      background: var(--white);
+      border-radius: var(--radius);
+      box-shadow: 0 1px 4px rgba(44,32,34,.04);
+      cursor: pointer;
+    }
+
+    .followup-card.urgent {
+      border-left: 3px solid var(--danger);
+    }
+
+    .followup-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .followup-name {
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    .followup-days {
+      font-size: 12px;
+      color: var(--mid);
+    }
+
+    .followup-days.urgent { color: var(--danger); font-weight: 600; }
+
+    .followup-subject {
+      font-size: 13px;
+      color: var(--mid);
+      margin-top: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .followup-actions {
+      margin-top: 10px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-sm {
+      font-size: 12px;
+      padding: 6px 14px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--white);
+      color: var(--mid);
+      cursor: pointer;
+      transition: all .15s;
+    }
+
+    .btn-sm:active { background: var(--cream); }
+
+    .btn-sm.primary {
+      background: var(--rose);
+      color: var(--white);
+      border-color: var(--rose);
+    }
+
+    .btn-sm.primary:active { background: var(--rose-dk); }
+
+    /* ── Archived Cards ────────────────────────────────────────────── */
+    .archived-card {
+      opacity: .65;
+    }
+
+    /* ── Empty & Loading States ────────────────────────────────────── */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+      text-align: center;
+    }
+
+    .empty-emoji { font-size: 40px; margin-bottom: 12px; }
+
+    .empty-text {
+      font-family: Georgia, serif;
+      font-size: 16px;
+      color: var(--mid);
+    }
+
+    .spinner-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+    }
+
+    .spinner {
+      width: 28px;
+      height: 28px;
+      border: 3px solid var(--border);
+      border-top-color: var(--rose);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+
+    /* ── Tab Bar ───────────────────────────────────────────────────── */
+    .tab-bar {
+      display: flex;
+      border-top: 1px solid var(--border);
+      background: var(--white);
+      padding-bottom: env(safe-area-inset-bottom, 0);
+      z-index: 100;
+    }
+
+    .tab {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding: 10px 0 8px;
+      background: none;
+      border: none;
+      font-size: 10px;
+      color: var(--mid);
+      cursor: pointer;
+      transition: color .15s;
+      position: relative;
+    }
+
+    .tab.active { color: var(--rose); }
+
+    .tab-icon { font-size: 20px; }
+
+    .tab-label { font-weight: 500; }
+
+    .tab-badge {
+      position: absolute;
+      top: 6px;
+      right: calc(50% - 20px);
+      min-width: 16px;
+      height: 16px;
+      background: var(--danger);
+      color: var(--white);
+      font-size: 9px;
+      font-weight: 700;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 4px;
+    }
+
+    .tab-badge:empty { display: none; }
+
+    /* ── Thread View ───────────────────────────────────────────────── */
+    .thread-view {
+      position: absolute;
+      inset: 0;
+      background: var(--cream);
+      z-index: 150;
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform .25s ease;
+    }
+
+    .thread-view.open { transform: translateX(0); }
+
+    .thread-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 20px 12px;
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .back-btn {
+      width: 34px;
+      height: 34px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--white);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 18px;
+      color: var(--mid);
+    }
+
+    .back-btn:active { background: var(--cream); }
+
+    .thread-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .thread-subject {
+      font-family: Georgia, serif;
+      font-size: 16px;
+      color: var(--dark);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .thread-email {
+      font-size: 12px;
+      color: var(--mid);
+      margin-top: 1px;
+    }
+
+    .thread-messages {
+      flex: 1;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 16px 16px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .message-bubble {
+      max-width: 85%;
+      padding: 12px 16px;
+      border-radius: 16px;
+      font-size: 14px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .message-inbound {
+      align-self: flex-start;
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 4px;
+    }
+
+    .message-outbound {
+      align-self: flex-end;
+      background: var(--rose-lt);
+      border-bottom-right-radius: 4px;
+    }
+
+    .message-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .3px;
+      margin-bottom: 4px;
+      color: var(--mid);
+    }
+
+    .message-outbound .message-label { color: var(--rose); }
+
+    .message-time {
+      font-size: 10px;
+      color: var(--mid);
+      margin-top: 4px;
+      text-align: right;
+    }
+
+    /* ── Draft Editor ──────────────────────────────────────────────── */
+    .draft-area {
+      background: var(--white);
+      border-top: 1px solid var(--border);
+      padding: 12px 16px 16px;
+      padding-bottom: calc(16px + env(safe-area-inset-bottom, 0));
+    }
+
+    .draft-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--gold);
+      margin-bottom: 8px;
+    }
+
+    .draft-textarea {
+      width: 100%;
+      min-height: 100px;
+      max-height: 200px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      font-family: system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      color: var(--dark);
+      background: var(--cream);
+      resize: vertical;
+      outline: none;
+      transition: border-color .15s;
+    }
+
+    .draft-textarea:focus { border-color: var(--rose); }
+
+    .draft-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 10px;
+    }
+
+    .char-count {
+      font-size: 11px;
+      color: var(--mid);
+    }
+
+    .char-count.over { color: var(--danger); font-weight: 600; }
+
+    .draft-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 10px;
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+    }
+
+    .btn:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+
+    .btn-send {
+      background: var(--rose);
+      color: var(--white);
+    }
+
+    .btn-send:active:not(:disabled) { background: var(--rose-dk); }
+
+    .btn-archive {
+      background: var(--white);
+      color: var(--mid);
+      border: 1px solid var(--border);
+    }
+
+    .btn-archive:active { background: var(--cream); }
+
+    /* ── Toast ──────────────────────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--dark);
+      color: var(--white);
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 500;
+      opacity: 0;
+      transition: all .3s ease;
+      z-index: 500;
+      white-space: nowrap;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* ── Confirm Dialog ────────────────────────────────────────────── */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(44,32,34,.4);
+      z-index: 300;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .2s;
+    }
+
+    .overlay.open { opacity: 1; pointer-events: auto; }
+
+    .confirm-sheet {
+      background: var(--white);
+      border-radius: 20px 20px 0 0;
+      padding: 24px 20px;
+      padding-bottom: calc(24px + env(safe-area-inset-bottom, 0));
+      width: 100%;
+      max-width: 480px;
+      transform: translateY(100%);
+      transition: transform .25s ease;
+    }
+
+    .overlay.open .confirm-sheet { transform: translateY(0); }
+
+    .confirm-title {
+      font-family: Georgia, serif;
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+
+    .confirm-text {
+      font-size: 14px;
+      color: var(--mid);
+      margin-bottom: 20px;
+    }
+
+    .confirm-actions {
+      display: flex;
+      gap: 10px;
+    }
+
+    .confirm-actions .btn { flex: 1; }
+
+    .btn-cancel {
+      background: var(--cream);
+      color: var(--dark);
+    }
+
+    .btn-danger {
+      background: var(--danger);
+      color: var(--white);
+    }
+
+    /* ── Utility ───────────────────────────────────────────────────── */
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="header-logo">G</div>
+      <div>
+        <div class="header-title">Smart Inbox</div>
+        <div class="header-subtitle">Glow SF</div>
+      </div>
+    </div>
+    <button class="menu-btn" id="menuBtn" aria-label="Menu">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+        <rect x="2" y="2" width="5" height="5" rx="1"/><rect x="11" y="2" width="5" height="5" rx="1"/>
+        <rect x="2" y="11" width="5" height="5" rx="1"/><rect x="11" y="11" width="5" height="5" rx="1"/>
+      </svg>
+    </button>
+    <div class="menu-dropdown" id="menuDropdown">
+      <a href="/inbox.html" class="menu-item active">
+        <span class="menu-icon">&#x1F4E8;</span> Smart Inbox
+      </a>
+      <a href="/" class="menu-item">
+        <span class="menu-icon">&#x1F48C;</span> Welcome Emails
+      </a>
+    </div>
+  </div>
+
+  <!-- Content -->
+  <div class="content" id="content"></div>
+
+  <!-- Thread View (slides in) -->
+  <div class="thread-view" id="threadView">
+    <div class="thread-header">
+      <button class="back-btn" id="backBtn" aria-label="Back">&larr;</button>
+      <div class="thread-info">
+        <div class="thread-subject" id="threadSubject"></div>
+        <div class="thread-email" id="threadEmail"></div>
+      </div>
+    </div>
+    <div class="thread-messages" id="threadMessages"></div>
+    <div class="draft-area hidden" id="draftArea">
+      <div class="draft-label">Your Draft Reply</div>
+      <textarea class="draft-textarea" id="draftTextarea" maxlength="2000" placeholder="Edit your reply..."></textarea>
+      <div class="draft-footer">
+        <span class="char-count" id="charCount">0 / 2,000</span>
+        <div class="draft-actions">
+          <button class="btn btn-archive" id="threadArchiveBtn">Archive</button>
+          <button class="btn btn-send" id="threadSendBtn">Send</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab Bar -->
+  <div class="tab-bar">
+    <button class="tab active" data-tab="inbox" id="tabInbox">
+      <span class="tab-icon">&#x1F4E5;</span>
+      <span class="tab-label">Inbox</span>
+      <span class="tab-badge" id="inboxBadge"></span>
+    </button>
+    <button class="tab" data-tab="followups" id="tabFollowups">
+      <span class="tab-icon">&#x1F504;</span>
+      <span class="tab-label">Follow-ups</span>
+      <span class="tab-badge" id="followupBadge"></span>
+    </button>
+    <button class="tab" data-tab="archived" id="tabArchived">
+      <span class="tab-icon">&#x1F4C1;</span>
+      <span class="tab-label">Archived</span>
+      <span class="tab-badge"></span>
+    </button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Confirm Overlay -->
+<div class="overlay" id="confirmOverlay">
+  <div class="confirm-sheet">
+    <div class="confirm-title" id="confirmTitle"></div>
+    <div class="confirm-text" id="confirmText"></div>
+    <div class="confirm-actions">
+      <button class="btn btn-cancel" id="confirmCancel">Cancel</button>
+      <button class="btn btn-danger" id="confirmOk">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ── State ───────────────────────────────────────────────────────
+  let currentTab = 'inbox';
+  let currentEmail = null;
+  let confirmCallback = null;
+
+  // ── DOM refs ────────────────────────────────────────────────────
+  const $ = id => document.getElementById(id);
+  const content = $('content');
+  const threadView = $('threadView');
+  const threadSubject = $('threadSubject');
+  const threadEmail = $('threadEmail');
+  const threadMessages = $('threadMessages');
+  const draftArea = $('draftArea');
+  const draftTextarea = $('draftTextarea');
+  const charCount = $('charCount');
+  const toast = $('toast');
+  const menuDropdown = $('menuDropdown');
+  const confirmOverlay = $('confirmOverlay');
+
+  // ── API ─────────────────────────────────────────────────────────
+  const api = {
+    async get(url) {
+      const res = await fetch(url, { credentials: 'include' });
+      if (res.status === 401) { window.location.href = '/'; return null; }
+      if (!res.ok) throw new Error(`API error ${res.status}`);
+      return res.json();
+    },
+    async post(url, body) {
+      const res = await fetch(url, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (res.status === 401) { window.location.href = '/'; return null; }
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `API error ${res.status}`); }
+      return res.json();
+    },
+    async put(url, body) {
+      const res = await fetch(url, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.status === 401) { window.location.href = '/'; return null; }
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `API error ${res.status}`); }
+      return res.json();
+    },
+  };
+
+  // ── Helpers ─────────────────────────────────────────────────────
+  function timeAgo(dateStr) {
+    if (!dateStr) return '';
+    const now = Date.now();
+    const then = new Date(dateStr).getTime();
+    const diff = Math.max(0, now - then);
+    const secs = Math.floor(diff / 1000);
+    if (secs < 60) return 'just now';
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return mins + 'm';
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return hrs + 'h';
+    const days = Math.floor(hrs / 24);
+    if (days < 30) return days + 'd';
+    const months = Math.floor(days / 30);
+    return months + 'mo';
+  }
+
+  function daysSince(dateStr) {
+    if (!dateStr) return 0;
+    return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
+  }
+
+  function initials(name) {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0][0].toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 2200);
+  }
+
+  function showConfirm(title, text, okLabel, cb) {
+    $('confirmTitle').textContent = title;
+    $('confirmText').textContent = text;
+    $('confirmOk').textContent = okLabel;
+    confirmCallback = cb;
+    confirmOverlay.classList.add('open');
+  }
+
+  function hideConfirm() {
+    confirmOverlay.classList.remove('open');
+    confirmCallback = null;
+  }
+
+  function renderLoading() {
+    content.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  }
+
+  // ── Menu ────────────────────────────────────────────────────────
+  $('menuBtn').addEventListener('click', e => {
+    e.stopPropagation();
+    menuDropdown.classList.toggle('open');
+  });
+
+  document.addEventListener('click', () => menuDropdown.classList.remove('open'));
+
+  // ── Tabs ────────────────────────────────────────────────────────
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      if (tab.dataset.tab === currentTab) return;
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      currentTab = tab.dataset.tab;
+      closeThread();
+      loadTab();
+    });
+  });
+
+  // ── Thread View ─────────────────────────────────────────────────
+  $('backBtn').addEventListener('click', closeThread);
+
+  function closeThread() {
+    threadView.classList.remove('open');
+    currentEmail = null;
+  }
+
+  async function openThread(emailId) {
+    threadView.classList.add('open');
+    threadMessages.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+    draftArea.classList.add('hidden');
+
+    try {
+      const data = await api.get('/api/emails/' + emailId);
+      if (!data) return;
+      const email = data.email;
+      currentEmail = email;
+
+      threadSubject.textContent = email.subject || '(no subject)';
+      threadEmail.textContent = email.from_email || '';
+
+      // Build messages
+      let html = '';
+
+      // Inbound message (the customer email)
+      if (email.body || email.snippet) {
+        html += `
+          <div class="message-bubble message-inbound">
+            <div class="message-label">${escHtml(email.from_name || email.from_email || 'Customer')}</div>
+            <div>${escHtml(email.body || email.snippet)}</div>
+            <div class="message-time">${timeAgo(email.received_at)}</div>
+          </div>`;
+      }
+
+      // Outbound (sent reply)
+      if (email.status === 'sent' && email.draft_content) {
+        html += `
+          <div class="message-bubble message-outbound">
+            <div class="message-label">Sent</div>
+            <div>${escHtml(email.draft_content)}</div>
+            <div class="message-time">${timeAgo(email.sent_at)}</div>
+          </div>`;
+      }
+
+      threadMessages.innerHTML = html || '<div class="empty-state"><div class="empty-text">No messages</div></div>';
+      threadMessages.scrollTop = threadMessages.scrollHeight;
+
+      // Draft area
+      if (email.draft_content && email.status !== 'sent' && email.status !== 'archived') {
+        draftArea.classList.remove('hidden');
+        draftTextarea.value = email.draft_content;
+        updateCharCount();
+      } else if (email.status === 'pending') {
+        // No draft yet, but show editor for pending items
+        draftArea.classList.add('hidden');
+      } else {
+        draftArea.classList.add('hidden');
+      }
+
+      // Show archive-only footer for non-draft items
+      if (!email.draft_content && email.status !== 'sent' && email.status !== 'archived') {
+        draftArea.classList.remove('hidden');
+        draftTextarea.classList.add('hidden');
+        $('threadSendBtn').classList.add('hidden');
+        charCount.classList.add('hidden');
+        $('draft-label-el')?.remove();
+        const lbl = draftArea.querySelector('.draft-label');
+        if (lbl) lbl.textContent = 'Awaiting AI draft...';
+      } else if (email.draft_content && email.status !== 'sent' && email.status !== 'archived') {
+        draftTextarea.classList.remove('hidden');
+        $('threadSendBtn').classList.remove('hidden');
+        charCount.classList.remove('hidden');
+        const lbl = draftArea.querySelector('.draft-label');
+        if (lbl) lbl.textContent = 'Your Draft Reply';
+      }
+
+      // Hide action buttons for archived/sent
+      if (email.status === 'sent' || email.status === 'archived') {
+        draftArea.classList.add('hidden');
+      }
+    } catch (err) {
+      threadMessages.innerHTML = '<div class="empty-state"><div class="empty-text">Failed to load email</div></div>';
+      console.error(err);
+    }
+  }
+
+  function escHtml(str) {
+    if (!str) return '';
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Draft Editor Events ─────────────────────────────────────────
+  draftTextarea.addEventListener('input', updateCharCount);
+
+  function updateCharCount() {
+    const len = draftTextarea.value.length;
+    charCount.textContent = len.toLocaleString() + ' / 2,000';
+    charCount.classList.toggle('over', len > 2000);
+    $('threadSendBtn').disabled = len === 0 || len > 2000;
+  }
+
+  // Send
+  $('threadSendBtn').addEventListener('click', async () => {
+    if (!currentEmail) return;
+    const btn = $('threadSendBtn');
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    try {
+      const draftContent = draftTextarea.value.trim();
+      await api.post('/api/emails/' + currentEmail.id + '/send', {
+        draft_content: draftContent !== currentEmail.draft_content ? draftContent : undefined,
+      });
+      showToast('Email sent!');
+      closeThread();
+      loadTab();
+    } catch (err) {
+      showToast('Failed to send: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Send';
+    }
+  });
+
+  // Archive from thread
+  $('threadArchiveBtn').addEventListener('click', () => {
+    if (!currentEmail) return;
+    showConfirm('Archive this email?', 'It will be moved to your archive.', 'Archive', async () => {
+      hideConfirm();
+      try {
+        await api.post('/api/emails/' + currentEmail.id + '/archive');
+        showToast('Archived');
+        closeThread();
+        loadTab();
+      } catch (err) {
+        showToast('Failed to archive');
+      }
+    });
+  });
+
+  // Confirm dialog
+  $('confirmCancel').addEventListener('click', hideConfirm);
+  $('confirmOk').addEventListener('click', () => { if (confirmCallback) confirmCallback(); });
+  confirmOverlay.addEventListener('click', e => { if (e.target === confirmOverlay) hideConfirm(); });
+
+  // ── Tab Loaders ─────────────────────────────────────────────────
+  async function loadTab() {
+    renderLoading();
+    if (currentTab === 'inbox') await loadInbox();
+    else if (currentTab === 'followups') await loadFollowups();
+    else if (currentTab === 'archived') await loadArchived();
+  }
+
+  async function loadInbox() {
+    try {
+      const [draftData, pendingData] = await Promise.all([
+        api.get('/api/emails?status=draft_ready'),
+        api.get('/api/emails?status=pending'),
+      ]);
+      if (!draftData || !pendingData) return;
+
+      const drafts = draftData.emails || [];
+      const pending = pendingData.emails || [];
+      const total = drafts.length + pending.length;
+
+      // Update badge
+      $('inboxBadge').textContent = total > 0 ? total : '';
+
+      if (total === 0) {
+        content.innerHTML = renderRefreshBar() +
+          '<div class="empty-state"><div class="empty-emoji">&#x2728;</div><div class="empty-text">You\'re all caught up!</div></div>';
+        bindRefresh();
+        return;
+      }
+
+      let html = renderRefreshBar();
+
+      if (drafts.length) {
+        html += `<div class="section-header">Drafts Ready <span class="section-count">${drafts.length}</span></div>`;
+        drafts.forEach(e => { html += renderEmailCard(e, true); });
+      }
+
+      if (pending.length) {
+        html += `<div class="section-header">New <span class="section-count">${pending.length}</span></div>`;
+        pending.forEach(e => { html += renderEmailCard(e, false); });
+      }
+
+      content.innerHTML = html;
+      bindRefresh();
+      bindCards();
+    } catch (err) {
+      content.innerHTML = '<div class="empty-state"><div class="empty-text">Failed to load inbox</div></div>';
+      console.error(err);
+    }
+  }
+
+  async function loadFollowups() {
+    try {
+      const data = await api.get('/api/emails/followup');
+      if (!data) return;
+      const emails = data.emails || [];
+
+      $('followupBadge').textContent = emails.length > 0 ? emails.length : '';
+
+      if (emails.length === 0) {
+        content.innerHTML = renderRefreshBar() +
+          '<div class="empty-state"><div class="empty-emoji">&#x1F31F;</div><div class="empty-text">No follow-ups needed!</div></div>';
+        bindRefresh();
+        return;
+      }
+
+      let html = renderRefreshBar();
+      html += `<div class="section-header">Awaiting Reply <span class="section-count">${emails.length}</span></div>`;
+
+      emails.forEach(e => {
+        const days = daysSince(e.sent_at);
+        const urgent = days >= 3;
+        html += `
+          <div class="followup-card${urgent ? ' urgent' : ''}" data-id="${e.id}">
+            <div class="followup-top">
+              <div class="followup-name">${escHtml(e.from_name || e.from_email)}</div>
+              <div class="followup-days${urgent ? ' urgent' : ''}">${days === 0 ? 'Today' : days + 'd ago'}</div>
+            </div>
+            <div class="followup-subject">${escHtml(e.subject)}</div>
+            <div class="followup-actions">
+              <button class="btn-sm" onclick="event.stopPropagation(); window.__viewThread('${e.id}')">View</button>
+              <button class="btn-sm primary" onclick="event.stopPropagation(); window.__archiveEmail('${e.id}')">Mark Resolved</button>
+            </div>
+          </div>`;
+      });
+
+      content.innerHTML = html;
+      bindRefresh();
+      bindFollowupCards();
+    } catch (err) {
+      content.innerHTML = '<div class="empty-state"><div class="empty-text">Failed to load follow-ups</div></div>';
+      console.error(err);
+    }
+  }
+
+  async function loadArchived() {
+    try {
+      const data = await api.get('/api/emails?status=archived');
+      if (!data) return;
+      const emails = data.emails || [];
+
+      if (emails.length === 0) {
+        content.innerHTML = renderRefreshBar() +
+          '<div class="empty-state"><div class="empty-emoji">&#x1F5C2;</div><div class="empty-text">No archived emails</div></div>';
+        bindRefresh();
+        return;
+      }
+
+      let html = renderRefreshBar();
+      html += `<div class="section-header">Archived <span class="section-count">${emails.length}</span></div>`;
+
+      emails.forEach(e => {
+        html += `<div class="archived-card">${renderEmailCard(e, false)}</div>`;
+      });
+
+      content.innerHTML = html;
+      bindRefresh();
+      bindCards();
+    } catch (err) {
+      content.innerHTML = '<div class="empty-state"><div class="empty-text">Failed to load archived emails</div></div>';
+      console.error(err);
+    }
+  }
+
+  // ── Card Renderers ──────────────────────────────────────────────
+  function renderEmailCard(email, isDraft) {
+    const name = email.from_name || email.from_email || 'Unknown';
+    const ini = initials(name);
+    const time = timeAgo(email.received_at);
+    const badges = [];
+    if (isDraft || email.status === 'draft_ready') badges.push('<span class="badge badge-draft">Draft</span>');
+    if (email.status === 'pending') badges.push('<span class="badge badge-pending">New</span>');
+    if (email.status === 'sent') badges.push('<span class="badge badge-sent">Sent</span>');
+
+    return `
+      <div class="email-card" data-id="${email.id}">
+        <div class="email-avatar">${ini}</div>
+        <div class="email-body">
+          <div class="email-top">
+            <div class="email-name">${escHtml(name)}</div>
+            <div class="email-time">${time}</div>
+          </div>
+          <div class="email-subject">${escHtml(email.subject || '(no subject)')}</div>
+          <div class="email-snippet">${escHtml(email.snippet || '')}</div>
+          ${badges.length ? '<div class="email-badges">' + badges.join('') + '</div>' : ''}
+        </div>
+        <button class="archive-btn-inline" onclick="event.stopPropagation(); window.__archiveEmail('${email.id}')" title="Archive">&#x1F4E6;</button>
+      </div>`;
+  }
+
+  function renderRefreshBar() {
+    return '<div class="refresh-bar"><button class="refresh-btn" id="refreshBtn"><span class="refresh-icon">&#x21BB;</span> Refresh</button></div>';
+  }
+
+  function bindRefresh() {
+    const btn = $('refreshBtn');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      btn.classList.add('spinning');
+      await loadTab();
+    });
+  }
+
+  function bindCards() {
+    content.querySelectorAll('.email-card').forEach(card => {
+      card.addEventListener('click', () => openThread(card.dataset.id));
+    });
+  }
+
+  function bindFollowupCards() {
+    content.querySelectorAll('.followup-card').forEach(card => {
+      card.addEventListener('click', () => openThread(card.dataset.id));
+    });
+  }
+
+  // ── Global helpers for onclick handlers ─────────────────────────
+  window.__viewThread = id => openThread(id);
+
+  window.__archiveEmail = id => {
+    showConfirm('Archive this email?', 'It will be moved to your archive.', 'Archive', async () => {
+      hideConfirm();
+      try {
+        await api.post('/api/emails/' + id + '/archive');
+        showToast('Archived');
+        loadTab();
+      } catch (err) {
+        showToast('Failed to archive');
+      }
+    });
+  };
+
+  // ── Init ────────────────────────────────────────────────────────
+  async function init() {
+    try {
+      const me = await api.get('/auth/me');
+      if (!me) return; // redirected
+      loadTab();
+    } catch (err) {
+      window.location.href = '/';
+    }
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
