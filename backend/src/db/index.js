@@ -178,6 +178,38 @@ function getFollowUpEmails(userId, hoursThreshold = 48) {
   `).all(userId, `-${hoursThreshold}`, userId);
 }
 
+// ─── Welcome Emails ──────────────────────────────────────────────────────────
+
+function saveWelcomeEmail({ customer_name, customer_email, products }) {
+  const stmt = db.prepare(`
+    INSERT INTO welcome_emails (customer_name, customer_email, products)
+    VALUES (?, ?, ?)
+  `);
+  const result = stmt.run(customer_name, customer_email, JSON.stringify(products));
+  return result.lastInsertRowid;
+}
+
+function getWelcomeEmails(limit = 50) {
+  return db.prepare(`
+    SELECT * FROM welcome_emails
+    ORDER BY sent_at DESC
+    LIMIT ?
+  `).all(limit);
+}
+
+function findOrCreateUserByEmail(email) {
+  let user = getUserByEmail(email);
+  if (!user) {
+    const { v4: uuidv4 } = require('uuid');
+    const id = uuidv4();
+    db.prepare(`
+      INSERT INTO users (id, email) VALUES (?, ?)
+    `).run(id, email);
+    user = getUser(id);
+  }
+  return user;
+}
+
 module.exports = {
   db,
   getUser,
@@ -198,4 +230,7 @@ module.exports = {
   updateDraftContent,
   markEmailSent,
   getFollowUpEmails,
+  findOrCreateUserByEmail,
+  saveWelcomeEmail,
+  getWelcomeEmails,
 };

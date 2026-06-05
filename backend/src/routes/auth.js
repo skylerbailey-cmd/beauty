@@ -3,7 +3,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { createOAuthClient, setupGmailWatch } = require('../services/gmail');
-const { saveUser, getUser, updateUserPushToken } = require('../db');
+const { db, saveUser, getUser, updateUserPushToken } = require('../db');
 
 const router = express.Router();
 
@@ -15,16 +15,45 @@ const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
 ];
 
+// ─── POST /auth/web-login ─────────────────────────────────────────────────────
+// Simple email-based login for the web UI (no password)
+
+router.post('/web-login', (req, res) => {
+  const { email } = req.body;
+  if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+    return res.status(400).json({ error: 'Valid email is required' });
+  }
+
+  const { findOrCreateUserByEmail } = require('../db');
+  const user = findOrCreateUserByEmail(email.trim().toLowerCase());
+
+  req.session.userId = user.id;
+
+  res.json({
+    success: true,
+    user: {
+      id: user.id,
+      email: user.email,
+      hasGmail: !!user.refresh_token,
+    },
+  });
+});
+
 // ─── GET /auth/google ──────────────────────────────────────────────────────────
 // Redirect user to Google OAuth consent screen
 
 router.get('/google', (req, res) => {
+  const from = req.query.from;
+  if (from === 'web') {
+    req.session.oauthFrom = 'web';
+  }
+
   const oauth2Client = createOAuthClient();
 
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: 'offline',
     scope: OAUTH_SCOPES,
-    prompt: 'consent', // force refresh_token on every login
+    prompt: 'consent',
     include_granted_scopes: true,
   });
 
@@ -57,18 +86,43 @@ router.get('/google/callback', async (req, res) => {
     const profileRes = await oauth2.userinfo.get();
     const profile = profileRes.data;
 
-    // Generate a stable user ID from Google sub
-    const userId = profile.id || uuidv4();
+    const isWebLogin = req.session?.oauthFrom === 'web';
+    const sessionUserId = req.session?.userId;
 
-    // Save/update user record
-    const user = saveUser({
-      id: userId,
-      email: profile.email,
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token || null,
-      push_token: null,
-      gmail_history_id: null,
-    });
+    // If coming from web login, update the existing user row with Gmail tokens
+    // Otherwise, create/update based on Google profile ID (mobile flow)
+    let userId;
+    if (isWebLogin && sessionUserId) {
+      // Update existing user's tokens and email
+      const { updateUserTokens, getUserByEmail } = require('../db');
+      const existingUser = getUser(sessionUserId);
+      if (existingUser) {
+        // Update email to match Google account and save tokens
+        db.prepare('UPDATE users SET email = ?, access_token = ?, refresh_token = COALESCE(?, refresh_token) WHERE id = ?')
+          .run(profile.email, tokens.access_token, tokens.refresh_token || null, sessionUserId);
+        userId = sessionUserId;
+      } else {
+        userId = profile.id || uuidv4();
+        saveUser({
+          id: userId,
+          email: profile.email,
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token || null,
+          push_token: null,
+          gmail_history_id: null,
+        });
+      }
+    } else {
+      userId = profile.id || uuidv4();
+      saveUser({
+        id: userId,
+        email: profile.email,
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token || null,
+        push_token: null,
+        gmail_history_id: null,
+      });
+    }
 
     // Set up Gmail push notifications
     try {
@@ -79,13 +133,18 @@ router.get('/google/callback', async (req, res) => {
 
     // Store userId in session
     req.session.userId = userId;
+    delete req.session.oauthFrom;
+
+    if (isWebLogin) {
+      // Redirect back to the web UI
+      return res.redirect('/');
+    }
 
     res.send(`
       <html><body style="font-family:sans-serif;text-align:center;padding:60px;background:#FDF6F0;">
         <h2 style="color:#D4A0A0;">✓ Gmail Connected!</h2>
         <p style="color:#2D2D2D;">Your User ID: <strong>${userId}</strong></p>
         <p style="color:#8A8A8A;">Copy this ID and add it to your mobile app .env as<br><code>EXPO_PUBLIC_USER_ID=${userId}</code></p>
-        ${tokens.refresh_token ? `<p style="color:#8A8A8A;margin-top:20px;">Refresh Token (save to Railway as GLOW_GMAIL_REFRESH_TOKEN):<br><code style="word-break:break-all;font-size:12px;">${tokens.refresh_token}</code></p>` : ''}
         <p style="color:#8A8A8A;margin-top:30px;">You can close this tab.</p>
       </body></html>
     `);
@@ -113,6 +172,7 @@ router.get('/me', (req, res) => {
   res.json({
     id: user.id,
     email: user.email,
+    hasGmail: !!user.refresh_token,
     push_token: user.push_token,
     gmail_history_id: user.gmail_history_id,
     created_at: user.created_at,

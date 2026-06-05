@@ -372,11 +372,15 @@ const STEP_REASONS = {
   'Sun Protection': 'SPF is the single most important anti-aging step. Without it, UV damage undoes the benefits of every other product in your routine.',
 };
 
-function routineStepHtml(label, product, suggestion) {
+function routineStepHtml(label, product, suggestion, opts = {}) {
   if (product) {
     return `<p style="margin-bottom:8px">✅ <b>${label}:</b> ${productLink(product)} — ${product.howToUse || ''}</p>`;
   }
   if (suggestion) {
+    // If this suggestion was already detailed in the AM routine, keep it short
+    if (opts.alreadySuggested) {
+      return `<p style="margin-bottom:8px">👉 <b>${label}:</b> Use your ${productLink(suggestion)} here too — same as your morning routine.</p>`;
+    }
     const reason = STEP_REASONS[label] || '';
     return `<p style="margin-bottom:8px">👉 <b>${label} (not in your collection yet):</b> ${reason ? reason + ' ' : ''}We recommend ${productLink(suggestion)} — ${shortDescription(suggestion)} Reply to this email to ask about current specials and our free shipping!</p>`;
   }
@@ -472,16 +476,31 @@ router.post('/generate', (req, res) => {
 
   const name = customerName.trim();
 
-  // ── 1. Welcome paragraph ──────────────────────────────────────────────
-  const welcomeHtml = `<p style="margin-bottom:16px">Hi ${name}! 👋</p>
-<p style="margin-bottom:24px">Welcome to the Glow SF family! We're so excited you've chosen us as part of your beauty journey. We handpick every product in our store because we genuinely believe in what they can do for your skin — and we can't wait for you to experience the results.</p>`;
+  // ── 1. Welcome paragraph (randomly selected) ──────────────────────────
+  const WELCOMES = [
+    `<p style="margin-bottom:16px">Hi ${name}! 👋</p>
+<p style="margin-bottom:24px">Welcome to the Glow SF family! We're so excited you've chosen us as part of your beauty journey. We handpick every product in our store because we genuinely believe in what they can do for your skin — and we can't wait for you to experience the results.</p>`,
+
+    `<p style="margin-bottom:16px">Hey ${name}! 💖</p>
+<p style="margin-bottom:24px">We are thrilled to have you as part of the Glow SF community! Every product we carry has been carefully selected because we've seen the incredible results firsthand — and now it's your turn. Get ready to fall in love with your skin all over again.</p>`,
+
+    `<p style="margin-bottom:16px">Hi ${name}! ✨</p>
+<p style="margin-bottom:24px">Welcome aboard — you just made an amazing choice for your skin! At Glow SF, we're passionate about helping you look and feel your absolute best. We personally stand behind every product in our collection, and we're so excited to be part of your glow-up journey.</p>`,
+
+    `<p style="margin-bottom:16px">Hello ${name}! 🌸</p>
+<p style="margin-bottom:24px">A warm welcome from all of us at Glow SF! We believe great skin starts with great products — and you've just picked some of our favorites. We're here to make sure you get the most out of every single one, so let's dive in!</p>`,
+
+    `<p style="margin-bottom:16px">Hi there, ${name}! 🌿</p>
+<p style="margin-bottom:24px">Welcome to Glow SF — we're so glad you found us! We started this store because we believe everyone deserves access to truly exceptional skincare. Your new products are going to do wonderful things for your skin, and we're here every step of the way.</p>`,
+  ];
+  const welcomeHtml = WELCOMES[Math.floor(Math.random() * WELCOMES.length)];
 
   // ── 2. Your New Products ──────────────────────────────────────────────
   const productsHtml = selectedProducts.map(p =>
     `<p style="margin-bottom:12px">✨ ${productLink(p)} — ${LOVE_LINES[p.id] || shortDescription(p)}</p>`
   ).join('\n');
 
-  const newProductsSection = `<p style="margin-bottom:8px"><b>🛍️ Your New Products</b></p>\n${productsHtml}`;
+  const newProductsSection = `<p style="margin-bottom:12px;font-size:20px"><b>🛍️ Your New Products</b></p>\n${productsHtml}`;
 
   // ── 3. Skincare Routine ───────────────────────────────────────────────
   // Find purchased products for each step, or suggest alternatives
@@ -496,24 +515,32 @@ router.post('/generate', (req, res) => {
   const amMoisturizer = findPurchased(p => isMoisturizer(p) && !isPmProduct(p)) || findPurchased(isMoisturizer) || null;
   const amSpf = findPurchased(isSpf) || null;
 
-  let amHtml = `<p style="margin-bottom:8px"><b>☀️ Morning Routine</b></p>\n`;
-  amHtml += routineStepHtml('Cleanse', amCleanser, amCleanser ? null : findSug(isCleanser));
-  amHtml += routineStepHtml('Tone', amToner, amToner ? null : findSug(isToner));
-  amHtml += routineStepHtml('Serum', amSerum, amSerum ? null : findSug(isSerum));
-  amHtml += routineStepHtml('Eye Treatment', amEye, amEye ? null : findSug(isEye));
-  amHtml += routineStepHtml('Moisturize', amMoisturizer, amMoisturizer ? null : findSug(isMoisturizer));
-  amHtml += routineStepHtml('Sun Protection', amSpf, amSpf ? null : findSug(isSpf));
+  // Track which suggestions we make in AM so PM can reference them briefly
+  const sugCleanser = !amCleanser ? findSug(isCleanser) : null;
+  const sugToner = !amToner ? findSug(isToner) : null;
+  const sugSerum = !amSerum ? findSug(isSerum) : null;
+  const sugEye = !amEye ? findSug(isEye) : null;
+  const sugMoisturizer = !amMoisturizer ? findSug(isMoisturizer) : null;
+  const sugSpf = !amSpf ? findSug(isSpf) : null;
+
+  let amHtml = `<p style="margin-bottom:8px;font-size:17px"><b>☀️ Morning Routine</b></p>\n`;
+  amHtml += routineStepHtml('Cleanse', amCleanser, sugCleanser);
+  amHtml += routineStepHtml('Tone', amToner, sugToner);
+  amHtml += routineStepHtml('Serum', amSerum, sugSerum);
+  amHtml += routineStepHtml('Eye Treatment', amEye, sugEye);
+  amHtml += routineStepHtml('Moisturize', amMoisturizer, sugMoisturizer);
+  amHtml += routineStepHtml('Sun Protection', amSpf, sugSpf);
 
   // PM Routine
   const pmSerum = findPurchased(p => isSerum(p) && isPmProduct(p)) || findPurchased(p => isSerum(p) && p !== amSerum) || amSerum;
   const pmMoisturizer = findPurchased(p => isMoisturizer(p) && isPmProduct(p)) || findPurchased(p => isMoisturizer(p) && p !== amMoisturizer) || amMoisturizer;
 
-  let pmHtml = `<p style="margin-top:20px;margin-bottom:8px"><b>🌙 Evening Routine</b></p>\n`;
-  pmHtml += routineStepHtml('Cleanse', amCleanser, amCleanser ? null : findSug(isCleanser));
-  pmHtml += routineStepHtml('Tone', amToner, amToner ? null : findSug(isToner));
-  pmHtml += routineStepHtml('Serum', pmSerum, pmSerum ? null : findSug(isSerum));
-  pmHtml += routineStepHtml('Eye Treatment', amEye, amEye ? null : findSug(isEye));
-  pmHtml += routineStepHtml('Moisturize', pmMoisturizer, pmMoisturizer ? null : findSug(isMoisturizer));
+  let pmHtml = `<p style="margin-top:20px;margin-bottom:8px;font-size:17px"><b>🌙 Evening Routine</b></p>\n`;
+  pmHtml += routineStepHtml('Cleanse', amCleanser, sugCleanser, { alreadySuggested: !!sugCleanser });
+  pmHtml += routineStepHtml('Tone', amToner, sugToner, { alreadySuggested: !!sugToner });
+  pmHtml += routineStepHtml('Serum', pmSerum, pmSerum ? null : sugSerum, { alreadySuggested: !!sugSerum });
+  pmHtml += routineStepHtml('Eye Treatment', amEye, sugEye, { alreadySuggested: !!sugEye });
+  pmHtml += routineStepHtml('Moisturize', pmMoisturizer, pmMoisturizer ? null : sugMoisturizer, { alreadySuggested: !!sugMoisturizer });
 
   // Treatment cream (if purchased)
   const treatment = findPurchased(isTreatment);
@@ -525,7 +552,7 @@ router.post('/generate', (req, res) => {
   const weeklyProducts = selectedProducts.filter(p => isExfoliant(p) || isMask(p) || isDevice(p));
   let weeklyHtml = '';
   if (weeklyProducts.length > 0) {
-    weeklyHtml = `<p style="margin-top:20px;margin-bottom:8px"><b>📅 Weekly Treatments</b></p>\n`;
+    weeklyHtml = `<p style="margin-top:20px;margin-bottom:8px;font-size:17px"><b>📅 Weekly Treatments</b></p>\n`;
     weeklyProducts.forEach(p => {
       const freq = isExfoliant(p) ? '1-2x/week' : isMask(p) ? '1-3x/week' : 'as directed';
       weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${p.name}</b> (${freq}) — ${p.howToUse || ''}</p>`;
@@ -536,19 +563,19 @@ router.post('/generate', (req, res) => {
   if (!weeklyProducts.some(isExfoliant)) {
     const sugExfoliant = findSug(isExfoliant);
     if (sugExfoliant) {
-      if (!weeklyHtml) weeklyHtml = `<p style="margin-top:20px;margin-bottom:8px"><b>📅 Weekly Treatments</b></p>\n`;
+      if (!weeklyHtml) weeklyHtml = `<p style="margin-top:20px;margin-bottom:8px;font-size:17px"><b>📅 Weekly Treatments</b></p>\n`;
       weeklyHtml += `<p style="margin-bottom:8px">👉 <b>Exfoliate (not in your collection yet):</b> Regular exfoliation removes dead skin cells that build up and make your complexion look dull — it's the secret to that fresh, glowing look. We recommend ${productLink(sugExfoliant)} — ${shortDescription(sugExfoliant)} Reply to this email to ask about current specials and our free shipping!</p>`;
     }
   }
   if (!weeklyProducts.some(isMask)) {
     const sugMask = findSug(isMask);
     if (sugMask) {
-      if (!weeklyHtml) weeklyHtml = `<p style="margin-top:20px;margin-bottom:8px"><b>📅 Weekly Treatments</b></p>\n`;
+      if (!weeklyHtml) weeklyHtml = `<p style="margin-top:20px;margin-bottom:8px;font-size:17px"><b>📅 Weekly Treatments</b></p>\n`;
       weeklyHtml += `<p style="margin-bottom:8px">👉 <b>Mask (not in your collection yet):</b> A weekly mask gives your skin a concentrated boost of nourishment that your daily routine can't match — think of it as a spa treatment at home. We recommend ${productLink(sugMask)} — ${shortDescription(sugMask)} Reply to this email to ask about current specials and our free shipping!</p>`;
     }
   }
 
-  const routineSection = `<p style="margin-top:24px;margin-bottom:8px"><b>🌿 Your Personalized Skincare Routine</b></p>\n${amHtml}\n${pmHtml}\n${weeklyHtml}`;
+  const routineSection = `<p style="margin-top:24px;margin-bottom:12px;font-size:20px"><b>🌿 Your Personalized Skincare Routine</b></p>\n${amHtml}\n${pmHtml}\n${weeklyHtml}`;
 
   // ── 4. Tips (customized based on products) ────────────────────────────
   const relevantTips = TIPS_BANK
@@ -556,16 +583,40 @@ router.post('/generate', (req, res) => {
     .slice(0, 3) // Max 3 tips to keep it concise
     .map(t => t.tip);
 
-  const tipsHtml = `<p style="margin-top:24px;margin-bottom:8px"><b>💡 Tips for Your Routine</b></p>\n` +
+  const tipsHtml = `<p style="margin-top:24px;margin-bottom:12px;font-size:20px"><b>💡 Tips for Your Routine</b></p>\n` +
     relevantTips.map(t => `<p style="margin-bottom:8px">• ${t}</p>`).join('\n');
 
-  // ── 5. Sign-off ──────────────────────────────────────────────────────
-  const signOffHtml = `<p style="margin-top:24px;margin-bottom:16px">Thank you so much for choosing Glow SF, ${name}. We're truly honored to be part of your skincare journey. If you ever have questions about your products, your routine, or just want personalized advice — don't hesitate to reply to this email. We're always here for you!</p>
+  // ── 4b. Consultation invite (only if fewer than 3 products) ────────────
+  const consultationHtml = selectedProducts.length < 3
+    ? `<p style="margin-top:24px;margin-bottom:16px;padding:16px;background:#fdf2f4;border-left:4px solid #c97d8a;border-radius:8px">💆 <b>Want a personalized skincare plan?</b> Since you're just getting started with your collection, we'd love to invite you in for a complimentary one-on-one consultation with one of our skincare specialists. We'll build a customized routine tailored to your skin type, goals, and lifestyle. Just reply to this email to book your visit — we'd love to see you!</p>`
+    : '';
+
+  // ── 5. Sign-off (randomly selected) ────────────────────────────────────
+  const SIGNOFFS = [
+    `<p style="margin-top:24px;margin-bottom:16px">Thank you so much for choosing Glow SF, ${name}. We're truly honored to be part of your skincare journey. If you ever have questions about your products, your routine, or just want personalized advice — don't hesitate to reply to this email. We're always here for you!</p>
 <p style="margin-bottom:16px">We'd also love to see you in person at our store in Santa Fe. Come say hi anytime — we're always happy to help you find your next favorite product. 💕</p>
-<p style="margin-bottom:8px">With love,<br><b>The Glow SF Team</b></p>`;
+<p style="margin-bottom:8px">With love,<br><b>The Glow SF Team</b></p>`,
+
+    `<p style="margin-top:24px;margin-bottom:16px">${name}, we're so grateful you chose Glow SF. Your skin is in great hands! If you ever need help with your routine, have questions about a product, or just want to chat about skincare — we're only an email away.</p>
+<p style="margin-bottom:16px">And if you're ever in Santa Fe, come visit us! We'd love to meet you in person and help you discover even more products you'll love. 🌟</p>
+<p style="margin-bottom:8px">Cheers to your glow,<br><b>The Glow SF Team</b></p>`,
+
+    `<p style="margin-top:24px;margin-bottom:16px">We can't wait to hear how you love your new products, ${name}! Remember, beautiful skin is a journey — and we're right here with you every step of the way. Reply anytime with questions or just to share your results!</p>
+<p style="margin-bottom:16px">Don't forget, our doors in Santa Fe are always open. Stop by for a personalized consultation or just to say hello — we love connecting with our customers in person. 💖</p>
+<p style="margin-bottom:8px">Here's to your best skin ever,<br><b>The Glow SF Team</b></p>`,
+
+    `<p style="margin-top:24px;margin-bottom:16px">Thank you for trusting us with your skincare, ${name} — it means the world to us! We're always here if you need advice, want to tweak your routine, or are curious about a new product. Just hit reply and we'll get back to you personally.</p>
+<p style="margin-bottom:16px">If you're ever passing through Santa Fe, our store is your home away from home. We'd love to pamper you in person! ✨</p>
+<p style="margin-bottom:8px">Warmly,<br><b>The Glow SF Team</b></p>`,
+
+    `<p style="margin-top:24px;margin-bottom:16px">${name}, starting a new skincare routine is exciting — and we're honored to be part of yours! If anything comes up along the way, whether it's a question, a concern, or you just want to share your glow-up progress — please reach out. We genuinely care.</p>
+<p style="margin-bottom:16px">And whenever you're in the Santa Fe area, come see us! There's nothing we love more than helping our customers find their perfect routine in person. 🌸</p>
+<p style="margin-bottom:8px">With love and good vibes,<br><b>The Glow SF Team</b></p>`,
+  ];
+  const signOffHtml = SIGNOFFS[Math.floor(Math.random() * SIGNOFFS.length)];
 
   // ── Assemble ──────────────────────────────────────────────────────────
-  const emailBody = [welcomeHtml, newProductsSection, routineSection, tipsHtml, signOffHtml].join('\n\n');
+  const emailBody = [welcomeHtml, newProductsSection, routineSection, tipsHtml, consultationHtml, signOffHtml].filter(Boolean).join('\n\n');
 
   res.json({
     success: true,
@@ -576,10 +627,9 @@ router.post('/generate', (req, res) => {
   });
 });
 
-// POST /api/welcome/send — send the welcome email via Gmail API (HTTPS, no SMTP)
-// Uses GLOW_GMAIL_REFRESH_TOKEN env var to authenticate
+// POST /api/welcome/send — send the welcome email via the logged-in user's Gmail
 router.post('/send', async (req, res) => {
-  const { customerEmail, emailBody } = req.body;
+  const { customerEmail, customerName, products, emailBody } = req.body;
 
   if (!customerEmail || typeof customerEmail !== 'string') {
     return res.status(400).json({ error: 'customerEmail is required' });
@@ -588,13 +638,19 @@ router.post('/send', async (req, res) => {
     return res.status(400).json({ error: 'emailBody is required' });
   }
 
-  const refreshToken = process.env.GLOW_GMAIL_REFRESH_TOKEN;
-  if (!refreshToken) {
-    return res.status(500).json({
-      error: 'GLOW_GMAIL_REFRESH_TOKEN is not configured.',
-      hasClientId: !!process.env.GOOGLE_CLIENT_ID,
-      hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET,
-    });
+  // Check session auth
+  const userId = req.session?.userId;
+  if (!userId) {
+    return res.status(401).json({ error: 'Not logged in. Please sign in first.' });
+  }
+
+  const { getUser, saveWelcomeEmail } = require('../db');
+  const user = getUser(userId);
+  if (!user) {
+    return res.status(401).json({ error: 'User not found. Please sign in again.' });
+  }
+  if (!user.refresh_token) {
+    return res.status(403).json({ error: 'Gmail not connected. Please connect your Gmail first.', needsGmailConnect: true });
   }
 
   try {
@@ -604,12 +660,12 @@ router.post('/send', async (req, res) => {
       process.env.GOOGLE_CLIENT_SECRET,
       process.env.GOOGLE_REDIRECT_URI
     );
-    oauth2Client.setCredentials({ refresh_token: refreshToken });
+    oauth2Client.setCredentials({ refresh_token: user.refresh_token });
 
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
     const messageParts = [
-      'From: "Glow SF" <glow.sf.santafe@gmail.com>',
+      `From: "${user.email}" <${user.email}>`,
       `To: ${customerEmail}`,
       'Subject: Welcome to Glow SF!',
       'Content-Type: text/html; charset=utf-8',
@@ -629,11 +685,33 @@ router.post('/send', async (req, res) => {
       requestBody: { raw: encodedMessage },
     });
 
+    // Save to history
+    saveWelcomeEmail({
+      customer_name: customerName || '',
+      customer_email: customerEmail,
+      products: products || [],
+    });
+
     res.json({ success: true, message: 'Email sent successfully' });
   } catch (err) {
     console.error('[welcome] Error sending email:', err.message);
     res.status(500).json({ error: 'Failed to send email: ' + err.message });
   }
+});
+
+// GET /api/welcome/history — list all sent welcome emails
+router.get('/history', (req, res) => {
+  const { getWelcomeEmails } = require('../db');
+  const emails = getWelcomeEmails();
+  res.json({
+    emails: emails.map(e => ({
+      id: e.id,
+      customerName: e.customer_name,
+      customerEmail: e.customer_email,
+      products: JSON.parse(e.products || '[]'),
+      sentAt: e.sent_at,
+    })),
+  });
 });
 
 // GET /api/welcome/debug — check DB and connected users
