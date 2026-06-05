@@ -211,6 +211,17 @@ const PRODUCTS = {
       step: 'toner',
       image: 'https://www.avinichi.com/wp-content/uploads/Noni-Pore-Purifying-Toner-1.png',
     },
+    {
+      id: 'avinichi-eye-rescue-phyto-serum',
+      name: 'Eye Rescue Phyto-Serum',
+      brand: 'Avinichi',
+      description: 'Featuring a botanical buffet of flower, leaf, root, and fruit extracts, the Eye Rescue Phyto-Serum is designed to leave the skin feeling deeply hydrated and restored. In addition to giving the skin around your eyes a plumper and fuller appearance, this antioxidant-rich formula will also leave you with a firmer and more lifted look.',
+      benefits: 'Antioxidant-rich botanical formula, deeply hydrates and restores, plumper and fuller appearance around eyes, firmer and more lifted look, peptide complex (Palmitoyl Tripeptide-1 and Palmitoyl Tetrapeptide-7), Camu Camu Vitamin C, Sodium Hyaluronate',
+      ingredients: 'Aqua, Propylene Glycol, Polysorbate 20, Palmitoyl Tripeptide-1, Palmitoyl Tetrapeptide-7, Sodium Hyaluronate, Sodium Polystyrene Sulfonate, Pueraria Lobata Root Extract, Organic Camelia Sinensis Leaf Extract, Organic Calendula Officinalis Flower Extract, Organic Aloe Barbadensis Leaf Extract, Organic Ginkgo Biloba Leaf Extract, Sodium PCA, Hydrolyzed Wheat Protein, Myrciaria Dubia Fruit Extract, Ascorbic Acid, Sclerotium Gum, Glycerin, Butylene Glycol, Allantoin, Carbomer, Potassium Sorbate, Disodium EDTA, Aminomethyl Propanediol, Phenoxyethanol, Ethylhexylglycerin.',
+      howToUse: 'After cleansing, apply around the entire eye area. Gently pat serum from the inner corner, under the eye, outer corner, and over the eyelid. Avoid contact with eyes.',
+      step: 'eye-serum',
+      image: 'https://www.avinichi.com/wp-content/uploads/Eye-Rescue-Phyto-Serum-1.png',
+    },
   ],
   hydrasphere: [
     {
