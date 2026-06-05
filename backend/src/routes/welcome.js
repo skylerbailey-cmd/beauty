@@ -177,6 +177,18 @@ const PRODUCTS = {
       step: 'serum',
       image: 'https://www.avinichi.com/wp-content/uploads/Hydrating-Multifruit-C-Serum-1.png',
     },
+    {
+      id: 'avinichi-noni-morning-glow',
+      name: 'Noni Morning Glow',
+      brand: 'Avinichi',
+      description: 'Everyone needs a go-to day cream, and the Noni Morning Glow will soon be yours. Infused with vitamins, antioxidants, and Noni, this daytime moisturizer will leave your skin feeling firmer and smoother after each use. Its lightweight, fast-absorbing, non-greasy formula deeply hydrates throughout the day and makes an excellent base for makeup.',
+      benefits: 'Lightweight daytime moisturizer, infused with vitamins, antioxidants, and Noni, firms and smooths skin, fast-absorbing and non-greasy, hydrates all day, prevents excess oil buildup, makes a great makeup base',
+      ingredients: 'Aqua, Glycerin, Propylene Glycol, Carthamus Tinctorius (Safflower) Seed Oil, Isopropyl Palmitate, Caprylic/Capric Triglyceride, PEG-100 Stearate, Glyceryl Stearate, Cetearyl Alcohol, Cetearyl Glucoside, Dimethicone, Butyrospermum Parkii (Shea Butter), Tocopheryl Acetate (Vitamin E), Retinyl Palmitate (Vitamin A), Organic Chamomilla Recutita Flower Extract, Organic Camelia Sinensis Leaf Extract, Organic Aloe Barbadensis Leaf Extract, Acrylates/C10-30 Alkyl Acrylates Crosspolymer, Carbomer, Disodium EDTA, Sodium Hydroxide, Ethylhexylglycerin, Phenoxyethanol, Morinda Citrifolia (Noni) Fruit Extract, Fragrance.',
+      howToUse: 'After cleansing, massage moisturizer over the entire face and neck. Use daily, in the morning.',
+      step: 'moisturizer',
+      image: 'https://www.avinichi.com/wp-content/uploads/Noni-Morning-Glow-1.png',
+      url: 'https://www.avinichi.com/product/noni-morning-glow/',
+    },
   ],
   hydrasphere: [
     {
