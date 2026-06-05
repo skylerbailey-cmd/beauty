@@ -993,13 +993,42 @@ router.get('/customers/:id', (req, res) => {
   res.json({ customer });
 });
 
-// PATCH /api/welcome/customers/:id/notes — update customer notes
+// PATCH /api/welcome/customers/:id/notes — update customer notes (legacy)
 router.patch('/customers/:id/notes', (req, res) => {
-  const { updateCustomerNotes, getCustomer } = require('../db');
+  const { updateCustomerNotes } = require('../db');
   const { notes } = req.body;
   if (typeof notes !== 'string') return res.status(400).json({ error: 'notes is required' });
   updateCustomerNotes(parseInt(req.params.id), notes);
   res.json({ success: true });
+});
+
+// PATCH /api/welcome/customers/:id — update any customer fields
+router.patch('/customers/:id', (req, res) => {
+  const { updateCustomer, getCustomer } = require('../db');
+  const id = parseInt(req.params.id);
+  const customer = getCustomer(id);
+  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+  const { name, email, phone, address, notes } = req.body;
+  updateCustomer(id, { name, email, phone, address, notes });
+  res.json({ success: true, customer: getCustomer(id) });
+});
+
+// POST /api/welcome/customers/from-email — create or update customer from inbox email
+router.post('/customers/from-email', (req, res) => {
+  const { findOrCreateCustomer, updateCustomer } = require('../db');
+  const { email, name, phone, address } = req.body;
+  if (!email) return res.status(400).json({ error: 'email is required' });
+
+  const customer = findOrCreateCustomer(name || '', email);
+  const updates = {};
+  if (phone) updates.phone = phone;
+  if (address) updates.address = address;
+  if (name && name !== customer.name) updates.name = name;
+  if (Object.keys(updates).length > 0) {
+    updateCustomer(customer.id, updates);
+  }
+  res.json({ success: true, customerId: customer.id });
 });
 
 // GET /api/welcome/products/list — list all product IDs/names for filtering

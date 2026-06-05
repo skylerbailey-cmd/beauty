@@ -392,4 +392,42 @@ router.post('/:id/generate-draft', async (req, res) => {
   }
 });
 
+// ─── POST /api/emails/:id/extract-contact — extract contact info from email body ───
+
+router.post('/:id/extract-contact', requireAuth, async (req, res) => {
+  const email = getEmail(req.params.id);
+  if (!email) return res.status(404).json({ error: 'Email not found' });
+  if (email.user_id !== req.userId) return res.status(403).json({ error: 'Forbidden' });
+
+  const body = email.body || email.snippet || '';
+  if (!body.trim()) return res.json({ extracted: {}, existing: null });
+
+  // Strip HTML for cleaner extraction
+  const plainText = body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Simple regex-based extraction (no AI needed for basic patterns)
+  const phoneMatch = plainText.match(/(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}/);
+  const phone = phoneMatch ? phoneMatch[0].trim() : null;
+
+  // Address: look for patterns like "123 Street, City, ST 12345"
+  const addressMatch = plainText.match(/\d{1,5}\s+[\w\s.]+(?:st(?:reet)?|ave(?:nue)?|blvd|boulevard|dr(?:ive)?|rd|road|ln|lane|way|ct|court|pl(?:ace)?|cir(?:cle)?)[\s,]+[\w\s]+,?\s*[A-Z]{2}\s*\d{5}(?:-\d{4})?/i);
+  const address = addressMatch ? addressMatch[0].trim() : null;
+
+  // Check if sender is already a customer
+  const { getCustomerByEmail } = require('../db');
+  const existing = getCustomerByEmail(email.from_email);
+
+  // Only return fields that are new (not already in CRM)
+  const extracted = {};
+  if (phone && (!existing || !existing.phone)) extracted.phone = phone;
+  if (address && (!existing || !existing.address)) extracted.address = address;
+
+  res.json({
+    extracted,
+    existing: existing ? { id: existing.id, name: existing.name, email: existing.email, phone: existing.phone, address: existing.address } : null,
+    senderEmail: email.from_email,
+    senderName: email.from_name,
+  });
+});
+
 module.exports = router;

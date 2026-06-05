@@ -1958,9 +1958,75 @@
       if (email.status === 'sent' || email.status === 'archived') {
         draftArea.classList.add('hidden');
       }
+
+      // Fire contact extraction in background (non-blocking)
+      extractContactInfo(emailId);
     } catch (err) {
       threadMessages.innerHTML = '<div class="empty-state"><p>Failed to load email: ' + escHtml(err.message || 'Unknown error') + '</p></div>';
       console.error('[openThread] Error:', err);
+    }
+  }
+
+  // ── Contact Info Extraction ──────────────────────────────────────
+  async function extractContactInfo(emailId) {
+    try {
+      const data = await api.post('/api/emails/' + emailId + '/extract-contact');
+      if (!data) return;
+      const { extracted, existing, senderEmail, senderName } = data;
+
+      // Only show if we found something new
+      if (!extracted || (Object.keys(extracted).length === 0)) return;
+      // Make sure we're still viewing this email
+      if (!currentEmail || currentEmail.id !== emailId) return;
+
+      // Remove any previous suggestion
+      const old = document.getElementById('crmSuggestionBanner');
+      if (old) old.remove();
+
+      let fieldsHtml = '';
+      if (extracted.phone) {
+        fieldsHtml += `<label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:.85rem;cursor:pointer">
+          <input type="checkbox" checked data-field="phone" data-value="${escHtml(extracted.phone)}" style="accent-color:var(--rose)">
+          <b>Phone:</b> ${escHtml(extracted.phone)}
+        </label>`;
+      }
+      if (extracted.address) {
+        fieldsHtml += `<label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:.85rem;cursor:pointer">
+          <input type="checkbox" checked data-field="address" data-value="${escHtml(extracted.address)}" style="accent-color:var(--rose)">
+          <b>Address:</b> ${escHtml(extracted.address)}
+        </label>`;
+      }
+
+      const banner = document.createElement('div');
+      banner.id = 'crmSuggestionBanner';
+      banner.style.cssText = 'background:var(--cream);border:1.5px solid var(--gold);border-radius:10px;padding:14px 16px;margin-bottom:12px;font-family:system-ui,sans-serif';
+      banner.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <span style="font-size:.82rem;font-weight:600;color:var(--dark)">📋 Contact info detected for ${escHtml(senderName || senderEmail)}</span>
+          <button onclick="this.closest('#crmSuggestionBanner').remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--mid)">&times;</button>
+        </div>
+        ${fieldsHtml}
+        <button onclick="saveCrmSuggestion('${escHtml(senderEmail)}', '${escHtml(senderName || '')}')" class="btn btn-primary" style="font-size:.78rem;padding:6px 14px;margin-top:6px">Add to CRM</button>
+      `;
+      threadMessages.insertBefore(banner, threadMessages.firstChild);
+    } catch (e) {
+      // Silently fail — this is a non-critical enhancement
+    }
+  }
+
+  async function saveCrmSuggestion(email, name) {
+    const banner = document.getElementById('crmSuggestionBanner');
+    if (!banner) return;
+    const payload = { email, name };
+    banner.querySelectorAll('input[type=checkbox]:checked').forEach(cb => {
+      payload[cb.dataset.field] = cb.dataset.value;
+    });
+    try {
+      await api.post('/api/welcome/customers/from-email', payload);
+      banner.innerHTML = '<div style="text-align:center;padding:8px;font-size:.85rem;color:var(--rose-dk);font-weight:600">✓ Added to CRM</div>';
+      setTimeout(() => banner.remove(), 2000);
+    } catch (e) {
+      showToast('Failed to save to CRM', true);
     }
   }
 

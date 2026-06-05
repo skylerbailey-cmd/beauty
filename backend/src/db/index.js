@@ -26,6 +26,8 @@ db.exec(schema);
 try { db.exec('ALTER TABLE users ADD COLUMN company_name TEXT'); } catch (_) { /* already exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN theme TEXT DEFAULT 'rose'"); } catch (_) { /* already exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN websites TEXT DEFAULT '[]'"); } catch (_) { /* already exists */ }
+try { db.exec("ALTER TABLE customers ADD COLUMN phone TEXT DEFAULT ''"); } catch (_) { /* already exists */ }
+try { db.exec("ALTER TABLE customers ADD COLUMN address TEXT DEFAULT ''"); } catch (_) { /* already exists */ }
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 
@@ -299,6 +301,29 @@ function updateCustomerNotes(id, notes) {
   db.prepare('UPDATE customers SET notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(notes, id);
 }
 
+function updateCustomer(id, fields) {
+  const allowed = ['name', 'email', 'phone', 'address', 'notes'];
+  const sets = [];
+  const params = [];
+  for (const key of allowed) {
+    if (fields[key] !== undefined) {
+      sets.push(`${key} = ?`);
+      params.push(fields[key]);
+    }
+  }
+  if (sets.length === 0) return;
+  sets.push('updated_at = CURRENT_TIMESTAMP');
+  params.push(id);
+  db.prepare(`UPDATE customers SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+}
+
+function getCustomerByEmail(email) {
+  const customer = db.prepare('SELECT * FROM customers WHERE email = ?').get(email);
+  if (!customer) return null;
+  customer.products = db.prepare('SELECT * FROM customer_products WHERE customer_id = ? ORDER BY purchased_at DESC').all(customer.id);
+  return customer;
+}
+
 function findOrCreateUserByEmail(email, companyName) {
   let user = getUserByEmail(email);
   let isNew = false;
@@ -361,4 +386,6 @@ module.exports = {
   getCustomersByProduct,
   getCustomer,
   updateCustomerNotes,
+  updateCustomer,
+  getCustomerByEmail,
 };

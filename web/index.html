@@ -2296,6 +2296,9 @@
     return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  const fieldStyle = 'width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark);transition:border-color .2s;';
+  const labelStyle = 'font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px;display:block';
+
   async function openCustomerDetail(id) {
     try {
       const res = await fetch(`/api/welcome/customers/${id}`, { credentials: 'include' });
@@ -2310,22 +2313,44 @@
       modal.style.cssText = 'position:fixed;inset:0;background:rgba(44,32,34,.4);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px';
       modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
       modal.innerHTML = `
-        <div style="background:var(--white);border-radius:16px;max-width:500px;width:100%;max-height:80vh;overflow-y:auto;box-shadow:0 16px 48px rgba(44,32,34,.15);padding:28px">
-          <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:16px">
-            <div>
-              <h3 style="font-size:1.2rem;margin-bottom:4px">${escapeHtml(c.name)}</h3>
-              <p style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid)">${escapeHtml(c.email)}</p>
-            </div>
+        <div style="background:var(--white);border-radius:16px;max-width:520px;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 16px 48px rgba(44,32,34,.15);padding:28px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+            <h3 style="font-size:1.15rem;margin:0">Customer Details</h3>
             <button onclick="this.closest('div[style*=fixed]').remove()" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--mid);padding:0 4px">&times;</button>
           </div>
-          <div style="margin-bottom:20px">
-            <div style="font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:8px">Products Purchased</div>
-            ${products || '<span style="color:var(--mid);font-family:system-ui,sans-serif;font-size:.85rem">No products recorded</span>'}
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px">
+            <div>
+              <label style="${labelStyle}">Name</label>
+              <input id="custName-${c.id}" value="${escapeHtml(c.name)}" style="${fieldStyle}" placeholder="Full name" />
+            </div>
+            <div>
+              <label style="${labelStyle}">Email</label>
+              <input id="custEmail-${c.id}" type="email" value="${escapeHtml(c.email)}" style="${fieldStyle}" placeholder="email@example.com" />
+            </div>
+            <div>
+              <label style="${labelStyle}">Phone</label>
+              <input id="custPhone-${c.id}" type="tel" value="${escapeHtml(c.phone || '')}" style="${fieldStyle}" placeholder="(555) 123-4567" />
+            </div>
+            <div>
+              <label style="${labelStyle}">Address</label>
+              <input id="custAddress-${c.id}" value="${escapeHtml(c.address || '')}" style="${fieldStyle}" placeholder="123 Main St, City, ST" />
+            </div>
           </div>
-          <div>
-            <div style="font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:8px">Notes</div>
-            <textarea id="customerNotes-${c.id}" style="width:100%;min-height:80px;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;resize:vertical;outline:none;background:var(--cream);color:var(--dark)">${escapeHtml(c.notes || '')}</textarea>
-            <button class="btn btn-primary" style="margin-top:8px;font-size:.82rem;padding:8px 18px" onclick="saveCustomerNotes(${c.id})">Save Notes</button>
+
+          <div style="margin-bottom:18px">
+            <label style="${labelStyle}">Notes</label>
+            <textarea id="custNotes-${c.id}" style="${fieldStyle}min-height:70px;resize:vertical;" placeholder="Add notes about this customer...">${escapeHtml(c.notes || '')}</textarea>
+          </div>
+
+          <div style="margin-bottom:18px">
+            <label style="${labelStyle}">Products Purchased</label>
+            <div style="margin-top:4px">${products || '<span style="color:var(--mid);font-family:system-ui,sans-serif;font-size:.85rem">No products recorded</span>'}</div>
+          </div>
+
+          <div style="display:flex;gap:10px;justify-content:flex-end">
+            <button class="btn btn-secondary" style="font-size:.82rem;padding:8px 18px" onclick="this.closest('div[style*=fixed]').remove()">Cancel</button>
+            <button class="btn btn-primary" style="font-size:.82rem;padding:8px 18px" onclick="saveCustomer(${c.id})">Save Customer</button>
           </div>
         </div>
       `;
@@ -2335,22 +2360,28 @@
     }
   }
 
-  async function saveCustomerNotes(id) {
-    const notes = document.getElementById('customerNotes-' + id).value;
+  async function saveCustomer(id) {
+    const payload = {
+      name: document.getElementById('custName-' + id).value,
+      email: document.getElementById('custEmail-' + id).value,
+      phone: document.getElementById('custPhone-' + id).value,
+      address: document.getElementById('custAddress-' + id).value,
+      notes: document.getElementById('custNotes-' + id).value,
+    };
     try {
-      await fetch(`/api/welcome/customers/${id}/notes`, {
+      await fetch(`/api/welcome/customers/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ notes }),
+        body: JSON.stringify(payload),
       });
-      // Close modal and reload
       document.querySelector('div[style*="position:fixed"][style*="z-index:1000"]')?.remove();
       loadCustomers();
     } catch (e) {
-      alert('Failed to save notes');
+      alert('Failed to save customer');
     }
   }
+  window.saveCustomer = saveCustomer;
 
   function resetToStart() {
     document.getElementById('step3').hidden = true;
