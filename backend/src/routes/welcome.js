@@ -233,6 +233,17 @@ const PRODUCTS = {
       step: 'exfoliant',
       image: 'https://www.avinichi.com/wp-content/uploads/Noni-Polishing-Peel-1.png',
     },
+    {
+      id: 'avinichi-wrinkle-reversal-solution',
+      name: 'Wrinkle Reversal Solution',
+      brand: 'Avinichi',
+      description: 'Effortlessly diminish the visibility of fine lines and wrinkles using the Wrinkle Reversal Solution. Whether for treating fine lines on your forehead, around your eyes, or around your mouth, this quick-acting formula instantly creates a smooth, taut, and firm appearance to your troublesome areas.',
+      benefits: 'Diminishes fine lines and wrinkles, quick-acting formula, smooth taut and firm appearance, Acetyl Hexapeptide-8 peptide complex, Sodium Hyaluronate, Mulberry extract (Morus Nigra Fruit Extract), Vitamin E, Vitamin A, Organic Cucumber, Organic Avocado Oil',
+      ingredients: 'Aqua, Sodium Silicate, Magnesium Aluminum Silicate, Sodium Polystyrene Sulfonate, Acetyl Hexapeptide-8, Sodium Hyaluronate, Tocopheryl Acetate (Vitamin E), Retinyl Palmitate (Vitamin A), Organic Cucumis Sativus (Cucumber) Fruit Extract, Organic Vitis Vinifera (Grape) Seed Extract, Organic Persea Gratissima (Avocado) Oil, Organic Prunus Amygdalus Dulcis (Sweet Almond) Oil, Morus Nigra Fruit Extract, Squalane, Caprylic/Capric Triglyceride, Dimethylaminoethanol Tartrate, Mica, Titanium Dioxide, Iron Oxide (CI 77491), Potassium Sorbate, Xanthan Gum, Ethylhexylglycerin, Phenoxyethanol.',
+      howToUse: 'Twist bottom of syringe and push to dispense formula on finger or directly on fine lines and wrinkles. Pat formula into skin gently. If necessary, remove excess solution with a cotton swab.',
+      step: 'wrinkle-treatment',
+      image: 'https://www.avinichi.com/wp-content/uploads/Wrinkle-Reversal-Solution-1.png',
+    },
   ],
   hydrasphere: [
     {
