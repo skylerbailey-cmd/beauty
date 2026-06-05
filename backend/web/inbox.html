@@ -1763,7 +1763,7 @@
     currentEmail = null;
   }
 
-  async function generateDraft() {
+  window.generateDraft = async function generateDraft() {
     if (!currentEmail) return;
     const btn = $('generateDraftBtn');
     if (btn) {
