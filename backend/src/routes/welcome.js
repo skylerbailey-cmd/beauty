@@ -509,7 +509,7 @@ router.post('/generate', (req, res) => {
     `<p style="margin-bottom:12px">✨ ${productLink(p)} — ${LOVE_LINES[p.id] || shortDescription(p)}</p>`
   ).join('\n');
 
-  const newProductsSection = `<p style="margin-bottom:12px;font-size:20px"><b>🛍️ Your New Products</b></p>\n${productsHtml}`;
+  const newProductsSection = `<div style="margin-top:24px;padding:20px;background:#fdf2f4;border-left:4px solid #c97d8a;border-radius:8px"><p style="margin-bottom:12px;font-size:20px"><b>🛍️ Your New Products</b></p>\n${productsHtml}</div>`;
 
   // ── 3. Skincare Routine ───────────────────────────────────────────────
   // Find purchased products for each step, or suggest alternatives
@@ -532,7 +532,7 @@ router.post('/generate', (req, res) => {
   const sugMoisturizer = !amMoisturizer ? findSug(isMoisturizer) : null;
   const sugSpf = !amSpf ? findSug(isSpf) : null;
 
-  let amHtml = `<p style="margin-bottom:8px;font-size:17px"><b>☀️ Morning Routine</b></p>\n`;
+  let amHtml = `<div style="margin-top:16px;padding:20px;background:#fef9ee;border-left:4px solid #c9a96e;border-radius:8px"><p style="margin-bottom:8px;font-size:17px"><b>☀️ Morning Routine</b></p>\n`;
   amHtml += routineStepHtml('Cleanse', amCleanser, sugCleanser);
   amHtml += routineStepHtml('Tone', amToner, sugToner);
   amHtml += routineStepHtml('Serum', amSerum, sugSerum);
@@ -544,7 +544,7 @@ router.post('/generate', (req, res) => {
   const pmSerum = findPurchased(p => isSerum(p) && isPmProduct(p)) || findPurchased(p => isSerum(p) && p !== amSerum) || amSerum;
   const pmMoisturizer = findPurchased(p => isMoisturizer(p) && isPmProduct(p)) || findPurchased(p => isMoisturizer(p) && p !== amMoisturizer) || amMoisturizer;
 
-  let pmHtml = `<p style="margin-top:20px;margin-bottom:8px;font-size:17px"><b>🌙 Evening Routine</b></p>\n`;
+  let pmHtml = `</div><div style="margin-top:16px;padding:20px;background:#f3f0fa;border-left:4px solid #9b8ec4;border-radius:8px"><p style="margin-bottom:8px;font-size:17px"><b>🌙 Evening Routine</b></p>\n`;
   pmHtml += routineStepHtml('Cleanse', amCleanser, sugCleanser, { alreadySuggested: !!sugCleanser });
   pmHtml += routineStepHtml('Tone', amToner, sugToner, { alreadySuggested: !!sugToner });
   pmHtml += routineStepHtml('Serum', pmSerum, pmSerum ? null : sugSerum, { alreadySuggested: !!sugSerum });
@@ -584,6 +584,14 @@ router.post('/generate', (req, res) => {
     }
   }
 
+  // Close the PM div
+  pmHtml += '</div>';
+
+  // Wrap weekly in its own callout if it has content
+  if (weeklyHtml) {
+    weeklyHtml = `<div style="margin-top:16px;padding:20px;background:#eef7f3;border-left:4px solid #6dab8e;border-radius:8px">${weeklyHtml}</div>`;
+  }
+
   const routineSection = `<p style="margin-top:24px;margin-bottom:12px;font-size:20px"><b>🌿 Your Personalized Skincare Routine</b></p>\n${amHtml}\n${pmHtml}\n${weeklyHtml}`;
 
   // ── 4. Tips (customized based on products) ────────────────────────────
@@ -592,8 +600,8 @@ router.post('/generate', (req, res) => {
     .slice(0, 3) // Max 3 tips to keep it concise
     .map(t => t.tip);
 
-  const tipsHtml = `<p style="margin-top:24px;margin-bottom:12px;font-size:20px"><b>💡 Tips for Your Routine</b></p>\n` +
-    relevantTips.map(t => `<p style="margin-bottom:8px">• ${t}</p>`).join('\n');
+  const tipsHtml = `<div style="margin-top:24px;padding:20px;background:#eef4fb;border-left:4px solid #6a9fd8;border-radius:8px"><p style="margin-bottom:12px;font-size:20px"><b>💡 Tips for Your Routine</b></p>\n` +
+    relevantTips.map(t => `<p style="margin-bottom:8px">• ${t}</p>`).join('\n') + '</div>';
 
   // ── 4b. Consultation invite (only if fewer than 3 products) ────────────
   const consultationHtml = selectedProducts.length < 3
