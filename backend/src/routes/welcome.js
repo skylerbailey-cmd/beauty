@@ -166,6 +166,17 @@ const PRODUCTS = {
       step: 'mask',
       image: 'https://www.avinichi.com/wp-content/uploads/Liquid-Lift-Overnight-Melting-Mask-1.png',
     },
+    {
+      id: 'avinichi-hydrating-multifruit-c-serum',
+      name: 'Hydrating Multifruit C-Serum',
+      brand: 'Avinichi',
+      description: 'A must-have in every skincare routine, a good vitamin C serum will leave your skin looking and feeling brighter and tighter. The Hydrating Multifruit C-Serum takes things one step further – not only is it infused with two potent forms of vitamin C, but it also boasts mulberry extract to target the appearance of wrinkles, along with multiple vitamins and antioxidants to promote a complexion that glows from within.',
+      benefits: 'Brightens and tightens, two potent forms of vitamin C, mulberry extract targets wrinkles, multiple vitamins and antioxidants, promotes glowing complexion, hydrates and lifts',
+      ingredients: 'Cyclopentasiloxane, Cyclotetrasiloxane, Dimethiconol, Isopropyl Palmitate, Glyceryl Dibehenate, Tribehenin, Glyceryl Behenate, Tetrahexyldecyl Ascorbate (Vitamin C), Ascorbyl Palmitate (Vitamin C), Retinyl Palmitate (Vitamin A), Tocopheryl Acetate (Vitamin E), Organic Simmondsia Chinensis (Jojoba) Seed Oil, Organic Persea Gratissima Oil, Organic Olea Europaea (Olive) Fruit Oil, Organic Cocos Nucifera (Coconut) Oil, Phenoxyethanol, Ethylhexylglycerin, Fragrance, Morus Nigra Fruit Extract.',
+      howToUse: 'After cleansing, massage onto face & neck using gentle upward motions. Once fully absorbed, follow with your moisturizer.',
+      step: 'serum',
+      image: 'https://www.avinichi.com/wp-content/uploads/Hydrating-Multifruit-C-Serum-1.png',
+    },
   ],
   hydrasphere: [
     {
