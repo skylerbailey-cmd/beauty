@@ -1747,9 +1747,6 @@
         <span class="nav-icon">&#128229;</span> Smart Inbox
         <span class="nav-badge" id="sidebarInboxBadge"></span>
       </a></li>
-      <li><a data-tab="sent" onclick="switchTab('sent')">
-        <span class="nav-icon">&#128203;</span> Sent Emails
-      </a></li>
       <li><a data-tab="customers" onclick="switchTab('customers')">
         <span class="nav-icon">&#128101;</span> Customers
       </a></li>
@@ -1768,9 +1765,6 @@
       </a>
       <a data-tab="inbox" onclick="switchTab('inbox')">
         <span>&#128229;</span> Smart Inbox
-      </a>
-      <a data-tab="sent" onclick="switchTab('sent')">
-        <span>&#128203;</span> Sent Emails
       </a>
       <a data-tab="customers" onclick="switchTab('customers')">
         <span>&#128101;</span> Customers
@@ -1936,36 +1930,15 @@
           <a data-subtab="archived" onclick="switchInboxSubtab('archived')">
             &#128193; Archived
           </a>
+          <a data-subtab="sent" onclick="switchInboxSubtab('sent')">
+            &#128228; Sent
+          </a>
         </div>
         <div class="inbox-content" id="inboxContent"></div>
       </main>
     </div><!-- /tab-inbox -->
 
     <!-- ════════ TAB: Sent Emails ════════ -->
-    <div id="tab-sent" hidden>
-      <main>
-        <div class="card">
-          <h2 class="card-title">Sent Welcome Emails</h2>
-          <p class="card-sub">History of all welcome emails sent to customers.</p>
-          <div style="overflow-x:auto">
-            <table class="history-full-table">
-              <thead>
-                <tr>
-                  <th>Customer</th>
-                  <th>Email</th>
-                  <th>Products</th>
-                  <th>Date Sent</th>
-                </tr>
-              </thead>
-              <tbody id="sentHistoryBody">
-                <tr><td colspan="4" style="padding:20px;text-align:center;color:var(--mid)">Loading...</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </main>
-    </div><!-- /tab-sent -->
-
     <!-- ════════ TAB: Marketing Campaigns ════════ -->
     <div id="tab-campaigns" hidden>
       <main>
@@ -2239,7 +2212,6 @@
     // Hide all tab panels
     document.getElementById('tab-welcome').hidden = true;
     document.getElementById('tab-inbox').hidden = true;
-    document.getElementById('tab-sent').hidden = true;
     document.getElementById('tab-customers').hidden = true;
     document.getElementById('tab-campaigns').hidden = true;
 
@@ -2257,9 +2229,7 @@
     });
 
     // Load data for the tab
-    if (tab === 'sent') {
-      loadSentHistory();
-    } else if (tab === 'customers') {
+    if (tab === 'customers') {
       loadCustomers();
     } else if (tab === 'campaigns') {
       loadCampaigns();
@@ -3196,6 +3166,7 @@
     if (inboxCurrentSubtab === 'inbox') inboxLoadInbox();
     else if (inboxCurrentSubtab === 'followups') inboxLoadFollowups();
     else if (inboxCurrentSubtab === 'archived') inboxLoadArchived();
+    else if (inboxCurrentSubtab === 'sent') inboxLoadSent();
   }
 
   // ── Thread View ───────────────────────────────────────────────────
@@ -3598,6 +3569,40 @@
       inboxBindCards();
     } catch (err) {
       content.innerHTML = '<div class="empty-state"><p>Failed to load archived emails</p></div>';
+      console.error(err);
+    }
+  }
+
+  async function inboxLoadSent() {
+    const content = document.getElementById('inboxContent');
+    try {
+      const res = await fetch('/api/welcome/history', { credentials: 'include' });
+      const data = await res.json();
+      const emails = data.emails || [];
+
+      if (emails.length === 0) {
+        content.innerHTML = '<div class="empty-state"><div class="empty-icon">&#x1F4E8;</div><h3>No sent emails yet</h3><p>Welcome emails you send will appear here.</p></div>';
+        return;
+      }
+
+      let html = '<div class="section-header">Sent Welcome Emails <span class="section-count">' + emails.length + '</span></div>';
+      html += '<table class="history-full-table"><thead><tr><th>Customer</th><th>Email</th><th>Products</th><th>Sent</th></tr></thead><tbody>';
+      emails.forEach(e => {
+        const products = (e.products || []).join(', ');
+        const date = new Date(e.sentAt).toLocaleDateString('en-US', {
+          month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit',
+        });
+        html += `<tr>
+          <td>${escapeHtml(e.customerName || '\u2014')}</td>
+          <td>${escapeHtml(e.customerEmail)}</td>
+          <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(products)}">${escapeHtml(products) || '\u2014'}</td>
+          <td style="white-space:nowrap">${date}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      content.innerHTML = html;
+    } catch (err) {
+      content.innerHTML = '<div class="empty-state"><p>Failed to load sent emails</p></div>';
       console.error(err);
     }
   }
