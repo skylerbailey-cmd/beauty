@@ -268,4 +268,74 @@ router.put('/:id/draft', async (req, res) => {
   }
 });
 
+// ─── POST /api/emails/:id/generate-draft ──────────────────────────────────────
+// Generate an AI draft reply using Claude
+
+router.post('/:id/generate-draft', async (req, res) => {
+  try {
+    const email = getEmail(req.params.id);
+    if (!email) {
+      return res.status(404).json({ error: 'Email not found' });
+    }
+    if (email.user_id !== req.userId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const { getThread } = require('../services/gmail');
+    const { generateEmailResponse } = require('../services/claude');
+
+    // Fetch the full thread from Gmail for context
+    let thread;
+    try {
+      thread = await getThread(req.userId, email.gmail_thread_id);
+    } catch (threadErr) {
+      // Fall back to just the single email if thread fetch fails
+      thread = {
+        threadId: email.gmail_thread_id,
+        messages: [{
+          fromEmail: email.from_email,
+          fromName: email.from_name,
+          subject: email.subject,
+          body: email.body,
+          receivedAt: email.received_at,
+        }],
+      };
+    }
+
+    // Generate the draft with Claude
+    const draftText = await generateEmailResponse(thread);
+
+    if (!draftText) {
+      return res.status(500).json({ error: 'AI failed to generate a draft' });
+    }
+
+    // Save to DB and create Gmail draft
+    const { createDraft: createGmailDraft } = require('../services/gmail');
+    let gmailDraftId = null;
+    try {
+      const draft = await createGmailDraft(
+        req.userId,
+        email.from_email,
+        email.subject,
+        draftText,
+        email.gmail_thread_id
+      );
+      gmailDraftId = draft.id;
+    } catch (draftErr) {
+      console.warn('[emails] Could not create Gmail draft:', draftErr.message);
+    }
+
+    saveEmailDraft(email.id, draftText, gmailDraftId);
+
+    res.json({
+      success: true,
+      draft_content: draftText,
+      gmail_draft_id: gmailDraftId,
+    });
+  } catch (err) {
+    console.error('[emails] Error generating draft:', err);
+    res.status(500).json({ error: 'Failed to generate draft: ' + err.message });
+  }
+});
+
 module.exports = router;

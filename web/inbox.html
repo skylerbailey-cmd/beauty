@@ -1754,6 +1754,27 @@
     currentEmail = null;
   }
 
+  async function generateDraft() {
+    if (!currentEmail) return;
+    const btn = $('generateDraftBtn');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Generating...';
+    }
+    try {
+      const data = await api.post('/api/emails/' + currentEmail.id + '/generate-draft');
+      if (!data || !data.draft_content) throw new Error('No draft returned');
+      // Re-open the thread to show the draft
+      await openThread(currentEmail.id);
+    } catch (err) {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = 'Generate AI Reply';
+      }
+      showToast('Failed to generate draft: ' + (err.message || 'Unknown error'), true);
+    }
+  }
+
   async function openThread(emailId) {
     threadOverlay.classList.add('open');
     threadMessages.innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
@@ -1815,14 +1836,14 @@
         draftArea.classList.add('hidden');
       }
 
-      // Show archive-only footer for non-draft items
+      // Show generate button for pending emails without a draft
       if (!email.draft_content && email.status !== 'sent' && email.status !== 'archived') {
         draftArea.classList.remove('hidden');
         draftTextarea.classList.add('hidden');
         $('threadSendBtn').classList.add('hidden');
         charCount.classList.add('hidden');
         const lbl = draftArea.querySelector('.draft-label');
-        if (lbl) lbl.textContent = 'Awaiting AI draft...';
+        if (lbl) lbl.innerHTML = '<button onclick="generateDraft()" class="btn btn-primary" id="generateDraftBtn" style="font-size:.85rem;padding:10px 20px;">Generate AI Reply</button>';
       } else if (email.draft_content && email.status !== 'sent' && email.status !== 'archived') {
         draftTextarea.classList.remove('hidden');
         $('threadSendBtn').classList.remove('hidden');
