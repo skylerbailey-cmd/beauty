@@ -25,9 +25,9 @@ router.post('/web-login', (req, res) => {
   }
 
   const { findOrCreateUserByEmail, updateCompanyName } = require('../db');
-  const user = findOrCreateUserByEmail(email.trim().toLowerCase(), companyName?.trim() || null);
+  const { user, isNew } = findOrCreateUserByEmail(email.trim().toLowerCase(), companyName?.trim() || null);
 
-  // Update company name if provided and user already existed
+  // Update company name if provided and user already existed without one
   if (companyName?.trim() && !user.company_name) {
     updateCompanyName(user.id, companyName.trim());
     user.company_name = companyName.trim();
@@ -37,6 +37,7 @@ router.post('/web-login', (req, res) => {
 
   res.json({
     success: true,
+    isNew,
     user: {
       id: user.id,
       email: user.email,
@@ -225,6 +226,25 @@ router.post('/theme', (req, res) => {
   const { updateUserTheme } = require('../db');
   updateUserTheme(userId, theme);
   res.json({ success: true, theme });
+});
+
+// ─── POST /auth/company-name ──────────────────────────────────────────────────
+// Update user's company name
+
+router.post('/company-name', (req, res) => {
+  const userId = req.session?.userId || req.headers['x-user-id'];
+  if (!userId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const { companyName } = req.body;
+  if (!companyName || typeof companyName !== 'string' || !companyName.trim()) {
+    return res.status(400).json({ error: 'Company name is required' });
+  }
+
+  const { updateCompanyName } = require('../db');
+  updateCompanyName(userId, companyName.trim());
+  res.json({ success: true, companyName: companyName.trim() });
 });
 
 // ─── POST /auth/logout ─────────────────────────────────────────────────────────

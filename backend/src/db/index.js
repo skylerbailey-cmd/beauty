@@ -203,6 +203,7 @@ function getWelcomeEmails(limit = 50) {
 
 function findOrCreateUserByEmail(email, companyName) {
   let user = getUserByEmail(email);
+  let isNew = false;
   if (!user) {
     const { v4: uuidv4 } = require('uuid');
     const id = uuidv4();
@@ -210,8 +211,9 @@ function findOrCreateUserByEmail(email, companyName) {
       INSERT INTO users (id, email, company_name) VALUES (?, ?, ?)
     `).run(id, email, companyName || null);
     user = getUser(id);
+    isNew = true;
   }
-  return user;
+  return { user, isNew };
 }
 
 function updateCompanyName(userId, companyName) {
