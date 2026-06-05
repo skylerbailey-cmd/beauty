@@ -41,6 +41,7 @@ router.post('/web-login', (req, res) => {
       id: user.id,
       email: user.email,
       companyName: user.company_name,
+      theme: user.theme || 'rose',
       hasGmail: !!user.refresh_token,
     },
   });
@@ -180,6 +181,7 @@ router.get('/me', (req, res) => {
     id: user.id,
     email: user.email,
     companyName: user.company_name,
+    theme: user.theme || 'rose',
     hasGmail: !!user.refresh_token,
     push_token: user.push_token,
     gmail_history_id: user.gmail_history_id,
@@ -203,6 +205,26 @@ router.post('/push-token', (req, res) => {
 
   updateUserPushToken(userId, push_token);
   res.json({ success: true });
+});
+
+// ─── POST /auth/theme ──────────────────────────────────────────────────────────
+// Save user's theme preference
+
+router.post('/theme', (req, res) => {
+  const userId = req.session?.userId || req.headers['x-user-id'];
+  if (!userId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const { theme } = req.body;
+  const VALID_THEMES = ['rose', 'earth'];
+  if (!theme || !VALID_THEMES.includes(theme)) {
+    return res.status(400).json({ error: `Invalid theme. Must be one of: ${VALID_THEMES.join(', ')}` });
+  }
+
+  const { updateUserTheme } = require('../db');
+  updateUserTheme(userId, theme);
+  res.json({ success: true, theme });
 });
 
 // ─── POST /auth/logout ─────────────────────────────────────────────────────────

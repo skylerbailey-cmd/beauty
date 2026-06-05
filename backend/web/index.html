@@ -8,7 +8,7 @@
     /* ── Reset & Base ─────────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    :root {
+    :root, [data-theme="rose"] {
       --rose:    #c97d8a;
       --rose-lt: #f2dde2;
       --rose-dk: #9e5567;
@@ -20,6 +20,21 @@
       --border:  #e8d5d9;
       --white:   #ffffff;
       --shadow:  0 4px 24px rgba(44,32,34,.08);
+      --radius:  14px;
+    }
+
+    [data-theme="earth"] {
+      --rose:    #5a8a7d;
+      --rose-lt: #dceee9;
+      --rose-dk: #3d6b60;
+      --gold:    #a0855b;
+      --gold-lt: #f0e8da;
+      --cream:   #f7f5f0;
+      --dark:    #2a2620;
+      --mid:     #5e5648;
+      --border:  #d4cdc2;
+      --white:   #ffffff;
+      --shadow:  0 4px 24px rgba(42,38,32,.08);
       --radius:  14px;
     }
 
@@ -522,6 +537,123 @@
 
     /* ── Hidden ───────────────────────────────────────────────────────── */
     [hidden] { display: none !important; }
+
+    /* ── Settings panel ──────────────────────────────────────────────── */
+    .settings-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+      color: var(--mid);
+      font-size: 1.1rem;
+      line-height: 1;
+      transition: all .2s;
+      margin-right: 8px;
+    }
+    .settings-btn:hover { border-color: var(--rose); color: var(--rose-dk); }
+
+    .settings-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.3);
+      z-index: 999;
+      display: none;
+    }
+    .settings-overlay.open { display: block; }
+
+    .settings-panel {
+      position: fixed;
+      top: 0;
+      right: -380px;
+      width: 360px;
+      max-width: 90vw;
+      height: 100vh;
+      background: var(--white);
+      box-shadow: -4px 0 24px rgba(0,0,0,.12);
+      z-index: 1000;
+      transition: right .3s ease;
+      padding: 32px 28px;
+      overflow-y: auto;
+      font-family: system-ui, sans-serif;
+    }
+    .settings-panel.open { right: 0; }
+
+    .settings-panel h3 {
+      font-size: 1.1rem;
+      color: var(--dark);
+      margin-bottom: 6px;
+    }
+    .settings-panel .settings-sub {
+      font-size: .82rem;
+      color: var(--mid);
+      margin-bottom: 24px;
+    }
+
+    .settings-close {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      background: none;
+      border: none;
+      font-size: 1.3rem;
+      cursor: pointer;
+      color: var(--mid);
+      padding: 4px 8px;
+    }
+    .settings-close:hover { color: var(--dark); }
+
+    .settings-section-label {
+      font-size: .75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--mid);
+      margin-bottom: 12px;
+    }
+
+    .theme-options {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .theme-option {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 16px;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: all .2s;
+      background: var(--white);
+    }
+    .theme-option:hover { border-color: var(--mid); }
+    .theme-option.active { border-color: var(--rose); background: var(--rose-lt); }
+
+    .theme-swatch {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .theme-swatch span {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 1px solid rgba(0,0,0,.08);
+    }
+
+    .theme-label {
+      font-size: .88rem;
+      font-weight: 600;
+      color: var(--dark);
+    }
+    .theme-desc {
+      font-size: .75rem;
+      color: var(--mid);
+      margin-top: 2px;
+    }
   </style>
 </head>
 <body>
@@ -533,13 +665,50 @@
     <p>Personalized product onboarding emails</p>
   </div>
   <div id="headerUser" style="display:none; font-family:system-ui,sans-serif; font-size:.82rem; text-align:right;">
-    <span id="headerCompany" style="color:var(--dark); font-weight:600;"></span>
-    <br>
-    <span id="headerEmail" style="color:var(--mid); font-size:.75rem;"></span>
-    <span style="color:var(--border); margin:0 4px;">|</span>
-    <a href="#" onclick="logout(); return false;" style="color:var(--rose-dk); text-decoration:underline; font-size:.75rem;">Sign out</a>
+    <button class="settings-btn" id="settingsToggle" onclick="toggleSettings()" title="Settings">&#9881;</button>
+    <div>
+      <span id="headerCompany" style="color:var(--dark); font-weight:600;"></span>
+      <br>
+      <span id="headerEmail" style="color:var(--mid); font-size:.75rem;"></span>
+      <span style="color:var(--border); margin:0 4px;">|</span>
+      <a href="#" onclick="logout(); return false;" style="color:var(--rose-dk); text-decoration:underline; font-size:.75rem;">Sign out</a>
+    </div>
   </div>
 </header>
+
+<!-- Settings Panel -->
+<div class="settings-overlay" id="settingsOverlay" onclick="toggleSettings()"></div>
+<div class="settings-panel" id="settingsPanel">
+  <button class="settings-close" onclick="toggleSettings()">&times;</button>
+  <h3>Settings</h3>
+  <p class="settings-sub">Customize your experience and email templates</p>
+
+  <div class="settings-section-label">Theme</div>
+  <div class="theme-options">
+    <div class="theme-option active" data-theme="rose" onclick="selectTheme('rose')">
+      <div class="theme-swatch">
+        <span style="background:#c97d8a"></span>
+        <span style="background:#f2dde2"></span>
+        <span style="background:#c9a96e"></span>
+      </div>
+      <div>
+        <div class="theme-label">Rose &amp; Gold</div>
+        <div class="theme-desc">Classic pink, rose, and gold tones</div>
+      </div>
+    </div>
+    <div class="theme-option" data-theme="earth" onclick="selectTheme('earth')">
+      <div class="theme-swatch">
+        <span style="background:#5a8a7d"></span>
+        <span style="background:#dceee9"></span>
+        <span style="background:#a0855b"></span>
+      </div>
+      <div>
+        <div class="theme-label">Earth &amp; Turquoise</div>
+        <div class="theme-desc">Brown, teal, and natural earth tones</div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <main>
 
@@ -729,6 +898,38 @@
 </main>
 
 <script>
+  // ── Theme / Settings ────────────────────────────────────────────────────────
+
+  function toggleSettings() {
+    const panel = document.getElementById('settingsPanel');
+    const overlay = document.getElementById('settingsOverlay');
+    panel.classList.toggle('open');
+    overlay.classList.toggle('open');
+  }
+
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    // Update active state on theme options
+    document.querySelectorAll('.theme-option').forEach(el => {
+      el.classList.toggle('active', el.dataset.theme === theme);
+    });
+  }
+
+  async function selectTheme(theme) {
+    applyTheme(theme);
+    localStorage.setItem('glowTheme', theme);
+    // Persist to server
+    try {
+      await fetch('/auth/theme', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ theme }),
+      });
+    } catch (err) {
+      console.warn('Failed to save theme preference:', err);
+    }
+  }
+
   // ── Auth state ────────────────────────────────────────────────────────────────
 
   let currentUser = null;
@@ -738,15 +939,23 @@
       const res = await fetch('/auth/me');
       if (res.ok) {
         currentUser = await res.json();
+        // Apply user's saved theme preference
+        const theme = currentUser.theme || localStorage.getItem('glowTheme') || 'rose';
+        applyTheme(theme);
         if (!currentUser.hasGmail) {
           showGmailBanner();
         } else {
           showApp();
         }
       } else {
+        // Apply locally saved theme even when logged out
+        const savedTheme = localStorage.getItem('glowTheme');
+        if (savedTheme) applyTheme(savedTheme);
         showLogin();
       }
     } catch {
+      const savedTheme = localStorage.getItem('glowTheme');
+      if (savedTheme) applyTheme(savedTheme);
       showLogin();
     }
   }
@@ -764,7 +973,10 @@
   }
 
   function updateHeader() {
-    document.getElementById('headerUser').style.display = 'block';
+    const el = document.getElementById('headerUser');
+    el.style.display = 'flex';
+    el.style.alignItems = 'center';
+    el.style.gap = '8px';
     document.getElementById('headerCompany').textContent = currentUser.companyName || '';
     document.getElementById('headerEmail').textContent = currentUser.email;
   }
@@ -813,6 +1025,10 @@
       localStorage.setItem('glowEmail', email);
       localStorage.setItem('glowCompany', companyName);
       currentUser = data.user;
+
+      // Apply user's saved theme
+      const theme = currentUser.theme || 'rose';
+      applyTheme(theme);
 
       if (!currentUser.hasGmail) {
         showGmailBanner();

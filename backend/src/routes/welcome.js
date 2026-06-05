@@ -246,12 +246,65 @@ router.get('/products', (req, res) => {
   res.json({ products: PRODUCTS });
 });
 
+// ─── Theme color palettes for email templates ────────────────────────────────
+
+const EMAIL_THEMES = {
+  rose: {
+    // Product links
+    linkColor: '#c97d8a',
+    // Products callout
+    productsBg: '#fdf2f4',
+    productsBorder: '#c97d8a',
+    // AM routine callout
+    amBg: '#fef9ee',
+    amBorder: '#c9a96e',
+    // PM routine callout
+    pmBg: '#f3f0fa',
+    pmBorder: '#9b8ec4',
+    // Weekly callout
+    weeklyBg: '#eef7f3',
+    weeklyBorder: '#6dab8e',
+    // Tips callout
+    tipsBg: '#eef4fb',
+    tipsBorder: '#6a9fd8',
+    // Consultation callout
+    consultBg: '#fdf2f4',
+    consultBorder: '#c97d8a',
+  },
+  earth: {
+    // Product links
+    linkColor: '#5a8a7d',
+    // Products callout
+    productsBg: '#eef5f3',
+    productsBorder: '#5a8a7d',
+    // AM routine callout
+    amBg: '#f5f0e8',
+    amBorder: '#a0855b',
+    // PM routine callout
+    pmBg: '#e8f0f0',
+    pmBorder: '#4a8b8b',
+    // Weekly callout
+    weeklyBg: '#f2ede6',
+    weeklyBorder: '#8b7355',
+    // Tips callout
+    tipsBg: '#edf2ef',
+    tipsBorder: '#6b9080',
+    // Consultation callout
+    consultBg: '#eef5f3',
+    consultBorder: '#5a8a7d',
+  },
+};
+
 // ─── Helpers for templated email generation ───────────────────────────────────
 
-const LINK_STYLE = 'color:#c97d8a;text-decoration:underline';
+function getLinkStyle(theme) {
+  const colors = EMAIL_THEMES[theme] || EMAIL_THEMES.rose;
+  return `color:${colors.linkColor};text-decoration:underline`;
+}
 
-function productLink(p) {
-  if (p.url) return `<a href="${p.url}" style="${LINK_STYLE}">${p.name}</a>`;
+function productLink(p, theme) {
+  const linkStyle = getLinkStyle(theme);
+  if (p.url) return `<a href="${p.url}" style="${linkStyle}">${p.name}</a>`;
   return `<b>${p.name}</b>`;
 }
 
@@ -373,16 +426,17 @@ const STEP_REASONS = {
 };
 
 function routineStepHtml(label, product, suggestion, opts = {}) {
+  const theme = opts.theme || 'rose';
   if (product) {
-    return `<p style="margin-bottom:8px">✅ <b>${label}:</b> ${productLink(product)} — ${product.howToUse || ''}</p>`;
+    return `<p style="margin-bottom:8px">✅ <b>${label}:</b> ${productLink(product, theme)} — ${product.howToUse || ''}</p>`;
   }
   if (suggestion) {
     // If this suggestion was already detailed in the AM routine, keep it short
     if (opts.alreadySuggested) {
-      return `<p style="margin-bottom:8px">👉 <b>${label}:</b> Use your ${productLink(suggestion)} here too — same as your morning routine.</p>`;
+      return `<p style="margin-bottom:8px">👉 <b>${label}:</b> Use your ${productLink(suggestion, theme)} here too — same as your morning routine.</p>`;
     }
     const reason = STEP_REASONS[label] || '';
-    return `<p style="margin-bottom:8px">👉 <b>${label} (not in your collection yet):</b> ${reason ? reason + ' ' : ''}We recommend ${productLink(suggestion)} — ${shortDescription(suggestion)} Reply to this email to ask about current specials and our free shipping!</p>`;
+    return `<p style="margin-bottom:8px">👉 <b>${label} (not in your collection yet):</b> ${reason ? reason + ' ' : ''}We recommend ${productLink(suggestion, theme)} — ${shortDescription(suggestion)} Reply to this email to ask about current specials and our free shipping!</p>`;
   }
   return '';
 }
@@ -464,14 +518,17 @@ router.post('/generate', (req, res) => {
     return res.status(400).json({ error: 'At least one product must be selected' });
   }
 
-  // Get company name from session user
+  // Get company name and theme from session user
   let companyName = 'our store';
+  let userTheme = 'rose';
   const userId = req.session?.userId;
   if (userId) {
     const { getUser } = require('../db');
     const user = getUser(userId);
     if (user?.company_name) companyName = user.company_name;
+    if (user?.theme) userTheme = user.theme;
   }
+  const tc = EMAIL_THEMES[userTheme] || EMAIL_THEMES.rose;
 
   const allProducts = [...PRODUCTS.avologi, ...PRODUCTS.hydrasphere];
   const selectedIds = new Set(selectedProductIds);
@@ -506,10 +563,10 @@ router.post('/generate', (req, res) => {
 
   // ── 2. Your New Products ──────────────────────────────────────────────
   const productsHtml = selectedProducts.map(p =>
-    `<p style="margin-bottom:12px">✨ ${productLink(p)} — ${LOVE_LINES[p.id] || shortDescription(p)}</p>`
+    `<p style="margin-bottom:12px">✨ ${productLink(p, userTheme)} — ${LOVE_LINES[p.id] || shortDescription(p)}</p>`
   ).join('\n');
 
-  const newProductsSection = `<div style="margin-top:24px;padding:20px;background:#fdf2f4;border-left:4px solid #c97d8a;border-radius:8px"><p style="margin-bottom:12px;font-size:20px"><b>🛍️ Your New Products</b></p>\n${productsHtml}</div>`;
+  const newProductsSection = `<div style="margin-top:24px;padding:20px;background:${tc.productsBg};border-left:4px solid ${tc.productsBorder};border-radius:8px"><p style="margin-bottom:12px;font-size:20px"><b>🛍️ Your New Products</b></p>\n${productsHtml}</div>`;
 
   // ── 3. Skincare Routine ───────────────────────────────────────────────
   // Find purchased products for each step, or suggest alternatives
@@ -532,24 +589,25 @@ router.post('/generate', (req, res) => {
   const sugMoisturizer = !amMoisturizer ? findSug(isMoisturizer) : null;
   const sugSpf = !amSpf ? findSug(isSpf) : null;
 
-  let amHtml = `<div style="margin-top:16px;padding:20px;background:#fef9ee;border-left:4px solid #c9a96e;border-radius:8px"><p style="margin-bottom:8px;font-size:17px"><b>☀️ Morning Routine</b></p>\n`;
-  amHtml += routineStepHtml('Cleanse', amCleanser, sugCleanser);
-  amHtml += routineStepHtml('Tone', amToner, sugToner);
-  amHtml += routineStepHtml('Serum', amSerum, sugSerum);
-  amHtml += routineStepHtml('Eye Treatment', amEye, sugEye);
-  amHtml += routineStepHtml('Moisturize', amMoisturizer, sugMoisturizer);
-  amHtml += routineStepHtml('Sun Protection', amSpf, sugSpf);
+  const themeOpts = { theme: userTheme };
+  let amHtml = `<div style="margin-top:16px;padding:20px;background:${tc.amBg};border-left:4px solid ${tc.amBorder};border-radius:8px"><p style="margin-bottom:8px;font-size:17px"><b>☀️ Morning Routine</b></p>\n`;
+  amHtml += routineStepHtml('Cleanse', amCleanser, sugCleanser, themeOpts);
+  amHtml += routineStepHtml('Tone', amToner, sugToner, themeOpts);
+  amHtml += routineStepHtml('Serum', amSerum, sugSerum, themeOpts);
+  amHtml += routineStepHtml('Eye Treatment', amEye, sugEye, themeOpts);
+  amHtml += routineStepHtml('Moisturize', amMoisturizer, sugMoisturizer, themeOpts);
+  amHtml += routineStepHtml('Sun Protection', amSpf, sugSpf, themeOpts);
 
   // PM Routine
   const pmSerum = findPurchased(p => isSerum(p) && isPmProduct(p)) || findPurchased(p => isSerum(p) && p !== amSerum) || amSerum;
   const pmMoisturizer = findPurchased(p => isMoisturizer(p) && isPmProduct(p)) || findPurchased(p => isMoisturizer(p) && p !== amMoisturizer) || amMoisturizer;
 
-  let pmHtml = `</div><div style="margin-top:16px;padding:20px;background:#f3f0fa;border-left:4px solid #9b8ec4;border-radius:8px"><p style="margin-bottom:8px;font-size:17px"><b>🌙 Evening Routine</b></p>\n`;
-  pmHtml += routineStepHtml('Cleanse', amCleanser, sugCleanser, { alreadySuggested: !!sugCleanser });
-  pmHtml += routineStepHtml('Tone', amToner, sugToner, { alreadySuggested: !!sugToner });
-  pmHtml += routineStepHtml('Serum', pmSerum, pmSerum ? null : sugSerum, { alreadySuggested: !!sugSerum });
-  pmHtml += routineStepHtml('Eye Treatment', amEye, sugEye, { alreadySuggested: !!sugEye });
-  pmHtml += routineStepHtml('Moisturize', pmMoisturizer, pmMoisturizer ? null : sugMoisturizer, { alreadySuggested: !!sugMoisturizer });
+  let pmHtml = `</div><div style="margin-top:16px;padding:20px;background:${tc.pmBg};border-left:4px solid ${tc.pmBorder};border-radius:8px"><p style="margin-bottom:8px;font-size:17px"><b>🌙 Evening Routine</b></p>\n`;
+  pmHtml += routineStepHtml('Cleanse', amCleanser, sugCleanser, { alreadySuggested: !!sugCleanser, theme: userTheme });
+  pmHtml += routineStepHtml('Tone', amToner, sugToner, { alreadySuggested: !!sugToner, theme: userTheme });
+  pmHtml += routineStepHtml('Serum', pmSerum, pmSerum ? null : sugSerum, { alreadySuggested: !!sugSerum, theme: userTheme });
+  pmHtml += routineStepHtml('Eye Treatment', amEye, sugEye, { alreadySuggested: !!sugEye, theme: userTheme });
+  pmHtml += routineStepHtml('Moisturize', pmMoisturizer, pmMoisturizer ? null : sugMoisturizer, { alreadySuggested: !!sugMoisturizer, theme: userTheme });
 
   // Treatment cream (if purchased)
   const treatment = findPurchased(isTreatment);
@@ -573,14 +631,14 @@ router.post('/generate', (req, res) => {
     const sugExfoliant = findSug(isExfoliant);
     if (sugExfoliant) {
       if (!weeklyHtml) weeklyHtml = `<p style="margin-top:20px;margin-bottom:8px;font-size:17px"><b>📅 Weekly Treatments</b></p>\n`;
-      weeklyHtml += `<p style="margin-bottom:8px">👉 <b>Exfoliate (not in your collection yet):</b> Regular exfoliation removes dead skin cells that build up and make your complexion look dull — it's the secret to that fresh, glowing look. We recommend ${productLink(sugExfoliant)} — ${shortDescription(sugExfoliant)} Reply to this email to ask about current specials and our free shipping!</p>`;
+      weeklyHtml += `<p style="margin-bottom:8px">👉 <b>Exfoliate (not in your collection yet):</b> Regular exfoliation removes dead skin cells that build up and make your complexion look dull — it's the secret to that fresh, glowing look. We recommend ${productLink(sugExfoliant, userTheme)} — ${shortDescription(sugExfoliant)} Reply to this email to ask about current specials and our free shipping!</p>`;
     }
   }
   if (!weeklyProducts.some(isMask)) {
     const sugMask = findSug(isMask);
     if (sugMask) {
       if (!weeklyHtml) weeklyHtml = `<p style="margin-top:20px;margin-bottom:8px;font-size:17px"><b>📅 Weekly Treatments</b></p>\n`;
-      weeklyHtml += `<p style="margin-bottom:8px">👉 <b>Mask (not in your collection yet):</b> A weekly mask gives your skin a concentrated boost of nourishment that your daily routine can't match — think of it as a spa treatment at home. We recommend ${productLink(sugMask)} — ${shortDescription(sugMask)} Reply to this email to ask about current specials and our free shipping!</p>`;
+      weeklyHtml += `<p style="margin-bottom:8px">👉 <b>Mask (not in your collection yet):</b> A weekly mask gives your skin a concentrated boost of nourishment that your daily routine can't match — think of it as a spa treatment at home. We recommend ${productLink(sugMask, userTheme)} — ${shortDescription(sugMask)} Reply to this email to ask about current specials and our free shipping!</p>`;
     }
   }
 
@@ -589,7 +647,7 @@ router.post('/generate', (req, res) => {
 
   // Wrap weekly in its own callout if it has content
   if (weeklyHtml) {
-    weeklyHtml = `<div style="margin-top:16px;padding:20px;background:#eef7f3;border-left:4px solid #6dab8e;border-radius:8px">${weeklyHtml}</div>`;
+    weeklyHtml = `<div style="margin-top:16px;padding:20px;background:${tc.weeklyBg};border-left:4px solid ${tc.weeklyBorder};border-radius:8px">${weeklyHtml}</div>`;
   }
 
   const routineSection = `<p style="margin-top:24px;margin-bottom:12px;font-size:20px"><b>🌿 Your Personalized Skincare Routine</b></p>\n${amHtml}\n${pmHtml}\n${weeklyHtml}`;
@@ -600,12 +658,12 @@ router.post('/generate', (req, res) => {
     .slice(0, 3) // Max 3 tips to keep it concise
     .map(t => t.tip);
 
-  const tipsHtml = `<div style="margin-top:24px;padding:20px;background:#eef4fb;border-left:4px solid #6a9fd8;border-radius:8px"><p style="margin-bottom:12px;font-size:20px"><b>💡 Tips for Your Routine</b></p>\n` +
+  const tipsHtml = `<div style="margin-top:24px;padding:20px;background:${tc.tipsBg};border-left:4px solid ${tc.tipsBorder};border-radius:8px"><p style="margin-bottom:12px;font-size:20px"><b>💡 Tips for Your Routine</b></p>\n` +
     relevantTips.map(t => `<p style="margin-bottom:8px">• ${t}</p>`).join('\n') + '</div>';
 
   // ── 4b. Consultation invite (only if fewer than 3 products) ────────────
   const consultationHtml = selectedProducts.length < 3
-    ? `<p style="margin-top:24px;margin-bottom:16px;padding:16px;background:#fdf2f4;border-left:4px solid #c97d8a;border-radius:8px">💆 <b>Want a personalized skincare plan?</b> Since you're just getting started with your collection, we'd love to invite you in for a complimentary one-on-one consultation with one of our skincare specialists. We'll build a customized routine tailored to your skin type, goals, and lifestyle. Just reply to this email to book your visit — we'd love to see you!</p>`
+    ? `<p style="margin-top:24px;margin-bottom:16px;padding:16px;background:${tc.consultBg};border-left:4px solid ${tc.consultBorder};border-radius:8px">💆 <b>Want a personalized skincare plan?</b> Since you're just getting started with your collection, we'd love to invite you in for a complimentary one-on-one consultation with one of our skincare specialists. We'll build a customized routine tailored to your skin type, goals, and lifestyle. Just reply to this email to book your visit — we'd love to see you!</p>`
     : '';
 
   // ── 5. Sign-off (randomly selected) ────────────────────────────────────
