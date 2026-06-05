@@ -573,6 +573,36 @@
       border: 1px solid var(--border);
     }
 
+    .email-card.email-unread {
+      background: var(--cream);
+      border-color: var(--rose);
+    }
+
+    .email-card.email-unread .email-name {
+      font-weight: 700;
+    }
+
+    .email-card.email-unread .email-subject {
+      font-weight: 700;
+      color: var(--dark);
+    }
+
+    .unread-dot {
+      position: absolute;
+      left: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--rose);
+      flex-shrink: 0;
+    }
+
+    .email-card.email-unread {
+      padding-left: 22px;
+    }
+
     .email-card:hover {
       border-color: var(--rose);
       box-shadow: var(--shadow);
@@ -2219,12 +2249,17 @@
     const name = email.from_name || email.from_email || 'Unknown';
     const ini = initials(name);
     const time = timeAgo(email.received_at);
+    const isUnread = !email.read_at;
     const badges = [];
     if (isDraft || email.status === 'draft_ready') badges.push('<span class="badge badge-draft">Draft</span>');
     if (email.status === 'pending') badges.push('<span class="badge badge-pending">New</span>');
     if (email.status === 'sent') badges.push('<span class="badge badge-sent">Sent</span>');
 
-    return '<div class="email-card" data-id="' + email.id + '">' +
+    const unreadClass = isUnread ? ' email-unread' : '';
+    const unreadDot = isUnread ? '<div class="unread-dot"></div>' : '';
+
+    return '<div class="email-card' + unreadClass + '" data-id="' + email.id + '">' +
+        unreadDot +
         '<div class="email-avatar">' + ini + '</div>' +
         '<div class="email-body">' +
           '<div class="email-top">' +

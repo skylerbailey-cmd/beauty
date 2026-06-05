@@ -161,6 +161,11 @@ router.get('/:id', (req, res) => {
     if (email.user_id !== req.userId) {
       return res.status(403).json({ error: 'Forbidden' });
     }
+    // Mark as read
+    const { markEmailRead } = require('../db');
+    markEmailRead(email.id);
+    if (!email.read_at) email.read_at = new Date().toISOString();
+
     res.json({ email });
   } catch (err) {
     console.error('[emails] Error fetching email:', err);

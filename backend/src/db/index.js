@@ -26,6 +26,7 @@ db.exec(schema);
 try { db.exec('ALTER TABLE users ADD COLUMN company_name TEXT'); } catch (_) { /* already exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN theme TEXT DEFAULT 'rose'"); } catch (_) { /* already exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN websites TEXT DEFAULT '[]'"); } catch (_) { /* already exists */ }
+try { db.exec("ALTER TABLE emails ADD COLUMN read_at DATETIME"); } catch (_) { /* already exists */ }
 try { db.exec("ALTER TABLE customers ADD COLUMN phone TEXT DEFAULT ''"); } catch (_) { /* already exists */ }
 try { db.exec("ALTER TABLE customers ADD COLUMN address TEXT DEFAULT ''"); } catch (_) { /* already exists */ }
 
@@ -179,6 +180,12 @@ function updateDraftContent(id, draftContent) {
 function markEmailSent(id) {
   db.prepare(`
     UPDATE emails SET status = 'sent', sent_at = CURRENT_TIMESTAMP WHERE id = ?
+  `).run(id);
+}
+
+function markEmailRead(id) {
+  db.prepare(`
+    UPDATE emails SET read_at = CURRENT_TIMESTAMP WHERE id = ? AND read_at IS NULL
   `).run(id);
 }
 
@@ -371,6 +378,7 @@ module.exports = {
   updateDraftContent,
   markEmailSent,
   getFollowUpEmails,
+  markEmailRead,
   findOrCreateUserByEmail,
   updateCompanyName,
   updateUserTheme,

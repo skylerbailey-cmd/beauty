@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS emails (
   draft_content TEXT,
   gmail_draft_id TEXT,
   sent_at DATETIME,
+  read_at DATETIME,
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
