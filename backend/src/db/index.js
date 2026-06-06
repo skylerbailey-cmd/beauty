@@ -14,9 +14,12 @@ if (!fs.existsSync(dbDir)) {
 
 const db = new Database(path.resolve(DB_PATH));
 
-// Enable WAL mode for better concurrent read performance
-db.pragma('journal_mode = WAL');
+// Use DELETE journal mode instead of WAL — WAL can lose data on Railway
+// because the container is killed before WAL checkpoints flush to disk
+db.pragma('journal_mode = DELETE');
 db.pragma('foreign_keys = ON');
+// Ensure writes are flushed to disk immediately
+db.pragma('synchronous = FULL');
 
 // Initialize schema
 const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
