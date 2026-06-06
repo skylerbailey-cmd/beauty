@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS users (
   company_name TEXT,
   theme TEXT DEFAULT 'rose',
   websites TEXT DEFAULT '[]',
+  brands TEXT DEFAULT '["avologi","avinichi","hydrasphere"]',
   access_token TEXT,
   refresh_token TEXT,
   push_token TEXT,

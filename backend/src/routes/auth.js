@@ -57,6 +57,7 @@ router.post('/web-login', (req, res) => {
       companyName: user.company_name,
       theme: user.theme || 'rose',
       websites: JSON.parse(user.websites || '[]'),
+      brands: JSON.parse(user.brands || '["avologi","avinichi","hydrasphere"]'),
       hasGmail: !!user.refresh_token,
     },
   });
@@ -213,6 +214,7 @@ router.get('/me', (req, res) => {
     companyName: user.company_name,
     theme: user.theme || 'rose',
     websites: JSON.parse(user.websites || '[]'),
+    brands: JSON.parse(user.brands || '["avologi","avinichi","hydrasphere"]'),
     hasGmail: !!user.refresh_token,
     push_token: user.push_token,
     gmail_history_id: user.gmail_history_id,
@@ -299,6 +301,32 @@ router.post('/websites', (req, res) => {
   const { updateUserWebsites } = require('../db');
   updateUserWebsites(userId, cleaned);
   res.json({ success: true, websites: cleaned });
+});
+
+// ─── POST /auth/brands ──────────────────────────────────────────────────────
+// Save user's selected product brands
+
+router.post('/brands', (req, res) => {
+  const userId = req.session?.userId || req.headers['x-user-id'];
+  if (!userId) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const { brands } = req.body;
+  if (!Array.isArray(brands)) {
+    return res.status(400).json({ error: 'brands must be an array' });
+  }
+
+  const VALID_BRANDS = ['avologi', 'avinichi', 'hydrasphere'];
+  const cleaned = brands.filter(b => VALID_BRANDS.includes(b));
+
+  if (cleaned.length === 0) {
+    return res.status(400).json({ error: 'At least one brand must be selected' });
+  }
+
+  const { updateUserBrands } = require('../db');
+  updateUserBrands(userId, cleaned);
+  res.json({ success: true, brands: cleaned });
 });
 
 // ─── POST /auth/logout ─────────────────────────────────────────────────────────

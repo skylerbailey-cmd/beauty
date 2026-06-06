@@ -639,7 +639,11 @@ router.post('/generate', (req, res) => {
   }
   const tc = EMAIL_THEMES[userTheme] || EMAIL_THEMES.rose;
 
-  const allProducts = [...PRODUCTS.avologi, ...(PRODUCTS.avinichi || []), ...PRODUCTS.hydrasphere];
+  // Filter products by user's selected brands
+  const userBrands = userId ? JSON.parse(require('../db').getUser(userId)?.brands || '["avologi","avinichi","hydrasphere"]') : ['avologi', 'avinichi', 'hydrasphere'];
+  const allProducts = Object.entries(PRODUCTS)
+    .filter(([key]) => userBrands.includes(key))
+    .flatMap(([, products]) => products);
   const selectedIds = new Set(selectedProductIds);
   const selectedProducts = selectedProductIds
     .map(id => allProducts.find(p => p.id === id))

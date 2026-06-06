@@ -1619,6 +1619,32 @@
   <div id="websitesList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;"></div>
   <button onclick="addWebsiteField()" style="background:none;border:1.5px dashed var(--border);border-radius:8px;padding:8px 14px;cursor:pointer;color:var(--mid);font-family:system-ui,sans-serif;font-size:.82rem;width:100%;transition:all .2s;margin-bottom:24px;" onmouseover="this.style.borderColor='var(--rose)';this.style.color='var(--rose-dk)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--mid)'">+ Add Website</button>
 
+  <div class="settings-section-label">Brands</div>
+  <p style="font-size:.78rem;color:var(--mid);margin-bottom:10px;">Select which product brands appear in your welcome emails and AI draft replies.</p>
+  <div id="brandCheckboxes" style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">
+    <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream);transition:all .2s;">
+      <input type="checkbox" value="avologi" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--rose-dk);" />
+      <div>
+        <div style="font-weight:600;font-size:.88rem;color:var(--dark);">Avologi</div>
+        <div style="font-size:.76rem;color:var(--mid);margin-top:2px;">Advanced youth-restoring LED and laser devices</div>
+      </div>
+    </label>
+    <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream);transition:all .2s;">
+      <input type="checkbox" value="avinichi" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--rose-dk);" />
+      <div>
+        <div style="font-weight:600;font-size:.88rem;color:var(--dark);">Avinichi</div>
+        <div style="font-size:.76rem;color:var(--mid);margin-top:2px;">Noni-infused luxury skincare products</div>
+      </div>
+    </label>
+    <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream);transition:all .2s;">
+      <input type="checkbox" value="hydrasphere" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--rose-dk);" />
+      <div>
+        <div style="font-weight:600;font-size:.88rem;color:var(--dark);">HydraSphere Plus</div>
+        <div style="font-size:.76rem;color:var(--mid);margin-top:2px;">Hydrogen-infused skincare and SPF products</div>
+      </div>
+    </label>
+  </div>
+
   <div class="settings-section-label">Theme</div>
   <div class="theme-options">
     <div class="theme-option active" data-theme="rose" onclick="selectTheme('rose')">
@@ -1819,7 +1845,7 @@
           </div>
 
           <!-- HydraSphere -->
-          <div class="brand-section">
+          <div class="brand-section" id="brand-section-hydrasphere">
             <div class="brand-header">
               <span class="brand-badge hydrasphere">HydraSphere+</span>
               <span class="brand-name">Hydrogen-Infused Skincare</span>
@@ -1833,7 +1859,7 @@
           </div>
 
           <!-- Avologi -->
-          <div class="brand-section">
+          <div class="brand-section" id="brand-section-avologi">
             <div class="brand-header">
               <span class="brand-badge avologi">Avologi</span>
               <span class="brand-name">Advanced Youth Restoring Technology</span>
@@ -1847,7 +1873,7 @@
           </div>
 
           <!-- Avinichi -->
-          <div class="brand-section">
+          <div class="brand-section" id="brand-section-avinichi">
             <div class="brand-header">
               <span class="brand-badge" style="background:#f5ede0;color:#8b6914;">Avinichi</span>
               <span class="brand-name">Noni-Infused Luxury Skincare</span>
@@ -2219,6 +2245,7 @@
       document.getElementById('settingsCompanyName').value = currentUser.companyName;
     }
     renderWebsites(currentUser?.websites || []);
+    renderBrandCheckboxes(currentUser?.brands || ['avologi', 'avinichi', 'hydrasphere']);
   }
 
   // ── Sidebar tab switching ───────────────────────────────────────────────────
@@ -2422,6 +2449,53 @@
       if (currentUser) currentUser.websites = websites;
     } catch (err) {
       console.warn('Failed to save websites:', err);
+    }
+  }
+
+  // ── Brands management ──────────────────────────────────────────────────
+  function renderBrandCheckboxes(brands) {
+    const allBrands = ['avologi', 'avinichi', 'hydrasphere'];
+    const selected = brands || allBrands;
+    document.querySelectorAll('#brandCheckboxes input[type=checkbox]').forEach(cb => {
+      cb.checked = selected.includes(cb.value);
+    });
+    applyBrandVisibility(selected);
+  }
+
+  function applyBrandVisibility(brands) {
+    const allBrands = ['avologi', 'avinichi', 'hydrasphere'];
+    allBrands.forEach(brand => {
+      const section = document.getElementById('brand-section-' + brand);
+      if (section) {
+        section.style.display = brands.includes(brand) ? '' : 'none';
+      }
+    });
+  }
+
+  function getSelectedBrands() {
+    return [...document.querySelectorAll('#brandCheckboxes input[type=checkbox]:checked')].map(cb => cb.value);
+  }
+
+  async function saveBrands() {
+    const brands = getSelectedBrands();
+    if (brands.length === 0) {
+      alert('At least one brand must be selected.');
+      // Re-check the last unchecked one
+      renderBrandCheckboxes(currentUser?.brands || ['avologi', 'avinichi', 'hydrasphere']);
+      return;
+    }
+    applyBrandVisibility(brands);
+    try {
+      const res = await fetch('/auth/brands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brands }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      if (currentUser) currentUser.brands = data.brands;
+    } catch (err) {
+      console.warn('Failed to save brands:', err);
     }
   }
 
