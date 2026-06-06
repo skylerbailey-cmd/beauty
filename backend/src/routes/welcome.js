@@ -248,7 +248,7 @@ const PRODUCTS = {
       benefits: 'Self-heating thermal mask, reduces fine lines and wrinkles, brightens dark spots, deep hydration with peptides and hyaluronic acid, lifts and firms with vitamin E and fruit extracts, includes jade roller for lymphatic drainage and absorption',
       ingredients: 'Phyto Remedy Thermal Mask – PEG-8, Zeolite, Kaolin, Methyl Gluceth-20, Retinyl Palmitate, Ascorbic Acid, Tocopheryl Acetate, Organic Arnica Montana Flower Extract, Organic Aloe Barbadensis Leaf Extract, Organic Prunus Amygdalus Dulcis Seed Extract, Organic Coffee Arabica Seed Extract, Organic Citrus Limon Fruit Extract, Organic Angelica Archangelica Root Extract, Ganoderma Lucidum (Mushroom) Extract, Phenoxyethanol, Ethylhexylglycerin, Mica, Titanium Dioxide CI-77891, Iron Oxide CI-77499.',
       howToUse: 'Apply the Phyto Remedy Thermal Mask to cleansed skin. Gently massage onto the face in a circular motion. To intensify heating treatment, massage 2-3 drops of the Hydrating Antioxidant Serum over the mask. Allow the mask to rest for 10-15 minutes, then rinse with warm water. Apply the Mulberr-E Moisture Infusion Cream evenly to the face after. Massage gently into skin.',
-      step: 'mask + serum + moisturizer',
+      step: 'treatment',
       frequency: '1x/month',
       image: 'https://www.avinichi.com/wp-content/uploads/Phyto-Thermal-Collection-1.png',
       url: 'https://www.avinichi.com/product/phyto-thermal-collection/',
@@ -560,7 +560,7 @@ function isDevice(p) {
 
 function isTreatment(p) {
   const step = (p.step || '').toLowerCase();
-  return step.includes('treatment cream');
+  return step.includes('treatment') && !step.includes('device');
 }
 
 // Find a suggestion from unselected products for a missing step
@@ -817,11 +817,12 @@ router.post('/generate', (req, res) => {
   pmHtml += routineStepHtml('Eye Treatment', amEye, sugEye, { alreadySuggested: !!sugEye, theme: userTheme });
   pmHtml += routineStepHtml('Moisturize', pmMoisturizer, pmMoisturizer ? null : sugMoisturizer, { alreadySuggested: !!sugMoisturizer, theme: userTheme });
 
-  // Treatment cream (if purchased)
-  const treatment = findPurchased(isTreatment);
-  if (treatment) {
-    pmHtml += routineStepHtml('Targeted Treatment', treatment, null);
-  }
+  // Treatments (if purchased) — shown separate from daily routine
+  const treatments = selectedProducts.filter(isTreatment);
+  treatments.forEach(t => {
+    const freq = t.frequency ? ` (${t.frequency})` : '';
+    pmHtml += `<p style="margin-bottom:8px">✅ <b>Targeted Treatment${freq}:</b> ${productLink(t, userTheme)} — ${t.howToUse || ''}</p>`;
+  });
 
   // Weekly
   const weeklyProducts = selectedProducts.filter(p => isExfoliant(p) || isMask(p) || isDevice(p));
