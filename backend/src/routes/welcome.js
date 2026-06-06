@@ -244,6 +244,17 @@ const PRODUCTS = {
       step: 'wrinkle-treatment',
       image: 'https://www.avinichi.com/wp-content/uploads/Wrinkle-Reversal-Solution-1.png',
     },
+    {
+      id: 'avinichi-noni-night-repair-cream',
+      name: 'Noni Night Repair Cream',
+      brand: 'Avinichi',
+      description: "Each night while you're asleep, your skin cells work hard to heal and regenerate. The Noni Night Repair Cream has been designed to keep your skin cells feeling supported as they go about those vital tasks. Packed with a long list of vitamins, plant butters, and botanical extracts, along with noni fruit extract for its hydrating humectant properties, this rich blend will restore lost moisture overnight, leaving you to wake up to a complexion that looks bright, plump, and perky.",
+      benefits: 'Restores lost moisture overnight, brightens and plumps skin, Noni Fruit Extract humectant, Shea Butter, Jojoba Oil, Aloe Vera, Green Tea, Vitamin E, Vitamin A, Sodium Hyaluronate',
+      ingredients: 'Aqua, Organic Helianthus Annuus (Sunflower) Seed Oil, Isopropyl Palmitate, Organic Butyrospermum Parkii (Shea Butter), Caprylic/Capric Triglyceride, Glycerin, Propanediol, Glyceryl Stearate, Cetyl Alcohol, Cetearyl Alcohol, Cetearyl Glucoside, Organic Simmondsia Chinensis (Jojoba) Seed Oil, Organic Aloe Barbadensis Leaf Extract, Organic Chamomilla Recutita Flower Extract, Organic Camellia Sinensis (Green Tea) Leaf Extract, Tocopheryl Acetate (Vitamin E), Retinyl Palmitate (Vitamin A), Tocopherol (Vitamin E), Sodium Hyaluronate, Allantoin, Potassium Sorbate, Sodium Polyacrylate, Trisodium Ethylenediamine Disuccinate, Ethylhexylglycerin, Phenoxyethanol, Morinda Citrifolia (Noni) Fruit Extract, Fragrance.',
+      howToUse: 'Gently massage cream into the skin until thoroughly absorbed. Use nightly before bedtime.',
+      step: 'moisturizer',
+      image: 'https://www.avinichi.com/wp-content/uploads/Noni-Night-Repair-Cream-1.png',
+    },
   ],
   hydrasphere: [
     {
