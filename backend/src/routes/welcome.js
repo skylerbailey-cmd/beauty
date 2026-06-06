@@ -250,6 +250,7 @@ const PRODUCTS = {
       howToUse: 'Apply the Phyto Remedy Thermal Mask to cleansed skin. Gently massage onto the face in a circular motion. To intensify heating treatment, massage 2-3 drops of the Hydrating Antioxidant Serum over the mask. Allow the mask to rest for 10-15 minutes, then rinse with warm water. Apply the Mulberr-E Moisture Infusion Cream evenly to the face after. Massage gently into skin.',
       step: 'mask + serum + moisturizer',
       image: 'https://www.avinichi.com/wp-content/uploads/Phyto-Thermal-Collection-1.png',
+      url: 'https://www.avinichi.com/product/phyto-thermal-collection/',
     },
     {
       id: 'avinichi-liquid-lift-overnight-melting-mask',
@@ -261,6 +262,7 @@ const PRODUCTS = {
       howToUse: 'Apply a thin layer evenly on skin and leave on for ten minutes. Gently massage into skin and watch droplets form on the surface. Let the droplets disappear. Don\'t wash off. Use this overnight mask weekly.',
       step: 'mask',
       image: 'https://www.avinichi.com/wp-content/uploads/Liquid-Lift-Overnight-Melting-Mask-1.png',
+      url: 'https://www.avinichi.com/product/liquid-lift-overnight-melting-mask/',
     },
     {
       id: 'avinichi-hydrating-multifruit-c-serum',
@@ -272,6 +274,7 @@ const PRODUCTS = {
       howToUse: 'After cleansing, massage onto face & neck using gentle upward motions. Once fully absorbed, follow with your moisturizer.',
       step: 'serum',
       image: 'https://www.avinichi.com/wp-content/uploads/Hydrating-Multifruit-C-Serum-1.png',
+      url: 'https://www.avinichi.com/product/hydrating-multifruit-c-serum/',
     },
     {
       id: 'avinichi-noni-morning-glow',
@@ -295,6 +298,7 @@ const PRODUCTS = {
       howToUse: 'Gently lather a small amount of mousse in hands and then apply to damp face. Rinse thoroughly with water.',
       step: 'cleanser',
       image: 'https://www.avinichi.com/wp-content/uploads/Noni-Mousse-Cleanser-1.png',
+      url: 'https://www.avinichi.com/product/noni-mousse-cleanser/',
     },
     {
       id: 'avinichi-noni-pore-purifying-toner',
@@ -306,6 +310,7 @@ const PRODUCTS = {
       howToUse: 'Apply after cleansing with a cotton ball or pad. Can be used morning or night daily.',
       step: 'toner',
       image: 'https://www.avinichi.com/wp-content/uploads/Noni-Pore-Purifying-Toner-1.png',
+      url: 'https://www.avinichi.com/product/noni-pore-purifying-toner/',
     },
     {
       id: 'avinichi-eye-rescue-phyto-serum',
@@ -317,6 +322,7 @@ const PRODUCTS = {
       howToUse: 'After cleansing, apply around the entire eye area. Gently pat serum from the inner corner, under the eye, outer corner, and over the eyelid. Avoid contact with eyes.',
       step: 'eye-serum',
       image: 'https://www.avinichi.com/wp-content/uploads/Eye-Rescue-Phyto-Serum-1.png',
+      url: 'https://www.avinichi.com/product/eye-rescue-phyto-serum/',
     },
     {
       id: 'avinichi-noni-polishing-peel',
@@ -328,6 +334,7 @@ const PRODUCTS = {
       howToUse: 'Apply to dry, clean skin. Gently massage in upward circular motions for 30 seconds. Wash peel off with cool water. Use twice a week.',
       step: 'exfoliant',
       image: 'https://www.avinichi.com/wp-content/uploads/Noni-Polishing-Peel-1.png',
+      url: 'https://www.avinichi.com/product/noni-polishing-peel/',
     },
     {
       id: 'avinichi-wrinkle-reversal-solution',
@@ -339,6 +346,7 @@ const PRODUCTS = {
       howToUse: 'Twist bottom of syringe and push to dispense formula on finger or directly on fine lines and wrinkles. Pat formula into skin gently. If necessary, remove excess solution with a cotton swab.',
       step: 'wrinkle-treatment',
       image: 'https://www.avinichi.com/wp-content/uploads/Wrinkle-Reversal-Solution-1.png',
+      url: 'https://www.avinichi.com/product/wrinkle-reversal-solution/',
     },
     {
       id: 'avinichi-noni-night-repair-cream',
