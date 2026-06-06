@@ -817,14 +817,8 @@ router.post('/generate', (req, res) => {
   pmHtml += routineStepHtml('Eye Treatment', amEye, sugEye, { alreadySuggested: !!sugEye, theme: userTheme });
   pmHtml += routineStepHtml('Moisturize', pmMoisturizer, pmMoisturizer ? null : sugMoisturizer, { alreadySuggested: !!sugMoisturizer, theme: userTheme });
 
-  // Treatments (if purchased) — shown separate from daily routine
+  // Weekly (includes exfoliants, masks, devices, and treatments)
   const treatments = selectedProducts.filter(isTreatment);
-  treatments.forEach(t => {
-    const freq = t.frequency ? ` (${t.frequency})` : '';
-    pmHtml += `<p style="margin-bottom:8px">✅ <b>Targeted Treatment${freq}:</b> ${productLink(t, userTheme)} — ${t.howToUse || ''}</p>`;
-  });
-
-  // Weekly
   const weeklyProducts = selectedProducts.filter(p => isExfoliant(p) || isMask(p) || isDevice(p));
   let weeklyHtml = '';
   if (weeklyProducts.length > 0) {
@@ -832,6 +826,15 @@ router.post('/generate', (req, res) => {
     weeklyProducts.forEach(p => {
       const freq = p.frequency || (isExfoliant(p) ? '1-2x/week' : isMask(p) ? '1-3x/week' : 'as directed');
       weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${p.name}</b> (${freq}) — ${p.howToUse || ''}</p>`;
+    });
+  }
+
+  // Add targeted treatments to weekly section (done at night)
+  if (treatments.length > 0) {
+    if (!weeklyHtml) weeklyHtml = `<p style="margin-bottom:10px;font-size:17px;color:${tc.routineAccent}"><b>📅 Weekly Treatments</b></p>\n`;
+    treatments.forEach(t => {
+      const freq = t.frequency || 'as directed';
+      weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${productLink(t, userTheme)}</b> (${freq}, at night) — ${t.howToUse || ''}</p>`;
     });
   }
 
