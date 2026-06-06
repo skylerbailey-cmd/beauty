@@ -56,14 +56,26 @@ app.use((req, res, next) => {
   const savedEmail = req.signedCookies?.glow_user_email;
   const savedCompany = req.signedCookies?.glow_company_name;
   const savedRefresh = req.signedCookies?.glow_gmail_refresh;
+  const savedTheme = req.signedCookies?.glow_theme;
+  const savedBrands = req.signedCookies?.glow_brands;
+  const savedWebsites = req.signedCookies?.glow_websites;
   if (savedEmail) {
-    const { findOrCreateUserByEmail } = require('./db');
+    const { findOrCreateUserByEmail, updateUserTokens, updateUserTheme, updateUserBrands, updateUserWebsites } = require('./db');
     try {
       const { user } = findOrCreateUserByEmail(savedEmail, savedCompany || null);
       // Restore Gmail refresh token if we have it in cookie but not in DB
       if (savedRefresh && !user.refresh_token) {
-        const { updateUserTokens } = require('./db');
         updateUserTokens(user.id, null, savedRefresh);
+      }
+      // Restore settings from cookies if DB has defaults but cookies have real values
+      if (savedTheme && savedTheme !== 'rose' && (!user.theme || user.theme === 'rose')) {
+        updateUserTheme(user.id, savedTheme);
+      }
+      if (savedBrands && (!user.brands || user.brands === '["avologi","avinichi","hydrasphere"]')) {
+        try { updateUserBrands(user.id, JSON.parse(savedBrands)); } catch (_) {}
+      }
+      if (savedWebsites && (!user.websites || user.websites === '[]')) {
+        try { updateUserWebsites(user.id, JSON.parse(savedWebsites)); } catch (_) {}
       }
       req.session.userId = user.id;
     } catch (e) {

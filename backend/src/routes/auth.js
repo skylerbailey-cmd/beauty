@@ -257,6 +257,8 @@ router.post('/theme', (req, res) => {
 
   const { updateUserTheme } = require('../db');
   updateUserTheme(userId, theme);
+  const cookieOpts = { maxAge: 365*24*60*60*1000, httpOnly: true, signed: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' };
+  res.cookie('glow_theme', theme, cookieOpts);
   res.json({ success: true, theme });
 });
 
@@ -276,6 +278,8 @@ router.post('/company-name', (req, res) => {
 
   const { updateCompanyName } = require('../db');
   updateCompanyName(userId, companyName.trim());
+  const cookieOpts = { maxAge: 365*24*60*60*1000, httpOnly: true, signed: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' };
+  res.cookie('glow_company_name', companyName.trim(), cookieOpts);
   res.json({ success: true, companyName: companyName.trim() });
 });
 
@@ -300,6 +304,8 @@ router.post('/websites', (req, res) => {
 
   const { updateUserWebsites } = require('../db');
   updateUserWebsites(userId, cleaned);
+  const cookieOpts = { maxAge: 365*24*60*60*1000, httpOnly: true, signed: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' };
+  res.cookie('glow_websites', JSON.stringify(cleaned), cookieOpts);
   res.json({ success: true, websites: cleaned });
 });
 
@@ -326,6 +332,8 @@ router.post('/brands', (req, res) => {
 
   const { updateUserBrands } = require('../db');
   updateUserBrands(userId, cleaned);
+  const cookieOpts = { maxAge: 365*24*60*60*1000, httpOnly: true, signed: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' };
+  res.cookie('glow_brands', JSON.stringify(cleaned), cookieOpts);
   res.json({ success: true, brands: cleaned });
 });
 
@@ -341,6 +349,10 @@ router.post('/logout', (req, res) => {
     res.clearCookie('connect.sid');
     res.clearCookie('glow_user_email');
     res.clearCookie('glow_company_name');
+    res.clearCookie('glow_gmail_refresh');
+    res.clearCookie('glow_theme');
+    res.clearCookie('glow_brands');
+    res.clearCookie('glow_websites');
     res.json({ success: true });
   });
 });
