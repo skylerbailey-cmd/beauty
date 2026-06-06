@@ -1927,7 +1927,7 @@
               <span>Email body</span>
               <button class="copy-btn" id="copyBtn" onclick="copyEmail()">Copy to clipboard</button>
             </div>
-            <div id="emailPreview" style="padding:20px;background:#fff;border:1px solid var(--border);border-radius:10px;min-height:200px;font-family:system-ui,sans-serif;font-size:0.95rem;line-height:1.6;color:#2c2022;overflow-y:auto;max-height:600px"></div>
+            <div id="emailPreview" contenteditable="true" style="padding:20px;background:#fff;border:1px solid var(--border);border-radius:10px;min-height:200px;font-family:system-ui,sans-serif;font-size:0.95rem;line-height:1.6;color:#2c2022;overflow-y:auto;max-height:600px;outline:none;cursor:text"></div>
             <textarea id="emailBody" spellcheck="true" style="display:none"></textarea>
           </div>
 
@@ -2710,10 +2710,14 @@
     const source = document.getElementById('emailBody');
     const btn = document.getElementById('toggleBtn');
     if (source.style.display === 'none') {
+      // Sync preview edits back to source
+      source.value = preview.innerHTML;
       source.style.display = '';
       preview.style.display = 'none';
       btn.textContent = 'View preview';
     } else {
+      // Sync source edits back to preview
+      preview.innerHTML = source.value;
       source.style.display = 'none';
       preview.style.display = '';
       btn.textContent = 'View source';
@@ -2721,6 +2725,11 @@
   }
 
   async function copyEmail() {
+    // Sync editable preview back to the hidden textarea
+    const preview = document.getElementById('emailPreview');
+    if (preview.style.display !== 'none') {
+      document.getElementById('emailBody').value = preview.innerHTML;
+    }
     const text = document.getElementById('emailBody').value;
     try {
       await navigator.clipboard.writeText(text);
@@ -2739,6 +2748,11 @@
   }
 
   async function sendEmail() {
+    // Sync editable preview back to the hidden textarea
+    const preview = document.getElementById('emailPreview');
+    if (preview.style.display !== 'none') {
+      document.getElementById('emailBody').value = preview.innerHTML;
+    }
     const emailBody = document.getElementById('emailBody').value;
     const btn = document.getElementById('sendBtn');
 

@@ -249,6 +249,7 @@ const PRODUCTS = {
       ingredients: 'Phyto Remedy Thermal Mask – PEG-8, Zeolite, Kaolin, Methyl Gluceth-20, Retinyl Palmitate, Ascorbic Acid, Tocopheryl Acetate, Organic Arnica Montana Flower Extract, Organic Aloe Barbadensis Leaf Extract, Organic Prunus Amygdalus Dulcis Seed Extract, Organic Coffee Arabica Seed Extract, Organic Citrus Limon Fruit Extract, Organic Angelica Archangelica Root Extract, Ganoderma Lucidum (Mushroom) Extract, Phenoxyethanol, Ethylhexylglycerin, Mica, Titanium Dioxide CI-77891, Iron Oxide CI-77499.',
       howToUse: 'Apply the Phyto Remedy Thermal Mask to cleansed skin. Gently massage onto the face in a circular motion. To intensify heating treatment, massage 2-3 drops of the Hydrating Antioxidant Serum over the mask. Allow the mask to rest for 10-15 minutes, then rinse with warm water. Apply the Mulberr-E Moisture Infusion Cream evenly to the face after. Massage gently into skin.',
       step: 'mask + serum + moisturizer',
+      frequency: '1x/month',
       image: 'https://www.avinichi.com/wp-content/uploads/Phyto-Thermal-Collection-1.png',
       url: 'https://www.avinichi.com/product/phyto-thermal-collection/',
     },
@@ -828,7 +829,7 @@ router.post('/generate', (req, res) => {
   if (weeklyProducts.length > 0) {
     weeklyHtml = `<p style="margin-bottom:10px;font-size:17px;color:${tc.routineAccent}"><b>📅 Weekly Treatments</b></p>\n`;
     weeklyProducts.forEach(p => {
-      const freq = isExfoliant(p) ? '1-2x/week' : isMask(p) ? '1-3x/week' : 'as directed';
+      const freq = p.frequency || (isExfoliant(p) ? '1-2x/week' : isMask(p) ? '1-3x/week' : 'as directed');
       weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${p.name}</b> (${freq}) — ${p.howToUse || ''}</p>`;
     });
   }
