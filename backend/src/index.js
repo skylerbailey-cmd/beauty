@@ -145,6 +145,16 @@ app.listen(PORT, async () => {
   } catch (err) {
     console.error('[startup] Error during watch restoration:', err.message);
   }
+
+  // Keep-alive: ping own public URL every 5 minutes to prevent Railway from sleeping
+  const publicDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
+  if (publicDomain) {
+    const keepAliveUrl = `https://${publicDomain}/health`;
+    setInterval(() => {
+      fetch(keepAliveUrl).catch(() => {});
+    }, 5 * 60 * 1000);
+    console.log(`[keep-alive] Pinging ${keepAliveUrl} every 5 minutes`);
+  }
 });
 
 module.exports = app;
