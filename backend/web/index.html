@@ -3924,10 +3924,14 @@
     document.getElementById('step2-dot').classList.remove('done', 'active');
     document.getElementById('customerEmail').value = '';
     document.getElementById('customerName').value = '';
-    // Uncheck all products
-    document.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    // Uncheck all product cards (scoped to product grids only, not settings checkboxes)
+    document.querySelectorAll('.product-card input[type="checkbox"]').forEach(cb => {
       cb.checked = false;
       syncCardState(cb);
+    });
+    // Also remove selected class from all product cards directly
+    document.querySelectorAll('.product-card.selected').forEach(card => {
+      card.classList.remove('selected');
     });
     hideError();
   }
