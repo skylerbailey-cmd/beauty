@@ -1061,7 +1061,11 @@ router.post('/campaign', async (req, res) => {
     return res.status(403).json({ error: 'Gmail not connected. Please connect your Gmail first.', needsGmailConnect: true });
   }
 
-  const customerEmails = getUniqueCustomerEmails();
+  // Support targeted email list or fall back to all customers
+  const { emails: targetEmails } = req.body;
+  const customerEmails = (Array.isArray(targetEmails) && targetEmails.length > 0)
+    ? targetEmails.filter(e => typeof e === 'string' && e.includes('@'))
+    : getUniqueCustomerEmails();
   if (customerEmails.length === 0) {
     return res.status(400).json({ error: 'No customer emails found. Send some welcome emails first to build your contact list.' });
   }
@@ -1133,10 +1137,19 @@ router.post('/campaign', async (req, res) => {
 
 // GET /api/welcome/customers — list all customers with their products
 router.get('/customers', (req, res) => {
-  const { getCustomers, getCustomersByProduct } = require('../db');
-  const { product } = req.query;
+  const { getCustomers, getCustomersByProduct, getCustomersByProducts } = require('../db');
+  const { product, products } = req.query;
 
-  const customers = product ? getCustomersByProduct(product) : getCustomers();
+  let customers;
+  if (products) {
+    // Multi-product filter: comma-separated product IDs
+    const productIds = products.split(',').map(s => s.trim()).filter(Boolean);
+    customers = productIds.length > 0 ? getCustomersByProducts(productIds) : getCustomers();
+  } else if (product) {
+    customers = getCustomersByProduct(product);
+  } else {
+    customers = getCustomers();
+  }
   res.json({ customers });
 });
 

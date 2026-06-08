@@ -301,6 +301,21 @@ function getCustomersByProduct(productId) {
   }));
 }
 
+function getCustomersByProducts(productIds) {
+  const placeholders = productIds.map(() => '?').join(',');
+  const rows = db.prepare(`
+    SELECT DISTINCT c.* FROM customers c
+    JOIN customer_products cp ON c.id = cp.customer_id
+    WHERE cp.product_id IN (${placeholders})
+    ORDER BY c.updated_at DESC
+  `).all(...productIds);
+  const productStmt = db.prepare('SELECT * FROM customer_products WHERE customer_id = ? ORDER BY purchased_at DESC');
+  return rows.map(c => ({
+    ...c,
+    products: productStmt.all(c.id),
+  }));
+}
+
 function getCustomer(id) {
   const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
   if (!customer) return null;
@@ -401,6 +416,7 @@ module.exports = {
   addCustomerProducts,
   getCustomers,
   getCustomersByProduct,
+  getCustomersByProducts,
   getCustomer,
   updateCustomerNotes,
   updateCustomer,

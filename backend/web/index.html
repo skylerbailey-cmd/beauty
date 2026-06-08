@@ -901,6 +901,67 @@
       font-size: .88rem;
     }
 
+    /* ── Multi-select product filter dropdown ────────────────────────── */
+    .multiselect-wrap {
+      position: relative;
+      display: inline-block;
+    }
+    .multiselect-btn {
+      padding: 9px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: .85rem;
+      font-family: system-ui, sans-serif;
+      background: var(--white);
+      color: var(--dark);
+      cursor: pointer;
+      white-space: nowrap;
+      min-width: 160px;
+      text-align: left;
+      transition: border-color .2s;
+    }
+    .multiselect-btn:hover, .multiselect-btn.open {
+      border-color: var(--rose);
+    }
+    .multiselect-btn::after {
+      content: '\25BE';
+      float: right;
+      margin-left: 8px;
+      color: var(--mid);
+    }
+    .multiselect-dropdown {
+      display: none;
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      min-width: 280px;
+      max-height: 320px;
+      overflow-y: auto;
+      background: var(--white);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.12);
+      z-index: 100;
+      padding: 6px 0;
+    }
+    .multiselect-dropdown.show { display: block; }
+    .multiselect-dropdown label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      cursor: pointer;
+      font-size: .85rem;
+      font-family: system-ui, sans-serif;
+      transition: background .15s;
+    }
+    .multiselect-dropdown label:hover { background: var(--cream); }
+    .multiselect-dropdown input[type="checkbox"] { accent-color: var(--rose-dk); }
+    .multiselect-dropdown .ms-divider {
+      border-top: 1px solid var(--border);
+      margin: 4px 0;
+    }
+
     /* ── Campaign compose ────────────────────────────────────────────── */
     .campaign-compose .field textarea {
       width: 100%;
@@ -2013,7 +2074,7 @@
             </div>
 
             <div id="campaignRecipientInfo" style="background:var(--gold-lt);border:1px solid #e8d8b0;border-radius:10px;padding:14px 18px;margin-bottom:24px;font-family:system-ui,sans-serif;font-size:.85rem">
-              <strong>Recipients:</strong> <span id="campaignRecipientCount">Loading...</span> unique customer emails from your welcome email history.
+              <strong>Recipients:</strong> <span id="campaignRecipientCount">Loading...</span> <span id="campaignRecipientSource">unique customer emails from your welcome email history.</span>
             </div>
 
             <div class="field">
@@ -2030,7 +2091,7 @@
 
             <div class="btn-row">
               <button class="btn btn-secondary" onclick="showCampaignList()">Cancel</button>
-              <button class="btn btn-send" id="sendCampaignBtn" onclick="sendCampaign()">Send to All Customers</button>
+              <button class="btn btn-send" id="sendCampaignBtn" onclick="sendCampaign()">Send Campaign</button>
             </div>
           </div>
         </div>
@@ -2059,9 +2120,10 @@
             <p class="card-sub" style="margin-bottom:0">Track your customers and the products they've purchased.</p>
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <select id="crmProductFilter" onchange="loadCustomers()" style="padding:9px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;background:var(--white);color:var(--dark);outline:none;cursor:pointer">
-              <option value="">All Products</option>
-            </select>
+            <div class="multiselect-wrap" id="crmProductFilterWrap">
+              <button type="button" class="multiselect-btn" id="crmProductFilterBtn" onclick="toggleProductFilter()">All Products</button>
+              <div class="multiselect-dropdown" id="crmProductFilterDropdown"></div>
+            </div>
             <input type="text" id="crmSearch" placeholder="Search name or email..." oninput="filterCustomerTable()" style="padding:9px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;background:var(--white);color:var(--dark);outline:none;width:200px" />
             <button class="btn btn-secondary" style="font-size:.82rem;padding:8px 16px" onclick="exportCustomers()">Export CSV</button>
             <label class="btn btn-secondary" style="font-size:.82rem;padding:8px 16px;cursor:pointer;margin:0">
@@ -2076,6 +2138,7 @@
             <table class="history-full-table" id="crmTable">
               <thead>
                 <tr>
+                  <th style="width:36px;padding-left:14px"><input type="checkbox" id="crmSelectAll" onchange="toggleAllCustomers(this.checked)" style="accent-color:var(--rose-dk);cursor:pointer" /></th>
                   <th>Customer</th>
                   <th>Email</th>
                   <th>Products</th>
@@ -2084,15 +2147,18 @@
                 </tr>
               </thead>
               <tbody id="crmBody">
-                <tr><td colspan="5" class="empty-state" style="padding:40px"><div class="empty-icon">&#128101;</div><h3>No customers yet</h3><p>Customers are automatically added when you send welcome emails.</p></td></tr>
+                <tr><td colspan="6" class="empty-state" style="padding:40px"><div class="empty-icon">&#128101;</div><h3>No customers yet</h3><p>Customers are automatically added when you send welcome emails.</p></td></tr>
               </tbody>
             </table>
           </div>
         </div>
 
-        <p style="margin-top:16px;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid)">
-          <span id="crmCount">0</span> customers &middot; Customers are automatically added when you send a welcome email
-        </p>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;flex-wrap:wrap;gap:12px">
+          <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:0">
+            <span id="crmCount">0</span> customers<span id="crmSelectedInfo"></span> &middot; Customers are automatically added when you send a welcome email
+          </p>
+          <button class="btn btn-primary" id="crmStartCampaignBtn" onclick="startCampaignFromCustomers()" style="font-size:.82rem;padding:8px 20px;display:none">Start Marketing Campaign</button>
+        </div>
       </main>
     </div><!-- /tab-customers -->
 
@@ -2893,12 +2959,15 @@
   }
 
   function showCampaignCompose() {
+    campaignTargetEmails = null; // reset to all customers
     document.getElementById('campaignListView').hidden = true;
     document.getElementById('campaignSentView').hidden = true;
     document.getElementById('campaignComposeView').hidden = false;
     document.getElementById('campaignSubject').value = '';
     document.getElementById('campaignBody').value = '';
     document.getElementById('campaignError').hidden = true;
+    document.getElementById('campaignRecipientSource').textContent = 'unique customer emails from your welcome email history.';
+    document.getElementById('sendCampaignBtn').textContent = 'Send Campaign';
 
     // Load recipient count
     loadRecipientCount();
@@ -2940,7 +3009,8 @@
       return;
     }
 
-    if (!confirm('Send this campaign email to all your customers?')) {
+    const recipientCount = campaignTargetEmails ? campaignTargetEmails.length : 'all';
+    if (!confirm(`Send this campaign email to ${recipientCount} customer${recipientCount === 1 ? '' : 's'}?`)) {
       return;
     }
 
@@ -2949,10 +3019,14 @@
     btn.textContent = 'Sending...';
 
     try {
+      const payload = { subject, body };
+      if (campaignTargetEmails) {
+        payload.emails = campaignTargetEmails;
+      }
       const res = await fetch('/api/welcome/campaign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ subject, body }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
@@ -2972,13 +3046,16 @@
         `Campaign sent to ${data.sentCount} of ${data.totalRecipients} recipients.` +
         (data.errors ? ` ${data.errors.length} failed.` : '');
 
+      // Reset state
+      campaignTargetEmails = null;
+      crmSelectedIds.clear();
       btn.disabled = false;
-      btn.textContent = 'Send to All Customers';
+      btn.textContent = 'Send Campaign';
     } catch (err) {
       errEl.textContent = err.message;
       errEl.hidden = false;
       btn.disabled = false;
-      btn.textContent = 'Send to All Customers';
+      btn.textContent = 'Send Campaign';
     }
   }
 
@@ -2998,21 +3075,55 @@
 
   let crmCustomers = [];
   let crmProductsLoaded = false;
+  let crmSelectedIds = new Set(); // selected customer IDs for campaign
+  let campaignTargetEmails = null; // null = all customers, array = specific emails
 
   async function loadCrmProductFilter() {
     if (crmProductsLoaded) return;
     try {
       const res = await fetch('/api/welcome/products/list', { credentials: 'include' });
       const data = await res.json();
-      const select = document.getElementById('crmProductFilter');
-      data.products.forEach(p => {
-        const opt = document.createElement('option');
-        opt.value = p.id;
-        opt.textContent = `${p.name} (${p.brand})`;
-        select.appendChild(opt);
-      });
+      const dropdown = document.getElementById('crmProductFilterDropdown');
+      dropdown.innerHTML = data.products.map(p =>
+        `<label><input type="checkbox" value="${p.id}" onchange="onProductFilterChange()" /> ${escapeHtml(p.name)} <span style="color:var(--mid);font-size:.78rem">(${escapeHtml(p.brand)})</span></label>`
+      ).join('');
       crmProductsLoaded = true;
     } catch (e) { /* ignore */ }
+  }
+
+  function toggleProductFilter() {
+    const dropdown = document.getElementById('crmProductFilterDropdown');
+    const btn = document.getElementById('crmProductFilterBtn');
+    const isOpen = dropdown.classList.contains('show');
+    dropdown.classList.toggle('show', !isOpen);
+    btn.classList.toggle('open', !isOpen);
+  }
+
+  // Close dropdown when clicking outside
+  document.addEventListener('click', (e) => {
+    const wrap = document.getElementById('crmProductFilterWrap');
+    if (wrap && !wrap.contains(e.target)) {
+      document.getElementById('crmProductFilterDropdown').classList.remove('show');
+      document.getElementById('crmProductFilterBtn').classList.remove('open');
+    }
+  });
+
+  function getSelectedProductIds() {
+    return [...document.querySelectorAll('#crmProductFilterDropdown input:checked')].map(cb => cb.value);
+  }
+
+  function onProductFilterChange() {
+    const selected = getSelectedProductIds();
+    const btn = document.getElementById('crmProductFilterBtn');
+    if (selected.length === 0) {
+      btn.textContent = 'All Products';
+    } else if (selected.length === 1) {
+      const label = document.querySelector(`#crmProductFilterDropdown input[value="${selected[0]}"]`).parentElement.textContent.trim();
+      btn.textContent = label.length > 30 ? label.substring(0, 28) + '...' : label;
+    } else {
+      btn.textContent = `${selected.length} products selected`;
+    }
+    loadCustomers();
   }
 
   function exportCustomers() {
@@ -3120,20 +3231,23 @@
 
   async function loadCustomers() {
     await loadCrmProductFilter();
-    const productFilter = document.getElementById('crmProductFilter').value;
-    const url = productFilter
-      ? `/api/welcome/customers?product=${encodeURIComponent(productFilter)}`
-      : '/api/welcome/customers';
+    const selectedProducts = getSelectedProductIds();
+    const params = selectedProducts.length > 0
+      ? '?products=' + encodeURIComponent(selectedProducts.join(','))
+      : '';
 
     try {
-      const res = await fetch(url, { credentials: 'include' });
+      const res = await fetch('/api/welcome/customers' + params, { credentials: 'include' });
       const data = await res.json();
       crmCustomers = data.customers || [];
       window._crmCustomers = crmCustomers;
+      // Preserve selections that still exist in the filtered results
+      const currentIds = new Set(crmCustomers.map(c => c.id));
+      crmSelectedIds = new Set([...crmSelectedIds].filter(id => currentIds.has(id)));
       renderCustomerTable(crmCustomers);
     } catch (e) {
       document.getElementById('crmBody').innerHTML =
-        '<tr><td colspan="5" style="padding:20px;text-align:center;color:var(--mid)">Failed to load customers.</td></tr>';
+        '<tr><td colspan="6" style="padding:20px;text-align:center;color:var(--mid)">Failed to load customers.</td></tr>';
     }
   }
 
@@ -3151,7 +3265,8 @@
     document.getElementById('crmCount').textContent = customers.length;
 
     if (customers.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty-state" style="padding:40px"><div class="empty-icon">&#128101;</div><h3>No customers found</h3><p>Try adjusting your filters or send some welcome emails to start building your customer list.</p></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state" style="padding:40px"><div class="empty-icon">&#128101;</div><h3>No customers found</h3><p>Try adjusting your filters or send some welcome emails to start building your customer list.</p></td></tr>';
+      updateCrmSelectionUI();
       return;
     }
 
@@ -3159,14 +3274,92 @@
       const products = (c.products || []).map(p => p.product_name).join(', ');
       const date = new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
       const notesPreview = c.notes ? c.notes.substring(0, 40) + (c.notes.length > 40 ? '...' : '') : '<span style="color:var(--border)">—</span>';
-      return `<tr style="cursor:pointer" onclick="openCustomerDetail(${c.id})" onmouseover="this.style.background='var(--cream)'" onmouseout="this.style.background=''">
-        <td style="padding:12px 14px;font-weight:600">${escapeHtml(c.name) || '—'}</td>
-        <td style="padding:12px 14px">${escapeHtml(c.email)}</td>
-        <td style="padding:12px 14px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(products)}">${products || '—'}</td>
-        <td style="padding:12px 14px;font-size:.82rem">${notesPreview}</td>
-        <td style="padding:12px 14px;white-space:nowrap;font-size:.82rem">${date}</td>
+      const checked = crmSelectedIds.has(c.id) ? 'checked' : '';
+      return `<tr style="cursor:pointer" onmouseover="this.style.background='var(--cream)'" onmouseout="this.style.background=''">
+        <td style="padding:12px 14px" onclick="event.stopPropagation()"><input type="checkbox" data-customer-id="${c.id}" ${checked} onchange="toggleCustomerSelect(${c.id}, this.checked)" style="accent-color:var(--rose-dk);cursor:pointer" /></td>
+        <td style="padding:12px 14px;font-weight:600" onclick="openCustomerDetail(${c.id})">${escapeHtml(c.name) || '—'}</td>
+        <td style="padding:12px 14px" onclick="openCustomerDetail(${c.id})">${escapeHtml(c.email)}</td>
+        <td style="padding:12px 14px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(products)}" onclick="openCustomerDetail(${c.id})">${products || '—'}</td>
+        <td style="padding:12px 14px;font-size:.82rem" onclick="openCustomerDetail(${c.id})">${notesPreview}</td>
+        <td style="padding:12px 14px;white-space:nowrap;font-size:.82rem" onclick="openCustomerDetail(${c.id})">${date}</td>
       </tr>`;
     }).join('');
+    updateCrmSelectionUI();
+  }
+
+  function toggleCustomerSelect(id, checked) {
+    if (checked) {
+      crmSelectedIds.add(id);
+    } else {
+      crmSelectedIds.delete(id);
+    }
+    updateCrmSelectionUI();
+  }
+
+  function toggleAllCustomers(checked) {
+    const displayed = getCurrentDisplayedCustomers();
+    displayed.forEach(c => {
+      if (checked) crmSelectedIds.add(c.id);
+      else crmSelectedIds.delete(c.id);
+    });
+    document.querySelectorAll('#crmBody input[data-customer-id]').forEach(cb => {
+      cb.checked = checked;
+    });
+    updateCrmSelectionUI();
+  }
+
+  function getCurrentDisplayedCustomers() {
+    const q = document.getElementById('crmSearch').value.toLowerCase();
+    if (!q) return crmCustomers;
+    return crmCustomers.filter(c =>
+      c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q)
+    );
+  }
+
+  function updateCrmSelectionUI() {
+    const count = crmSelectedIds.size;
+    const info = document.getElementById('crmSelectedInfo');
+    const btn = document.getElementById('crmStartCampaignBtn');
+    if (count > 0) {
+      info.textContent = ` · ${count} selected`;
+      btn.style.display = '';
+      btn.textContent = `Start Marketing Campaign (${count})`;
+    } else {
+      info.textContent = '';
+      btn.style.display = 'none';
+    }
+    // Update select-all checkbox state
+    const selectAll = document.getElementById('crmSelectAll');
+    const displayed = getCurrentDisplayedCustomers();
+    if (displayed.length > 0 && displayed.every(c => crmSelectedIds.has(c.id))) {
+      selectAll.checked = true;
+      selectAll.indeterminate = false;
+    } else if (displayed.some(c => crmSelectedIds.has(c.id))) {
+      selectAll.checked = false;
+      selectAll.indeterminate = true;
+    } else {
+      selectAll.checked = false;
+      selectAll.indeterminate = false;
+    }
+  }
+
+  function startCampaignFromCustomers() {
+    const selectedCustomers = crmCustomers.filter(c => crmSelectedIds.has(c.id));
+    const emails = selectedCustomers.map(c => c.email).filter(Boolean);
+    if (emails.length === 0) { alert('No customers selected'); return; }
+
+    campaignTargetEmails = emails;
+    switchTab('campaigns');
+    // Go directly to compose
+    document.getElementById('campaignListView').hidden = true;
+    document.getElementById('campaignSentView').hidden = true;
+    document.getElementById('campaignComposeView').hidden = false;
+    document.getElementById('campaignSubject').value = '';
+    document.getElementById('campaignBody').value = '';
+    document.getElementById('campaignError').hidden = true;
+    document.getElementById('campaignRecipientCount').textContent = emails.length;
+    document.getElementById('campaignRecipientSource').textContent = 'selected customers.';
+    document.getElementById('sendCampaignBtn').textContent = `Send to ${emails.length} Customer${emails.length !== 1 ? 's' : ''}`;
   }
 
   function escapeHtml(str) {
