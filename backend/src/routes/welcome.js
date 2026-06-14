@@ -982,11 +982,12 @@ router.post('/send', async (req, res) => {
       customer_name: customerName || '',
       customer_email: customerEmail,
       products: products || [],
+      user_id: userId,
     });
 
     // Save to CRM
     const { findOrCreateCustomer, addCustomerProducts } = require('../db');
-    const customer = findOrCreateCustomer(customerName || '', customerEmail);
+    const customer = findOrCreateCustomer(customerName || '', customerEmail, userId);
     if (products && products.length > 0) {
       // Resolve product IDs from names
       const allProds = [...PRODUCTS.avologi, ...(PRODUCTS.avinichi || []), ...PRODUCTS.hydrasphere];
@@ -1008,8 +1009,9 @@ router.post('/send', async (req, res) => {
 
 // GET /api/welcome/history — list all sent welcome emails
 router.get('/history', (req, res) => {
+  const userId = req.session?.userId;
   const { getWelcomeEmails } = require('../db');
-  const emails = getWelcomeEmails();
+  const emails = getWelcomeEmails(userId);
   res.json({
     emails: emails.map(e => ({
       id: e.id,
@@ -1023,8 +1025,9 @@ router.get('/history', (req, res) => {
 
 // GET /api/welcome/campaigns — list past campaigns
 router.get('/campaigns', (req, res) => {
+  const userId = req.session?.userId;
   const { getCampaigns } = require('../db');
-  const campaigns = getCampaigns();
+  const campaigns = getCampaigns(userId);
   res.json({
     campaigns: campaigns.map(c => ({
       id: c.id,
@@ -1065,7 +1068,7 @@ router.post('/campaign', async (req, res) => {
   const { emails: targetEmails } = req.body;
   const customerEmails = (Array.isArray(targetEmails) && targetEmails.length > 0)
     ? targetEmails.filter(e => typeof e === 'string' && e.includes('@'))
-    : getUniqueCustomerEmails();
+    : getUniqueCustomerEmails(userId);
   if (customerEmails.length === 0) {
     return res.status(400).json({ error: 'No customer emails found. Send some welcome emails first to build your contact list.' });
   }
@@ -1119,6 +1122,7 @@ router.post('/campaign', async (req, res) => {
       subject: subject.trim(),
       body,
       recipient_count: sentCount,
+      user_id: userId,
     });
 
     res.json({
@@ -1137,6 +1141,7 @@ router.post('/campaign', async (req, res) => {
 
 // GET /api/welcome/customers — list all customers with their products
 router.get('/customers', (req, res) => {
+  const userId = req.session?.userId;
   const { getCustomers, getCustomersByProduct, getCustomersByProducts } = require('../db');
   const { product, products } = req.query;
 
@@ -1144,11 +1149,11 @@ router.get('/customers', (req, res) => {
   if (products) {
     // Multi-product filter: comma-separated product IDs
     const productIds = products.split(',').map(s => s.trim()).filter(Boolean);
-    customers = productIds.length > 0 ? getCustomersByProducts(productIds) : getCustomers();
+    customers = productIds.length > 0 ? getCustomersByProducts(productIds, userId) : getCustomers(userId);
   } else if (product) {
-    customers = getCustomersByProduct(product);
+    customers = getCustomersByProduct(product, userId);
   } else {
-    customers = getCustomers();
+    customers = getCustomers(userId);
   }
   res.json({ customers });
 });
@@ -1184,11 +1189,12 @@ router.patch('/customers/:id', (req, res) => {
 
 // POST /api/welcome/customers/from-email — create or update customer from inbox email
 router.post('/customers/from-email', (req, res) => {
+  const userId = req.session?.userId;
   const { findOrCreateCustomer, updateCustomer } = require('../db');
   const { email, name, phone, address } = req.body;
   if (!email) return res.status(400).json({ error: 'email is required' });
 
-  const customer = findOrCreateCustomer(name || '', email);
+  const customer = findOrCreateCustomer(name || '', email, userId);
   const updates = {};
   if (phone) updates.phone = phone;
   if (address) updates.address = address;
@@ -1209,11 +1215,12 @@ router.get('/products/list', (req, res) => {
 
 // POST /api/welcome/customers/import — import a single customer from CSV
 router.post('/customers/import', (req, res) => {
+  const userId = req.session?.userId;
   const { email, name, phone, address, notes } = req.body;
   if (!email) return res.status(400).json({ error: 'email is required' });
 
   const { findOrCreateCustomer, updateCustomer } = require('../db');
-  const customer = findOrCreateCustomer(name || '', email);
+  const customer = findOrCreateCustomer(name || '', email, userId);
 
   // Update fields if provided
   const updates = {};

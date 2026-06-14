@@ -33,6 +33,41 @@ try { db.exec("ALTER TABLE users ADD COLUMN brands TEXT DEFAULT '[\"avologi\",\"
 try { db.exec("ALTER TABLE emails ADD COLUMN read_at DATETIME"); } catch (_) { /* already exists */ }
 try { db.exec("ALTER TABLE customers ADD COLUMN phone TEXT DEFAULT ''"); } catch (_) { /* already exists */ }
 try { db.exec("ALTER TABLE customers ADD COLUMN address TEXT DEFAULT ''"); } catch (_) { /* already exists */ }
+// Add user_id to scope data per company/account
+try { db.exec("ALTER TABLE customers ADD COLUMN user_id TEXT DEFAULT ''"); } catch (_) { /* already exists */ }
+try { db.exec("ALTER TABLE welcome_emails ADD COLUMN user_id TEXT DEFAULT ''"); } catch (_) { /* already exists */ }
+try { db.exec("ALTER TABLE campaigns ADD COLUMN user_id TEXT DEFAULT ''"); } catch (_) { /* already exists */ }
+try { db.exec("CREATE INDEX idx_customers_user_id ON customers(user_id)"); } catch (_) { /* already exists */ }
+try { db.exec("CREATE INDEX idx_welcome_emails_user_id ON welcome_emails(user_id)"); } catch (_) { /* already exists */ }
+try { db.exec("CREATE INDEX idx_campaigns_user_id ON campaigns(user_id)"); } catch (_) { /* already exists */ }
+// Migrate customers table to allow same email under different user_ids
+// (remove the old UNIQUE(email) constraint by recreating the table)
+try {
+  const hasUniqueEmail = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='customers'").get();
+  if (hasUniqueEmail && hasUniqueEmail.sql && hasUniqueEmail.sql.includes('email TEXT UNIQUE')) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS customers_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        phone TEXT DEFAULT '',
+        address TEXT DEFAULT '',
+        notes TEXT DEFAULT '',
+        user_id TEXT DEFAULT '',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT INTO customers_new SELECT id, name, email, phone, address, notes, user_id, created_at, updated_at FROM customers;
+      DROP TABLE customers;
+      ALTER TABLE customers_new RENAME TO customers;
+      CREATE INDEX IF NOT EXISTS idx_customers_user_id ON customers(user_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_user_email ON customers(user_id, email);
+    `);
+    console.log('[db] Migrated customers table: removed UNIQUE(email), added UNIQUE(user_id, email)');
+  }
+} catch (err) {
+  console.error('[db] Customer table migration error:', err.message);
+}
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 
@@ -209,43 +244,60 @@ function getFollowUpEmails(userId, hoursThreshold = 48) {
 
 // ─── Welcome Emails ──────────────────────────────────────────────────────────
 
-function saveWelcomeEmail({ customer_name, customer_email, products }) {
+function saveWelcomeEmail({ customer_name, customer_email, products, user_id }) {
   const stmt = db.prepare(`
-    INSERT INTO welcome_emails (customer_name, customer_email, products)
-    VALUES (?, ?, ?)
+    INSERT INTO welcome_emails (customer_name, customer_email, products, user_id)
+    VALUES (?, ?, ?, ?)
   `);
-  const result = stmt.run(customer_name, customer_email, JSON.stringify(products));
+  const result = stmt.run(customer_name, customer_email, JSON.stringify(products), user_id || '');
   return result.lastInsertRowid;
 }
 
-function getWelcomeEmails(limit = 50) {
+function getWelcomeEmails(userId, limit = 50) {
+  if (userId) {
+    return db.prepare(`
+      SELECT * FROM welcome_emails WHERE user_id = ?
+      ORDER BY sent_at DESC LIMIT ?
+    `).all(userId, limit);
+  }
   return db.prepare(`
     SELECT * FROM welcome_emails
-    ORDER BY sent_at DESC
-    LIMIT ?
+    ORDER BY sent_at DESC LIMIT ?
   `).all(limit);
 }
 
 // ─── Campaigns ──────────────────────────────────────────────────────────────
 
-function saveCampaign({ subject, body, recipient_count }) {
+function saveCampaign({ subject, body, recipient_count, user_id }) {
   const stmt = db.prepare(`
-    INSERT INTO campaigns (subject, body, recipient_count)
-    VALUES (?, ?, ?)
+    INSERT INTO campaigns (subject, body, recipient_count, user_id)
+    VALUES (?, ?, ?, ?)
   `);
-  const result = stmt.run(subject, body, recipient_count);
+  const result = stmt.run(subject, body, recipient_count, user_id || '');
   return result.lastInsertRowid;
 }
 
-function getCampaigns(limit = 50) {
+function getCampaigns(userId, limit = 50) {
+  if (userId) {
+    return db.prepare(`
+      SELECT * FROM campaigns WHERE user_id = ?
+      ORDER BY sent_at DESC LIMIT ?
+    `).all(userId, limit);
+  }
   return db.prepare(`
     SELECT * FROM campaigns
-    ORDER BY sent_at DESC
-    LIMIT ?
+    ORDER BY sent_at DESC LIMIT ?
   `).all(limit);
 }
 
-function getUniqueCustomerEmails() {
+function getUniqueCustomerEmails(userId) {
+  if (userId) {
+    return db.prepare(`
+      SELECT DISTINCT c.email FROM customers c
+      WHERE c.user_id = ?
+      ORDER BY c.email
+    `).all(userId).map(row => row.email);
+  }
   return db.prepare(`
     SELECT DISTINCT customer_email FROM welcome_emails
     ORDER BY customer_email
@@ -254,8 +306,11 @@ function getUniqueCustomerEmails() {
 
 // ─── CRM: Customers ─────────────────────────────────────────────────────────
 
-function findOrCreateCustomer(name, email) {
-  let customer = db.prepare('SELECT * FROM customers WHERE email = ?').get(email);
+function findOrCreateCustomer(name, email, userId) {
+  // Scope by user_id — same customer email can exist under different companies
+  let customer = userId
+    ? db.prepare('SELECT * FROM customers WHERE email = ? AND user_id = ?').get(email, userId)
+    : db.prepare('SELECT * FROM customers WHERE email = ?').get(email);
   if (customer) {
     // Update name if it changed
     if (name && name !== customer.name) {
@@ -264,7 +319,7 @@ function findOrCreateCustomer(name, email) {
     }
     return customer;
   }
-  const result = db.prepare('INSERT INTO customers (name, email) VALUES (?, ?)').run(name || '', email);
+  const result = db.prepare('INSERT INTO customers (name, email, user_id) VALUES (?, ?, ?)').run(name || '', email, userId || '');
   return db.prepare('SELECT * FROM customers WHERE id = ?').get(result.lastInsertRowid);
 }
 
@@ -278,8 +333,10 @@ function addCustomerProducts(customerId, products) {
   }
 }
 
-function getCustomers() {
-  const customers = db.prepare('SELECT * FROM customers ORDER BY updated_at DESC').all();
+function getCustomers(userId) {
+  const customers = userId
+    ? db.prepare('SELECT * FROM customers WHERE user_id = ? ORDER BY updated_at DESC').all(userId)
+    : db.prepare('SELECT * FROM customers ORDER BY updated_at DESC').all();
   const productStmt = db.prepare('SELECT * FROM customer_products WHERE customer_id = ? ORDER BY purchased_at DESC');
   return customers.map(c => ({
     ...c,
@@ -287,13 +344,20 @@ function getCustomers() {
   }));
 }
 
-function getCustomersByProduct(productId) {
-  const rows = db.prepare(`
-    SELECT DISTINCT c.* FROM customers c
-    JOIN customer_products cp ON c.id = cp.customer_id
-    WHERE cp.product_id = ?
-    ORDER BY c.updated_at DESC
-  `).all(productId);
+function getCustomersByProduct(productId, userId) {
+  const rows = userId
+    ? db.prepare(`
+        SELECT DISTINCT c.* FROM customers c
+        JOIN customer_products cp ON c.id = cp.customer_id
+        WHERE cp.product_id = ? AND c.user_id = ?
+        ORDER BY c.updated_at DESC
+      `).all(productId, userId)
+    : db.prepare(`
+        SELECT DISTINCT c.* FROM customers c
+        JOIN customer_products cp ON c.id = cp.customer_id
+        WHERE cp.product_id = ?
+        ORDER BY c.updated_at DESC
+      `).all(productId);
   const productStmt = db.prepare('SELECT * FROM customer_products WHERE customer_id = ? ORDER BY purchased_at DESC');
   return rows.map(c => ({
     ...c,
@@ -301,14 +365,20 @@ function getCustomersByProduct(productId) {
   }));
 }
 
-function getCustomersByProducts(productIds) {
+function getCustomersByProducts(productIds, userId) {
   const placeholders = productIds.map(() => '?').join(',');
+  const params = [...productIds];
+  let whereExtra = '';
+  if (userId) {
+    whereExtra = ' AND c.user_id = ?';
+    params.push(userId);
+  }
   const rows = db.prepare(`
     SELECT DISTINCT c.* FROM customers c
     JOIN customer_products cp ON c.id = cp.customer_id
-    WHERE cp.product_id IN (${placeholders})
+    WHERE cp.product_id IN (${placeholders})${whereExtra}
     ORDER BY c.updated_at DESC
-  `).all(...productIds);
+  `).all(...params);
   const productStmt = db.prepare('SELECT * FROM customer_products WHERE customer_id = ? ORDER BY purchased_at DESC');
   return rows.map(c => ({
     ...c,
@@ -343,8 +413,10 @@ function updateCustomer(id, fields) {
   db.prepare(`UPDATE customers SET ${sets.join(', ')} WHERE id = ?`).run(...params);
 }
 
-function getCustomerByEmail(email) {
-  const customer = db.prepare('SELECT * FROM customers WHERE email = ?').get(email);
+function getCustomerByEmail(email, userId) {
+  const customer = userId
+    ? db.prepare('SELECT * FROM customers WHERE email = ? AND user_id = ?').get(email, userId)
+    : db.prepare('SELECT * FROM customers WHERE email = ?').get(email);
   if (!customer) return null;
   customer.products = db.prepare('SELECT * FROM customer_products WHERE customer_id = ? ORDER BY purchased_at DESC').all(customer.id);
   return customer;

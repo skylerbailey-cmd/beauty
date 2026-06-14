@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS welcome_emails (
   customer_name TEXT NOT NULL,
   customer_email TEXT NOT NULL,
   products TEXT NOT NULL,
+  user_id TEXT DEFAULT '',
   sent_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -50,16 +51,18 @@ CREATE TABLE IF NOT EXISTS campaigns (
   subject TEXT NOT NULL,
   body TEXT NOT NULL,
   recipient_count INTEGER DEFAULT 0,
+  user_id TEXT DEFAULT '',
   sent_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS customers (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL,
-  email TEXT UNIQUE NOT NULL,
+  email TEXT NOT NULL,
   phone TEXT DEFAULT '',
   address TEXT DEFAULT '',
   notes TEXT DEFAULT '',
+  user_id TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -76,3 +79,6 @@ CREATE TABLE IF NOT EXISTS customer_products (
 
 CREATE INDEX IF NOT EXISTS idx_customer_products_customer ON customer_products(customer_id);
 CREATE INDEX IF NOT EXISTS idx_customer_products_product ON customer_products(product_id);
+CREATE INDEX IF NOT EXISTS idx_customers_user_id ON customers(user_id);
+CREATE INDEX IF NOT EXISTS idx_welcome_emails_user_id ON welcome_emails(user_id);
+CREATE INDEX IF NOT EXISTS idx_campaigns_user_id ON campaigns(user_id);
