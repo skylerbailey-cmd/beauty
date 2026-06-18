@@ -262,6 +262,18 @@ const PRODUCTS = {
       image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/5-9-600x600.png',
       url: 'https://hydrasphereplus.com/product/advanced-night-repair/',
     },
+    {
+      id: 'hydrasphere-advanced-eye-lifting-serum',
+      name: 'Advanced Eye Lifting Serum',
+      brand: 'HydraSphere Plus',
+      description: 'A lightweight, all-natural serum formulated specifically for the delicate eye area. Combines Collagen, Caviar Extract, and Acetyl Hexapeptide-3 with Hyaluronic Acid and Vitamins A, C, and E to reduce fine lines, minimize puffiness and under-eye bags, diminish dark circles, and improve elasticity around the eyes.',
+      benefits: 'Reduces fine lines and wrinkles around eyes, minimizes under-eye bags and puffiness, diminishes dark circles, improves skin elasticity and firmness, hydrates the eye contour.',
+      ingredients: 'Collagen, Glycerin, Macrocystis Pyrifera (Kelp) Extract, Sodium Hyaluronate, Acetyl Hexapeptide-3, Retinyl Palmitate (Vitamin A), Ascorbic Acid (Vitamin C), Tocopheryl Acetate (Vitamin E), Aloe Barbadensis (Aloe Vera) Leaf Juice, Caviar Extract, Chamomilla Recutita (Chamomile) Flower Extract, Euterpe Oleracea (Acai) Fruit Oil.',
+      howToUse: 'Apply 1–3 pumps daily, morning and night, to cleansed skin around the eye area. Spread a thin veil over the skin, blending in small circles with a gentle tapping motion until the product disappears.',
+      step: 'AM Routine',
+      image: 'https://hydrasphereplus.com/wp-content/uploads/2023/10/17-600x600.png',
+      url: 'https://hydrasphereplus.com/product/advanced-eye-lifting-serum/',
+    },
   ],
   avinichi: [
     {
