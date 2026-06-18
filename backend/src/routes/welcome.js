@@ -238,6 +238,18 @@ const PRODUCTS = {
       image: 'https://hydrasphereplus.com/wp-content/uploads/2025/11/14-scaled.png',
       url: 'https://hydrasphereplus.com/product/hydrocharcoal-silk-mask/',
     },
+    {
+      id: 'hydrasphere-hydrocharcoal-collagen-neck-mask',
+      name: 'HydroCharcoal Collagen Neck & Décolleté Mask',
+      brand: 'HydraSphere Plus',
+      description: 'A targeted mask formulated specifically for the neck and chest area, combining activated charcoal and soluble collagen with Sodium Hyaluronate, Retinyl Palmitate, and Allantoin. Delivers lifting, firming, and deep hydration to one of the most neglected areas in skincare, visibly reducing neck lines, breast wrinkles, and pigmentation.',
+      benefits: 'Addresses neck lines and stretch marks, reduces breast wrinkles and fine lines, minimizes pigmentation and brown spots, provides lifting and firming, protects against sun damage, enhances smoothness and elasticity.',
+      ingredients: 'Soluble Collagen, Activated Charcoal, Sodium Hyaluronate, Retinyl Palmitate, Allantoin, Chondrus Crispus (Carrageenan).',
+      howToUse: 'Apply to clean, dry skin on neck and chest area. Leave on for 10 minutes or longer as desired. Remove mask and gently pat remaining emulsion into skin. No rinsing required. Use weekly or as needed.',
+      step: 'mask',
+      image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/37.png',
+      url: 'https://hydrasphereplus.com/product/hydrocharcoal-collagen-neck-and-decollete-mask/',
+    },
   ],
   avinichi: [
     {
