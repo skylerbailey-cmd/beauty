@@ -250,6 +250,18 @@ const PRODUCTS = {
       image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/37.png',
       url: 'https://hydrasphereplus.com/product/hydrocharcoal-collagen-neck-and-decollete-mask/',
     },
+    {
+      id: 'hydrasphere-advanced-night-repair',
+      name: 'Advanced Night Repair',
+      brand: 'HydraSphere Plus',
+      description: 'An intensive night cream that targets signs of aging while you sleep. Formulated with Collagen, Hyaluronic Acid, Acetyl Hexapeptide-3, and a blend of nourishing oils including Sweet Almond, Jojoba, and Acai — it delivers deep hydration and repair to diminish fine lines, wrinkles, and visible aging markers for a smoother, firmer, more radiant complexion by morning.',
+      benefits: 'Reduces fine lines and wrinkles, deep overnight hydration and repair, promotes smoother and firmer complexion, revitalizes and refreshes skin.',
+      ingredients: 'Water, Sweet Almond Oil, Glycerin, Jojoba Seed Oil, Collagen, Stearic Acid, Cetyl Alcohol, Algae, Tocopheryl Acetate (Vitamin E), Ascorbic Acid (Vitamin C), Acetyl Hexapeptide-3, Euterpe Oleracea (Acai) Fruit Oil, Aloe Barbadensis (Aloe Vera) Leaf Juice, Chamomilla Recutita (Chamomile) Flower Extract, Hyaluronic Acid, Ethylhexylglycerin, Phenoxyethanol.',
+      howToUse: 'Apply a thin layer to clean, dry facial and neck skin before bedtime. Massage in small upward circles over the face and neck. Allow full absorption before sleep. Use 1–2 times weekly for optimal results.',
+      step: 'PM Routine',
+      image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/5-9-600x600.png',
+      url: 'https://hydrasphereplus.com/product/advanced-night-repair/',
+    },
   ],
   avinichi: [
     {
