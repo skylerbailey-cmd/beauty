@@ -841,6 +841,21 @@ router.post('/generate', (req, res) => {
   amHtml += routineStepHtml('Eye Treatment', amEye, sugEye, themeOpts);
   amHtml += routineStepHtml('Moisturize', amMoisturizer, sugMoisturizer, themeOpts);
   amHtml += routineStepHtml('Sun Protection', amSpf, sugSpf, themeOpts);
+
+  // For small orders, add a single summary of missing steps instead of individual upsells
+  if (skipSuggestions) {
+    const missingAm = [];
+    if (!amCleanser) missingAm.push('cleansing');
+    if (!amToner) missingAm.push('toning');
+    if (!amSerum) missingAm.push('a serum');
+    if (!amEye) missingAm.push('an eye treatment');
+    if (!amMoisturizer) missingAm.push('moisturizing');
+    if (!amSpf) missingAm.push('sun protection');
+    if (missingAm.length > 0) {
+      amHtml += `<p style="margin-bottom:8px;margin-top:12px;font-style:italic">A complete morning routine also includes ${missingAm.join(', ')} — reply to this email if you\'d like personalized product suggestions!</p>`;
+    }
+  }
+
   amHtml += '</div>';
 
   // PM Routine
@@ -854,6 +869,19 @@ router.post('/generate', (req, res) => {
   pmHtml += routineStepHtml('Serum', pmSerum, pmSerum ? null : sugSerum, { alreadySuggested: !!sugSerum, theme: userTheme, skipSuggestions });
   pmHtml += routineStepHtml('Eye Treatment', amEye, sugEye, { alreadySuggested: !!sugEye, theme: userTheme, skipSuggestions });
   pmHtml += routineStepHtml('Moisturize', pmMoisturizer, pmMoisturizer ? null : sugMoisturizer, { alreadySuggested: !!sugMoisturizer, theme: userTheme, skipSuggestions });
+
+  // For small orders, add a single summary of missing PM steps
+  if (skipSuggestions) {
+    const missingPm = [];
+    if (!amCleanser) missingPm.push('cleansing');
+    if (!amToner) missingPm.push('toning');
+    if (!pmSerum) missingPm.push('a serum');
+    if (!amEye) missingPm.push('an eye treatment');
+    if (!pmMoisturizer) missingPm.push('moisturizing');
+    if (missingPm.length > 0) {
+      pmHtml += `<p style="margin-bottom:8px;margin-top:12px;font-style:italic">A complete evening routine also includes ${missingPm.join(', ')} — reply to this email if you\'d like personalized product suggestions!</p>`;
+    }
+  }
 
   // Split into weekly (exfoliants/devices) and monthly (masks/treatments)
   const treatments = selectedProducts.filter(isTreatment);
