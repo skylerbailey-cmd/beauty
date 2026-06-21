@@ -852,7 +852,7 @@ router.post('/generate', (req, res) => {
     if (!amMoisturizer) missingAm.push('moisturizing');
     if (!amSpf) missingAm.push('sun protection');
     if (missingAm.length > 0) {
-      amHtml += `<p style="margin-bottom:8px;margin-top:12px;font-style:italic">A complete morning routine also includes ${missingAm.join(', ')} — reply to this email if you\'d like personalized product suggestions!</p>`;
+      amHtml += `<p style="margin-bottom:8px;margin-top:12px;font-style:italic">A complete morning routine also includes ${missingAm.join(', ')} — reply to this email if you\'d like personalized product suggestions! As a new customer, you\'re eligible for a special discount with free shipping.</p>`;
     }
   }
 
@@ -879,7 +879,7 @@ router.post('/generate', (req, res) => {
     if (!amEye) missingPm.push('an eye treatment');
     if (!pmMoisturizer) missingPm.push('moisturizing');
     if (missingPm.length > 0) {
-      pmHtml += `<p style="margin-bottom:8px;margin-top:12px;font-style:italic">A complete evening routine also includes ${missingPm.join(', ')} — reply to this email if you\'d like personalized product suggestions!</p>`;
+      pmHtml += `<p style="margin-bottom:8px;margin-top:12px;font-style:italic">A complete evening routine also includes ${missingPm.join(', ')} — reply to this email if you\'d like personalized product suggestions! As a new customer, you\'re eligible for a special discount with free shipping.</p>`;
     }
   }
 
