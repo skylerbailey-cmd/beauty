@@ -5,14 +5,19 @@ const fs = require('fs');
 const path = require('path');
 
 const DB_PATH = process.env.DATABASE_PATH || './data/glow.db';
+const resolvedPath = path.resolve(DB_PATH);
 
 // Ensure data directory exists
-const dbDir = path.dirname(path.resolve(DB_PATH));
+const dbDir = path.dirname(resolvedPath);
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
 
-const db = new Database(path.resolve(DB_PATH));
+// Log DB path and whether file already exists (helps debug persistence)
+const dbExisted = fs.existsSync(resolvedPath);
+console.log(`[db] Path: ${resolvedPath} (${dbExisted ? 'existing' : 'new'} database)`);
+
+const db = new Database(resolvedPath);
 
 // Use DELETE journal mode instead of WAL — WAL can lose data on Railway
 // because the container is killed before WAL checkpoints flush to disk
@@ -24,6 +29,11 @@ db.pragma('synchronous = FULL');
 // Initialize schema
 const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
 db.exec(schema);
+
+// Log existing data counts on startup
+const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
+const customerCount = db.prepare('SELECT COUNT(*) as c FROM customers').get().c;
+console.log(`[db] Existing data: ${userCount} users, ${customerCount} customers`);
 
 // Migrations — add columns that may not exist in older DBs
 try { db.exec('ALTER TABLE users ADD COLUMN company_name TEXT'); } catch (_) { /* already exists */ }
