@@ -2066,6 +2066,11 @@
 
           <div id="formError" class="error-box" hidden></div>
 
+          <div style="margin-top:16px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="includeSuggestions" style="width:18px;height:18px;accent-color:var(--rose);cursor:pointer" />
+            <label for="includeSuggestions" style="font-size:.9rem;color:var(--dark);cursor:pointer">Include product suggestions for items not in their collection</label>
+          </div>
+
           <div class="btn-row">
             <button class="btn btn-primary" id="nextBtn" onclick="handleNext()">Generate Welcome Email &#8594;</button>
           </div>
@@ -2853,6 +2858,7 @@
       { id: 'hydrasphere-advanced-foaming-cleanser', name: 'Advanced Foaming Cleanser', description: 'Alcohol-free luxury foaming cleanser that retextures, lightly exfoliates, and preps skin for moisturizing — powered by hemp extract for a radiant, conditioned complexion.', image: 'https://hydrasphereplus.com/wp-content/uploads/2023/10/1-2.png' },
       { id: 'hydrasphere-hydra-toning-solution', name: 'Hydra Toning Solution', description: 'Revitalizing toner that refreshes and balances skin\'s natural pH, preparing it to absorb the full benefits of subsequent skincare products.', image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/25-1024x1024.png' },
       { id: 'hydrasphere-vitamin-c-serum', name: 'Vitamin C Serum', description: 'Concentrated anti-aging serum packed with Vitamin C to diminish fine lines, promote collagen production, brighten, and even skin tone.', image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/73.png' },
+      { id: 'hydrasphere-mineralift-thermal-set', name: 'MineralLift Thermal Set', description: 'Complete 3-piece monthly treatment: Thermal Mask, Thermal Serum, and Thermal Cream. Apply mask, massage serum into mask until warming sensation, leave 10 min, rinse, then moisturize with cream.', image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/55-1024x1024.png', isSet: true },
       { id: 'hydrasphere-mineralift-thermal-serum', name: 'MineralLift Thermal Serum', description: 'Scientifically proven to promote a firmer, more lifted appearance by stimulating collagen production and enhancing elasticity.', image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/59.png' },
       { id: 'hydrasphere-deep-moisturizing-cream', name: 'Deep Moisturizing Cream', description: 'A firming elixir blending botanical wonders and cutting-edge science — deeply nourishes the face, neck, and under-eye area beyond basic hydration.', image: 'https://hydrasphereplus.com/wp-content/uploads/2023/10/13-1-1024x1024.png' },
       { id: 'hydrasphere-mineralift-thermal-cream', name: 'MineralLift Thermal Cream', description: 'Luxurious thermal cream that firms and lifts, stimulates collagen, and enhances elasticity for tighter, more youthful-looking skin.', image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/51.png' },
@@ -2895,8 +2901,24 @@
   renderGrid('avologi');
   renderGrid('avinichi');
 
+  const THERMAL_SET_ID = 'hydrasphere-mineralift-thermal-set';
+  const THERMAL_INDIVIDUAL_IDS = ['hydrasphere-mineralift-thermal-serum', 'hydrasphere-mineralift-thermal-cream', 'hydrasphere-mineralift-thermal-mask'];
+
   function syncCardState(checkbox) {
     checkbox.closest('.product-card').classList.toggle('selected', checkbox.checked);
+
+    // When thermal set is checked, uncheck individual thermal products
+    if (checkbox.checked && checkbox.value === THERMAL_SET_ID) {
+      THERMAL_INDIVIDUAL_IDS.forEach(id => {
+        const cb = document.querySelector(`input[value="${id}"]`);
+        if (cb && cb.checked) { cb.checked = false; syncCardState(cb); }
+      });
+    }
+    // When an individual thermal product is checked, uncheck the set
+    if (checkbox.checked && THERMAL_INDIVIDUAL_IDS.includes(checkbox.value)) {
+      const setCb = document.querySelector(`input[value="${THERMAL_SET_ID}"]`);
+      if (setCb && setCb.checked) { setCb.checked = false; syncCardState(setCb); }
+    }
   }
 
   function selectAll(brand) {
@@ -2914,7 +2936,7 @@
   }
 
   function getSelectedIds() {
-    return [...document.querySelectorAll('input[type=checkbox]:checked')].map(cb => cb.value);
+    return [...document.querySelectorAll('input[type=checkbox]:checked')].filter(cb => cb.value && cb.id !== 'includeSuggestions').map(cb => cb.value);
   }
 
   // ── Navigation ──────────────────────────────────────────────────────────────
@@ -2968,7 +2990,7 @@
       const res = await fetch('/api/welcome/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerEmail: email, customerName: name, selectedProductIds: selectedIds }),
+        body: JSON.stringify({ customerEmail: email, customerName: name, selectedProductIds: selectedIds, includeSuggestions: document.getElementById('includeSuggestions').checked }),
       });
 
       const data = await res.json();

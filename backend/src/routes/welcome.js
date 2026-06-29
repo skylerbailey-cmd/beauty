@@ -532,6 +532,17 @@ const ROUTINE_STEPS = {
   ],
 };
 
+// MineralLift Thermal products — excluded from AM/PM, shown only in Monthly
+const THERMAL_SET_IDS = new Set([
+  'hydrasphere-mineralift-thermal-serum',
+  'hydrasphere-mineralift-thermal-cream',
+  'hydrasphere-mineralift-thermal-mask',
+]);
+
+function isThermalProduct(p) {
+  return THERMAL_SET_IDS.has(p.id);
+}
+
 // Match a product to a routine step key
 function matchStep(product, stepDef) {
   const pStep = (product.step || '').toLowerCase();
@@ -624,10 +635,9 @@ function routineStepHtml(label, product, suggestion, opts = {}) {
   if (suggestion && !opts.skipSuggestions) {
     // If this suggestion was already detailed in the AM routine, keep it short
     if (opts.alreadySuggested) {
-      return `<p style="margin-bottom:8px">👉 <b>${label}:</b> Use your ${productLink(suggestion, theme)} here too — same as your morning routine.</p>`;
+      return `<p style="margin-bottom:8px">👉 <b>${label}:</b> Use your ${productLink(suggestion, theme)} here too.</p>`;
     }
-    const reason = STEP_REASONS[label] || '';
-    return `<p style="margin-bottom:8px">👉 <b>${label} (not in your collection yet):</b> ${reason ? reason + ' ' : ''}We recommend ${productLink(suggestion, theme)} — ${shortDescription(suggestion)} Reply to this email to ask about current specials and our free shipping!</p>`;
+    return `<p style="margin-bottom:8px">👉 <b>${label}:</b> We recommend ${productLink(suggestion, theme)} — reply for a special new-customer discount with free shipping!</p>`;
   }
   return '';
 }
@@ -697,7 +707,14 @@ const TIPS_BANK = [
 
 // POST /api/welcome/generate — build a templated welcome email (no AI)
 router.post('/generate', (req, res) => {
-  const { customerEmail, customerName, selectedProductIds } = req.body;
+  const { customerEmail, customerName, selectedProductIds: rawProductIds, includeSuggestions } = req.body;
+
+  // Expand the thermal set into its individual product IDs
+  const selectedProductIds = rawProductIds.flatMap(id =>
+    id === 'hydrasphere-mineralift-thermal-set'
+      ? ['hydrasphere-mineralift-thermal-mask', 'hydrasphere-mineralift-thermal-serum', 'hydrasphere-mineralift-thermal-cream']
+      : [id]
+  );
 
   if (!customerEmail || typeof customerEmail !== 'string') {
     return res.status(400).json({ error: 'customerEmail is required' });
@@ -813,12 +830,12 @@ router.post('/generate', (req, res) => {
   const findPurchased = (matchFn) => selectedProducts.find(matchFn) || null;
   const findSug = (matchFn) => findSuggestion(matchFn, selectedIds, allProducts);
 
-  // AM Routine
+  // AM Routine (exclude thermal products — they go in Monthly only)
   const amCleanser = findPurchased(isCleanser) || null;
   const amToner = findPurchased(isToner) || null;
-  const amSerum = findPurchased(p => isSerum(p) && !isPmProduct(p)) || findPurchased(isSerum) || null;
+  const amSerum = findPurchased(p => isSerum(p) && !isPmProduct(p) && !isThermalProduct(p)) || findPurchased(p => isSerum(p) && !isThermalProduct(p)) || null;
   const amEye = findPurchased(isEye) || null;
-  const amMoisturizer = findPurchased(p => isMoisturizer(p) && !isPmProduct(p)) || findPurchased(isMoisturizer) || null;
+  const amMoisturizer = findPurchased(p => isMoisturizer(p) && !isPmProduct(p) && !isThermalProduct(p)) || findPurchased(p => isMoisturizer(p) && !isThermalProduct(p)) || null;
   const amSpf = findPurchased(isSpf) || null;
 
   // Track which suggestions we make in AM so PM can reference them briefly
@@ -829,7 +846,7 @@ router.post('/generate', (req, res) => {
   const sugMoisturizer = !amMoisturizer ? findSug(isMoisturizer) : null;
   const sugSpf = !amSpf ? findSug(isSpf) : null;
 
-  const skipSuggestions = selectedProducts.length <= 3;
+  const skipSuggestions = includeSuggestions === false || (includeSuggestions === undefined && selectedProducts.length <= 3);
   const themeOpts = { theme: userTheme, skipSuggestions };
 
   // Routine sub-sections use a colored top-border header strip (not full callout)
@@ -858,9 +875,9 @@ router.post('/generate', (req, res) => {
 
   amHtml += '</div>';
 
-  // PM Routine
-  const pmSerum = findPurchased(p => isSerum(p) && isPmProduct(p)) || findPurchased(p => isSerum(p) && p !== amSerum) || amSerum;
-  const pmMoisturizer = findPurchased(p => isMoisturizer(p) && isPmProduct(p)) || findPurchased(p => isMoisturizer(p) && p !== amMoisturizer) || amMoisturizer;
+  // PM Routine (exclude thermal products — they go in Monthly only)
+  const pmSerum = findPurchased(p => isSerum(p) && isPmProduct(p) && !isThermalProduct(p)) || findPurchased(p => isSerum(p) && p !== amSerum && !isThermalProduct(p)) || amSerum;
+  const pmMoisturizer = findPurchased(p => isMoisturizer(p) && isPmProduct(p) && !isThermalProduct(p)) || findPurchased(p => isMoisturizer(p) && p !== amMoisturizer && !isThermalProduct(p)) || amMoisturizer;
 
   let pmHtml = `<div style="margin-top:16px;border-top:3px solid ${tc.routineAccent};padding-top:12px">
 <p style="margin-bottom:10px;font-size:17px;color:${tc.routineAccent}"><b>🌙 Evening Routine</b></p>\n`;
@@ -903,7 +920,7 @@ router.post('/generate', (req, res) => {
     const sugExfoliant = findSug(isExfoliant);
     if (sugExfoliant) {
       if (!weeklyHtml) weeklyHtml += `<p style="margin-bottom:10px;font-size:17px;color:${tc.routineAccent}"><b>📅 Weekly Treatments</b></p>\n`;
-      weeklyHtml += `<p style="margin-bottom:8px">👉 <b>Exfoliate (not in your collection yet):</b> Regular exfoliation removes dead skin cells that build up and make your complexion look dull — it's the secret to that fresh, glowing look. We recommend ${productLink(sugExfoliant, userTheme)} — ${shortDescription(sugExfoliant)} Reply to this email to ask about current specials and our free shipping!</p>`;
+      weeklyHtml += `<p style="margin-bottom:8px">👉 <b>Exfoliate:</b> We recommend ${productLink(sugExfoliant, userTheme)} — reply for a special new-customer discount with free shipping!</p>`;
     }
   }
 
@@ -943,7 +960,7 @@ router.post('/generate', (req, res) => {
     const sugMask = findSug(isMask);
     if (sugMask) {
       if (!weeklyHtml) weeklyHtml += `<p style="margin-bottom:10px;font-size:17px;color:${tc.routineAccent}"><b>📅 Monthly Treatments</b></p>\n`;
-      weeklyHtml += `<p style="margin-bottom:8px">👉 <b>Mask (not in your collection yet):</b> A monthly mask gives your skin a concentrated boost of nourishment that your daily routine can't match — think of it as a spa treatment at home. We recommend ${productLink(sugMask, userTheme)} — ${shortDescription(sugMask)} Reply to this email to ask about current specials and our free shipping!</p>`;
+      weeklyHtml += `<p style="margin-bottom:8px">👉 <b>Mask:</b> We recommend ${productLink(sugMask, userTheme)} — reply for a special new-customer discount with free shipping!</p>`;
     }
   }
 
