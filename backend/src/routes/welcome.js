@@ -234,8 +234,9 @@ const PRODUCTS = {
       description: 'Experience the purifying power of the HydroCharcoal Silk Mask, a luxurious leave-on treatment developed with bioengineered delivery systems to detoxify, renew, and deeply hydrate. This advanced formula merges activated charcoal microparticles with encapsulated hyaluronic acid and signal peptides, targeting visible signs of aging at the surface level. The result is instantly smoother texture, refined pores, and a radiant, balanced glow.',
       benefits: 'Detoxifies pores, deeply hydrates, refines pores, smooths texture, anti-aging, leave-on treatment',
       ingredients: 'Polysilicone-11, Aqua (Water), Cyclopentasiloxane, Polymethylsilsesquioxane, Glycerin, Betaine, Sodium Benzoate, Xanthan Gum, Jojoba Oil, Laureth-7, Cetearyl Olivate, Squalane, Ethylhexylglycerin, Butyrospermum Parkii (Shea) Butter, Arbutin, Acetyl Hexapeptide-8, Sodium Hyaluronate, Bakuchiol, Charcoal, Tocopheryl Acetate (Vitamin E), Centella Asiatica Extract, Onopordum Acanthium Flower/Leaf/Stem Extract, Aloe Barbadensis Leaf Extract, Camellia Sinensis (Green Tea) Leaf Extract, Chamomilla Recutita (Matricaria) Flower Extract, Glycyrrhiza Glabra (Licorice) Root Extract, Rosmarinus Officinalis (Rosemary) Leaf Extract, Aristotelia Chilensis (Maqui) Fruit Extract, Aronia Melanocarpa (Chokeberry) Fruit Extract, Euterpe Oleracea (Acai Berry) Fruit Extract, Garcinia Mangostana (Mangosteen) Fruit Extract, Lycium Barbarum (Goji Berry) Fruit Extract, Morinda Citrifolia (Noni) Fruit Extract, Punica Granatum (Pomegranate) Fruit Extract, Vaccinium Myrtillus (Bilberry) Fruit Extract, Soluble Collagen, Caffeine.',
-      howToUse: 'Apply a thin, even layer to clean, dry skin. Focus on areas with fine lines or visible pores. Gently pat and smooth until fully absorbed. Do not rinse. Use once or twice a week or before special occasions.',
-      step: 'mask',
+      howToUse: 'Apply a thin, even layer to clean, dry skin. Focus on areas with fine lines or visible pores. Gently pat and smooth until fully absorbed. Do not rinse. Use once or twice a week or before special occasions. For best results, apply before using your laser device.',
+      frequency: '1-2x/week',
+      step: 'weekly-mask',
       image: 'https://hydrasphereplus.com/wp-content/uploads/2025/11/14-scaled.png',
       url: 'https://hydrasphereplus.com/product/hydrocharcoal-silk-mask/',
     },
@@ -900,10 +901,12 @@ router.post('/generate', (req, res) => {
     }
   }
 
-  // Split into weekly (exfoliants/devices) and monthly (masks/treatments)
+  // Split into weekly (exfoliants/devices/weekly masks) and monthly (monthly masks/treatments)
   const treatments = selectedProducts.filter(isTreatment);
-  const weeklyExfoliants = selectedProducts.filter(p => isExfoliant(p) || isDevice(p));
-  const monthlyMasks = selectedProducts.filter(p => isMask(p));
+  const isWeeklyMask = (p) => isMask(p) && (p.step || '').toLowerCase().includes('weekly');
+  const isMonthlyMask = (p) => isMask(p) && !(p.step || '').toLowerCase().includes('weekly');
+  const weeklyExfoliants = selectedProducts.filter(p => isExfoliant(p) || isDevice(p) || isWeeklyMask(p));
+  const monthlyMasks = selectedProducts.filter(p => isMonthlyMask(p));
   let weeklyHtml = '';
 
   // ── Weekly Treatments (exfoliants and devices) ────────────────────────
