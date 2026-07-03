@@ -832,6 +832,12 @@ router.post('/generate', (req, res) => {
   amHtml += routineStepHtml('Serum', amSerum, sugSerum, themeOpts);
   amHtml += routineStepHtml('Eye Treatment', amEye, sugEye, themeOpts);
   amHtml += routineStepHtml('Moisturize', amMoisturizer, sugMoisturizer, themeOpts);
+  // Show alternate moisturizers the customer also purchased
+  const extraAmMoisturizers = selectedProducts.filter(p => isMoisturizer(p) && !isThermalProduct(p) && p !== amMoisturizer);
+  if (amMoisturizer && extraAmMoisturizers.length > 0) {
+    const altNames = extraAmMoisturizers.map(p => productLink(p, userTheme)).join(' or ');
+    amHtml += `<p style="margin-bottom:8px;margin-left:24px;font-style:italic">You can also use ${altNames} instead, or mix a small amount of each for extra nourishment.</p>`;
+  }
   amHtml += routineStepHtml('Sun Protection', amSpf, sugSpf, themeOpts);
 
   // For small orders, add a single summary of missing steps instead of individual upsells
@@ -861,6 +867,12 @@ router.post('/generate', (req, res) => {
   pmHtml += routineStepHtml('Serum', pmSerum, pmSerum ? null : sugSerum, { alreadySuggested: !!sugSerum, theme: userTheme, skipSuggestions });
   pmHtml += routineStepHtml('Eye Treatment', amEye, sugEye, { alreadySuggested: !!sugEye, theme: userTheme, skipSuggestions });
   pmHtml += routineStepHtml('Moisturize', pmMoisturizer, pmMoisturizer ? null : sugMoisturizer, { alreadySuggested: !!sugMoisturizer, theme: userTheme, skipSuggestions });
+  // Show alternate moisturizers the customer also purchased
+  const extraPmMoisturizers = selectedProducts.filter(p => isMoisturizer(p) && !isThermalProduct(p) && p !== pmMoisturizer && p !== amMoisturizer);
+  if (pmMoisturizer && extraPmMoisturizers.length > 0) {
+    const altNames = extraPmMoisturizers.map(p => productLink(p, userTheme)).join(' or ');
+    pmHtml += `<p style="margin-bottom:8px;margin-left:24px;font-style:italic">You can also use ${altNames} instead, or mix a small amount of each for extra nourishment.</p>`;
+  }
 
   // For small orders, add a single summary of missing PM steps
   if (skipSuggestions) {
