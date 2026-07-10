@@ -399,6 +399,18 @@ const PRODUCTS = {
       image: 'https://www.avinichi.com/wp-content/uploads/Noni-Clarifying-Lather-Purifier-1.png',
       url: 'https://www.avinichi.com/product/noni-clarifying-lather-purifier/',
     },
+    {
+      id: 'avinichi-mulberry-hydrating-regimen',
+      name: 'Mulberry Hydrating Regimen',
+      brand: 'Avinichi',
+      description: 'A three-piece skincare collection infused with mulberry extract designed to deeply hydrate, leaving your skin with a velvety smooth appearance. Includes the Liquid Lift Overnight Melting Mask, Super-Dewy Bead Serum, and Mulberry Velvet Silk Crème, plus a derma roller for enhanced absorption.',
+      benefits: 'Deep hydration, velvety smooth texture, reduced pore appearance, improved skin tone and radiance, firming and volumizing, lift and tighten.',
+      ingredients: 'Liquid Lift Overnight Melting Mask: Aqua, Caprylyl Methicone, PEG-12 Dimethicone/PPG Crosspolymer, Glycerin, Caprylic/Capric Triglyceride, Onopordum Acanthium Flower Leaf/Stem Extract, Acetyl Hexapeptide-8, Sodium Hyaluronate, Squalane, Morus Nigra Fruit Extract, Retinyl Palmitate (Vitamin A), Tocopheryl Acetate (Vitamin E). Super-Dewy Bead Serum: Aqua, Cyclopentasiloxane, Glycerin, Dimethicone, Vitis Vinifera Fruit Cell Extract, Organic Ginkgo Biloba Leaf Extract, Acetyl Hexapeptide-8, Sodium Hyaluronate, Dimethylaminoethanol Tartrate, Morus Nigra Fruit Extract. Mulberry Velvet Silk Crème: Aqua, Polysilicone-11, Cyclopentasiloxane, Vitis Vinifera Fruit Cell Extract, Caffeine, Collagen Amino Acids, Acetyl Hexapeptide-8, Sodium Hyaluronate, Tocopheryl Acetate (Vitamin E), Retinyl Palmitate (Vitamin A), Morus Nigra Fruit Extract.',
+      howToUse: 'Evening: After cleansing, use the derma roller — gently roll 4-5 times in horizontal, vertical, and diagonal directions across your face. Clean roller after use. Apply a thin layer of the Liquid Lift Overnight Melting Mask; leave for ten minutes. Gently massage until surface droplets form, allowing them to disappear naturally — do not rinse. Morning: Apply the Super-Dewy Bead Serum to freshly cleansed skin, followed by the Mulberry Velvet Silk Crème.',
+      step: 'set',
+      image: 'https://www.avinichi.com/wp-content/uploads/Mulberry-Hydrating-Regimen-1.png',
+      url: 'https://www.avinichi.com/product/mulberry-hydrating-regimen/',
+    },
   ],
 };
 
@@ -643,6 +655,9 @@ const LOVE_LINES = {
   'hydrasphere-facial-peeling-gel': 'Get ready for baby-soft skin! This gentle mandelic acid peel sweeps away dead skin cells, fades dark spots, and smooths texture — revealing the fresh, glowing skin hiding underneath. You\'ll be obsessed!',
   'hydrasphere-mineralift-thermal-mask': 'This is your monthly spa moment at home! The self-warming formula stimulates your facial muscles and boosts circulation while detoxifying and firming. You\'ll feel the tingle and see the glow — so good!',
   'hydrasphere-hydrocharcoal-silk-mask': 'Treat yourself to this luxurious leave-on mask! Activated charcoal and hyaluronic acid work together to purify pores, smooth texture, and give you an instant radiant glow. Perfect before a special occasion or anytime you want to look your absolute best!',
+
+  // Avinichi products
+  'avinichi-mulberry-hydrating-regimen': 'This is your complete hydration ritual! The mulberry-infused trio works together beautifully — the overnight mask repairs while you sleep, the serum plumps and firms in the morning, and the silk crème locks it all in with a velvety finish. Your skin is going to feel incredible!',
 };
 
 const TIPS_BANK = [
@@ -889,18 +904,23 @@ router.post('/generate', (req, res) => {
 
   // Split into weekly (exfoliants/devices/weekly masks) and monthly (monthly masks/treatments)
   const treatments = selectedProducts.filter(isTreatment);
+  const isSet = (p) => (p.step || '').toLowerCase() === 'set';
+  const sets = selectedProducts.filter(isSet);
   const isWeeklyMask = (p) => isMask(p) && (p.step || '').toLowerCase().includes('weekly');
   const isMonthlyMask = (p) => isMask(p) && !(p.step || '').toLowerCase().includes('weekly');
   const weeklyExfoliants = selectedProducts.filter(p => isExfoliant(p) || isDevice(p) || isWeeklyMask(p));
   const monthlyMasks = selectedProducts.filter(p => isMonthlyMask(p));
   let weeklyHtml = '';
 
-  // ── Weekly Treatments (exfoliants and devices) ────────────────────────
-  if (weeklyExfoliants.length > 0) {
+  // ── Treatments (exfoliants, devices, and sets) ────────────────────────
+  if (weeklyExfoliants.length > 0 || sets.length > 0) {
     weeklyHtml += `<p style="margin-bottom:10px;font-size:17px;color:${tc.routineAccent}"><b>📅 Treatments</b></p>\n`;
     weeklyExfoliants.forEach(p => {
       const freq = p.frequency || (isExfoliant(p) ? '1-2x/week' : 'as directed');
       weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${p.name}</b> (${freq}) — ${p.howToUse || ''}</p>`;
+    });
+    sets.forEach(p => {
+      weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${p.name}</b> — ${p.howToUse || ''}</p>`;
     });
   }
 
