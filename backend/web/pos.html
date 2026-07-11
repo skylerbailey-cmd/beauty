@@ -600,6 +600,35 @@
         </div>
       </div>
 
+      <!-- Brands -->
+      <div class="report-card" style="margin-top:16px">
+        <h3>Product Brands</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Select which brands appear in the register and across all apps.</p>
+        <div id="brandCheckboxes" style="display:flex;flex-direction:column;gap:10px">
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream);transition:all .2s">
+            <input type="checkbox" value="avologi" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--rose-dk)" />
+            <div>
+              <div style="font-weight:600;font-size:.88rem;color:var(--dark)">Avologi</div>
+              <div style="font-size:.76rem;color:var(--mid);margin-top:2px">Advanced youth-restoring LED and laser devices</div>
+            </div>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream);transition:all .2s">
+            <input type="checkbox" value="avinichi" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--rose-dk)" />
+            <div>
+              <div style="font-weight:600;font-size:.88rem;color:var(--dark)">Avinichi</div>
+              <div style="font-size:.76rem;color:var(--mid);margin-top:2px">Noni-infused luxury skincare products</div>
+            </div>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream);transition:all .2s">
+            <input type="checkbox" value="hydrasphere" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--rose-dk)" />
+            <div>
+              <div style="font-weight:600;font-size:.88rem;color:var(--dark)">HydraSphere Plus</div>
+              <div style="font-size:.76rem;color:var(--mid);margin-top:2px">Hydrogen-infused skincare and SPF products</div>
+            </div>
+          </label>
+        </div>
+      </div>
+
       <!-- Theme -->
       <div class="report-card" style="margin-top:16px">
         <h3>Theme</h3>
@@ -728,6 +757,7 @@ let lastTransaction = null;
 let currentPin = '';
 let saleEmployees = []; // [{employee_id, name, commission_type, commission_value}]
 let allEmployees = [];
+let selectedBrands = ['avologi', 'avinichi', 'hydrasphere'];
 
 const API = '';
 
@@ -740,7 +770,8 @@ async function init() {
     const resp = await fetch(`${API}/auth/me`, { credentials: 'include' });
     if (!resp.ok) throw new Error('Not auth');
     const data = await resp.json();
-    currentUser = { email: data.email, companyName: data.company_name || data.companyName, theme: data.theme };
+    currentUser = { email: data.email, companyName: data.company_name || data.companyName, theme: data.theme, brands: data.brands };
+    selectedBrands = data.brands || ['avologi', 'avinichi', 'hydrasphere'];
     addLinkedAccount(currentUser.email, currentUser.companyName);
 
     const el = document.getElementById('headerUser');
@@ -787,7 +818,7 @@ async function loadProducts() {
 }
 
 function renderBrandFilters() {
-  const brands = [...new Set(products.map(p => p.brand))].sort();
+  const brands = [...new Set(products.map(p => p.brand))].filter(b => selectedBrands.includes(BRAND_KEY_MAP[b] || b.toLowerCase())).sort();
   const container = document.getElementById('brandFilters');
   container.innerHTML = `<button class="brand-filter-btn ${!activeBrand ? 'active' : ''}" onclick="filterBrand(null)">All</button>` +
     brands.map(b => `<button class="brand-filter-btn ${activeBrand === b ? 'active' : ''}" onclick="filterBrand('${b}')">${b}</button>`).join('');
@@ -803,10 +834,14 @@ function filterProducts() {
   renderProducts();
 }
 
+const BRAND_KEY_MAP = { 'Avologi': 'avologi', 'Avinichi': 'avinichi', 'HydraSphere Plus': 'hydrasphere' };
+
 function renderProducts() {
   const search = document.getElementById('searchInput').value.toLowerCase();
   const grid = document.getElementById('productGrid');
   const filtered = products.filter(p => {
+    const brandKey = BRAND_KEY_MAP[p.brand] || p.brand.toLowerCase();
+    if (!selectedBrands.includes(brandKey)) return false;
     if (activeBrand && p.brand !== activeBrand) return false;
     if (search && !p.name.toLowerCase().includes(search) && !p.brand.toLowerCase().includes(search)) return false;
     return true;
@@ -1453,7 +1488,7 @@ function switchTab(tabName) {
 
   if (tabName === 'history') loadTransactions();
   if (tabName === 'reports') loadReports();
-  if (tabName === 'settings') { loadEmployees(); loadStoreSettings(); }
+  if (tabName === 'settings') { loadEmployees(); loadStoreSettings(); renderBrandCheckboxes(); }
   if (tabName === 'prices') renderPrices();
 }
 
@@ -1498,6 +1533,33 @@ async function saveStoreSettings() {
     const btn = document.querySelector('#tab-settings .btn-confirm');
     if (btn) { btn.textContent = 'Saved!'; setTimeout(() => { btn.textContent = 'Save'; }, 1500); }
   } catch (err) { alert('Failed to save: ' + err.message); }
+}
+
+// ─── Brands ─────────────────────────────────────────────────────────────────
+function renderBrandCheckboxes() {
+  document.querySelectorAll('#brandCheckboxes input[type=checkbox]').forEach(cb => {
+    cb.checked = selectedBrands.includes(cb.value);
+  });
+}
+
+async function saveBrands() {
+  const brands = [...document.querySelectorAll('#brandCheckboxes input[type=checkbox]:checked')].map(cb => cb.value);
+  if (brands.length === 0) {
+    alert('At least one brand must be selected.');
+    renderBrandCheckboxes();
+    return;
+  }
+  selectedBrands = brands;
+  try {
+    await fetch(`${API}/auth/brands`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ brands }),
+    });
+    if (currentUser) currentUser.brands = brands;
+  } catch (_) {}
+  // Re-render products with new brand filter
+  renderBrandFilters();
+  renderProducts();
 }
 
 function applyTheme(theme) {
@@ -1605,7 +1667,8 @@ async function switchAccount(email) {
     const res = await fetch(`${API}/auth/web-login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ email }) });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Switch failed');
-    currentUser = { email: data.user.email, companyName: data.user.companyName, theme: data.user.theme };
+    currentUser = { email: data.user.email, companyName: data.user.companyName, theme: data.user.theme, brands: data.user.brands };
+    selectedBrands = data.user.brands || ['avologi', 'avinichi', 'hydrasphere'];
     addLinkedAccount(currentUser.email, currentUser.companyName);
     applyTheme(currentUser.theme || 'rose');
     document.getElementById('headerCompany').textContent = currentUser.companyName || '';
