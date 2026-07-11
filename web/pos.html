@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Point of Sale</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root, [data-theme="rose"] {
+      --rose: #c97d8a; --rose-lt: #f2dde2; --rose-dk: #9e5567;
+      --gold: #c9a96e; --gold-lt: #f5edd9; --cream: #fdf9f5;
+      --dark: #2c2022; --mid: #6b5057; --border: #e8d5d9;
+      --white: #ffffff; --success: #6B9E6B; --danger: #C96C6C;
+      --shadow: 0 4px 24px rgba(44,32,34,.08); --radius: 14px;
+    }
+    [data-theme="earth"] {
+      --rose: #5a8a7d; --rose-lt: #dceee9; --rose-dk: #3d6b60;
+      --gold: #a0855b; --gold-lt: #f0e8da; --cream: #f7f5f0;
+      --dark: #2a2620; --mid: #5e5648; --border: #d4cdc2;
+      --white: #ffffff; --success: #6B9E6B; --danger: #C96C6C;
+      --shadow: 0 4px 24px rgba(42,38,32,.08); --radius: 14px;
+    }
+    [data-theme="lavender"] {
+      --rose: #8b7bb5; --rose-lt: #eee9f7; --rose-dk: #6b5a9e;
+      --gold: #b0a0d0; --gold-lt: #f0ecf7; --cream: #f8f6fc;
+      --dark: #2a2535; --mid: #6b6080; --border: #d8d0e8;
+      --white: #ffffff; --success: #6B9E6B; --danger: #C96C6C;
+      --shadow: 0 4px 24px rgba(42,37,53,.08); --radius: 14px;
+    }
+    [data-theme="ocean"] {
+      --rose: #3d7a8a; --rose-lt: #daeef3; --rose-dk: #2c5f6e;
+      --gold: #5a9aaa; --gold-lt: #e0f0f5; --cream: #f4f9fb;
+      --dark: #1e2e33; --mid: #4a6a72; --border: #c5dce2;
+      --white: #ffffff; --success: #6B9E6B; --danger: #C96C6C;
+      --shadow: 0 4px 24px rgba(30,46,51,.08); --radius: 14px;
+    }
+    [data-theme="sage"] {
+      --rose: #6b8f71; --rose-lt: #e2ede4; --rose-dk: #4d6e52;
+      --gold: #8aaa8e; --gold-lt: #e8f0e9; --cream: #f5f8f5;
+      --dark: #232e24; --mid: #556b58; --border: #c8d8ca;
+      --white: #ffffff; --success: #6B9E6B; --danger: #C96C6C;
+      --shadow: 0 4px 24px rgba(35,46,36,.08); --radius: 14px;
+    }
+
+    body { font-family: 'Georgia', serif; background: var(--cream); color: var(--dark); min-height: 100vh; }
+
+    /* ── Header ─── */
+    header {
+      background: var(--white); border-bottom: 1px solid var(--border);
+      padding: 12px 24px; display: flex; align-items: center; gap: 16px;
+    }
+    header h1 { font-size: 1.2rem; color: var(--rose-dk); }
+    header p { font-size: .78rem; color: var(--mid); font-family: system-ui, sans-serif; margin-top: 2px; }
+
+    /* ── App Switcher ─── */
+    .app-switch-btn {
+      width: 40px; height: 40px; border-radius: 10px; border: 1.5px solid var(--border);
+      background: var(--white); cursor: pointer; display: grid;
+      grid-template-columns: repeat(3,6px); gap: 4px; align-content: center;
+      justify-content: center; transition: all .2s; padding: 0;
+    }
+    .app-switch-btn:hover { border-color: var(--rose); background: var(--rose-lt); }
+    .app-switch-btn span { width: 6px; height: 6px; border-radius: 1.5px; background: var(--rose); }
+    .app-menu {
+      display: none; position: absolute; left: 0; top: 52px; background: var(--white);
+      border: 1px solid var(--border); border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(44,32,34,.12); min-width: 220px; z-index: 999; overflow: hidden;
+    }
+    .app-menu a {
+      display: flex; align-items: center; gap: 10px; padding: 14px 16px;
+      text-decoration: none; color: var(--dark); font-family: system-ui, sans-serif;
+      font-size: .88rem; border-left: 3px solid transparent;
+    }
+    .app-menu a:hover { background: var(--cream); }
+    .app-menu a.active { background: var(--rose-lt); border-left-color: var(--rose); }
+    .app-menu a b { display: block; }
+    .app-menu a .sub { font-size: .75rem; color: var(--mid); }
+
+    /* ── Layout ─── */
+    .pos-layout { display: flex; height: calc(100vh - 57px); }
+    .pos-products { flex: 1; overflow-y: auto; padding: 20px; }
+    .pos-cart { width: 380px; background: var(--white); border-left: 1px solid var(--border); display: flex; flex-direction: column; }
+
+    /* ── Top bar (employee + mode) ─── */
+    .pos-topbar {
+      display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .pos-topbar .employee-badge {
+      font-family: system-ui, sans-serif; font-size: .82rem; padding: 6px 14px;
+      background: var(--gold-lt); border-radius: 20px; color: var(--dark);
+    }
+    .mode-toggle {
+      display: flex; border: 1.5px solid var(--border); border-radius: 8px; overflow: hidden;
+      font-family: system-ui, sans-serif; font-size: .82rem;
+    }
+    .mode-toggle button {
+      padding: 6px 16px; border: none; cursor: pointer; background: var(--white); color: var(--mid);
+      font-family: inherit; font-size: inherit; transition: all .2s;
+    }
+    .mode-toggle button.active { background: var(--rose); color: white; }
+    .mode-toggle button.return-active { background: var(--danger); color: white; }
+
+    /* ── Search ─── */
+    .search-bar {
+      width: 100%; padding: 10px 16px; border: 1.5px solid var(--border); border-radius: 10px;
+      font-size: .95rem; font-family: system-ui, sans-serif; background: var(--white);
+      outline: none; margin-bottom: 16px;
+    }
+    .search-bar:focus { border-color: var(--rose); }
+
+    /* ── Brand filters ─── */
+    .brand-filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .brand-filter-btn {
+      padding: 5px 14px; border-radius: 20px; border: 1.5px solid var(--border);
+      background: var(--white); cursor: pointer; font-family: system-ui, sans-serif;
+      font-size: .78rem; font-weight: 600; transition: all .2s; text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+    .brand-filter-btn:hover { border-color: var(--rose); }
+    .brand-filter-btn.active { background: var(--rose); color: white; border-color: var(--rose); }
+
+    /* ── Product grid ─── */
+    .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+    .product-tile {
+      background: var(--white); border: 1.5px solid var(--border); border-radius: 12px;
+      padding: 14px; cursor: pointer; transition: all .2s; user-select: none;
+    }
+    .product-tile:hover { border-color: var(--rose); transform: translateY(-2px); box-shadow: var(--shadow); }
+    .product-tile .p-brand { font-family: system-ui, sans-serif; font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--rose); margin-bottom: 4px; }
+    .product-tile .p-name { font-size: .88rem; font-weight: 600; margin-bottom: 6px; line-height: 1.3; }
+    .product-tile .p-price { font-family: system-ui, sans-serif; font-size: 1rem; font-weight: 700; color: var(--rose-dk); }
+    .product-tile .p-no-price { font-family: system-ui, sans-serif; font-size: .78rem; color: var(--danger); font-style: italic; }
+    .product-tile img { width: 100%; height: 100px; object-fit: cover; border-radius: 8px; margin-bottom: 8px; background: var(--rose-lt); }
+
+    /* ── Cart ─── */
+    .cart-header { padding: 16px 20px; border-bottom: 1px solid var(--border); font-family: system-ui, sans-serif; }
+    .cart-header h3 { font-size: 1rem; color: var(--rose-dk); }
+    .cart-items { flex: 1; overflow-y: auto; padding: 12px 20px; }
+    .cart-empty { text-align: center; padding: 40px 20px; color: var(--mid); font-family: system-ui, sans-serif; font-size: .9rem; }
+    .cart-item {
+      display: flex; align-items: center; gap: 10px; padding: 10px 0;
+      border-bottom: 1px solid var(--border); font-family: system-ui, sans-serif;
+    }
+    .cart-item .ci-info { flex: 1; }
+    .cart-item .ci-name { font-size: .85rem; font-weight: 600; }
+    .cart-item .ci-brand { font-size: .7rem; color: var(--mid); }
+    .cart-item .ci-price { font-size: .85rem; color: var(--rose-dk); font-weight: 600; }
+    .cart-item .ci-qty {
+      display: flex; align-items: center; gap: 6px;
+    }
+    .cart-item .ci-qty button {
+      width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border);
+      background: var(--white); cursor: pointer; font-size: .9rem; display: flex;
+      align-items: center; justify-content: center; transition: all .15s;
+    }
+    .cart-item .ci-qty button:hover { border-color: var(--rose); background: var(--rose-lt); }
+    .cart-item .ci-qty span { min-width: 20px; text-align: center; font-size: .88rem; font-weight: 600; }
+    .cart-item .ci-remove { color: var(--danger); cursor: pointer; font-size: 1.1rem; padding: 4px; border: none; background: none; }
+
+    /* ── Cart footer ─── */
+    .cart-footer { border-top: 1px solid var(--border); padding: 16px 20px; font-family: system-ui, sans-serif; }
+    .cart-totals { margin-bottom: 12px; }
+    .cart-row { display: flex; justify-content: space-between; font-size: .85rem; margin-bottom: 4px; color: var(--mid); }
+    .cart-row.total { font-size: 1.1rem; font-weight: 700; color: var(--dark); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+    .cart-row.discount { color: var(--danger); }
+
+    .customer-section { margin-bottom: 12px; }
+    .customer-section input {
+      width: 100%; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px;
+      font-size: .85rem; font-family: system-ui, sans-serif; outline: none; margin-bottom: 6px;
+      background: var(--cream);
+    }
+    .customer-section input:focus { border-color: var(--rose); background: var(--white); }
+
+    .payment-methods { display: flex; gap: 8px; margin-bottom: 12px; }
+    .pay-btn {
+      flex: 1; padding: 8px; border: 1.5px solid var(--border); border-radius: 8px;
+      background: var(--white); cursor: pointer; font-family: system-ui, sans-serif;
+      font-size: .78rem; font-weight: 600; text-align: center; transition: all .2s;
+    }
+    .pay-btn:hover { border-color: var(--rose); }
+    .pay-btn.active { background: var(--rose); color: white; border-color: var(--rose); }
+
+    .checkout-btn {
+      width: 100%; padding: 14px; border: none; border-radius: 10px; font-size: 1rem;
+      font-weight: 700; font-family: system-ui, sans-serif; cursor: pointer;
+      transition: all .2s; color: white;
+    }
+    .checkout-btn.sale { background: var(--success); }
+    .checkout-btn.sale:hover { background: #5a8a5a; }
+    .checkout-btn.return { background: var(--danger); }
+    .checkout-btn.return:hover { background: #b55555; }
+    .checkout-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .discount-row { display: flex; gap: 8px; margin-bottom: 12px; }
+    .discount-row input {
+      flex: 1; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px;
+      font-size: .85rem; font-family: system-ui, sans-serif; outline: none;
+    }
+    .discount-row input:focus { border-color: var(--rose); }
+
+    /* ── Modals ─── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; background: rgba(44,32,34,.5);
+      z-index: 1000; align-items: center; justify-content: center;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: var(--white); border-radius: var(--radius); box-shadow: 0 16px 48px rgba(0,0,0,.15);
+      max-width: 500px; width: 90%; max-height: 85vh; overflow-y: auto; padding: 32px;
+    }
+    .modal h2 { font-size: 1.2rem; color: var(--rose-dk); margin-bottom: 8px; }
+    .modal p.sub { font-size: .85rem; color: var(--mid); font-family: system-ui, sans-serif; margin-bottom: 20px; }
+    .modal .field { margin-bottom: 16px; }
+    .modal .field label { display: block; font-family: system-ui, sans-serif; font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--mid); margin-bottom: 6px; }
+    .modal .field input { width: 100%; padding: 10px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: .95rem; font-family: system-ui, sans-serif; outline: none; }
+    .modal .field input:focus { border-color: var(--rose); }
+    .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
+    .modal-actions .btn { padding: 10px 24px; border-radius: 8px; font-family: system-ui, sans-serif; font-size: .88rem; font-weight: 600; cursor: pointer; border: none; transition: all .2s; }
+    .btn-cancel { background: var(--cream); color: var(--mid); border: 1px solid var(--border) !important; }
+    .btn-cancel:hover { border-color: var(--rose) !important; color: var(--rose-dk); }
+    .btn-confirm { background: var(--rose); color: white; }
+    .btn-confirm:hover { background: var(--rose-dk); }
+
+    /* ── Receipt modal ─── */
+    .receipt-modal .modal { max-width: 420px; }
+    .receipt {
+      font-family: 'Courier New', monospace; font-size: .82rem; line-height: 1.6;
+      border: 1px dashed var(--border); padding: 20px; margin-bottom: 20px; background: var(--cream);
+    }
+    .receipt .r-center { text-align: center; }
+    .receipt .r-line { border-bottom: 1px dashed var(--mid); margin: 8px 0; }
+    .receipt .r-row { display: flex; justify-content: space-between; }
+    .receipt .r-total { font-weight: bold; font-size: .95rem; }
+    .receipt-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .receipt-actions .btn { flex: 1; min-width: 120px; padding: 10px 16px; border-radius: 8px; font-family: system-ui, sans-serif; font-size: .85rem; font-weight: 600; cursor: pointer; border: none; text-align: center; }
+
+    /* ── Employee clock-in modal ─── */
+    .pin-display { text-align: center; margin: 20px 0; }
+    .pin-dots { display: flex; gap: 12px; justify-content: center; margin-bottom: 20px; }
+    .pin-dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border); }
+    .pin-dot.filled { background: var(--rose); border-color: var(--rose); }
+    .pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 240px; margin: 0 auto; }
+    .pin-key {
+      padding: 14px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--white);
+      font-size: 1.2rem; font-weight: 600; cursor: pointer; transition: all .15s; text-align: center;
+      font-family: system-ui, sans-serif;
+    }
+    .pin-key:hover { background: var(--rose-lt); border-color: var(--rose); }
+    .pin-key:active { background: var(--rose); color: white; }
+    .pin-error { color: var(--danger); font-family: system-ui, sans-serif; font-size: .85rem; text-align: center; margin-top: 12px; }
+
+    /* ── Reports panel ─── */
+    .reports-panel { display: none; }
+    .reports-panel.show { display: block; }
+    .report-card { background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; box-shadow: var(--shadow); }
+    .report-card h3 { font-size: 1rem; color: var(--rose-dk); margin-bottom: 12px; font-family: system-ui, sans-serif; }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .stat-box { background: var(--cream); border-radius: 10px; padding: 14px; text-align: center; }
+    .stat-box .stat-val { font-size: 1.4rem; font-weight: 700; color: var(--rose-dk); }
+    .stat-box .stat-lbl { font-family: system-ui, sans-serif; font-size: .72rem; text-transform: uppercase; letter-spacing: .5px; color: var(--mid); margin-top: 4px; }
+    .report-table { width: 100%; border-collapse: collapse; font-family: system-ui, sans-serif; font-size: .82rem; }
+    .report-table th { text-align: left; padding: 8px; border-bottom: 2px solid var(--border); color: var(--mid); font-size: .72rem; text-transform: uppercase; letter-spacing: .5px; }
+    .report-table td { padding: 8px; border-bottom: 1px solid var(--border); }
+    .report-table tr:hover td { background: var(--cream); }
+
+    .date-range { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; font-family: system-ui, sans-serif; font-size: .85rem; }
+    .date-range input { padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-family: system-ui, sans-serif; font-size: .85rem; outline: none; }
+    .date-range input:focus { border-color: var(--rose); }
+    .date-range .btn { padding: 8px 16px; }
+
+    /* ── Manage employees panel ─── */
+    .emp-list { margin-top: 16px; }
+    .emp-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); font-family: system-ui, sans-serif; font-size: .88rem; }
+    .emp-row .emp-name { flex: 1; font-weight: 600; }
+    .emp-row .emp-role { font-size: .78rem; color: var(--mid); padding: 3px 10px; background: var(--cream); border-radius: 12px; }
+    .emp-row .emp-status { font-size: .72rem; padding: 3px 10px; border-radius: 12px; }
+    .emp-row .emp-status.active { background: #e8f5e9; color: #388e3c; }
+    .emp-row .emp-status.inactive { background: #fce4ec; color: #c62828; }
+
+    /* ── Sub-tabs ─── */
+    .pos-subtabs {
+      display: flex; border-bottom: 2px solid var(--border); margin-bottom: 16px;
+    }
+    .pos-subtabs button {
+      padding: 10px 20px; border: none; background: none; cursor: pointer;
+      font-family: system-ui, sans-serif; font-size: .88rem; font-weight: 600;
+      color: var(--mid); border-bottom: 2px solid transparent; margin-bottom: -2px;
+      transition: all .2s;
+    }
+    .pos-subtabs button:hover { color: var(--rose-dk); }
+    .pos-subtabs button.active { color: var(--rose-dk); border-bottom-color: var(--rose); }
+
+    .tab-content { display: none; }
+    .tab-content.show { display: block; }
+
+    /* ── Price setup ─── */
+    .price-row {
+      display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border);
+      font-family: system-ui, sans-serif; font-size: .85rem;
+    }
+    .price-row .pr-name { flex: 1; }
+    .price-row .pr-brand { font-size: .7rem; color: var(--mid); text-transform: uppercase; }
+    .price-row input { width: 100px; padding: 6px 10px; border: 1.5px solid var(--border); border-radius: 6px; font-size: .85rem; text-align: right; outline: none; }
+    .price-row input:focus { border-color: var(--rose); }
+
+    /* ── Transaction history table ─── */
+    .tx-type-sale { color: var(--success); font-weight: 600; }
+    .tx-type-return { color: var(--danger); font-weight: 600; }
+
+    /* ── Print styles ─── */
+    @media print {
+      body * { visibility: hidden; }
+      .receipt-print, .receipt-print * { visibility: visible; }
+      .receipt-print {
+        position: absolute; left: 0; top: 0; width: 80mm;
+        font-family: 'Courier New', monospace; font-size: 12px;
+      }
+    }
+
+    /* ── Responsive ─── */
+    @media (max-width: 768px) {
+      .pos-layout { flex-direction: column; height: auto; }
+      .pos-cart { width: 100%; border-left: none; border-top: 1px solid var(--border); }
+      .product-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div style="position:relative" id="appSwitcherWrap">
+    <button class="app-switch-btn" onclick="toggleAppSwitcher()" title="Switch app">
+      <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
+    </button>
+    <div class="app-menu" id="appSwitcherMenu">
+      <a href="/">
+        <span style="font-size:18px">&#9993;&#65039;</span>
+        <div><b>Welcome Emails</b><span class="sub"><br>Customer onboarding</span></div>
+      </a>
+      <a href="/inbox.html">
+        <span style="font-size:18px">&#128232;</span>
+        <div><b>Smart Inbox</b><span class="sub"><br>AI-powered email replies</span></div>
+      </a>
+      <a href="/pos.html" class="active">
+        <span style="font-size:18px">&#128179;</span>
+        <div><b>Point of Sale</b><span class="sub"><br>Sales, returns & receipts</span></div>
+      </a>
+    </div>
+  </div>
+  <div style="flex:1">
+    <h1>Point of Sale</h1>
+    <p id="headerSub">Sales & receipts</p>
+  </div>
+  <div id="headerUser" style="display:none;font-family:system-ui,sans-serif;font-size:.82rem;text-align:right;">
+    <div>
+      <span id="headerCompany" style="color:var(--dark);font-weight:600"></span><br>
+      <span id="headerEmail" style="color:var(--mid);font-size:.75rem"></span>
+      <span style="color:var(--border);margin:0 4px">|</span>
+      <a href="#" onclick="logout();return false" style="color:var(--rose-dk);text-decoration:underline;font-size:.75rem">Sign out</a>
+    </div>
+  </div>
+</header>
+
+<!-- ── Login gate ─── -->
+<div id="loginGate" style="display:none;max-width:400px;margin:80px auto;padding:0 20px">
+  <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);padding:36px;text-align:center">
+    <h2 style="color:var(--rose-dk);margin-bottom:8px">Sign In Required</h2>
+    <p style="font-family:system-ui,sans-serif;font-size:.88rem;color:var(--mid);margin-bottom:24px">Please sign in via the Welcome Emails page first to use the POS system.</p>
+    <a href="/" style="display:inline-block;padding:12px 32px;background:var(--rose);color:white;border-radius:10px;text-decoration:none;font-family:system-ui,sans-serif;font-weight:600">Go to Welcome Emails</a>
+  </div>
+</div>
+
+<!-- ── Main POS UI ─── -->
+<div id="posMain" style="display:none">
+
+  <!-- Sub-navigation tabs -->
+  <div class="pos-subtabs" id="posSubtabs">
+    <button class="active" onclick="switchTab('register')">Register</button>
+    <button onclick="switchTab('history')">Transactions</button>
+    <button onclick="switchTab('reports')">Reports</button>
+    <button onclick="switchTab('employees')">Employees</button>
+    <button onclick="switchTab('prices')">Prices</button>
+  </div>
+
+  <!-- ─── REGISTER TAB ─── -->
+  <div class="tab-content show" id="tab-register">
+    <div class="pos-layout">
+      <!-- Products side -->
+      <div class="pos-products">
+        <div class="pos-topbar">
+          <div class="employee-badge" id="employeeBadge" style="display:none">
+            <span id="employeeName"></span>
+            <button onclick="clockOutEmployee()" style="margin-left:8px;background:none;border:none;cursor:pointer;color:var(--danger);font-size:.78rem;text-decoration:underline">Clock Out</button>
+          </div>
+          <button onclick="showClockInModal()" class="btn-confirm" style="padding:6px 14px;border-radius:8px;font-size:.82rem;border:none;cursor:pointer;font-family:system-ui,sans-serif" id="clockInBtn">Clock In</button>
+          <div class="mode-toggle">
+            <button class="active" id="modesale" onclick="setMode('sale')">Sale</button>
+            <button id="modereturn" onclick="setMode('return')">Return</button>
+          </div>
+        </div>
+        <input type="text" class="search-bar" placeholder="Search products..." id="searchInput" oninput="filterProducts()">
+        <div class="brand-filters" id="brandFilters"></div>
+        <div class="product-grid" id="productGrid"></div>
+      </div>
+
+      <!-- Cart side -->
+      <div class="pos-cart">
+        <div class="cart-header">
+          <h3 id="cartTitle">Current Sale</h3>
+        </div>
+        <div class="cart-items" id="cartItems">
+          <div class="cart-empty">No items added yet</div>
+        </div>
+        <div class="cart-footer">
+          <div class="customer-section">
+            <input type="text" id="custName" placeholder="Customer name (optional)">
+            <input type="email" id="custEmail" placeholder="Customer email (optional)">
+          </div>
+          <div class="discount-row">
+            <input type="number" id="discountInput" placeholder="Discount $" min="0" step="0.01" value="" oninput="updateCartTotals()">
+          </div>
+          <div class="cart-totals">
+            <div class="cart-row"><span>Subtotal</span><span id="cartSubtotal">$0.00</span></div>
+            <div class="cart-row discount" id="discountRow" style="display:none"><span>Discount</span><span id="cartDiscount">-$0.00</span></div>
+            <div class="cart-row"><span>Tax (8.75%)</span><span id="cartTax">$0.00</span></div>
+            <div class="cart-row total"><span>Total</span><span id="cartTotal">$0.00</span></div>
+          </div>
+          <div class="payment-methods">
+            <button class="pay-btn active" onclick="setPayment('card')" data-method="card">Card</button>
+            <button class="pay-btn" onclick="setPayment('cash')" data-method="cash">Cash</button>
+            <button class="pay-btn" onclick="setPayment('other')" data-method="other">Other</button>
+          </div>
+          <button class="checkout-btn sale" id="checkoutBtn" onclick="processTransaction()" disabled>
+            Complete Sale
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── TRANSACTIONS TAB ─── -->
+  <div class="tab-content" id="tab-history">
+    <div style="max-width:1000px;margin:0 auto;padding:20px">
+      <div class="date-range">
+        <label>From:</label>
+        <input type="date" id="histStart">
+        <label>To:</label>
+        <input type="date" id="histEnd">
+        <button class="btn btn-confirm" onclick="loadTransactions()">Filter</button>
+      </div>
+      <div class="report-card">
+        <h3>Transaction History</h3>
+        <table class="report-table">
+          <thead><tr><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Items</th><th>Total</th><th></th></tr></thead>
+          <tbody id="txHistoryBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── REPORTS TAB ─── -->
+  <div class="tab-content" id="tab-reports">
+    <div style="max-width:1000px;margin:0 auto;padding:20px">
+      <div class="date-range">
+        <label>From:</label>
+        <input type="date" id="rptStart">
+        <label>To:</label>
+        <input type="date" id="rptEnd">
+        <button class="btn btn-confirm" onclick="loadReports()">Update</button>
+      </div>
+
+      <div class="stat-grid" id="salesSummary"></div>
+
+      <div class="report-card">
+        <h3>Employee Commissions & Sales</h3>
+        <table class="report-table">
+          <thead><tr><th>Employee</th><th>Sales</th><th>Returns</th><th>Gross Sales</th><th>Returns Total</th><th>Net Sales</th></tr></thead>
+          <tbody id="empReportBody"></tbody>
+        </table>
+      </div>
+
+      <div class="report-card">
+        <h3>Top Products</h3>
+        <table class="report-table">
+          <thead><tr><th>Product</th><th>Brand</th><th>Units Sold</th><th>Revenue</th></tr></thead>
+          <tbody id="prodReportBody"></tbody>
+        </table>
+      </div>
+
+      <div class="report-card">
+        <h3>Customers</h3>
+        <table class="report-table">
+          <thead><tr><th>Customer</th><th>Email</th><th>Purchases</th><th>Returns</th><th>Total Spent</th></tr></thead>
+          <tbody id="custReportBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── EMPLOYEES TAB ─── -->
+  <div class="tab-content" id="tab-employees">
+    <div style="max-width:700px;margin:0 auto;padding:20px">
+      <div class="report-card">
+        <h3>Manage Employees</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:16px">Add employees and manage their clock-in PINs.</p>
+        <div style="display:flex;gap:8px;margin-bottom:16px">
+          <input type="text" id="newEmpName" placeholder="Employee name" style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none">
+          <input type="text" id="newEmpPin" placeholder="4-digit PIN" maxlength="6" style="width:110px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;text-align:center">
+          <select id="newEmpRole" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none">
+            <option value="sales">Sales</option>
+            <option value="manager">Manager</option>
+          </select>
+          <button class="btn btn-confirm" onclick="addEmployee()">Add</button>
+        </div>
+        <div class="emp-list" id="empList"></div>
+      </div>
+
+      <div class="report-card" style="margin-top:16px">
+        <h3>Clock History</h3>
+        <div class="date-range">
+          <label>From:</label>
+          <input type="date" id="clockStart">
+          <label>To:</label>
+          <input type="date" id="clockEnd">
+          <button class="btn btn-confirm" onclick="loadClockEntries()">Filter</button>
+        </div>
+        <table class="report-table">
+          <thead><tr><th>Employee</th><th>Clock In</th><th>Clock Out</th><th>Hours</th></tr></thead>
+          <tbody id="clockBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── PRICES TAB ─── -->
+  <div class="tab-content" id="tab-prices">
+    <div style="max-width:700px;margin:0 auto;padding:20px">
+      <div class="report-card">
+        <h3>Product Prices</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:16px">Set prices for each product. Products without prices cannot be added to sales.</p>
+        <div id="priceList"></div>
+        <div style="margin-top:16px;text-align:right">
+          <button class="btn btn-confirm" onclick="savePrices()">Save All Prices</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Clock-in Modal ─── -->
+<div class="modal-overlay" id="clockInModal">
+  <div class="modal" style="max-width:360px">
+    <h2 style="text-align:center">Employee Clock In</h2>
+    <p class="sub" style="text-align:center">Enter your PIN</p>
+    <div class="pin-display">
+      <div class="pin-dots" id="pinDots">
+        <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
+      </div>
+    </div>
+    <div class="pin-pad" id="pinPad">
+      <button class="pin-key" onclick="pinInput('1')">1</button>
+      <button class="pin-key" onclick="pinInput('2')">2</button>
+      <button class="pin-key" onclick="pinInput('3')">3</button>
+      <button class="pin-key" onclick="pinInput('4')">4</button>
+      <button class="pin-key" onclick="pinInput('5')">5</button>
+      <button class="pin-key" onclick="pinInput('6')">6</button>
+      <button class="pin-key" onclick="pinInput('7')">7</button>
+      <button class="pin-key" onclick="pinInput('8')">8</button>
+      <button class="pin-key" onclick="pinInput('9')">9</button>
+      <button class="pin-key" onclick="pinClear()" style="font-size:.9rem">CLR</button>
+      <button class="pin-key" onclick="pinInput('0')">0</button>
+      <button class="pin-key" onclick="pinSubmit()" style="font-size:.9rem;background:var(--rose);color:white;border-color:var(--rose)">OK</button>
+    </div>
+    <div class="pin-error" id="pinError"></div>
+    <div class="modal-actions" style="justify-content:center">
+      <button class="btn btn-cancel" onclick="hideClockInModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Receipt Modal ─── -->
+<div class="modal-overlay receipt-modal" id="receiptModal">
+  <div class="modal">
+    <h2 style="text-align:center" id="receiptModalTitle">Sale Complete!</h2>
+    <div class="receipt" id="receiptContent"></div>
+    <div class="receipt-actions">
+      <button class="btn" style="background:var(--rose);color:white" onclick="printReceipt()">Print Receipt</button>
+      <button class="btn" style="background:var(--gold);color:white" onclick="emailReceipt()">Email Receipt</button>
+      <button class="btn btn-cancel" onclick="closeReceipt()">Done</button>
+    </div>
+    <div id="emailReceiptForm" style="display:none;margin-top:12px">
+      <div style="display:flex;gap:8px">
+        <input type="email" id="receiptEmail" placeholder="Customer email" style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+        <button class="btn btn-confirm" onclick="sendReceiptEmail()">Send</button>
+      </div>
+      <div id="emailStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Hidden receipt for printing -->
+<div id="printReceipt" class="receipt-print" style="display:none"></div>
+
+<script>
+// ─── State ──────────────────────────────────────────────────────────────────
+let products = [];
+let cart = [];
+let currentMode = 'sale'; // 'sale' or 'return'
+let currentEmployee = null;
+let paymentMethod = 'card';
+let activeBrand = null;
+let lastTransaction = null;
+let currentPin = '';
+
+const API = '';
+
+// ─── Init ───────────────────────────────────────────────────────────────────
+async function init() {
+  // Check auth
+  try {
+    const resp = await fetch(`${API}/auth/me`, { credentials: 'include' });
+    if (!resp.ok) throw new Error('Not auth');
+    const data = await resp.json();
+    document.getElementById('headerUser').style.display = 'block';
+    document.getElementById('headerCompany').textContent = data.company_name || 'My Store';
+    document.getElementById('headerEmail').textContent = data.email || '';
+    if (data.theme) document.documentElement.setAttribute('data-theme', data.theme);
+    document.getElementById('posMain').style.display = 'block';
+    loadProducts();
+    loadEmployees();
+
+    // Set default date ranges
+    const today = new Date().toISOString().slice(0, 10);
+    const thirtyAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    document.getElementById('histStart').value = thirtyAgo;
+    document.getElementById('histEnd').value = today;
+    document.getElementById('rptStart').value = thirtyAgo;
+    document.getElementById('rptEnd').value = today;
+    document.getElementById('clockStart').value = thirtyAgo;
+    document.getElementById('clockEnd').value = today;
+  } catch (_) {
+    document.getElementById('loginGate').style.display = 'block';
+  }
+}
+
+// ─── Products ───────────────────────────────────────────────────────────────
+async function loadProducts() {
+  const resp = await fetch(`${API}/api/pos/products`, { credentials: 'include' });
+  const data = await resp.json();
+  products = data.products || [];
+  renderBrandFilters();
+  renderProducts();
+}
+
+function renderBrandFilters() {
+  const brands = [...new Set(products.map(p => p.brand))].sort();
+  const container = document.getElementById('brandFilters');
+  container.innerHTML = `<button class="brand-filter-btn ${!activeBrand ? 'active' : ''}" onclick="filterBrand(null)">All</button>` +
+    brands.map(b => `<button class="brand-filter-btn ${activeBrand === b ? 'active' : ''}" onclick="filterBrand('${b}')">${b}</button>`).join('');
+}
+
+function filterBrand(brand) {
+  activeBrand = brand;
+  renderBrandFilters();
+  renderProducts();
+}
+
+function filterProducts() {
+  renderProducts();
+}
+
+function renderProducts() {
+  const search = document.getElementById('searchInput').value.toLowerCase();
+  const grid = document.getElementById('productGrid');
+  const filtered = products.filter(p => {
+    if (activeBrand && p.brand !== activeBrand) return false;
+    if (search && !p.name.toLowerCase().includes(search) && !p.brand.toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  grid.innerHTML = filtered.map(p => `
+    <div class="product-tile" onclick="addToCart('${p.id}')" title="${p.description || ''}">
+      ${p.image ? `<img src="${p.image}" alt="${p.name}" onerror="this.style.display='none'">` : ''}
+      <div class="p-brand">${p.brand}</div>
+      <div class="p-name">${p.name}</div>
+      ${p.price > 0 ? `<div class="p-price">$${p.price.toFixed(2)}</div>` : `<div class="p-no-price">Set price first</div>`}
+    </div>
+  `).join('');
+}
+
+// ─── Cart ───────────────────────────────────────────────────────────────────
+function addToCart(productId) {
+  const product = products.find(p => p.id === productId);
+  if (!product || product.price <= 0) {
+    alert('Please set a price for this product first (Prices tab).');
+    return;
+  }
+
+  const existing = cart.find(c => c.product_id === productId);
+  if (existing) {
+    existing.quantity++;
+  } else {
+    cart.push({
+      product_id: product.id,
+      product_name: product.name,
+      brand: product.brand,
+      unit_price: product.price,
+      quantity: 1,
+      discount: 0,
+    });
+  }
+  renderCart();
+}
+
+function removeFromCart(idx) {
+  cart.splice(idx, 1);
+  renderCart();
+}
+
+function changeQty(idx, delta) {
+  cart[idx].quantity += delta;
+  if (cart[idx].quantity <= 0) cart.splice(idx, 1);
+  renderCart();
+}
+
+function renderCart() {
+  const container = document.getElementById('cartItems');
+  if (cart.length === 0) {
+    container.innerHTML = '<div class="cart-empty">No items added yet</div>';
+  } else {
+    container.innerHTML = cart.map((item, i) => `
+      <div class="cart-item">
+        <div class="ci-info">
+          <div class="ci-name">${item.product_name}</div>
+          <div class="ci-brand">${item.brand}</div>
+        </div>
+        <div class="ci-qty">
+          <button onclick="changeQty(${i}, -1)">&minus;</button>
+          <span>${item.quantity}</span>
+          <button onclick="changeQty(${i}, 1)">+</button>
+        </div>
+        <div class="ci-price">$${(item.unit_price * item.quantity).toFixed(2)}</div>
+        <button class="ci-remove" onclick="removeFromCart(${i})">&times;</button>
+      </div>
+    `).join('');
+  }
+  updateCartTotals();
+}
+
+function updateCartTotals() {
+  const subtotal = cart.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+  const discountVal = parseFloat(document.getElementById('discountInput').value) || 0;
+  const taxable = Math.max(0, subtotal - discountVal);
+  const tax = Math.round(taxable * 0.0875 * 100) / 100;
+  const total = Math.round((taxable + tax) * 100) / 100;
+
+  document.getElementById('cartSubtotal').textContent = `$${subtotal.toFixed(2)}`;
+  if (discountVal > 0) {
+    document.getElementById('discountRow').style.display = 'flex';
+    document.getElementById('cartDiscount').textContent = `-$${discountVal.toFixed(2)}`;
+  } else {
+    document.getElementById('discountRow').style.display = 'none';
+  }
+  document.getElementById('cartTax').textContent = `$${tax.toFixed(2)}`;
+  document.getElementById('cartTotal').textContent = `$${total.toFixed(2)}`;
+  document.getElementById('checkoutBtn').disabled = cart.length === 0;
+}
+
+// ─── Mode Toggle ────────────────────────────────────────────────────────────
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('modesale').className = mode === 'sale' ? 'active' : '';
+  document.getElementById('modereturn').className = mode === 'return' ? 'return-active' : '';
+  document.getElementById('cartTitle').textContent = mode === 'sale' ? 'Current Sale' : 'Current Return';
+  const btn = document.getElementById('checkoutBtn');
+  btn.className = `checkout-btn ${mode}`;
+  btn.textContent = mode === 'sale' ? 'Complete Sale' : 'Process Return';
+}
+
+// ─── Payment ────────────────────────────────────────────────────────────────
+function setPayment(method) {
+  paymentMethod = method;
+  document.querySelectorAll('.pay-btn').forEach(b => b.classList.toggle('active', b.dataset.method === method));
+}
+
+// ─── Transaction ────────────────────────────────────────────────────────────
+async function processTransaction() {
+  if (cart.length === 0) return;
+
+  const discountVal = parseFloat(document.getElementById('discountInput').value) || 0;
+
+  const body = {
+    type: currentMode,
+    employee_id: currentEmployee?.id || null,
+    customer_name: document.getElementById('custName').value.trim(),
+    customer_email: document.getElementById('custEmail').value.trim(),
+    items: cart.map(i => ({
+      product_id: i.product_id,
+      product_name: i.product_name,
+      brand: i.brand,
+      quantity: i.quantity,
+      unit_price: i.unit_price,
+    })),
+    payment_method: paymentMethod,
+    discount_amount: discountVal,
+  };
+
+  try {
+    const resp = await fetch(`${API}/api/pos/transactions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    lastTransaction = data.transaction;
+    showReceipt(data.transaction);
+    // Reset cart
+    cart = [];
+    renderCart();
+    document.getElementById('custName').value = '';
+    document.getElementById('custEmail').value = '';
+    document.getElementById('discountInput').value = '';
+  } catch (err) {
+    alert('Transaction failed: ' + err.message);
+  }
+}
+
+// ─── Receipt ────────────────────────────────────────────────────────────────
+function showReceipt(tx) {
+  const title = tx.type === 'return' ? 'Return Processed!' : 'Sale Complete!';
+  document.getElementById('receiptModalTitle').textContent = title;
+
+  const companyName = document.getElementById('headerCompany').textContent || 'Glow SF';
+  const date = new Date(tx.created_at).toLocaleString();
+
+  let html = `
+    <div class="r-center"><strong>${companyName}</strong></div>
+    <div class="r-center" style="font-size:.75rem">${tx.type === 'return' ? 'RETURN RECEIPT' : 'SALES RECEIPT'}</div>
+    <div class="r-line"></div>
+    <div class="r-row"><span>Receipt #:</span><span>${tx.receipt_number}</span></div>
+    <div class="r-row"><span>Date:</span><span>${date}</span></div>
+    ${tx.employee_name ? `<div class="r-row"><span>Employee:</span><span>${tx.employee_name}</span></div>` : ''}
+    ${tx.customer_name ? `<div class="r-row"><span>Customer:</span><span>${tx.customer_name}</span></div>` : ''}
+    <div class="r-line"></div>
+  `;
+
+  for (const item of tx.items) {
+    html += `<div class="r-row"><span>${item.product_name} x${item.quantity}</span><span>$${item.line_total.toFixed(2)}</span></div>`;
+  }
+
+  html += `
+    <div class="r-line"></div>
+    <div class="r-row"><span>Subtotal:</span><span>$${tx.subtotal.toFixed(2)}</span></div>
+    ${tx.discount_amount > 0 ? `<div class="r-row"><span>Discount:</span><span>-$${tx.discount_amount.toFixed(2)}</span></div>` : ''}
+    <div class="r-row"><span>Tax:</span><span>$${tx.tax_amount.toFixed(2)}</span></div>
+    <div class="r-line"></div>
+    <div class="r-row r-total"><span>TOTAL:</span><span>$${tx.total.toFixed(2)}</span></div>
+    <div class="r-row"><span>Payment:</span><span>${tx.payment_method.toUpperCase()}</span></div>
+    <div class="r-line"></div>
+    <div class="r-center" style="font-size:.75rem;margin-top:8px">Thank you for your purchase!</div>
+  `;
+
+  document.getElementById('receiptContent').innerHTML = html;
+  document.getElementById('receiptEmail').value = tx.customer_email || '';
+  document.getElementById('emailReceiptForm').style.display = 'none';
+  document.getElementById('emailStatus').textContent = '';
+  document.getElementById('receiptModal').classList.add('show');
+}
+
+function printReceipt() {
+  const content = document.getElementById('receiptContent').innerHTML;
+  const printEl = document.getElementById('printReceipt');
+  printEl.innerHTML = content;
+  printEl.style.display = 'block';
+  window.print();
+  setTimeout(() => { printEl.style.display = 'none'; }, 500);
+}
+
+function emailReceipt() {
+  const form = document.getElementById('emailReceiptForm');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+
+async function sendReceiptEmail() {
+  const email = document.getElementById('receiptEmail').value.trim();
+  if (!email || !lastTransaction) return;
+
+  const statusEl = document.getElementById('emailStatus');
+  statusEl.textContent = 'Sending...';
+  statusEl.style.color = 'var(--mid)';
+
+  try {
+    const resp = await fetch(`${API}/api/pos/transactions/${lastTransaction.id}/email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    statusEl.textContent = `Receipt sent to ${email}`;
+    statusEl.style.color = 'var(--success)';
+  } catch (err) {
+    statusEl.textContent = 'Failed: ' + err.message;
+    statusEl.style.color = 'var(--danger)';
+  }
+}
+
+function closeReceipt() {
+  document.getElementById('receiptModal').classList.remove('show');
+}
+
+// ─── Employee Clock In/Out ──────────────────────────────────────────────────
+function showClockInModal() {
+  currentPin = '';
+  updatePinDots();
+  document.getElementById('pinError').textContent = '';
+  document.getElementById('clockInModal').classList.add('show');
+}
+
+function hideClockInModal() {
+  document.getElementById('clockInModal').classList.remove('show');
+}
+
+function pinInput(digit) {
+  if (currentPin.length >= 6) return;
+  currentPin += digit;
+  updatePinDots();
+}
+
+function pinClear() {
+  currentPin = '';
+  updatePinDots();
+  document.getElementById('pinError').textContent = '';
+}
+
+function updatePinDots() {
+  const dots = document.getElementById('pinDots').children;
+  for (let i = 0; i < dots.length; i++) {
+    dots[i].classList.toggle('filled', i < currentPin.length);
+  }
+}
+
+async function pinSubmit() {
+  if (currentPin.length < 4) {
+    document.getElementById('pinError').textContent = 'Enter at least 4 digits';
+    return;
+  }
+
+  try {
+    const resp = await fetch(`${API}/api/pos/employees/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ pin: currentPin }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+
+    currentEmployee = data.employee;
+
+    // Clock them in
+    await fetch(`${API}/api/pos/clock/in`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ employee_id: currentEmployee.id }),
+    });
+
+    document.getElementById('employeeBadge').style.display = 'inline-flex';
+    document.getElementById('employeeName').textContent = currentEmployee.name;
+    document.getElementById('clockInBtn').style.display = 'none';
+    hideClockInModal();
+  } catch (err) {
+    document.getElementById('pinError').textContent = err.message || 'Invalid PIN';
+    currentPin = '';
+    updatePinDots();
+  }
+}
+
+async function clockOutEmployee() {
+  if (!currentEmployee) return;
+  await fetch(`${API}/api/pos/clock/out`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ employee_id: currentEmployee.id }),
+  });
+  currentEmployee = null;
+  document.getElementById('employeeBadge').style.display = 'none';
+  document.getElementById('clockInBtn').style.display = 'inline-block';
+}
+
+// ─── Employees Management ───────────────────────────────────────────────────
+async function loadEmployees() {
+  const resp = await fetch(`${API}/api/pos/employees`, { credentials: 'include' });
+  const data = await resp.json();
+  const list = document.getElementById('empList');
+  if (!data.employees || data.employees.length === 0) {
+    list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--mid);font-family:system-ui,sans-serif">No employees yet. Add one above.</div>';
+    return;
+  }
+  list.innerHTML = data.employees.map(e => `
+    <div class="emp-row">
+      <div class="emp-name">${e.name}</div>
+      <div class="emp-role">${e.role}</div>
+      <span class="emp-status ${e.active ? 'active' : 'inactive'}">${e.active ? 'Active' : 'Inactive'}</span>
+      <button onclick="toggleEmployee(${e.id}, ${e.active})" style="border:none;background:none;cursor:pointer;font-size:.78rem;color:var(--rose);text-decoration:underline">${e.active ? 'Deactivate' : 'Activate'}</button>
+    </div>
+  `).join('');
+}
+
+async function addEmployee() {
+  const name = document.getElementById('newEmpName').value.trim();
+  const pin = document.getElementById('newEmpPin').value.trim();
+  const role = document.getElementById('newEmpRole').value;
+  if (!name || !pin) return alert('Name and PIN required');
+  if (pin.length < 4) return alert('PIN must be at least 4 digits');
+
+  await fetch(`${API}/api/pos/employees`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ name, pin, role }),
+  });
+  document.getElementById('newEmpName').value = '';
+  document.getElementById('newEmpPin').value = '';
+  loadEmployees();
+}
+
+async function toggleEmployee(id, currentlyActive) {
+  await fetch(`${API}/api/pos/employees/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ active: currentlyActive ? 0 : 1 }),
+  });
+  loadEmployees();
+}
+
+// ─── Clock History ──────────────────────────────────────────────────────────
+async function loadClockEntries() {
+  const start = document.getElementById('clockStart').value;
+  const end = document.getElementById('clockEnd').value;
+  const resp = await fetch(`${API}/api/pos/clock/entries?start=${start}T00:00:00&end=${end}T23:59:59`, { credentials: 'include' });
+  const data = await resp.json();
+  const body = document.getElementById('clockBody');
+  body.innerHTML = (data.entries || []).map(e => {
+    const hours = e.clock_out ? ((new Date(e.clock_out) - new Date(e.clock_in)) / 3600000).toFixed(1) : 'Active';
+    return `<tr>
+      <td>${e.employee_name}</td>
+      <td>${new Date(e.clock_in).toLocaleString()}</td>
+      <td>${e.clock_out ? new Date(e.clock_out).toLocaleString() : '<em>Still clocked in</em>'}</td>
+      <td>${hours}${typeof hours === 'string' ? '' : 'h'}</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--mid)">No entries</td></tr>';
+}
+
+// ─── Prices ─────────────────────────────────────────────────────────────────
+function renderPrices() {
+  const list = document.getElementById('priceList');
+  const brands = [...new Set(products.map(p => p.brand))].sort();
+
+  let html = '';
+  for (const brand of brands) {
+    html += `<div style="font-family:system-ui,sans-serif;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--rose);margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border)">${brand}</div>`;
+    const brandProds = products.filter(p => p.brand === brand);
+    for (const p of brandProds) {
+      html += `
+        <div class="price-row">
+          <div class="pr-name">${p.name}</div>
+          <div>$</div>
+          <input type="number" step="0.01" min="0" value="${p.price || ''}" data-id="${p.id}" placeholder="0.00">
+        </div>
+      `;
+    }
+  }
+  list.innerHTML = html;
+}
+
+async function savePrices() {
+  const inputs = document.querySelectorAll('#priceList input[data-id]');
+  const prices = [];
+  inputs.forEach(input => {
+    const val = parseFloat(input.value);
+    if (!isNaN(val) && val >= 0) {
+      prices.push({ product_id: input.dataset.id, price: val });
+    }
+  });
+
+  await fetch(`${API}/api/pos/products/prices/bulk`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ prices }),
+  });
+
+  await loadProducts();
+  renderPrices();
+  alert('Prices saved!');
+}
+
+// ─── Transactions History ───────────────────────────────────────────────────
+async function loadTransactions() {
+  const start = document.getElementById('histStart').value;
+  const end = document.getElementById('histEnd').value;
+  const resp = await fetch(`${API}/api/pos/transactions?start=${start}T00:00:00&end=${end}T23:59:59`, { credentials: 'include' });
+  const data = await resp.json();
+  const body = document.getElementById('txHistoryBody');
+  body.innerHTML = (data.transactions || []).map(tx => `
+    <tr>
+      <td style="font-family:monospace">${tx.receipt_number}</td>
+      <td>${new Date(tx.created_at).toLocaleString()}</td>
+      <td><span class="tx-type-${tx.type}">${tx.type.toUpperCase()}</span></td>
+      <td>${tx.employee_name || '-'}</td>
+      <td>${tx.customer_name || '-'}</td>
+      <td>${tx.items.length}</td>
+      <td style="font-weight:600">$${tx.total.toFixed(2)}</td>
+      <td><button onclick="viewReceipt(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--rose);text-decoration:underline;font-size:.82rem">View</button></td>
+    </tr>
+  `).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--mid)">No transactions</td></tr>';
+}
+
+async function viewReceipt(txId) {
+  const resp = await fetch(`${API}/api/pos/transactions/${txId}`, { credentials: 'include' });
+  const data = await resp.json();
+  if (data.transaction) {
+    lastTransaction = data.transaction;
+    showReceipt(data.transaction);
+  }
+}
+
+// ─── Reports ────────────────────────────────────────────────────────────────
+async function loadReports() {
+  const start = document.getElementById('rptStart').value;
+  const end = document.getElementById('rptEnd').value;
+  const qs = `start=${start}T00:00:00&end=${end}T23:59:59`;
+
+  const [salesResp, empResp, prodResp, custResp] = await Promise.all([
+    fetch(`${API}/api/pos/reports/sales?${qs}`, { credentials: 'include' }),
+    fetch(`${API}/api/pos/reports/employees?${qs}`, { credentials: 'include' }),
+    fetch(`${API}/api/pos/reports/products?${qs}`, { credentials: 'include' }),
+    fetch(`${API}/api/pos/reports/customers?${qs}`, { credentials: 'include' }),
+  ]);
+
+  const sales = (await salesResp.json()).report || {};
+  const employees = (await empResp.json()).report || [];
+  const prods = (await prodResp.json()).report || [];
+  const customers = (await custResp.json()).report || [];
+
+  // Sales summary
+  document.getElementById('salesSummary').innerHTML = `
+    <div class="stat-box"><div class="stat-val">${sales.total_sales || 0}</div><div class="stat-lbl">Total Sales</div></div>
+    <div class="stat-box"><div class="stat-val">${sales.total_returns || 0}</div><div class="stat-lbl">Returns</div></div>
+    <div class="stat-box"><div class="stat-val">$${(sales.sales_revenue || 0).toFixed(2)}</div><div class="stat-lbl">Gross Revenue</div></div>
+    <div class="stat-box"><div class="stat-val">$${(sales.returns_total || 0).toFixed(2)}</div><div class="stat-lbl">Returns Total</div></div>
+    <div class="stat-box"><div class="stat-val">$${(sales.net_revenue || 0).toFixed(2)}</div><div class="stat-lbl">Net Revenue</div></div>
+    <div class="stat-box"><div class="stat-val">$${(sales.net_tax || 0).toFixed(2)}</div><div class="stat-lbl">Tax Collected</div></div>
+  `;
+
+  // Employee report
+  document.getElementById('empReportBody').innerHTML = employees.map(e => `
+    <tr>
+      <td style="font-weight:600">${e.employee_name}</td>
+      <td>${e.sale_count}</td>
+      <td>${e.return_count}</td>
+      <td>$${e.sales_total.toFixed(2)}</td>
+      <td>$${e.returns_total.toFixed(2)}</td>
+      <td style="font-weight:600">$${e.net_total.toFixed(2)}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No data</td></tr>';
+
+  // Product report
+  document.getElementById('prodReportBody').innerHTML = prods.map(p => `
+    <tr>
+      <td style="font-weight:600">${p.product_name}</td>
+      <td>${p.brand}</td>
+      <td>${p.units_sold}</td>
+      <td style="font-weight:600">$${p.revenue.toFixed(2)}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--mid)">No data</td></tr>';
+
+  // Customer report
+  document.getElementById('custReportBody').innerHTML = customers.map(c => `
+    <tr>
+      <td style="font-weight:600">${c.customer_name}</td>
+      <td>${c.customer_email}</td>
+      <td>${c.purchases}</td>
+      <td>${c.returns}</td>
+      <td style="font-weight:600">$${c.total_spent.toFixed(2)}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--mid)">No data</td></tr>';
+}
+
+// ─── Tab Switching ──────────────────────────────────────────────────────────
+function switchTab(tabName) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('show'));
+  document.querySelectorAll('.pos-subtabs button').forEach(el => el.classList.remove('active'));
+  document.getElementById(`tab-${tabName}`).classList.add('show');
+  event.target.classList.add('active');
+
+  if (tabName === 'history') loadTransactions();
+  if (tabName === 'reports') loadReports();
+  if (tabName === 'employees') { loadEmployees(); loadClockEntries(); }
+  if (tabName === 'prices') renderPrices();
+}
+
+// ─── App Switcher ───────────────────────────────────────────────────────────
+function toggleAppSwitcher() {
+  const menu = document.getElementById('appSwitcherMenu');
+  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('appSwitcherWrap');
+  if (wrap && !wrap.contains(e.target)) {
+    document.getElementById('appSwitcherMenu').style.display = 'none';
+  }
+});
+
+// ─── Logout ─────────────────────────────────────────────────────────────────
+async function logout() {
+  await fetch(`${API}/auth/logout`, { credentials: 'include', method: 'POST' }).catch(() => {});
+  window.location.href = '/';
+}
+
+// ─── Start ──────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

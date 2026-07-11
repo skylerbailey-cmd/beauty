@@ -12,6 +12,7 @@ const authRoutes = require('./routes/auth');
 const emailRoutes = require('./routes/emails');
 const webhookRoutes = require('./routes/webhook');
 const { router: welcomeRoutes } = require('./routes/welcome');
+const posRoutes = require('./routes/pos');
 const { getAllUsers } = require('./db');
 const { setupGmailWatch } = require('./services/gmail');
 
@@ -97,6 +98,7 @@ app.use(express.static(fs.existsSync(webDir) ? webDir : webDirAlt));
 app.use('/auth', authRoutes);
 app.use('/api/emails', emailRoutes);
 app.use('/api/welcome', welcomeRoutes);
+app.use('/api/pos', posRoutes);
 app.use('/webhook', webhookRoutes);
 
 // Health check
