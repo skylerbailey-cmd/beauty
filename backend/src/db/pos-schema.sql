@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS pos_transactions (
   notes TEXT DEFAULT '',
   receipt_number TEXT NOT NULL,
   original_transaction_id INTEGER,
+  original_sale_date DATETIME,
   user_id TEXT DEFAULT '',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (employee_id) REFERENCES pos_employees(id),

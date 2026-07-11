@@ -126,11 +126,28 @@ router.post('/transactions', (req, res) => {
     return res.status(400).json({ error: 'At least one item required' });
   }
 
-  // If this is a return, look up original transaction
+  // If this is a return, require original receipt and enforce 14-day policy
   let original_transaction_id = null;
-  if (type === 'return' && original_receipt) {
+  let original_sale_date = null;
+  if (type === 'return') {
+    if (!original_receipt) {
+      return res.status(400).json({ error: 'Original receipt number is required for returns' });
+    }
     const orig = posDb.getTransactionByReceipt(original_receipt, userId);
-    if (orig) original_transaction_id = orig.id;
+    if (!orig) {
+      return res.status(404).json({ error: 'Original receipt not found' });
+    }
+    if (orig.type !== 'sale') {
+      return res.status(400).json({ error: 'Can only return against a sale receipt' });
+    }
+    // Enforce 14-day return window
+    const saleDate = new Date(orig.created_at);
+    const daysSince = (Date.now() - saleDate.getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSince > 14) {
+      return res.status(400).json({ error: `Return window expired. Sale was ${Math.floor(daysSince)} days ago (14-day limit).` });
+    }
+    original_transaction_id = orig.id;
+    original_sale_date = orig.created_at;
   }
 
   const rate = tax_rate ?? 0.0875;
@@ -153,6 +170,7 @@ router.post('/transactions', (req, res) => {
     payment_method: payment_method || 'card',
     notes: notes || '',
     original_transaction_id,
+    original_sale_date,
     user_id: userId,
   });
 

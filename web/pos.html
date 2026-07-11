@@ -400,9 +400,44 @@
             <button id="modereturn" onclick="setMode('return')">Return</button>
           </div>
         </div>
-        <input type="text" class="search-bar" placeholder="Search products..." id="searchInput" oninput="filterProducts()">
-        <div class="brand-filters" id="brandFilters"></div>
-        <div class="product-grid" id="productGrid"></div>
+        <!-- Sale mode: product search & grid -->
+        <div id="saleView">
+          <input type="text" class="search-bar" placeholder="Search products..." id="searchInput" oninput="filterProducts()">
+          <div class="brand-filters" id="brandFilters"></div>
+          <div class="product-grid" id="productGrid"></div>
+        </div>
+        <!-- Return mode: receipt lookup -->
+        <div id="returnView" style="display:none">
+          <div class="report-card" style="max-width:500px">
+            <h3 style="font-family:system-ui,sans-serif;margin-bottom:4px">Lookup Original Receipt</h3>
+            <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:16px">Enter the receipt number from the original sale to process a return. Returns must be within 14 days of purchase.</p>
+            <div style="display:flex;gap:8px">
+              <input type="text" id="returnReceiptInput" class="search-bar" placeholder="Receipt # (e.g. R20260711-1234)" style="margin-bottom:0;flex:1" onkeydown="if(event.key==='Enter')lookupReceipt()">
+              <button class="btn btn-confirm" onclick="lookupReceipt()" style="white-space:nowrap">Look Up</button>
+            </div>
+            <div id="returnLookupError" style="display:none;margin-top:10px;padding:10px 14px;background:#fce4ec;border-radius:8px;font-family:system-ui,sans-serif;font-size:.85rem;color:var(--danger)"></div>
+            <div id="returnLookupResult" style="display:none;margin-top:16px">
+              <div style="border:1px solid var(--border);border-radius:10px;padding:16px;background:var(--cream)">
+                <div style="display:flex;justify-content:space-between;font-family:system-ui,sans-serif;font-size:.85rem;margin-bottom:8px">
+                  <span><strong>Receipt:</strong> <span id="returnOrigReceipt"></span></span>
+                  <span><strong>Date:</strong> <span id="returnOrigDate"></span></span>
+                </div>
+                <div style="font-family:system-ui,sans-serif;font-size:.85rem;margin-bottom:8px" id="returnOrigCustomer"></div>
+                <div id="returnOrigDaysLeft" style="font-family:system-ui,sans-serif;font-size:.78rem;margin-bottom:12px"></div>
+                <table class="report-table" style="margin-bottom:12px">
+                  <thead><tr><th></th><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+                  <tbody id="returnItemsBody"></tbody>
+                </table>
+                <div style="text-align:right;font-family:system-ui,sans-serif;font-size:.9rem">
+                  <strong>Original Total: <span id="returnOrigTotal"></span></strong>
+                </div>
+              </div>
+              <div style="margin-top:12px;text-align:right">
+                <button class="btn btn-confirm" style="background:var(--danger)" onclick="addReturnItemsToCart()">Select All for Return</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Cart side -->
@@ -823,6 +858,8 @@ function updateCartTotals() {
 }
 
 // ─── Mode Toggle ────────────────────────────────────────────────────────────
+let returnOriginalTx = null;
+
 function setMode(mode) {
   currentMode = mode;
   document.getElementById('modesale').className = mode === 'sale' ? 'active' : '';
@@ -831,6 +868,97 @@ function setMode(mode) {
   const btn = document.getElementById('checkoutBtn');
   btn.className = `checkout-btn ${mode}`;
   btn.textContent = mode === 'sale' ? 'Complete Sale' : 'Process Return';
+
+  // Toggle views
+  document.getElementById('saleView').style.display = mode === 'sale' ? 'block' : 'none';
+  document.getElementById('returnView').style.display = mode === 'return' ? 'block' : 'none';
+
+  if (mode === 'return') {
+    // Clear cart and reset return lookup
+    cart = [];
+    renderCart();
+    returnOriginalTx = null;
+    document.getElementById('returnReceiptInput').value = '';
+    document.getElementById('returnLookupResult').style.display = 'none';
+    document.getElementById('returnLookupError').style.display = 'none';
+    document.getElementById('returnReceiptInput').focus();
+  } else {
+    returnOriginalTx = null;
+  }
+}
+
+async function lookupReceipt() {
+  const receiptNum = document.getElementById('returnReceiptInput').value.trim();
+  if (!receiptNum) return;
+
+  const errorEl = document.getElementById('returnLookupError');
+  const resultEl = document.getElementById('returnLookupResult');
+  errorEl.style.display = 'none';
+  resultEl.style.display = 'none';
+
+  try {
+    const resp = await fetch(`${API}/api/pos/transactions/receipt/${encodeURIComponent(receiptNum)}`, { credentials: 'include' });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+
+    const tx = data.transaction;
+    if (tx.type !== 'sale') throw new Error('Can only return against a sale receipt');
+
+    // Check 14-day window
+    const saleDate = new Date(tx.created_at);
+    const daysSince = (Date.now() - saleDate.getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSince > 14) {
+      throw new Error(`Return window expired. Sale was ${Math.floor(daysSince)} days ago (14-day limit).`);
+    }
+
+    returnOriginalTx = tx;
+    const daysLeft = Math.max(0, Math.ceil(14 - daysSince));
+
+    document.getElementById('returnOrigReceipt').textContent = tx.receipt_number;
+    document.getElementById('returnOrigDate').textContent = saleDate.toLocaleDateString();
+    document.getElementById('returnOrigCustomer').textContent = tx.customer_name ? `Customer: ${tx.customer_name}` : '';
+    document.getElementById('returnOrigDaysLeft').innerHTML = `<span style="color:${daysLeft <= 3 ? 'var(--danger)' : 'var(--success)'}">${daysLeft} day${daysLeft !== 1 ? 's' : ''} left to return</span>`;
+    document.getElementById('returnOrigTotal').textContent = `$${tx.total.toFixed(2)}`;
+
+    document.getElementById('returnItemsBody').innerHTML = tx.items.map((item, i) => `
+      <tr>
+        <td><input type="checkbox" checked data-idx="${i}" class="return-item-cb" style="width:16px;height:16px;accent-color:var(--danger)"></td>
+        <td>${item.product_name}<br><span style="font-size:.72rem;color:var(--mid)">${item.brand}</span></td>
+        <td>${item.quantity}</td>
+        <td>$${item.unit_price.toFixed(2)}</td>
+        <td>$${item.line_total.toFixed(2)}</td>
+      </tr>
+    `).join('');
+
+    // Pre-fill customer info
+    document.getElementById('custName').value = tx.customer_name || '';
+    document.getElementById('custEmail').value = tx.customer_email || '';
+
+    resultEl.style.display = 'block';
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.style.display = 'block';
+  }
+}
+
+function addReturnItemsToCart() {
+  if (!returnOriginalTx) return;
+  cart = [];
+  const checkboxes = document.querySelectorAll('.return-item-cb');
+  checkboxes.forEach(cb => {
+    if (cb.checked) {
+      const item = returnOriginalTx.items[parseInt(cb.dataset.idx)];
+      cart.push({
+        product_id: item.product_id,
+        product_name: item.product_name,
+        brand: item.brand,
+        unit_price: item.unit_price,
+        quantity: item.quantity,
+        discount: 0,
+      });
+    }
+  });
+  renderCart();
 }
 
 // ─── Payment ────────────────────────────────────────────────────────────────
@@ -859,6 +987,7 @@ async function processTransaction() {
     })),
     payment_method: paymentMethod,
     discount_amount: discountVal,
+    original_receipt: returnOriginalTx?.receipt_number || null,
   };
 
   try {
@@ -872,12 +1001,18 @@ async function processTransaction() {
     if (!resp.ok) throw new Error(data.error);
     lastTransaction = data.transaction;
     showReceipt(data.transaction);
-    // Reset cart
+    // Reset cart and return state
     cart = [];
     renderCart();
     document.getElementById('custName').value = '';
     document.getElementById('custEmail').value = '';
     document.getElementById('discountInput').value = '';
+    if (currentMode === 'return') {
+      returnOriginalTx = null;
+      document.getElementById('returnReceiptInput').value = '';
+      document.getElementById('returnLookupResult').style.display = 'none';
+      document.getElementById('returnLookupError').style.display = 'none';
+    }
   } catch (err) {
     alert('Transaction failed: ' + err.message);
   }
@@ -897,6 +1032,7 @@ function showReceipt(tx) {
     <div class="r-line"></div>
     <div class="r-row"><span>Receipt #:</span><span>${tx.receipt_number}</span></div>
     <div class="r-row"><span>Date:</span><span>${date}</span></div>
+    ${tx.original_sale_date ? `<div class="r-row"><span>Orig. Sale:</span><span>${new Date(tx.original_sale_date).toLocaleDateString()}</span></div>` : ''}
     ${tx.employee_name ? `<div class="r-row"><span>Employee:</span><span>${tx.employee_name}</span></div>` : ''}
     ${tx.customer_name ? `<div class="r-row"><span>Customer:</span><span>${tx.customer_name}</span></div>` : ''}
     <div class="r-line"></div>

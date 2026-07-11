@@ -8,6 +8,9 @@ const path = require('path');
 const posSchema = fs.readFileSync(path.join(__dirname, 'pos-schema.sql'), 'utf8');
 db.exec(posSchema);
 
+// Migrations
+try { db.exec("ALTER TABLE pos_transactions ADD COLUMN original_sale_date DATETIME"); } catch (_) { /* already exists */ }
+
 // ─── Employees ──────────────────────────────────────────────────────────────
 
 function getEmployees(userId) {
@@ -114,8 +117,8 @@ function createTransaction(txData) {
     INSERT INTO pos_transactions
       (type, employee_id, customer_id, customer_name, customer_email,
        subtotal, tax_rate, tax_amount, discount_amount, total,
-       payment_method, notes, receipt_number, original_transaction_id, user_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       payment_method, notes, receipt_number, original_transaction_id, original_sale_date, user_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     txData.type || 'sale',
     txData.employee_id || null,
@@ -131,6 +134,7 @@ function createTransaction(txData) {
     txData.notes || '',
     receiptNumber,
     txData.original_transaction_id || null,
+    txData.original_sale_date || null,
     txData.user_id
   );
   return { id: result.lastInsertRowid, receipt_number: receiptNumber };
@@ -197,6 +201,7 @@ function getTransactions(userId, opts = {}) {
 // ─── Reports ────────────────────────────────────────────────────────────────
 
 function getSalesReport(userId, startDate, endDate) {
+  // Returns are attributed to the original sale date, not the return date
   const summary = db.prepare(`
     SELECT
       COUNT(CASE WHEN type = 'sale' THEN 1 END) as total_sales,
@@ -206,13 +211,16 @@ function getSalesReport(userId, startDate, endDate) {
       COALESCE(SUM(CASE WHEN type = 'sale' THEN total ELSE -total END), 0) as net_revenue,
       COALESCE(SUM(CASE WHEN type = 'sale' THEN tax_amount ELSE -tax_amount END), 0) as net_tax
     FROM pos_transactions
-    WHERE user_id = ? AND created_at >= ? AND created_at <= ?
+    WHERE user_id = ?
+      AND COALESCE(original_sale_date, created_at) >= ?
+      AND COALESCE(original_sale_date, created_at) <= ?
   `).get(userId, startDate, endDate);
 
   return summary;
 }
 
 function getEmployeeSalesReport(userId, startDate, endDate) {
+  // Returns attributed to original sale date for commission accuracy
   return db.prepare(`
     SELECT
       e.id as employee_id,
@@ -224,7 +232,9 @@ function getEmployeeSalesReport(userId, startDate, endDate) {
       COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.total ELSE -t.total END), 0) as net_total
     FROM pos_employees e
     LEFT JOIN pos_transactions t ON e.id = t.employee_id
-      AND t.user_id = ? AND t.created_at >= ? AND t.created_at <= ?
+      AND t.user_id = ?
+      AND COALESCE(t.original_sale_date, t.created_at) >= ?
+      AND COALESCE(t.original_sale_date, t.created_at) <= ?
     WHERE e.user_id = ?
     GROUP BY e.id
     ORDER BY net_total DESC
@@ -241,7 +251,9 @@ function getTopProductsReport(userId, startDate, endDate) {
       SUM(CASE WHEN t.type = 'sale' THEN ti.line_total ELSE -ti.line_total END) as revenue
     FROM pos_transaction_items ti
     JOIN pos_transactions t ON ti.transaction_id = t.id
-    WHERE t.user_id = ? AND t.created_at >= ? AND t.created_at <= ?
+    WHERE t.user_id = ?
+      AND COALESCE(t.original_sale_date, t.created_at) >= ?
+      AND COALESCE(t.original_sale_date, t.created_at) <= ?
     GROUP BY ti.product_id
     ORDER BY revenue DESC
   `).all(userId, startDate, endDate);
@@ -256,7 +268,9 @@ function getCustomerReport(userId, startDate, endDate) {
       COUNT(CASE WHEN type = 'return' THEN 1 END) as returns,
       COALESCE(SUM(CASE WHEN type = 'sale' THEN total ELSE -total END), 0) as total_spent
     FROM pos_transactions
-    WHERE user_id = ? AND created_at >= ? AND created_at <= ?
+    WHERE user_id = ?
+      AND COALESCE(original_sale_date, created_at) >= ?
+      AND COALESCE(original_sale_date, created_at) <= ?
       AND customer_name != ''
     GROUP BY customer_email
     ORDER BY total_spent DESC
