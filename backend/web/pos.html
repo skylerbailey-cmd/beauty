@@ -218,30 +218,16 @@
     /* ── Receipt modal ─── */
     .receipt-modal .modal { max-width: 420px; }
     .receipt {
-      font-family: 'Courier New', monospace; font-size: .82rem; line-height: 1.6;
-      border: 1px dashed var(--border); padding: 20px; margin-bottom: 20px; background: var(--cream);
+      font-family: 'Courier New', monospace; font-size: .88rem; line-height: 1.7;
+      border: 1px solid var(--border); padding: 24px; margin-bottom: 20px; background: #fff;
+      color: #1a1a1a;
     }
     .receipt .r-center { text-align: center; }
-    .receipt .r-line { border-bottom: 1px dashed var(--mid); margin: 8px 0; }
-    .receipt .r-row { display: flex; justify-content: space-between; }
-    .receipt .r-total { font-weight: bold; font-size: .95rem; }
+    .receipt .r-line { border-bottom: 1px dashed #999; margin: 10px 0; }
+    .receipt .r-row { display: flex; justify-content: space-between; font-weight: 500; }
+    .receipt .r-total { font-weight: 900; font-size: 1.05rem; color: #000; }
     .receipt-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .receipt-actions .btn { flex: 1; min-width: 120px; padding: 10px 16px; border-radius: 8px; font-family: system-ui, sans-serif; font-size: .85rem; font-weight: 600; cursor: pointer; border: none; text-align: center; }
-
-    /* ── Employee clock-in modal ─── */
-    .pin-display { text-align: center; margin: 20px 0; }
-    .pin-dots { display: flex; gap: 12px; justify-content: center; margin-bottom: 20px; }
-    .pin-dot { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--border); }
-    .pin-dot.filled { background: var(--rose); border-color: var(--rose); }
-    .pin-pad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 240px; margin: 0 auto; }
-    .pin-key {
-      padding: 14px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--white);
-      font-size: 1.2rem; font-weight: 600; cursor: pointer; transition: all .15s; text-align: center;
-      font-family: system-ui, sans-serif;
-    }
-    .pin-key:hover { background: var(--rose-lt); border-color: var(--rose); }
-    .pin-key:active { background: var(--rose); color: white; }
-    .pin-error { color: var(--danger); font-family: system-ui, sans-serif; font-size: .85rem; text-align: center; margin-top: 12px; }
 
     /* ── Reports panel ─── */
     .reports-panel { display: none; }
@@ -427,11 +413,6 @@
       <!-- Products side -->
       <div class="pos-products">
         <div class="pos-topbar">
-          <div class="employee-badge" id="employeeBadge" style="display:none">
-            <span id="employeeName"></span>
-            <button onclick="clockOutEmployee()" style="margin-left:8px;background:none;border:none;cursor:pointer;color:var(--danger);font-size:.78rem;text-decoration:underline">Clock Out</button>
-          </div>
-          <button onclick="showClockInModal()" class="btn-confirm" style="padding:6px 14px;border-radius:8px;font-size:.82rem;border:none;cursor:pointer;font-family:system-ui,sans-serif" id="clockInBtn">Clock In</button>
           <div class="mode-toggle">
             <button class="active" id="modesale" onclick="setMode('sale')">Sale</button>
             <button id="modereturn" onclick="setMode('return')">Return</button>
@@ -490,6 +471,14 @@
             <input type="text" id="custName" placeholder="Customer name (optional)">
             <input type="email" id="custEmail" placeholder="Customer email (optional)">
           </div>
+          <!-- Employee assignment -->
+          <div class="employee-assign" style="margin-bottom:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <label style="font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid)">Employees</label>
+              <button onclick="addEmployeeToSale()" style="background:none;border:none;cursor:pointer;color:var(--rose);font-family:system-ui,sans-serif;font-size:.78rem;text-decoration:underline">+ Add</button>
+            </div>
+            <div id="saleEmployees"></div>
+          </div>
           <div class="cart-totals">
             <div class="cart-row"><span>Subtotal</span><span id="cartSubtotal">$0.00</span></div>
             <div class="cart-row"><span>Tax (8.75%)</span><span id="cartTax">$0.00</span></div>
@@ -544,7 +533,7 @@
       <div class="report-card">
         <h3>Employee Commissions & Sales</h3>
         <table class="report-table">
-          <thead><tr><th>Employee</th><th>Sales</th><th>Returns</th><th>Gross Sales</th><th>Returns Total</th><th>Net Sales</th></tr></thead>
+          <thead><tr><th>Employee</th><th>Sales</th><th>Returns</th><th>Sales Commission</th><th>Returns</th><th>Net Commission</th></tr></thead>
           <tbody id="empReportBody"></tbody>
         </table>
       </div>
@@ -654,22 +643,6 @@
         <div class="emp-list" id="empList"></div>
       </div>
 
-      <!-- Clock History -->
-      <div class="report-card" style="margin-top:16px">
-        <h3>Clock History</h3>
-        <div class="date-range">
-          <label>From:</label>
-          <input type="date" id="clockStart">
-          <label>To:</label>
-          <input type="date" id="clockEnd">
-          <button class="btn btn-confirm" onclick="loadClockEntries()">Filter</button>
-        </div>
-        <table class="report-table">
-          <thead><tr><th>Employee</th><th>Clock In</th><th>Clock Out</th><th>Hours</th></tr></thead>
-          <tbody id="clockBody"></tbody>
-        </table>
-      </div>
-
       <!-- Sign Out -->
       <div style="margin-top:24px;text-align:center">
         <a href="#" onclick="logout(); return false;" style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--rose-dk);text-decoration:none" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
@@ -690,37 +663,6 @@
           <button class="btn btn-confirm" onclick="savePrices()">Save All Prices</button>
         </div>
       </div>
-    </div>
-  </div>
-</div>
-
-<!-- ─── Clock-in Modal ─── -->
-<div class="modal-overlay" id="clockInModal">
-  <div class="modal" style="max-width:360px">
-    <h2 style="text-align:center">Employee Clock In</h2>
-    <p class="sub" style="text-align:center">Enter your PIN</p>
-    <div class="pin-display">
-      <div class="pin-dots" id="pinDots">
-        <div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div><div class="pin-dot"></div>
-      </div>
-    </div>
-    <div class="pin-pad" id="pinPad">
-      <button class="pin-key" onclick="pinInput('1')">1</button>
-      <button class="pin-key" onclick="pinInput('2')">2</button>
-      <button class="pin-key" onclick="pinInput('3')">3</button>
-      <button class="pin-key" onclick="pinInput('4')">4</button>
-      <button class="pin-key" onclick="pinInput('5')">5</button>
-      <button class="pin-key" onclick="pinInput('6')">6</button>
-      <button class="pin-key" onclick="pinInput('7')">7</button>
-      <button class="pin-key" onclick="pinInput('8')">8</button>
-      <button class="pin-key" onclick="pinInput('9')">9</button>
-      <button class="pin-key" onclick="pinClear()" style="font-size:.9rem">CLR</button>
-      <button class="pin-key" onclick="pinInput('0')">0</button>
-      <button class="pin-key" onclick="pinSubmit()" style="font-size:.9rem;background:var(--rose);color:white;border-color:var(--rose)">OK</button>
-    </div>
-    <div class="pin-error" id="pinError"></div>
-    <div class="modal-actions" style="justify-content:center">
-      <button class="btn btn-cancel" onclick="hideClockInModal()">Cancel</button>
     </div>
   </div>
 </div>
@@ -779,12 +721,13 @@
 // ─── State ──────────────────────────────────────────────────────────────────
 let products = [];
 let cart = [];
-let currentMode = 'sale'; // 'sale' or 'return'
-let currentEmployee = null;
+let currentMode = 'sale';
 let paymentMethod = 'card';
 let activeBrand = null;
 let lastTransaction = null;
 let currentPin = '';
+let saleEmployees = []; // [{employee_id, name, commission_type, commission_value}]
+let allEmployees = [];
 
 const API = '';
 
@@ -945,6 +888,16 @@ function changeQty(idx, delta) {
   renderCart();
 }
 
+function editCartPrice(idx) {
+  const item = cart[idx];
+  const newPrice = prompt(`Edit price for ${item.product_name}:`, item.unit_price.toFixed(2));
+  if (newPrice === null) return;
+  const parsed = parseFloat(newPrice);
+  if (isNaN(parsed) || parsed < 0) return;
+  cart[idx].unit_price = parsed;
+  renderCart();
+}
+
 function renderCart() {
   const container = document.getElementById('cartItems');
   if (cart.length === 0) {
@@ -961,7 +914,7 @@ function renderCart() {
           <span>${item.quantity}</span>
           <button onclick="changeQty(${i}, 1)">+</button>
         </div>
-        <div class="ci-price">$${(item.unit_price * item.quantity).toFixed(2)}</div>
+        <div class="ci-price" onclick="editCartPrice(${i})" style="cursor:pointer" title="Click to edit price">$${(item.unit_price * item.quantity).toFixed(2)}</div>
         <button class="ci-remove" onclick="removeFromCart(${i})">&times;</button>
       </div>
     `).join('');
@@ -1094,9 +1047,21 @@ function setPayment(method) {
 async function processTransaction() {
   if (cart.length === 0) return;
 
+  // Read employee commission values from the form
+  const empInputs = document.querySelectorAll('#saleEmployees .emp-assign-row');
+  const employeeAssignments = [];
+  empInputs.forEach(row => {
+    const empId = parseInt(row.dataset.empId);
+    const type = row.querySelector('.emp-comm-type')?.value || 'percent';
+    const val = parseFloat(row.querySelector('.emp-comm-val')?.value) || 0;
+    if (empId && val > 0) {
+      employeeAssignments.push({ employee_id: empId, commission_type: type, commission_value: val });
+    }
+  });
+
   const body = {
     type: currentMode,
-    employee_id: currentEmployee?.id || null,
+    employees: employeeAssignments.length > 0 ? employeeAssignments : undefined,
     customer_name: document.getElementById('custName').value.trim(),
     customer_email: document.getElementById('custEmail').value.trim(),
     items: cart.map(i => ({
@@ -1121,8 +1086,10 @@ async function processTransaction() {
     if (!resp.ok) throw new Error(data.error);
     lastTransaction = data.transaction;
     showReceipt(data.transaction);
-    // Reset cart and return state
+    // Reset cart, employees, and return state
     cart = [];
+    saleEmployees = [];
+    renderSaleEmployees();
     renderCart();
     document.getElementById('custName').value = '';
     document.getElementById('custEmail').value = '';
@@ -1153,7 +1120,7 @@ function showReceipt(tx) {
     <div class="r-row"><span>Receipt #:</span><span>${tx.receipt_number}</span></div>
     <div class="r-row"><span>Date:</span><span>${date}</span></div>
     ${tx.original_sale_date ? `<div class="r-row"><span>Orig. Sale:</span><span>${new Date(tx.original_sale_date).toLocaleDateString()}</span></div>` : ''}
-    ${tx.employee_name ? `<div class="r-row"><span>Employee:</span><span>${tx.employee_name}</span></div>` : ''}
+    ${tx.employees && tx.employees.length > 0 ? tx.employees.map(e => `<div class="r-row"><span>Employee:</span><span>${e.employee_name}</span></div>`).join('') : (tx.employee_name ? `<div class="r-row"><span>Employee:</span><span>${tx.employee_name}</span></div>` : '')}
     ${tx.customer_name ? `<div class="r-row"><span>Customer:</span><span>${tx.customer_name}</span></div>` : ''}
     <div class="r-line"></div>
   `;
@@ -1243,91 +1210,60 @@ function closeReceipt() {
   document.getElementById('receiptModal').classList.remove('show');
 }
 
-// ─── Employee Clock In/Out ──────────────────────────────────────────────────
-function showClockInModal() {
-  currentPin = '';
-  updatePinDots();
-  document.getElementById('pinError').textContent = '';
-  document.getElementById('clockInModal').classList.add('show');
-}
-
-function hideClockInModal() {
-  document.getElementById('clockInModal').classList.remove('show');
-}
-
-function pinInput(digit) {
-  if (currentPin.length >= 6) return;
-  currentPin += digit;
-  updatePinDots();
-}
-
-function pinClear() {
-  currentPin = '';
-  updatePinDots();
-  document.getElementById('pinError').textContent = '';
-}
-
-function updatePinDots() {
-  const dots = document.getElementById('pinDots').children;
-  for (let i = 0; i < dots.length; i++) {
-    dots[i].classList.toggle('filled', i < currentPin.length);
-  }
-}
-
-async function pinSubmit() {
-  if (currentPin.length < 4) {
-    document.getElementById('pinError').textContent = 'Enter at least 4 digits';
+// ─── Employee Assignment ────────────────────────────────────────────────────
+function addEmployeeToSale() {
+  if (allEmployees.length === 0) {
+    alert('No employees found. Add employees in the Settings tab first.');
     return;
   }
-
-  try {
-    const resp = await fetch(`${API}/api/pos/employees/verify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ pin: currentPin }),
-    });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error);
-
-    currentEmployee = data.employee;
-
-    // Clock them in
-    await fetch(`${API}/api/pos/clock/in`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({ employee_id: currentEmployee.id }),
-    });
-
-    document.getElementById('employeeBadge').style.display = 'inline-flex';
-    document.getElementById('employeeName').textContent = currentEmployee.name;
-    document.getElementById('clockInBtn').style.display = 'none';
-    hideClockInModal();
-  } catch (err) {
-    document.getElementById('pinError').textContent = err.message || 'Invalid PIN';
-    currentPin = '';
-    updatePinDots();
+  // Add first available employee not already assigned
+  const assigned = saleEmployees.map(e => e.employee_id);
+  const available = allEmployees.filter(e => e.active && !assigned.includes(e.id));
+  if (available.length === 0) {
+    alert('All employees are already assigned to this sale.');
+    return;
   }
+  saleEmployees.push({
+    employee_id: available[0].id,
+    name: available[0].name,
+    commission_type: 'percent',
+    commission_value: saleEmployees.length === 0 ? 100 : 50,
+  });
+  renderSaleEmployees();
 }
 
-async function clockOutEmployee() {
-  if (!currentEmployee) return;
-  await fetch(`${API}/api/pos/clock/out`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ employee_id: currentEmployee.id }),
-  });
-  currentEmployee = null;
-  document.getElementById('employeeBadge').style.display = 'none';
-  document.getElementById('clockInBtn').style.display = 'inline-block';
+function removeEmployeeFromSale(idx) {
+  saleEmployees.splice(idx, 1);
+  renderSaleEmployees();
+}
+
+function renderSaleEmployees() {
+  const container = document.getElementById('saleEmployees');
+  const activeEmps = allEmployees.filter(e => e.active);
+  if (saleEmployees.length === 0) {
+    container.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);padding:4px 0">No employees assigned</div>';
+    return;
+  }
+  container.innerHTML = saleEmployees.map((se, i) => `
+    <div class="emp-assign-row" data-emp-id="${se.employee_id}" style="display:flex;gap:6px;align-items:center;margin-bottom:6px;font-family:system-ui,sans-serif;font-size:.82rem">
+      <select onchange="saleEmployees[${i}].employee_id=parseInt(this.value);saleEmployees[${i}].name=this.options[this.selectedIndex].text" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none">
+        ${activeEmps.map(e => `<option value="${e.id}" ${e.id === se.employee_id ? 'selected' : ''}>${e.name}</option>`).join('')}
+      </select>
+      <select class="emp-comm-type" onchange="saleEmployees[${i}].commission_type=this.value" style="width:55px;padding:6px 4px;border:1px solid var(--border);border-radius:6px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none">
+        <option value="percent" ${se.commission_type === 'percent' ? 'selected' : ''}>%</option>
+        <option value="dollar" ${se.commission_type === 'dollar' ? 'selected' : ''}>$</option>
+      </select>
+      <input type="number" class="emp-comm-val" value="${se.commission_value}" min="0" step="1" onchange="saleEmployees[${i}].commission_value=parseFloat(this.value)" style="width:65px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:.82rem;text-align:right;outline:none">
+      <button onclick="removeEmployeeFromSale(${i})" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:1.1rem;padding:2px 4px">&times;</button>
+    </div>
+  `).join('');
 }
 
 // ─── Employees Management ───────────────────────────────────────────────────
 async function loadEmployees() {
   const resp = await fetch(`${API}/api/pos/employees`, { credentials: 'include' });
   const data = await resp.json();
+  allEmployees = data.employees || [];
   const list = document.getElementById('empList');
   if (!data.employees || data.employees.length === 0) {
     list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--mid);font-family:system-ui,sans-serif">No employees yet. Add one above.</div>';
@@ -1372,23 +1308,6 @@ async function toggleEmployee(id, currentlyActive) {
 }
 
 // ─── Clock History ──────────────────────────────────────────────────────────
-async function loadClockEntries() {
-  const start = document.getElementById('clockStart').value;
-  const end = document.getElementById('clockEnd').value;
-  const resp = await fetch(`${API}/api/pos/clock/entries?start=${start}T00:00:00&end=${end}T23:59:59`, { credentials: 'include' });
-  const data = await resp.json();
-  const body = document.getElementById('clockBody');
-  body.innerHTML = (data.entries || []).map(e => {
-    const hours = e.clock_out ? ((new Date(e.clock_out) - new Date(e.clock_in)) / 3600000).toFixed(1) : 'Active';
-    return `<tr>
-      <td>${e.employee_name}</td>
-      <td>${new Date(e.clock_in).toLocaleString()}</td>
-      <td>${e.clock_out ? new Date(e.clock_out).toLocaleString() : '<em>Still clocked in</em>'}</td>
-      <td>${hours}${typeof hours === 'string' ? '' : 'h'}</td>
-    </tr>`;
-  }).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--mid)">No entries</td></tr>';
-}
-
 // ─── Prices ─────────────────────────────────────────────────────────────────
 function renderPrices() {
   const list = document.getElementById('priceList');
@@ -1445,7 +1364,7 @@ async function loadTransactions() {
       <td style="font-family:monospace">${tx.receipt_number}</td>
       <td>${new Date(tx.created_at).toLocaleString()}</td>
       <td><span class="tx-type-${tx.type}">${tx.type.toUpperCase()}</span></td>
-      <td>${tx.employee_name || '-'}</td>
+      <td>${tx.employees && tx.employees.length > 0 ? tx.employees.map(e => e.employee_name).join(', ') : '-'}</td>
       <td>${tx.customer_name || '-'}</td>
       <td>${tx.items.length}</td>
       <td style="font-weight:600">$${tx.total.toFixed(2)}</td>
@@ -1534,7 +1453,7 @@ function switchTab(tabName) {
 
   if (tabName === 'history') loadTransactions();
   if (tabName === 'reports') loadReports();
-  if (tabName === 'settings') { loadEmployees(); loadClockEntries(); loadStoreSettings(); }
+  if (tabName === 'settings') { loadEmployees(); loadStoreSettings(); }
   if (tabName === 'prices') renderPrices();
 }
 

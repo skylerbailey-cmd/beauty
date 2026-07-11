@@ -83,6 +83,21 @@ CREATE TABLE IF NOT EXISTS pos_transaction_items (
 CREATE INDEX IF NOT EXISTS idx_pos_items_tx ON pos_transaction_items(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_pos_items_product ON pos_transaction_items(product_id);
 
+-- Transaction employee commissions (multi-employee support)
+CREATE TABLE IF NOT EXISTS pos_transaction_employees (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  transaction_id INTEGER NOT NULL,
+  employee_id INTEGER NOT NULL,
+  commission_type TEXT DEFAULT 'percent',
+  commission_value REAL DEFAULT 100,
+  commission_amount REAL DEFAULT 0,
+  FOREIGN KEY (transaction_id) REFERENCES pos_transactions(id),
+  FOREIGN KEY (employee_id) REFERENCES pos_employees(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_pos_tx_emp_tx ON pos_transaction_employees(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_pos_tx_emp_emp ON pos_transaction_employees(employee_id);
+
 -- POS store settings
 CREATE TABLE IF NOT EXISTS pos_settings (
   user_id TEXT PRIMARY KEY,

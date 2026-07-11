@@ -120,7 +120,7 @@ router.get('/clock/entries', (req, res) => {
 
 router.post('/transactions', (req, res) => {
   const userId = req.session.userId;
-  const { type, employee_id, customer_name, customer_email, items, payment_method, notes, tax_rate, discount_amount, original_receipt } = req.body;
+  const { type, employee_id, employees: employeeAssignments, customer_name, customer_email, items, payment_method, notes, tax_rate, discount_amount, original_receipt } = req.body;
 
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'At least one item required' });
@@ -185,6 +185,34 @@ router.post('/transactions', (req, res) => {
   }));
 
   posDb.addTransactionItems(id, txItems);
+
+  // Record employee commissions
+  if (employeeAssignments && employeeAssignments.length > 0) {
+    const empRecords = employeeAssignments.map(ea => {
+      let commissionAmount = 0;
+      if (ea.commission_type === 'dollar') {
+        commissionAmount = ea.commission_value || 0;
+      } else {
+        // percent of total
+        commissionAmount = Math.round(total * (ea.commission_value || 100) / 100 * 100) / 100;
+      }
+      return {
+        employee_id: ea.employee_id,
+        commission_type: ea.commission_type || 'percent',
+        commission_value: ea.commission_value || 100,
+        commission_amount: commissionAmount,
+      };
+    });
+    posDb.addTransactionEmployees(id, empRecords);
+  } else if (employee_id) {
+    // Legacy single employee — give them 100%
+    posDb.addTransactionEmployees(id, [{
+      employee_id,
+      commission_type: 'percent',
+      commission_value: 100,
+      commission_amount: total,
+    }]);
+  }
 
   // Also record in CRM if customer info provided and it's a sale
   if (type !== 'return' && customer_email) {

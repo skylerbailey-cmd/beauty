@@ -160,10 +160,30 @@ function addTransactionItems(transactionId, items) {
   }
 }
 
+function addTransactionEmployees(transactionId, employees) {
+  const stmt = db.prepare(`
+    INSERT INTO pos_transaction_employees (transaction_id, employee_id, commission_type, commission_value, commission_amount)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  for (const emp of employees) {
+    stmt.run(transactionId, emp.employee_id, emp.commission_type || 'percent', emp.commission_value || 100, emp.commission_amount || 0);
+  }
+}
+
+function getTransactionEmployees(transactionId) {
+  return db.prepare(`
+    SELECT te.*, e.name as employee_name
+    FROM pos_transaction_employees te
+    JOIN pos_employees e ON te.employee_id = e.id
+    WHERE te.transaction_id = ?
+  `).all(transactionId);
+}
+
 function getTransaction(id) {
   const tx = db.prepare('SELECT * FROM pos_transactions WHERE id = ?').get(id);
   if (!tx) return null;
   tx.items = db.prepare('SELECT * FROM pos_transaction_items WHERE transaction_id = ?').all(id);
+  tx.employees = getTransactionEmployees(id);
   return tx;
 }
 
@@ -195,7 +215,8 @@ function getTransactions(userId, opts = {}) {
   `).all(...params);
 
   const itemStmt = db.prepare('SELECT * FROM pos_transaction_items WHERE transaction_id = ?');
-  return transactions.map(tx => ({ ...tx, items: itemStmt.all(tx.id) }));
+  const empStmt = db.prepare('SELECT te.*, e.name as employee_name FROM pos_transaction_employees te JOIN pos_employees e ON te.employee_id = e.id WHERE te.transaction_id = ?');
+  return transactions.map(tx => ({ ...tx, items: itemStmt.all(tx.id), employees: empStmt.all(tx.id) }));
 }
 
 // ─── Reports ────────────────────────────────────────────────────────────────
@@ -220,18 +241,19 @@ function getSalesReport(userId, startDate, endDate) {
 }
 
 function getEmployeeSalesReport(userId, startDate, endDate) {
-  // Returns attributed to original sale date for commission accuracy
+  // Use commission table for multi-employee support
   return db.prepare(`
     SELECT
       e.id as employee_id,
       e.name as employee_name,
-      COUNT(CASE WHEN t.type = 'sale' THEN 1 END) as sale_count,
-      COUNT(CASE WHEN t.type = 'return' THEN 1 END) as return_count,
-      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.total ELSE 0 END), 0) as sales_total,
-      COALESCE(SUM(CASE WHEN t.type = 'return' THEN t.total ELSE 0 END), 0) as returns_total,
-      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.total ELSE -t.total END), 0) as net_total
+      COUNT(DISTINCT CASE WHEN t.type = 'sale' THEN t.id END) as sale_count,
+      COUNT(DISTINCT CASE WHEN t.type = 'return' THEN t.id END) as return_count,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN te.commission_amount ELSE 0 END), 0) as sales_total,
+      COALESCE(SUM(CASE WHEN t.type = 'return' THEN te.commission_amount ELSE 0 END), 0) as returns_total,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN te.commission_amount ELSE -te.commission_amount END), 0) as net_total
     FROM pos_employees e
-    LEFT JOIN pos_transactions t ON e.id = t.employee_id
+    LEFT JOIN pos_transaction_employees te ON e.id = te.employee_id
+    LEFT JOIN pos_transactions t ON te.transaction_id = t.id
       AND t.user_id = ?
       AND COALESCE(t.original_sale_date, t.created_at) >= ?
       AND COALESCE(t.original_sale_date, t.created_at) <= ?
@@ -320,6 +342,7 @@ module.exports = {
   getProductPrice,
   createTransaction,
   addTransactionItems,
+  addTransactionEmployees,
   getTransaction,
   getTransactionByReceipt,
   getTransactions,
