@@ -82,3 +82,11 @@ CREATE TABLE IF NOT EXISTS pos_transaction_items (
 
 CREATE INDEX IF NOT EXISTS idx_pos_items_tx ON pos_transaction_items(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_pos_items_product ON pos_transaction_items(product_id);
+
+-- POS store settings
+CREATE TABLE IF NOT EXISTS pos_settings (
+  user_id TEXT PRIMARY KEY,
+  store_name TEXT DEFAULT '',
+  receipt_footer TEXT DEFAULT 'Thank you for your purchase!',
+  timezone TEXT DEFAULT 'America/Los_Angeles'
+);

@@ -105,10 +105,10 @@ function getProductPrice(productId, userId) {
 // ─── Transactions ───────────────────────────────────────────────────────────
 
 function generateReceiptNumber() {
-  const now = new Date();
-  const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-  const rand = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-  return `R${dateStr}-${rand}`;
+  // Simple incrementing receipt number per store
+  const last = db.prepare('SELECT MAX(CAST(receipt_number AS INTEGER)) as num FROM pos_transactions WHERE receipt_number GLOB \'[0-9]*\'').get();
+  const next = (last?.num || 1000) + 1;
+  return String(next);
 }
 
 function createTransaction(txData) {
@@ -277,6 +277,34 @@ function getCustomerReport(userId, startDate, endDate) {
   `).all(userId, startDate, endDate);
 }
 
+// ─── Settings ───────────────────────────────────────────────────────────────
+
+function getSettings(userId) {
+  let settings = db.prepare('SELECT * FROM pos_settings WHERE user_id = ?').get(userId);
+  if (!settings) {
+    db.prepare('INSERT INTO pos_settings (user_id) VALUES (?)').run(userId);
+    settings = db.prepare('SELECT * FROM pos_settings WHERE user_id = ?').get(userId);
+  }
+  return settings;
+}
+
+function updateSettings(userId, fields) {
+  const allowed = ['store_name', 'receipt_footer', 'timezone'];
+  const sets = [];
+  const params = [];
+  for (const key of allowed) {
+    if (fields[key] !== undefined) {
+      sets.push(`${key} = ?`);
+      params.push(fields[key]);
+    }
+  }
+  if (sets.length === 0) return;
+  params.push(userId);
+  // Ensure row exists
+  db.prepare('INSERT OR IGNORE INTO pos_settings (user_id) VALUES (?)').run(userId);
+  db.prepare(`UPDATE pos_settings SET ${sets.join(', ')} WHERE user_id = ?`).run(...params);
+}
+
 module.exports = {
   getEmployees,
   getEmployee,
@@ -299,4 +327,6 @@ module.exports = {
   getEmployeeSalesReport,
   getTopProductsReport,
   getCustomerReport,
+  getSettings,
+  updateSettings,
 };

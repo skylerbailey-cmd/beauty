@@ -311,20 +311,7 @@
       }
     }
 
-    /* ── Settings panel ─── */
-    .settings-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 999; display: none; }
-    .settings-overlay.open { display: block; }
-    .settings-panel {
-      position: fixed; top: 0; right: -380px; width: 360px; max-width: 90vw; height: 100vh;
-      background: var(--white); box-shadow: -4px 0 24px rgba(0,0,0,.12); z-index: 1000;
-      transition: right .3s ease; padding: 32px 28px; overflow-y: auto; font-family: system-ui, sans-serif;
-    }
-    .settings-panel.open { right: 0; }
-    .settings-panel h3 { font-size: 1.1rem; color: var(--dark); margin-bottom: 6px; }
-    .settings-panel .settings-sub { font-size: .82rem; color: var(--mid); margin-bottom: 24px; }
-    .settings-close { position: absolute; top: 16px; right: 16px; background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--mid); padding: 4px 8px; }
-    .settings-close:hover { color: var(--dark); }
-    .settings-section-label { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--mid); margin-bottom: 12px; }
+    /* ── Theme options ─── */
     .theme-options { display: flex; flex-direction: column; gap: 12px; }
     .theme-option { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 2px solid var(--border); border-radius: 12px; cursor: pointer; transition: all .2s; background: var(--white); }
     .theme-option:hover { border-color: var(--mid); }
@@ -409,54 +396,9 @@
         </button>
         <div class="company-switcher-menu" id="companySwitcherMenu"></div>
       </div>
-      <span style="font-size:18px;color:var(--mid);flex-shrink:0;cursor:pointer;padding:4px" title="Settings" onclick="toggleSettings()">&#9881;</span>
     </div>
   </div>
 </header>
-
-<!-- Settings Panel -->
-<div class="settings-overlay" id="settingsOverlay" onclick="toggleSettings()"></div>
-<div class="settings-panel" id="settingsPanel">
-  <button class="settings-close" onclick="toggleSettings()">&times;</button>
-  <h3>Settings</h3>
-  <p class="settings-sub">Customize your POS experience</p>
-
-  <div class="settings-section-label">Company</div>
-  <div style="display:flex;gap:8px;margin-bottom:24px;">
-    <input type="text" id="settingsCompanyName" placeholder="Company name" style="flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark);" />
-    <button class="btn btn-confirm" style="padding:10px 18px;font-size:.82rem;" onclick="saveCompanyName()">Save</button>
-  </div>
-
-  <div class="settings-section-label">Theme</div>
-  <div class="theme-options">
-    <div class="theme-option active" data-theme="rose" onclick="selectTheme('rose')">
-      <div class="theme-swatch"><span style="background:#c97d8a"></span><span style="background:#f2dde2"></span><span style="background:#c9a96e"></span></div>
-      <div><div class="theme-label">Rose &amp; Gold</div><div class="theme-desc">Classic pink, rose, and gold tones</div></div>
-    </div>
-    <div class="theme-option" data-theme="earth" onclick="selectTheme('earth')">
-      <div class="theme-swatch"><span style="background:#5a8a7d"></span><span style="background:#dceee9"></span><span style="background:#a0855b"></span></div>
-      <div><div class="theme-label">Earth &amp; Turquoise</div><div class="theme-desc">Brown, teal, and natural earth tones</div></div>
-    </div>
-    <div class="theme-option" data-theme="lavender" onclick="selectTheme('lavender')">
-      <div class="theme-swatch"><span style="background:#8b7bb5"></span><span style="background:#eee9f7"></span><span style="background:#b0a0d0"></span></div>
-      <div><div class="theme-label">Lavender Spa</div><div class="theme-desc">Soft purple, lilac, and calming violet tones</div></div>
-    </div>
-    <div class="theme-option" data-theme="ocean" onclick="selectTheme('ocean')">
-      <div class="theme-swatch"><span style="background:#3d7a8a"></span><span style="background:#daeef3"></span><span style="background:#5a9aaa"></span></div>
-      <div><div class="theme-label">Ocean Breeze</div><div class="theme-desc">Deep teal, aqua, and coastal blue tones</div></div>
-    </div>
-    <div class="theme-option" data-theme="sage" onclick="selectTheme('sage')">
-      <div class="theme-swatch"><span style="background:#6b8f71"></span><span style="background:#e2ede4"></span><span style="background:#8aaa8e"></span></div>
-      <div><div class="theme-label">Sage Garden</div><div class="theme-desc">Muted green, herbal, and botanical tones</div></div>
-    </div>
-  </div>
-
-  <div style="margin-top:32px;padding-top:20px;border-top:1px solid var(--border)">
-    <a href="#" onclick="logout(); return false;" style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.85rem;color:var(--rose-dk);text-decoration:none" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
-      <span style="font-size:16px">&#8594;</span> Sign out
-    </a>
-  </div>
-</div>
 
 <!-- ── Login gate ─── -->
 <div id="loginGate" style="display:none;max-width:400px;margin:80px auto;padding:0 20px">
@@ -475,8 +417,8 @@
     <button class="active" onclick="switchTab('register')">Register</button>
     <button onclick="switchTab('history')">Transactions</button>
     <button onclick="switchTab('reports')">Reports</button>
-    <button onclick="switchTab('employees')">Employees</button>
     <button onclick="switchTab('prices')">Prices</button>
+    <button onclick="switchTab('settings')">Settings</button>
   </div>
 
   <!-- ─── REGISTER TAB ─── -->
@@ -625,11 +567,80 @@
     </div>
   </div>
 
-  <!-- ─── EMPLOYEES TAB ─── -->
-  <div class="tab-content" id="tab-employees">
+  <!-- ─── SETTINGS TAB ─── -->
+  <div class="tab-content" id="tab-settings">
     <div style="max-width:700px;margin:0 auto;padding:20px">
+
+      <!-- Store Settings -->
       <div class="report-card">
-        <h3>Manage Employees</h3>
+        <h3>Store Settings</h3>
+        <div class="field" style="margin-bottom:16px">
+          <label style="display:block;font-family:system-ui,sans-serif;font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Store Name</label>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="settingsStoreName" placeholder="Your store name" style="flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
+            <button class="btn btn-confirm" style="padding:10px 18px;font-size:.82rem" onclick="saveStoreSettings()">Save</button>
+          </div>
+        </div>
+        <div class="field" style="margin-bottom:16px">
+          <label style="display:block;font-family:system-ui,sans-serif;font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Receipt Footer Text</label>
+          <input type="text" id="settingsReceiptFooter" placeholder="Thank you for your purchase!" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
+        </div>
+        <div class="field" style="margin-bottom:16px">
+          <label style="display:block;font-family:system-ui,sans-serif;font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Timezone</label>
+          <select id="settingsTimezone" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
+            <option value="America/Los_Angeles">Pacific Time (Los Angeles)</option>
+            <option value="America/Denver">Mountain Time (Denver)</option>
+            <option value="America/Chicago">Central Time (Chicago)</option>
+            <option value="America/New_York">Eastern Time (New York)</option>
+            <option value="America/Anchorage">Alaska Time</option>
+            <option value="Pacific/Honolulu">Hawaii Time</option>
+            <option value="Europe/London">London (GMT)</option>
+            <option value="Europe/Paris">Paris (CET)</option>
+            <option value="Asia/Tokyo">Tokyo (JST)</option>
+            <option value="Asia/Dubai">Dubai (GST)</option>
+            <option value="Asia/Jerusalem">Israel (IST)</option>
+          </select>
+        </div>
+        <div class="field" style="margin-bottom:0">
+          <label style="display:block;font-family:system-ui,sans-serif;font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Company Name</label>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="settingsCompanyName" placeholder="Company name" style="flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
+            <button class="btn btn-confirm" style="padding:10px 18px;font-size:.82rem" onclick="saveCompanyName()">Save</button>
+          </div>
+          <p style="font-family:system-ui,sans-serif;font-size:.75rem;color:var(--mid);margin-top:4px">This is the company name used across all apps.</p>
+        </div>
+      </div>
+
+      <!-- Theme -->
+      <div class="report-card" style="margin-top:16px">
+        <h3>Theme</h3>
+        <div class="theme-options">
+          <div class="theme-option active" data-theme="rose" onclick="selectTheme('rose')">
+            <div class="theme-swatch"><span style="background:#c97d8a"></span><span style="background:#f2dde2"></span><span style="background:#c9a96e"></span></div>
+            <div><div class="theme-label">Rose &amp; Gold</div><div class="theme-desc">Classic pink, rose, and gold tones</div></div>
+          </div>
+          <div class="theme-option" data-theme="earth" onclick="selectTheme('earth')">
+            <div class="theme-swatch"><span style="background:#5a8a7d"></span><span style="background:#dceee9"></span><span style="background:#a0855b"></span></div>
+            <div><div class="theme-label">Earth &amp; Turquoise</div><div class="theme-desc">Brown, teal, and natural earth tones</div></div>
+          </div>
+          <div class="theme-option" data-theme="lavender" onclick="selectTheme('lavender')">
+            <div class="theme-swatch"><span style="background:#8b7bb5"></span><span style="background:#eee9f7"></span><span style="background:#b0a0d0"></span></div>
+            <div><div class="theme-label">Lavender Spa</div><div class="theme-desc">Soft purple, lilac, and calming violet tones</div></div>
+          </div>
+          <div class="theme-option" data-theme="ocean" onclick="selectTheme('ocean')">
+            <div class="theme-swatch"><span style="background:#3d7a8a"></span><span style="background:#daeef3"></span><span style="background:#5a9aaa"></span></div>
+            <div><div class="theme-label">Ocean Breeze</div><div class="theme-desc">Deep teal, aqua, and coastal blue tones</div></div>
+          </div>
+          <div class="theme-option" data-theme="sage" onclick="selectTheme('sage')">
+            <div class="theme-swatch"><span style="background:#6b8f71"></span><span style="background:#e2ede4"></span><span style="background:#8aaa8e"></span></div>
+            <div><div class="theme-label">Sage Garden</div><div class="theme-desc">Muted green, herbal, and botanical tones</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Employees -->
+      <div class="report-card" style="margin-top:16px">
+        <h3>Employees</h3>
         <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:16px">Add employees and manage their clock-in PINs.</p>
         <div style="display:flex;gap:8px;margin-bottom:16px">
           <input type="text" id="newEmpName" placeholder="Employee name" style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none">
@@ -643,6 +654,7 @@
         <div class="emp-list" id="empList"></div>
       </div>
 
+      <!-- Clock History -->
       <div class="report-card" style="margin-top:16px">
         <h3>Clock History</h3>
         <div class="date-range">
@@ -656,6 +668,13 @@
           <thead><tr><th>Employee</th><th>Clock In</th><th>Clock Out</th><th>Hours</th></tr></thead>
           <tbody id="clockBody"></tbody>
         </table>
+      </div>
+
+      <!-- Sign Out -->
+      <div style="margin-top:24px;text-align:center">
+        <a href="#" onclick="logout(); return false;" style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--rose-dk);text-decoration:none" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+          Sign out
+        </a>
       </div>
     </div>
   </div>
@@ -738,14 +757,15 @@
     <h2 style="text-align:center" id="receiptModalTitle">Sale Complete!</h2>
     <div class="receipt" id="receiptContent"></div>
     <div class="receipt-actions">
-      <button class="btn" style="background:var(--rose);color:white" onclick="printReceipt()">Print Receipt</button>
+      <button class="btn" style="background:var(--rose);color:white" onclick="printReceipt()">Print</button>
       <button class="btn" style="background:var(--gold);color:white" onclick="emailReceipt()">Email Receipt</button>
+      <button class="btn" style="background:var(--success);color:white" id="sendInstructionsBtn" onclick="showInstructionsForm()">Send Instructions</button>
       <button class="btn btn-cancel" onclick="closeReceipt()">Done</button>
     </div>
     <div id="emailReceiptForm" style="display:none;margin-top:12px">
       <div style="display:flex;gap:8px">
         <input type="email" id="receiptEmail" placeholder="Customer email" style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
-        <button class="btn btn-confirm" onclick="sendReceiptEmail()">Send</button>
+        <button class="btn btn-confirm" id="emailSendBtn" onclick="sendReceiptEmailOrInstructions()">Send Receipt</button>
       </div>
       <div id="emailStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
     </div>
@@ -797,6 +817,7 @@ async function init() {
     document.getElementById('posMain').style.display = 'block';
     loadProducts();
     loadEmployees();
+    loadStoreSettings();
 
     const today = new Date().toISOString().slice(0, 10);
     const thirtyAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -1121,8 +1142,9 @@ function showReceipt(tx) {
   const title = tx.type === 'return' ? 'Return Processed!' : 'Sale Complete!';
   document.getElementById('receiptModalTitle').textContent = title;
 
-  const companyName = document.getElementById('headerCompany').textContent || 'Glow SF';
-  const date = new Date(tx.created_at).toLocaleString();
+  const companyName = storeSettings.store_name || document.getElementById('headerCompany').textContent || 'Glow SF';
+  const tz = storeSettings.timezone || 'America/Los_Angeles';
+  const date = new Date(tx.created_at).toLocaleString('en-US', { timeZone: tz });
 
   let html = `
     <div class="r-center"><strong>${companyName}</strong></div>
@@ -1149,13 +1171,14 @@ function showReceipt(tx) {
     <div class="r-row r-total"><span>TOTAL:</span><span>$${tx.total.toFixed(2)}</span></div>
     <div class="r-row"><span>Payment:</span><span>${tx.payment_method.toUpperCase()}</span></div>
     <div class="r-line"></div>
-    <div class="r-center" style="font-size:.75rem;margin-top:8px">Thank you for your purchase!</div>
+    <div class="r-center" style="font-size:.75rem;margin-top:8px">${storeSettings.receipt_footer || 'Thank you for your purchase!'}</div>
   `;
 
   document.getElementById('receiptContent').innerHTML = html;
   document.getElementById('receiptEmail').value = tx.customer_email || '';
   document.getElementById('emailReceiptForm').style.display = 'none';
   document.getElementById('emailStatus').textContent = '';
+  document.getElementById('sendInstructionsBtn').style.display = tx.type === 'return' ? 'none' : '';
   document.getElementById('receiptModal').classList.add('show');
 }
 
@@ -1168,12 +1191,25 @@ function printReceipt() {
   setTimeout(() => { printEl.style.display = 'none'; }, 500);
 }
 
-function emailReceipt() {
+let emailMode = 'receipt'; // 'receipt' or 'instructions'
+
+function showInstructionsForm() {
+  emailMode = 'instructions';
   const form = document.getElementById('emailReceiptForm');
-  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  form.style.display = 'block';
+  document.getElementById('emailSendBtn').textContent = 'Send Instructions';
+  document.getElementById('emailStatus').textContent = '';
 }
 
-async function sendReceiptEmail() {
+function emailReceipt() {
+  emailMode = 'receipt';
+  const form = document.getElementById('emailReceiptForm');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  document.getElementById('emailSendBtn').textContent = 'Send Receipt';
+  document.getElementById('emailStatus').textContent = '';
+}
+
+async function sendReceiptEmailOrInstructions() {
   const email = document.getElementById('receiptEmail').value.trim();
   if (!email || !lastTransaction) return;
 
@@ -1181,8 +1217,12 @@ async function sendReceiptEmail() {
   statusEl.textContent = 'Sending...';
   statusEl.style.color = 'var(--mid)';
 
+  const endpoint = emailMode === 'instructions'
+    ? `${API}/api/pos/transactions/${lastTransaction.id}/instructions`
+    : `${API}/api/pos/transactions/${lastTransaction.id}/email`;
+
   try {
-    const resp = await fetch(`${API}/api/pos/transactions/${lastTransaction.id}/email`, {
+    const resp = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
@@ -1190,7 +1230,8 @@ async function sendReceiptEmail() {
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error);
-    statusEl.textContent = `Receipt sent to ${email}`;
+    const label = emailMode === 'instructions' ? 'Instructions' : 'Receipt';
+    statusEl.textContent = `${label} sent to ${email}`;
     statusEl.style.color = 'var(--success)';
   } catch (err) {
     statusEl.textContent = 'Failed: ' + err.message;
@@ -1493,7 +1534,7 @@ function switchTab(tabName) {
 
   if (tabName === 'history') loadTransactions();
   if (tabName === 'reports') loadReports();
-  if (tabName === 'employees') { loadEmployees(); loadClockEntries(); }
+  if (tabName === 'settings') { loadEmployees(); loadClockEntries(); loadStoreSettings(); }
   if (tabName === 'prices') renderPrices();
 }
 
@@ -1509,10 +1550,35 @@ document.addEventListener('click', e => {
   }
 });
 
-// ─── Settings ───────────────────────────────────────────────────────────────
-function toggleSettings() {
-  document.getElementById('settingsPanel').classList.toggle('open');
-  document.getElementById('settingsOverlay').classList.toggle('open');
+// ─── Store Settings ─────────────────────────────────────────────────────────
+let storeSettings = { store_name: '', receipt_footer: 'Thank you for your purchase!', timezone: 'America/Los_Angeles' };
+
+async function loadStoreSettings() {
+  try {
+    const resp = await fetch(`${API}/api/pos/settings`, { credentials: 'include' });
+    const data = await resp.json();
+    storeSettings = data.settings || storeSettings;
+    document.getElementById('settingsStoreName').value = storeSettings.store_name || '';
+    document.getElementById('settingsReceiptFooter').value = storeSettings.receipt_footer || '';
+    document.getElementById('settingsTimezone').value = storeSettings.timezone || 'America/Los_Angeles';
+  } catch (_) {}
+}
+
+async function saveStoreSettings() {
+  const store_name = document.getElementById('settingsStoreName').value.trim();
+  const receipt_footer = document.getElementById('settingsReceiptFooter').value.trim();
+  const timezone = document.getElementById('settingsTimezone').value;
+  try {
+    const resp = await fetch(`${API}/api/pos/settings`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ store_name, receipt_footer, timezone }),
+    });
+    const data = await resp.json();
+    storeSettings = data.settings || storeSettings;
+    // Flash success
+    const btn = document.querySelector('#tab-settings .btn-confirm');
+    if (btn) { btn.textContent = 'Saved!'; setTimeout(() => { btn.textContent = 'Save'; }, 1500); }
+  } catch (err) { alert('Failed to save: ' + err.message); }
 }
 
 function applyTheme(theme) {

@@ -222,6 +222,41 @@ router.get('/transactions/receipt/:number', (req, res) => {
   res.json({ transaction: tx });
 });
 
+// ─── Gmail helper ─────────────────────────────────────────────────────────
+
+async function sendGmail(user, toEmail, subject, htmlBody) {
+  const { google } = require('googleapis');
+  const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI
+  );
+  oauth2Client.setCredentials({ refresh_token: user.refresh_token });
+
+  const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+  const fromName = user.company_name || user.email;
+  const raw = [
+    `From: "${fromName}" <${user.email}>`,
+    `To: ${toEmail}`,
+    `Subject: ${subject}`,
+    'Content-Type: text/html; charset=utf-8',
+    'MIME-Version: 1.0',
+    '',
+    htmlBody,
+  ].join('\r\n');
+
+  const encoded = Buffer.from(raw)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+
+  await gmail.users.messages.send({
+    userId: 'me',
+    requestBody: { raw: encoded },
+  });
+}
+
 // ─── Email Receipt ─────────────────────────────────────────────────────────
 
 router.post('/transactions/:id/email', async (req, res) => {
@@ -233,7 +268,16 @@ router.post('/transactions/:id/email', async (req, res) => {
 
   const { getUser } = require('../db');
   const user = getUser(req.session.userId);
-  const companyName = user?.company_name || 'Glow SF';
+  if (!user?.refresh_token) {
+    return res.status(403).json({ error: 'Gmail not connected. Please connect Gmail via the Welcome Emails page first.' });
+  }
+
+  const settings = posDb.getSettings(req.session.userId);
+  const storeName = settings.store_name || user.company_name || 'Glow SF';
+  const footer = settings.receipt_footer || 'Thank you for your purchase!';
+  const tz = settings.timezone || 'America/Los_Angeles';
+
+  const dateStr = new Date(tx.created_at).toLocaleString('en-US', { timeZone: tz, year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
   const itemRows = tx.items.map(i =>
     `<tr><td style="padding:8px;border-bottom:1px solid #eee">${i.product_name}</td>` +
@@ -245,12 +289,12 @@ router.post('/transactions/:id/email', async (req, res) => {
   const html = `
     <div style="max-width:500px;margin:0 auto;font-family:Georgia,serif;color:#2c2022">
       <div style="text-align:center;padding:24px 0;border-bottom:2px solid #c97d8a">
-        <h1 style="margin:0;font-size:1.4rem;color:#9e5567">${companyName}</h1>
+        <h1 style="margin:0;font-size:1.4rem;color:#9e5567">${storeName}</h1>
         <p style="margin:4px 0 0;font-size:.85rem;color:#6b5057">${tx.type === 'return' ? 'Return Receipt' : 'Sales Receipt'}</p>
       </div>
       <div style="padding:20px 0">
         <p style="font-size:.85rem;color:#6b5057;margin:0 0 4px">Receipt #: <strong>${tx.receipt_number}</strong></p>
-        <p style="font-size:.85rem;color:#6b5057;margin:0 0 16px">Date: ${new Date(tx.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+        <p style="font-size:.85rem;color:#6b5057;margin:0 0 16px">Date: ${dateStr}</p>
         <table style="width:100%;border-collapse:collapse;font-size:.88rem">
           <thead><tr style="background:#f2dde2">
             <th style="padding:8px;text-align:left">Item</th>
@@ -262,51 +306,93 @@ router.post('/transactions/:id/email', async (req, res) => {
         </table>
         <div style="margin-top:16px;text-align:right;font-size:.9rem">
           <p style="margin:4px 0">Subtotal: <strong>$${tx.subtotal.toFixed(2)}</strong></p>
-          ${tx.discount_amount > 0 ? `<p style="margin:4px 0;color:#c97d8a">Discount: -$${tx.discount_amount.toFixed(2)}</p>` : ''}
           <p style="margin:4px 0">Tax: <strong>$${tx.tax_amount.toFixed(2)}</strong></p>
           <p style="margin:8px 0 0;font-size:1.1rem;color:#9e5567"><strong>Total: $${tx.total.toFixed(2)}</strong></p>
         </div>
         <p style="margin-top:16px;font-size:.82rem;color:#6b5057">Payment: ${tx.payment_method}</p>
       </div>
       <div style="text-align:center;padding:16px 0;border-top:1px solid #e8d5d9;font-size:.8rem;color:#6b5057">
-        Thank you for your purchase!
+        ${footer}
       </div>
     </div>
   `;
 
   try {
-    const { google } = require('googleapis');
-    const oauth2Client = new (require('googleapis').auth.OAuth2)(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET
-    );
-    oauth2Client.setCredentials({
-      access_token: user.access_token,
-      refresh_token: user.refresh_token,
-    });
-
-    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-    const subject = `${tx.type === 'return' ? 'Return' : 'Sales'} Receipt - ${tx.receipt_number} | ${companyName}`;
-    const raw = [
-      `From: ${user.email}`,
-      `To: ${email}`,
-      `Subject: ${subject}`,
-      'MIME-Version: 1.0',
-      'Content-Type: text/html; charset=utf-8',
-      '',
-      html,
-    ].join('\r\n');
-
-    const encoded = Buffer.from(raw).toString('base64url');
-    await gmail.users.messages.send({
-      userId: 'me',
-      requestBody: { raw: encoded },
-    });
-
+    const subject = `${tx.type === 'return' ? 'Return' : 'Sales'} Receipt #${tx.receipt_number} | ${storeName}`;
+    await sendGmail(user, email, subject, html);
     res.json({ ok: true, sent_to: email });
   } catch (err) {
     console.error('[pos] Email receipt error:', err.message);
     res.status(500).json({ error: 'Failed to send receipt email: ' + err.message });
+  }
+});
+
+// ─── Email Product Instructions ─────────────────────────────────────────────
+
+router.post('/transactions/:id/instructions', async (req, res) => {
+  const tx = posDb.getTransaction(parseInt(req.params.id));
+  if (!tx) return res.status(404).json({ error: 'Transaction not found' });
+
+  const email = req.body.email || tx.customer_email;
+  if (!email) return res.status(400).json({ error: 'Email address required' });
+
+  const { getUser } = require('../db');
+  const user = getUser(req.session.userId);
+  if (!user?.refresh_token) {
+    return res.status(403).json({ error: 'Gmail not connected. Please connect Gmail via the Welcome Emails page first.' });
+  }
+
+  const settings = posDb.getSettings(req.session.userId);
+  const storeName = settings.store_name || user.company_name || 'Glow SF';
+
+  // Look up product instructions from the catalog
+  const allProducts = [];
+  for (const [, products] of Object.entries(PRODUCTS)) {
+    for (const p of products) allProducts.push(p);
+  }
+
+  const instructionSections = tx.items.map(item => {
+    const catalogProduct = allProducts.find(p => p.id === item.product_id);
+    if (!catalogProduct) return '';
+    return `
+      <div style="margin-bottom:24px;padding:20px;border:1px solid #e8d5d9;border-radius:12px;background:#fdf9f5">
+        <h3 style="margin:0 0 4px;font-size:1rem;color:#9e5567">${catalogProduct.name}</h3>
+        <p style="margin:0 0 12px;font-size:.78rem;color:#6b5057;font-style:italic">${catalogProduct.brand}</p>
+        ${catalogProduct.howToUse ? `<div style="margin-bottom:12px"><strong style="font-size:.82rem;color:#2c2022">How to Use:</strong><p style="margin:4px 0 0;font-size:.88rem;color:#2c2022;line-height:1.6">${catalogProduct.howToUse}</p></div>` : ''}
+        ${catalogProduct.benefits ? `<div><strong style="font-size:.82rem;color:#2c2022">Benefits:</strong><p style="margin:4px 0 0;font-size:.85rem;color:#6b5057;line-height:1.5">${catalogProduct.benefits}</p></div>` : ''}
+        ${catalogProduct.frequency ? `<p style="margin:8px 0 0;font-size:.82rem;color:#9e5567"><strong>Recommended frequency:</strong> ${catalogProduct.frequency}</p>` : ''}
+      </div>
+    `;
+  }).filter(Boolean).join('');
+
+  if (!instructionSections) {
+    return res.status(400).json({ error: 'No product instructions available for items in this transaction' });
+  }
+
+  const html = `
+    <div style="max-width:600px;margin:0 auto;font-family:Georgia,serif;color:#2c2022">
+      <div style="text-align:center;padding:24px 0;border-bottom:2px solid #c97d8a">
+        <h1 style="margin:0;font-size:1.4rem;color:#9e5567">${storeName}</h1>
+        <p style="margin:4px 0 0;font-size:.85rem;color:#6b5057">Your Product Instructions</p>
+      </div>
+      <div style="padding:24px 0">
+        <p style="font-size:.92rem;color:#2c2022;margin:0 0 20px;line-height:1.5">
+          Thank you for your purchase! Here are the usage instructions for your products.
+        </p>
+        ${instructionSections}
+      </div>
+      <div style="text-align:center;padding:16px 0;border-top:1px solid #e8d5d9;font-size:.8rem;color:#6b5057">
+        Questions? Reply to this email and we'll be happy to help.
+      </div>
+    </div>
+  `;
+
+  try {
+    await sendGmail(user, email, `Your Product Instructions | ${storeName}`, html);
+    res.json({ ok: true, sent_to: email });
+  } catch (err) {
+    console.error('[pos] Instructions email error:', err.message);
+    res.status(500).json({ error: 'Failed to send instructions email: ' + err.message });
   }
 });
 
@@ -338,6 +424,17 @@ router.get('/reports/customers', (req, res) => {
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
   res.json({ report: posDb.getCustomerReport(req.session.userId, startDate, endDate) });
+});
+
+// ─── Settings ──────────────────────────────────────────────────────────────
+
+router.get('/settings', (req, res) => {
+  res.json({ settings: posDb.getSettings(req.session.userId) });
+});
+
+router.post('/settings', (req, res) => {
+  posDb.updateSettings(req.session.userId, req.body);
+  res.json({ settings: posDb.getSettings(req.session.userId) });
 });
 
 // ─── Customer Lookup ───────────────────────────────────────────────────────
