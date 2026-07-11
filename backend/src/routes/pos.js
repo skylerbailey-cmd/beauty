@@ -35,7 +35,8 @@ router.get('/products', (req, res) => {
         brand: prod.brand || brandKey,
         description: prod.description,
         image: prod.image,
-        price: priceEntry?.price ?? 0,
+        retailPrice: prod.retailPrice || 0,
+        price: priceEntry?.price ?? prod.retailPrice ?? 0,
         cost: priceEntry?.cost ?? 0,
       });
     }
