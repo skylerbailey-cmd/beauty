@@ -631,9 +631,12 @@
         <input type="number" id="priceEditInput" step="0.01" min="0" style="font-size:1.2rem;font-weight:600;padding:12px 14px" autofocus>
       </div>
     </div>
-    <div class="modal-actions">
-      <button class="btn btn-cancel" onclick="closePriceEdit()">Cancel</button>
-      <button class="btn btn-confirm" onclick="confirmPriceEdit()">Add to Cart</button>
+    <div class="modal-actions" style="justify-content:space-between">
+      <button class="btn" style="background:var(--cream);color:var(--mid);border:1.5px dashed var(--border)" onclick="document.getElementById('priceEditInput').value='0';confirmPriceEdit()">Free ($0)</button>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-cancel" onclick="closePriceEdit()">Cancel</button>
+        <button class="btn btn-confirm" onclick="confirmPriceEdit()">Add to Cart</button>
+      </div>
     </div>
   </div>
 </div>
@@ -774,7 +777,7 @@ function closePriceEdit() {
 
 function confirmPriceEdit() {
   const price = parseFloat(document.getElementById('priceEditInput').value);
-  if (!pendingProduct || isNaN(price) || price <= 0) {
+  if (!pendingProduct || isNaN(price) || price < 0) {
     alert('Please enter a valid price.');
     return;
   }
