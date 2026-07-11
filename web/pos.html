@@ -163,7 +163,6 @@
     .cart-totals { margin-bottom: 12px; }
     .cart-row { display: flex; justify-content: space-between; font-size: .85rem; margin-bottom: 4px; color: var(--mid); }
     .cart-row.total { font-size: 1.1rem; font-weight: 700; color: var(--dark); margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
-    .cart-row.discount { color: var(--danger); }
 
     .customer-section { margin-bottom: 12px; }
     .customer-section input {
@@ -192,13 +191,6 @@
     .checkout-btn.return { background: var(--danger); }
     .checkout-btn.return:hover { background: #b55555; }
     .checkout-btn:disabled { opacity: .5; cursor: not-allowed; }
-
-    .discount-row { display: flex; gap: 8px; margin-bottom: 12px; }
-    .discount-row input {
-      flex: 1; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px;
-      font-size: .85rem; font-family: system-ui, sans-serif; outline: none;
-    }
-    .discount-row input:focus { border-color: var(--rose); }
 
     /* ── Modals ─── */
     .modal-overlay {
@@ -319,6 +311,58 @@
       }
     }
 
+    /* ── Settings panel ─── */
+    .settings-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.3); z-index: 999; display: none; }
+    .settings-overlay.open { display: block; }
+    .settings-panel {
+      position: fixed; top: 0; right: -380px; width: 360px; max-width: 90vw; height: 100vh;
+      background: var(--white); box-shadow: -4px 0 24px rgba(0,0,0,.12); z-index: 1000;
+      transition: right .3s ease; padding: 32px 28px; overflow-y: auto; font-family: system-ui, sans-serif;
+    }
+    .settings-panel.open { right: 0; }
+    .settings-panel h3 { font-size: 1.1rem; color: var(--dark); margin-bottom: 6px; }
+    .settings-panel .settings-sub { font-size: .82rem; color: var(--mid); margin-bottom: 24px; }
+    .settings-close { position: absolute; top: 16px; right: 16px; background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--mid); padding: 4px 8px; }
+    .settings-close:hover { color: var(--dark); }
+    .settings-section-label { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--mid); margin-bottom: 12px; }
+    .theme-options { display: flex; flex-direction: column; gap: 12px; }
+    .theme-option { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 2px solid var(--border); border-radius: 12px; cursor: pointer; transition: all .2s; background: var(--white); }
+    .theme-option:hover { border-color: var(--mid); }
+    .theme-option.active { border-color: var(--rose); background: var(--rose-lt); }
+    .theme-swatch { display: flex; gap: 4px; flex-shrink: 0; }
+    .theme-swatch span { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(0,0,0,.08); }
+    .theme-label { font-size: .88rem; font-weight: 600; color: var(--dark); }
+    .theme-desc { font-size: .75rem; color: var(--mid); margin-top: 2px; }
+
+    /* ── Company switcher ─── */
+    .company-switcher { position: relative; display: inline-block; }
+    .company-switcher-btn {
+      display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+      border: 1.5px solid var(--border); border-radius: 10px; background: var(--white);
+      cursor: pointer; font-family: system-ui, sans-serif; transition: all .2s; min-width: 0;
+    }
+    .company-switcher-btn:hover { border-color: var(--rose); background: var(--cream); }
+    .company-switcher-btn .cs-company { font-weight: 600; font-size: .85rem; color: var(--dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+    .company-switcher-btn .cs-email { font-size: .72rem; color: var(--mid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+    .company-switcher-btn .cs-arrow { color: var(--mid); font-size: 10px; flex-shrink: 0; }
+    .company-switcher-menu {
+      display: none; position: absolute; top: calc(100% + 4px); right: 0; min-width: 260px;
+      background: var(--white); border: 1.5px solid var(--border); border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.12); z-index: 200; padding: 6px 0; font-family: system-ui, sans-serif;
+    }
+    .company-switcher-menu.show { display: block; }
+    .cs-account { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; transition: background .15s; }
+    .cs-account:hover { background: var(--cream); }
+    .cs-account.active { background: var(--rose-lt); }
+    .cs-account .cs-check { width: 18px; flex-shrink: 0; text-align: center; color: var(--rose-dk); font-size: 14px; }
+    .cs-account-info { min-width: 0; flex: 1; }
+    .cs-account-info .cs-name { font-weight: 600; font-size: .85rem; color: var(--dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cs-account-info .cs-addr { font-size: .75rem; color: var(--mid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cs-divider { border-top: 1px solid var(--border); margin: 4px 0; }
+    .cs-action { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; font-size: .85rem; color: var(--rose-dk); transition: background .15s; }
+    .cs-action:hover { background: var(--cream); }
+    .cs-action .cs-icon { width: 18px; text-align: center; font-size: 16px; flex-shrink: 0; }
+
     /* ── Responsive ─── */
     @media (max-width: 768px) {
       .pos-layout { flex-direction: column; height: auto; }
@@ -354,14 +398,65 @@
     <p id="headerSub">Sales & receipts</p>
   </div>
   <div id="headerUser" style="display:none;font-family:system-ui,sans-serif;font-size:.82rem;text-align:right;">
-    <div>
-      <span id="headerCompany" style="color:var(--dark);font-weight:600"></span><br>
-      <span id="headerEmail" style="color:var(--mid);font-size:.75rem"></span>
-      <span style="color:var(--border);margin:0 4px">|</span>
-      <a href="#" onclick="logout();return false" style="color:var(--rose-dk);text-decoration:underline;font-size:.75rem">Sign out</a>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div class="company-switcher" id="companySwitcher">
+        <button type="button" class="company-switcher-btn" onclick="toggleCompanySwitcher()">
+          <div style="text-align:left;min-width:0">
+            <div class="cs-company" id="headerCompany"></div>
+            <div class="cs-email" id="headerEmail"></div>
+          </div>
+          <span class="cs-arrow">&#9660;</span>
+        </button>
+        <div class="company-switcher-menu" id="companySwitcherMenu"></div>
+      </div>
+      <span style="font-size:18px;color:var(--mid);flex-shrink:0;cursor:pointer;padding:4px" title="Settings" onclick="toggleSettings()">&#9881;</span>
     </div>
   </div>
 </header>
+
+<!-- Settings Panel -->
+<div class="settings-overlay" id="settingsOverlay" onclick="toggleSettings()"></div>
+<div class="settings-panel" id="settingsPanel">
+  <button class="settings-close" onclick="toggleSettings()">&times;</button>
+  <h3>Settings</h3>
+  <p class="settings-sub">Customize your POS experience</p>
+
+  <div class="settings-section-label">Company</div>
+  <div style="display:flex;gap:8px;margin-bottom:24px;">
+    <input type="text" id="settingsCompanyName" placeholder="Company name" style="flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark);" />
+    <button class="btn btn-confirm" style="padding:10px 18px;font-size:.82rem;" onclick="saveCompanyName()">Save</button>
+  </div>
+
+  <div class="settings-section-label">Theme</div>
+  <div class="theme-options">
+    <div class="theme-option active" data-theme="rose" onclick="selectTheme('rose')">
+      <div class="theme-swatch"><span style="background:#c97d8a"></span><span style="background:#f2dde2"></span><span style="background:#c9a96e"></span></div>
+      <div><div class="theme-label">Rose &amp; Gold</div><div class="theme-desc">Classic pink, rose, and gold tones</div></div>
+    </div>
+    <div class="theme-option" data-theme="earth" onclick="selectTheme('earth')">
+      <div class="theme-swatch"><span style="background:#5a8a7d"></span><span style="background:#dceee9"></span><span style="background:#a0855b"></span></div>
+      <div><div class="theme-label">Earth &amp; Turquoise</div><div class="theme-desc">Brown, teal, and natural earth tones</div></div>
+    </div>
+    <div class="theme-option" data-theme="lavender" onclick="selectTheme('lavender')">
+      <div class="theme-swatch"><span style="background:#8b7bb5"></span><span style="background:#eee9f7"></span><span style="background:#b0a0d0"></span></div>
+      <div><div class="theme-label">Lavender Spa</div><div class="theme-desc">Soft purple, lilac, and calming violet tones</div></div>
+    </div>
+    <div class="theme-option" data-theme="ocean" onclick="selectTheme('ocean')">
+      <div class="theme-swatch"><span style="background:#3d7a8a"></span><span style="background:#daeef3"></span><span style="background:#5a9aaa"></span></div>
+      <div><div class="theme-label">Ocean Breeze</div><div class="theme-desc">Deep teal, aqua, and coastal blue tones</div></div>
+    </div>
+    <div class="theme-option" data-theme="sage" onclick="selectTheme('sage')">
+      <div class="theme-swatch"><span style="background:#6b8f71"></span><span style="background:#e2ede4"></span><span style="background:#8aaa8e"></span></div>
+      <div><div class="theme-label">Sage Garden</div><div class="theme-desc">Muted green, herbal, and botanical tones</div></div>
+    </div>
+  </div>
+
+  <div style="margin-top:32px;padding-top:20px;border-top:1px solid var(--border)">
+    <a href="#" onclick="logout(); return false;" style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.85rem;color:var(--rose-dk);text-decoration:none" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+      <span style="font-size:16px">&#8594;</span> Sign out
+    </a>
+  </div>
+</div>
 
 <!-- ── Login gate ─── -->
 <div id="loginGate" style="display:none;max-width:400px;margin:80px auto;padding:0 20px">
@@ -453,12 +548,8 @@
             <input type="text" id="custName" placeholder="Customer name (optional)">
             <input type="email" id="custEmail" placeholder="Customer email (optional)">
           </div>
-          <div class="discount-row">
-            <input type="number" id="discountInput" placeholder="Discount $" min="0" step="0.01" value="" oninput="updateCartTotals()">
-          </div>
           <div class="cart-totals">
             <div class="cart-row"><span>Subtotal</span><span id="cartSubtotal">$0.00</span></div>
-            <div class="cart-row discount" id="discountRow" style="display:none"><span>Discount</span><span id="cartDiscount">-$0.00</span></div>
             <div class="cart-row"><span>Tax (8.75%)</span><span id="cartTax">$0.00</span></div>
             <div class="cart-row total"><span>Total</span><span id="cartTotal">$0.00</span></div>
           </div>
@@ -677,22 +768,36 @@ let currentPin = '';
 
 const API = '';
 
+// ─── State ──────────────────────────────────────────────────────────────────
+let currentUser = null;
+
 // ─── Init ───────────────────────────────────────────────────────────────────
 async function init() {
-  // Check auth
   try {
     const resp = await fetch(`${API}/auth/me`, { credentials: 'include' });
     if (!resp.ok) throw new Error('Not auth');
     const data = await resp.json();
-    document.getElementById('headerUser').style.display = 'block';
-    document.getElementById('headerCompany').textContent = data.company_name || 'My Store';
-    document.getElementById('headerEmail').textContent = data.email || '';
-    if (data.theme) document.documentElement.setAttribute('data-theme', data.theme);
+    currentUser = { email: data.email, companyName: data.company_name || data.companyName, theme: data.theme };
+    addLinkedAccount(currentUser.email, currentUser.companyName);
+
+    const el = document.getElementById('headerUser');
+    el.style.display = 'flex';
+    el.style.alignItems = 'center';
+    el.style.gap = '8px';
+    document.getElementById('headerCompany').textContent = currentUser.companyName || 'My Store';
+    document.getElementById('headerEmail').textContent = currentUser.email || '';
+
+    const theme = currentUser.theme || localStorage.getItem('glowTheme') || 'rose';
+    applyTheme(theme);
+
+    if (currentUser.companyName) {
+      document.getElementById('settingsCompanyName').value = currentUser.companyName;
+    }
+
     document.getElementById('posMain').style.display = 'block';
     loadProducts();
     loadEmployees();
 
-    // Set default date ranges
     const today = new Date().toISOString().slice(0, 10);
     const thirtyAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
     document.getElementById('histStart').value = thirtyAgo;
@@ -702,6 +807,8 @@ async function init() {
     document.getElementById('clockStart').value = thirtyAgo;
     document.getElementById('clockEnd').value = today;
   } catch (_) {
+    const savedTheme = localStorage.getItem('glowTheme');
+    if (savedTheme) applyTheme(savedTheme);
     document.getElementById('loginGate').style.display = 'block';
   }
 }
@@ -843,18 +950,10 @@ function renderCart() {
 
 function updateCartTotals() {
   const subtotal = cart.reduce((s, i) => s + i.unit_price * i.quantity, 0);
-  const discountVal = parseFloat(document.getElementById('discountInput').value) || 0;
-  const taxable = Math.max(0, subtotal - discountVal);
-  const tax = Math.round(taxable * 0.0875 * 100) / 100;
-  const total = Math.round((taxable + tax) * 100) / 100;
+  const tax = Math.round(subtotal * 0.0875 * 100) / 100;
+  const total = Math.round((subtotal + tax) * 100) / 100;
 
   document.getElementById('cartSubtotal').textContent = `$${subtotal.toFixed(2)}`;
-  if (discountVal > 0) {
-    document.getElementById('discountRow').style.display = 'flex';
-    document.getElementById('cartDiscount').textContent = `-$${discountVal.toFixed(2)}`;
-  } else {
-    document.getElementById('discountRow').style.display = 'none';
-  }
   document.getElementById('cartTax').textContent = `$${tax.toFixed(2)}`;
   document.getElementById('cartTotal').textContent = `$${total.toFixed(2)}`;
   document.getElementById('checkoutBtn').disabled = cart.length === 0;
@@ -974,8 +1073,6 @@ function setPayment(method) {
 async function processTransaction() {
   if (cart.length === 0) return;
 
-  const discountVal = parseFloat(document.getElementById('discountInput').value) || 0;
-
   const body = {
     type: currentMode,
     employee_id: currentEmployee?.id || null,
@@ -989,7 +1086,6 @@ async function processTransaction() {
       unit_price: i.unit_price,
     })),
     payment_method: paymentMethod,
-    discount_amount: discountVal,
     original_receipt: returnOriginalTx?.receipt_number || null,
   };
 
@@ -1009,7 +1105,6 @@ async function processTransaction() {
     renderCart();
     document.getElementById('custName').value = '';
     document.getElementById('custEmail').value = '';
-    document.getElementById('discountInput').value = '';
     if (currentMode === 'return') {
       returnOriginalTx = null;
       document.getElementById('returnReceiptInput').value = '';
@@ -1414,9 +1509,144 @@ document.addEventListener('click', e => {
   }
 });
 
+// ─── Settings ───────────────────────────────────────────────────────────────
+function toggleSettings() {
+  document.getElementById('settingsPanel').classList.toggle('open');
+  document.getElementById('settingsOverlay').classList.toggle('open');
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  document.querySelectorAll('.theme-option').forEach(el => {
+    el.classList.toggle('active', el.dataset.theme === theme);
+  });
+}
+
+async function selectTheme(theme) {
+  applyTheme(theme);
+  localStorage.setItem('glowTheme', theme);
+  try {
+    await fetch(`${API}/auth/theme`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ theme }) });
+  } catch (_) {}
+}
+
+async function saveCompanyName() {
+  const input = document.getElementById('settingsCompanyName');
+  const name = input.value.trim();
+  if (!name) return;
+  try {
+    const res = await fetch(`${API}/auth/company-name`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ companyName: name }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    currentUser.companyName = data.companyName;
+    document.getElementById('headerCompany').textContent = data.companyName;
+    addLinkedAccount(currentUser.email, data.companyName);
+    input.style.borderColor = '#81c784';
+    setTimeout(() => { input.style.borderColor = ''; }, 1500);
+  } catch (err) { alert('Failed to save: ' + err.message); }
+}
+
+// ─── Company Switcher ───────────────────────────────────────────────────────
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function getLinkedAccounts() {
+  try { return JSON.parse(localStorage.getItem('glowLinkedAccounts') || '[]'); } catch { return []; }
+}
+
+function saveLinkedAccounts(accounts) {
+  localStorage.setItem('glowLinkedAccounts', JSON.stringify(accounts));
+}
+
+function addLinkedAccount(email, companyName) {
+  if (!email) return;
+  const accounts = getLinkedAccounts();
+  const existing = accounts.findIndex(a => a.email === email);
+  if (existing >= 0) {
+    accounts[existing].companyName = companyName || accounts[existing].companyName;
+  } else {
+    accounts.push({ email, companyName: companyName || '' });
+  }
+  saveLinkedAccounts(accounts);
+}
+
+function toggleCompanySwitcher() {
+  const menu = document.getElementById('companySwitcherMenu');
+  const isOpen = menu.classList.contains('show');
+  if (!isOpen) renderCompanySwitcherMenu();
+  menu.classList.toggle('show', !isOpen);
+}
+
+document.addEventListener('click', e => {
+  const switcher = document.getElementById('companySwitcher');
+  if (switcher && !switcher.contains(e.target)) {
+    document.getElementById('companySwitcherMenu').classList.remove('show');
+  }
+});
+
+function renderCompanySwitcherMenu() {
+  const menu = document.getElementById('companySwitcherMenu');
+  const accounts = getLinkedAccounts();
+  const currentEmail = currentUser?.email;
+
+  let html = '';
+  accounts.forEach(a => {
+    const isActive = a.email === currentEmail;
+    html += `<div class="cs-account ${isActive ? 'active' : ''}" onclick="switchAccount('${escapeHtml(a.email)}')">
+      <span class="cs-check">${isActive ? '&#10003;' : ''}</span>
+      <div class="cs-account-info">
+        <div class="cs-name">${escapeHtml(a.companyName) || escapeHtml(a.email)}</div>
+        <div class="cs-addr">${escapeHtml(a.email)}</div>
+      </div>
+    </div>`;
+  });
+
+  html += '<div class="cs-divider"></div>';
+  html += `<div class="cs-action" onclick="addNewAccount()">
+    <span class="cs-icon">+</span> Add another company
+  </div>`;
+
+  menu.innerHTML = html;
+}
+
+async function switchAccount(email) {
+  if (email === currentUser?.email) {
+    document.getElementById('companySwitcherMenu').classList.remove('show');
+    return;
+  }
+  try {
+    const res = await fetch(`${API}/auth/web-login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ email }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Switch failed');
+    currentUser = { email: data.user.email, companyName: data.user.companyName, theme: data.user.theme };
+    addLinkedAccount(currentUser.email, currentUser.companyName);
+    applyTheme(currentUser.theme || 'rose');
+    document.getElementById('headerCompany').textContent = currentUser.companyName || '';
+    document.getElementById('headerEmail').textContent = currentUser.email;
+    if (currentUser.companyName) document.getElementById('settingsCompanyName').value = currentUser.companyName;
+    // Reload POS data for new account
+    cart = [];
+    renderCart();
+    loadProducts();
+    loadEmployees();
+  } catch (err) { alert('Failed to switch account: ' + err.message); }
+  document.getElementById('companySwitcherMenu').classList.remove('show');
+}
+
+function addNewAccount() {
+  document.getElementById('companySwitcherMenu').classList.remove('show');
+  window.location.href = '/';
+}
+
 // ─── Logout ─────────────────────────────────────────────────────────────────
 async function logout() {
   await fetch(`${API}/auth/logout`, { credentials: 'include', method: 'POST' }).catch(() => {});
+  if (currentUser) {
+    const accounts = getLinkedAccounts().filter(a => a.email !== currentUser.email);
+    saveLinkedAccounts(accounts);
+  }
   window.location.href = '/';
 }
 
