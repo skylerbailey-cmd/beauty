@@ -18,11 +18,17 @@ router.get('/debug/products-sample', async (req, res) => {
   try {
     const userId = '24f18ae0-c5c5-420b-b9b3-1f4ea2c74112';
     const prices = await pgDb.getProductPrices(userId);
+    const employees = await pgDb.getEmployees(userId);
     const sample = prices.slice(0, 3).map(p => ({ product_id: p.product_id, price: p.price, min_price: p.min_price }));
-    res.json({ price_count: prices.length, sample, db_connected: true });
+    res.json({ price_count: prices.length, employee_count: employees.length, employees: employees.map(e => ({ id: e.id, name: e.name, role: e.role, user_id: e.user_id })), sample, db_connected: true });
   } catch (err) {
     res.json({ error: err.message, db_connected: false });
   }
+});
+
+// Debug: check session userId
+router.get('/debug/session', (req, res) => {
+  res.json({ session_userId: req.session?.userId || 'NOT SET', has_session: !!req.session });
 });
 
 router.use(requireAuth);
