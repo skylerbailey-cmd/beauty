@@ -383,7 +383,6 @@
     <button class="active" onclick="switchTab('register')">Register</button>
     <button onclick="switchTab('history')">Transactions</button>
     <button onclick="switchTab('reports')">Reports</button>
-    <button onclick="switchTab('batch')">Batch</button>
     <button onclick="switchTab('emails')">Emails</button>
     <button onclick="switchTab('settings')">Settings</button>
   </div>
@@ -518,6 +517,8 @@
         <input type="number" id="histMax" placeholder="Max $" min="0" step="0.01" oninput="applyTxFilters()" style="width:90px">
         <button class="btn btn-confirm" style="padding:8px 16px" onclick="loadTransactions()">Filter</button>
         <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="clearTxFilters()">Clear</button>
+        <button class="btn" style="background:var(--gold);color:#fff;padding:8px 16px" onclick="runAudit()">Run Batch Audit</button>
+        <span id="batchStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)"></span>
       </div>
       <div class="report-card">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
@@ -534,6 +535,36 @@
           <thead><tr><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Items</th><th>Subtotal</th><th>Total</th><th></th></tr></thead>
           <tbody id="txHistoryBody"></tbody>
         </table>
+      </div>
+
+      <!-- Batch reconciliation audit (uses the date range above) -->
+      <div id="batchResult" style="display:none">
+        <div class="stat-grid" id="batchSummary"></div>
+        <div class="report-card">
+          <h3>Batch Reconciliation Audit <span id="batchResultRange" style="font-weight:400;color:var(--mid);font-size:.85rem"></span></h3>
+          <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Each day compares the merchant's settled card batches to the POS's recorded card sales (net of returns) over the selected date range. Days that don't match are flagged with an explanation.</p>
+          <table class="report-table">
+            <thead><tr><th>Date</th><th>Merchant Settled</th><th>POS Card (net)</th><th>Difference</th><th>Status</th><th>Explanation</th></tr></thead>
+            <tbody id="batchBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Maverick connection config -->
+      <div class="report-card" id="maverickConfigCard">
+        <h3>Maverick Payments Connection</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
+          Connect this company's Maverick account to reconcile batches against recorded sales. The token is stored securely on the server and never shown again.
+          <span id="maverickConnStatus" style="font-weight:600"></span>
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="text" id="maverickDbaId" placeholder="DBA ID" style="width:200px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+          <input type="password" id="maverickToken" placeholder="Access token (leave blank to keep current)" autocomplete="off" style="flex:1;min-width:220px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+          <button class="btn btn-confirm" onclick="saveMaverick()">Save</button>
+          <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border)" onclick="lookupDbas()">Look up DBAs</button>
+        </div>
+        <div id="maverickDbaList" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
+        <div id="maverickSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
       </div>
     </div>
   </div>
@@ -621,49 +652,6 @@
           <thead><tr><th>Return #</th><th>Date</th><th>Original Sale</th><th>Sale Employees</th><th>Return Employees</th><th>Total</th></tr></thead>
           <tbody id="flaggedReturnsBody"></tbody>
         </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- ─── BATCH RECONCILIATION TAB ─── -->
-  <div class="tab-content" id="tab-batch">
-    <div style="max-width:1000px;margin:0 auto;padding:20px">
-      <div class="date-range">
-        <label>From:</label>
-        <input type="date" id="batchFrom">
-        <label>To:</label>
-        <input type="date" id="batchTo">
-        <button class="btn btn-confirm" onclick="runAudit()">Run Audit</button>
-        <span id="batchStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)"></span>
-      </div>
-
-      <div id="batchResult" style="display:none">
-        <div class="stat-grid" id="batchSummary"></div>
-        <div class="report-card">
-          <h3>Daily Reconciliation Audit <span id="batchResultRange" style="font-weight:400;color:var(--mid);font-size:.85rem"></span></h3>
-          <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Each day compares the merchant's settled card batches to the POS's recorded card sales (net of returns). Days that don't match are flagged with an explanation.</p>
-          <table class="report-table">
-            <thead><tr><th>Date</th><th>Merchant Settled</th><th>POS Card (net)</th><th>Difference</th><th>Status</th><th>Explanation</th></tr></thead>
-            <tbody id="batchBody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Maverick connection config -->
-      <div class="report-card" id="maverickConfigCard">
-        <h3>Maverick Payments Connection</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
-          Connect this company's Maverick account to reconcile daily batches against recorded sales. The token is stored securely on the server and never shown again.
-          <span id="maverickConnStatus" style="font-weight:600"></span>
-        </p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <input type="text" id="maverickDbaId" placeholder="DBA ID (e.g. 333359)" style="width:200px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
-          <input type="password" id="maverickToken" placeholder="Access token (leave blank to keep current)" autocomplete="off" style="flex:1;min-width:220px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
-          <button class="btn btn-confirm" onclick="saveMaverick()">Save</button>
-          <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border)" onclick="lookupDbas()">Look up DBAs</button>
-        </div>
-        <div id="maverickDbaList" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
-        <div id="maverickSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
       </div>
     </div>
   </div>
@@ -2477,22 +2465,15 @@ async function sendMassEmail() {
   }
 }
 
-// ─── Batch Reconciliation (Maverick) ────────────────────────────────────────
-let batchTabInitialized = false;
-
-function initBatchTab() {
-  if (!batchTabInitialized) {
-    const today = new Date().toISOString().slice(0, 10);
-    const weekAgo = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
-    document.getElementById('batchFrom').value = weekAgo;
-    document.getElementById('batchTo').value = today;
-    batchTabInitialized = true;
-  }
-  // Reflect current Maverick connection state
-  document.getElementById('maverickDbaId').value = storeSettings.maverick_dba_id || '';
+// ─── Batch Reconciliation (Maverick) — lives in the Transactions tab ────────
+function refreshMaverickConnState() {
+  const dbaEl = document.getElementById('maverickDbaId');
+  if (!dbaEl) return;
+  dbaEl.value = storeSettings.maverick_dba_id || '';
   const connected = !!storeSettings.maverick_connected;
-  document.getElementById('maverickConnStatus').textContent = connected ? '✓ Connected' : '· Not connected';
-  document.getElementById('maverickConnStatus').style.color = connected ? 'var(--success)' : 'var(--mid)';
+  const statusEl = document.getElementById('maverickConnStatus');
+  statusEl.textContent = connected ? '✓ Connected' : '· Not connected';
+  statusEl.style.color = connected ? 'var(--success)' : 'var(--mid)';
 }
 
 async function saveMaverick() {
@@ -2514,7 +2495,7 @@ async function saveMaverick() {
     document.getElementById('maverickToken').value = '';
     statusEl.style.color = 'var(--success)';
     statusEl.textContent = 'Saved.';
-    initBatchTab();
+    refreshMaverickConnState();
   } catch (err) {
     statusEl.style.color = 'var(--danger)';
     statusEl.textContent = 'Failed: ' + err.message;
@@ -2549,11 +2530,12 @@ async function lookupDbas() {
 }
 
 async function runAudit() {
-  const from = document.getElementById('batchFrom').value;
-  const to = document.getElementById('batchTo').value;
+  // Uses the same date range selected for the transaction history
+  const from = document.getElementById('histStart').value;
+  const to = document.getElementById('histEnd').value;
   const statusEl = document.getElementById('batchStatus');
   const resultEl = document.getElementById('batchResult');
-  if (!from || !to) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Pick a date range.'; return; }
+  if (!from || !to) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Pick a From/To date range above.'; return; }
   statusEl.style.color = 'var(--mid)';
   statusEl.textContent = 'Fetching batches…';
   resultEl.style.display = 'none';
@@ -2623,9 +2605,8 @@ function switchTab(tabName) {
   document.getElementById(`tab-${tabName}`).classList.add('show');
   event.target.classList.add('active');
 
-  if (tabName === 'history') loadTransactions();
+  if (tabName === 'history') { loadTransactions(); refreshMaverickConnState(); }
   if (tabName === 'reports') loadReports();
-  if (tabName === 'batch') initBatchTab();
   if (tabName === 'emails') {
     const f = document.getElementById('emailsFrame');
     if (f && !f.src) f.src = f.dataset.src; // load once, on first open
@@ -3118,6 +3099,8 @@ async function switchAccount(email) {
     renderCart();
     await loadStoreSettings();   // pulls this company's store settings + brands + theme from Postgres
     renderBrandCheckboxes();     // sync the Settings-tab brand checkboxes
+    refreshMaverickConnState();  // reflect this company's Maverick connection
+    document.getElementById('batchResult').style.display = 'none';
     loadProducts();
     loadEmployees();
     // Clear + reload the Transactions and Reports tabs so they never show the
