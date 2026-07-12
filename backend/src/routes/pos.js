@@ -31,40 +31,6 @@ router.get('/debug/session', (req, res) => {
   res.json({ session_userId: req.session?.userId || 'NOT SET', has_session: !!req.session });
 });
 
-// Debug: tenancy map — who owns what data. Open this while on each company.
-router.get('/debug/tenancy', async (req, res) => {
-  try {
-    const { getAllUsers, getUser } = require('../db');
-    const sessionUserId = req.session?.userId || null;
-    const me = sessionUserId ? getUser(sessionUserId) : null;
-    const users = getAllUsers().map(u => ({ id: u.id, email: u.email, company_name: u.company_name }));
-    // Per-user data counts from Postgres
-    const counts = (await pgDb.pool.query(`
-      SELECT user_id,
-        (SELECT COUNT(*) FROM pos_transactions t WHERE t.user_id = u.user_id) AS transactions,
-        (SELECT COUNT(*) FROM customers c WHERE c.user_id = u.user_id) AS customers,
-        (SELECT store_name FROM pos_settings s WHERE s.user_id = u.user_id) AS store_name
-      FROM (
-        SELECT DISTINCT user_id FROM (
-          SELECT user_id FROM pos_transactions
-          UNION SELECT user_id FROM customers
-          UNION SELECT user_id FROM pos_settings
-          UNION SELECT user_id FROM pos_employees
-        ) d
-      ) u
-      ORDER BY transactions DESC
-    `)).rows;
-    res.json({
-      session_userId: sessionUserId,
-      me: me ? { id: me.id, email: me.email, company_name: me.company_name } : null,
-      sqlite_users: users,
-      data_by_user_id: counts,
-    });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
 router.use(requireAuth);
 
 // One-time, non-destructive bridge: reattach any orphaned pre-migration dataset
