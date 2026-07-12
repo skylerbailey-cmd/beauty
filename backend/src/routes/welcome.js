@@ -3,6 +3,7 @@
 const express = require('express');
 
 const router = express.Router();
+const pgDb = require('../db/postgres');
 
 // ─── Product catalog (hardcoded with usage instructions) ────────────────────
 
@@ -1085,7 +1086,7 @@ router.post('/send', async (req, res) => {
     return res.status(401).json({ error: 'Not logged in. Please sign in first.' });
   }
 
-  const { getUser, saveWelcomeEmail } = require('../db');
+  const { getUser } = require('../db');
   const user = getUser(userId);
   if (!user) {
     return res.status(401).json({ error: 'User not found. Please sign in again.' });
@@ -1131,26 +1132,24 @@ router.post('/send', async (req, res) => {
       requestBody: { raw: encodedMessage },
     });
 
-    // Save to history
-    saveWelcomeEmail({
+    // Save to history (Postgres)
+    await pgDb.saveWelcomeEmail({
       customer_name: customerName || '',
       customer_email: customerEmail,
       products: products || [],
       user_id: userId,
     });
 
-    // Save to CRM
-    const { findOrCreateCustomer, addCustomerProducts } = require('../db');
-    const customer = findOrCreateCustomer(customerName || '', customerEmail, userId);
+    // Save to CRM (Postgres)
+    const customer = await pgDb.findOrCreateCustomer(customerName || '', customerEmail, userId);
     if (products && products.length > 0) {
-      // Resolve product IDs from names
       const allProds = [...PRODUCTS.avologi, ...(PRODUCTS.avinichi || []), ...PRODUCTS.hydrasphere];
       const productRecords = products
         .map(name => allProds.find(p => p.name === name))
         .filter(Boolean)
         .map(p => ({ id: p.id, name: p.name }));
       if (productRecords.length > 0) {
-        addCustomerProducts(customer.id, productRecords);
+        await pgDb.addCustomerProducts(customer.id, productRecords);
       }
     }
 
@@ -1162,26 +1161,24 @@ router.post('/send', async (req, res) => {
 });
 
 // GET /api/welcome/history — list all sent welcome emails
-router.get('/history', (req, res) => {
+router.get('/history', async (req, res) => {
   const userId = req.session?.userId;
-  const { getWelcomeEmails } = require('../db');
-  const emails = getWelcomeEmails(userId);
+  const emails = await pgDb.getWelcomeEmails(userId);
   res.json({
     emails: emails.map(e => ({
       id: e.id,
       customerName: e.customer_name,
       customerEmail: e.customer_email,
-      products: JSON.parse(e.products || '[]'),
+      products: typeof e.products === 'string' ? JSON.parse(e.products || '[]') : (e.products || []),
       sentAt: e.sent_at,
     })),
   });
 });
 
 // GET /api/welcome/campaigns — list past campaigns
-router.get('/campaigns', (req, res) => {
+router.get('/campaigns', async (req, res) => {
   const userId = req.session?.userId;
-  const { getCampaigns } = require('../db');
-  const campaigns = getCampaigns(userId);
+  const campaigns = await pgDb.getCampaigns(userId);
   res.json({
     campaigns: campaigns.map(c => ({
       id: c.id,
@@ -1209,7 +1206,7 @@ router.post('/campaign', async (req, res) => {
     return res.status(401).json({ error: 'Not logged in. Please sign in first.' });
   }
 
-  const { getUser, getUniqueCustomerEmails, saveCampaign } = require('../db');
+  const { getUser } = require('../db');
   const user = getUser(userId);
   if (!user) {
     return res.status(401).json({ error: 'User not found. Please sign in again.' });
@@ -1222,7 +1219,7 @@ router.post('/campaign', async (req, res) => {
   const { emails: targetEmails } = req.body;
   const customerEmails = (Array.isArray(targetEmails) && targetEmails.length > 0)
     ? targetEmails.filter(e => typeof e === 'string' && e.includes('@'))
-    : getUniqueCustomerEmails(userId);
+    : await pgDb.getUniqueCustomerEmails(userId);
   if (customerEmails.length === 0) {
     return res.status(400).json({ error: 'No customer emails found. Send some welcome emails first to build your contact list.' });
   }
@@ -1272,7 +1269,7 @@ router.post('/campaign', async (req, res) => {
     }
 
     // Save campaign record
-    saveCampaign({
+    await pgDb.saveCampaign({
       subject: subject.trim(),
       body,
       recipient_count: sentCount,
@@ -1294,67 +1291,61 @@ router.post('/campaign', async (req, res) => {
 // ─── CRM: Customer endpoints ──────────────────────────────────────────────────
 
 // GET /api/welcome/customers — list all customers with their products
-router.get('/customers', (req, res) => {
+router.get('/customers', async (req, res) => {
   const userId = req.session?.userId;
-  const { getCustomers, getCustomersByProduct, getCustomersByProducts } = require('../db');
   const { product, products } = req.query;
 
   let customers;
   if (products) {
-    // Multi-product filter: comma-separated product IDs
     const productIds = products.split(',').map(s => s.trim()).filter(Boolean);
-    customers = productIds.length > 0 ? getCustomersByProducts(productIds, userId) : getCustomers(userId);
+    customers = productIds.length > 0 ? await pgDb.getCustomersByProducts(productIds, userId) : await pgDb.getCustomers(userId);
   } else if (product) {
-    customers = getCustomersByProduct(product, userId);
+    customers = await pgDb.getCustomersByProduct(product, userId);
   } else {
-    customers = getCustomers(userId);
+    customers = await pgDb.getCustomers(userId);
   }
   res.json({ customers });
 });
 
 // GET /api/welcome/customers/:id — get single customer
-router.get('/customers/:id', (req, res) => {
-  const { getCustomer } = require('../db');
-  const customer = getCustomer(parseInt(req.params.id));
+router.get('/customers/:id', async (req, res) => {
+  const customer = await pgDb.getCustomer(parseInt(req.params.id));
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
   res.json({ customer });
 });
 
 // PATCH /api/welcome/customers/:id/notes — update customer notes (legacy)
-router.patch('/customers/:id/notes', (req, res) => {
-  const { updateCustomerNotes } = require('../db');
+router.patch('/customers/:id/notes', async (req, res) => {
   const { notes } = req.body;
   if (typeof notes !== 'string') return res.status(400).json({ error: 'notes is required' });
-  updateCustomerNotes(parseInt(req.params.id), notes);
+  await pgDb.updateCustomerNotes(parseInt(req.params.id), notes);
   res.json({ success: true });
 });
 
 // PATCH /api/welcome/customers/:id — update any customer fields
-router.patch('/customers/:id', (req, res) => {
-  const { updateCustomer, getCustomer } = require('../db');
+router.patch('/customers/:id', async (req, res) => {
   const id = parseInt(req.params.id);
-  const customer = getCustomer(id);
+  const customer = await pgDb.getCustomer(id);
   if (!customer) return res.status(404).json({ error: 'Customer not found' });
 
   const { name, email, phone, address, notes } = req.body;
-  updateCustomer(id, { name, email, phone, address, notes });
-  res.json({ success: true, customer: getCustomer(id) });
+  await pgDb.updateCustomer(id, { name, email, phone, address, notes });
+  res.json({ success: true, customer: await pgDb.getCustomer(id) });
 });
 
 // POST /api/welcome/customers/from-email — create or update customer from inbox email
-router.post('/customers/from-email', (req, res) => {
+router.post('/customers/from-email', async (req, res) => {
   const userId = req.session?.userId;
-  const { findOrCreateCustomer, updateCustomer } = require('../db');
   const { email, name, phone, address } = req.body;
   if (!email) return res.status(400).json({ error: 'email is required' });
 
-  const customer = findOrCreateCustomer(name || '', email, userId);
+  const customer = await pgDb.findOrCreateCustomer(name || '', email, userId);
   const updates = {};
   if (phone) updates.phone = phone;
   if (address) updates.address = address;
   if (name && name !== customer.name) updates.name = name;
   if (Object.keys(updates).length > 0) {
-    updateCustomer(customer.id, updates);
+    await pgDb.updateCustomer(customer.id, updates);
   }
   res.json({ success: true, customerId: customer.id });
 });
@@ -1368,22 +1359,20 @@ router.get('/products/list', (req, res) => {
 });
 
 // POST /api/welcome/customers/import — import a single customer from CSV
-router.post('/customers/import', (req, res) => {
+router.post('/customers/import', async (req, res) => {
   const userId = req.session?.userId;
   const { email, name, phone, address, notes } = req.body;
   if (!email) return res.status(400).json({ error: 'email is required' });
 
-  const { findOrCreateCustomer, updateCustomer } = require('../db');
-  const customer = findOrCreateCustomer(name || '', email, userId);
+  const customer = await pgDb.findOrCreateCustomer(name || '', email, userId);
 
-  // Update fields if provided
   const updates = {};
   if (name) updates.name = name;
   if (phone) updates.phone = phone;
   if (address) updates.address = address;
   if (notes) updates.notes = notes;
   if (Object.keys(updates).length > 0) {
-    updateCustomer(customer.id, updates);
+    await pgDb.updateCustomer(customer.id, updates);
   }
 
   res.json({ success: true, id: customer.id });

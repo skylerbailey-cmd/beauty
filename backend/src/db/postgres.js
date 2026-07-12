@@ -116,6 +116,28 @@ async function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_pg_txemp_tx ON pos_transaction_employees(transaction_id);
     CREATE INDEX IF NOT EXISTS idx_pg_txemp_emp ON pos_transaction_employees(employee_id);
 
+    -- Welcome emails history
+    CREATE TABLE IF NOT EXISTS welcome_emails (
+      id SERIAL PRIMARY KEY,
+      customer_name TEXT NOT NULL,
+      customer_email TEXT NOT NULL,
+      products TEXT NOT NULL,
+      user_id TEXT DEFAULT '',
+      sent_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_pg_we_user ON welcome_emails(user_id);
+
+    -- Campaigns history
+    CREATE TABLE IF NOT EXISTS campaigns (
+      id SERIAL PRIMARY KEY,
+      subject TEXT NOT NULL,
+      body TEXT NOT NULL,
+      recipient_count INTEGER DEFAULT 0,
+      user_id TEXT DEFAULT '',
+      sent_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_pg_camp_user ON campaigns(user_id);
+
     -- POS store settings
     CREATE TABLE IF NOT EXISTS pos_settings (
       user_id TEXT PRIMARY KEY,
@@ -446,6 +468,78 @@ async function updateSettings(userId, fields) {
   await pool.query(`UPDATE pos_settings SET ${sets.join(', ')} WHERE user_id = $${idx}`, params);
 }
 
+// ─── Additional Customer queries ────────────────────────────────────────────
+
+async function updateCustomerNotes(id, notes) {
+  await pool.query('UPDATE customers SET notes = $1, updated_at = NOW() WHERE id = $2', [notes, id]);
+}
+
+async function getCustomersByProduct(productId, userId) {
+  const rows = userId
+    ? (await pool.query(`SELECT DISTINCT c.* FROM customers c JOIN customer_products cp ON c.id = cp.customer_id WHERE cp.product_id = $1 AND c.user_id = $2 ORDER BY c.updated_at DESC`, [productId, userId])).rows
+    : (await pool.query(`SELECT DISTINCT c.* FROM customers c JOIN customer_products cp ON c.id = cp.customer_id WHERE cp.product_id = $1 ORDER BY c.updated_at DESC`, [productId])).rows;
+  for (const c of rows) {
+    c.products = (await pool.query('SELECT * FROM customer_products WHERE customer_id = $1 ORDER BY purchased_at DESC', [c.id])).rows;
+  }
+  return rows;
+}
+
+async function getCustomersByProducts(productIds, userId) {
+  const placeholders = productIds.map((_, i) => `$${i + 1}`).join(',');
+  const params = [...productIds];
+  let whereExtra = '';
+  if (userId) {
+    whereExtra = ` AND c.user_id = $${params.length + 1}`;
+    params.push(userId);
+  }
+  const rows = (await pool.query(`SELECT DISTINCT c.* FROM customers c JOIN customer_products cp ON c.id = cp.customer_id WHERE cp.product_id IN (${placeholders})${whereExtra} ORDER BY c.updated_at DESC`, params)).rows;
+  for (const c of rows) {
+    c.products = (await pool.query('SELECT * FROM customer_products WHERE customer_id = $1 ORDER BY purchased_at DESC', [c.id])).rows;
+  }
+  return rows;
+}
+
+async function getUniqueCustomerEmails(userId) {
+  if (userId) {
+    return (await pool.query('SELECT DISTINCT email FROM customers WHERE user_id = $1 ORDER BY email', [userId])).rows.map(r => r.email);
+  }
+  return (await pool.query('SELECT DISTINCT customer_email FROM welcome_emails ORDER BY customer_email')).rows.map(r => r.customer_email);
+}
+
+// ─── Welcome Emails ─────────────────────────────────────────────────────────
+
+async function saveWelcomeEmail({ customer_name, customer_email, products, user_id }) {
+  const result = await pool.query(
+    'INSERT INTO welcome_emails (customer_name, customer_email, products, user_id) VALUES ($1, $2, $3, $4) RETURNING id',
+    [customer_name, customer_email, JSON.stringify(products), user_id || '']
+  );
+  return result.rows[0].id;
+}
+
+async function getWelcomeEmails(userId, limit = 50) {
+  if (userId) {
+    return (await pool.query('SELECT * FROM welcome_emails WHERE user_id = $1 ORDER BY sent_at DESC LIMIT $2', [userId, limit])).rows;
+  }
+  return (await pool.query('SELECT * FROM welcome_emails ORDER BY sent_at DESC LIMIT $1', [limit])).rows;
+}
+
+// ─── Campaigns ──────────────────────────────────────────────────────────────
+
+async function saveCampaign({ subject, body, recipient_count, user_id }) {
+  const result = await pool.query(
+    'INSERT INTO campaigns (subject, body, recipient_count, user_id) VALUES ($1, $2, $3, $4) RETURNING id',
+    [subject, body, recipient_count, user_id || '']
+  );
+  return result.rows[0].id;
+}
+
+async function getCampaigns(userId, limit = 50) {
+  if (userId) {
+    return (await pool.query('SELECT * FROM campaigns WHERE user_id = $1 ORDER BY sent_at DESC LIMIT $2', [userId, limit])).rows;
+  }
+  return (await pool.query('SELECT * FROM campaigns ORDER BY sent_at DESC LIMIT $1', [limit])).rows;
+}
+
 module.exports = {
   pool,
   initSchema,
@@ -456,6 +550,15 @@ module.exports = {
   getCustomer,
   getCustomerByEmail,
   updateCustomer,
+  updateCustomerNotes,
+  getCustomersByProduct,
+  getCustomersByProducts,
+  getUniqueCustomerEmails,
+  // Welcome Emails & Campaigns
+  saveWelcomeEmail,
+  getWelcomeEmails,
+  saveCampaign,
+  getCampaigns,
   // Employees
   getEmployees,
   getEmployee,
