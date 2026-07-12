@@ -185,6 +185,26 @@ router.post('/transactions', async (req, res) => {
     return res.status(400).json({ error: 'Last 4 digits of credit card required for card payments' });
   }
 
+  // Enforce minimum pricing (skip for returns)
+  if (type !== 'return') {
+    const [prices, customProducts] = await Promise.all([
+      pgDb.getProductPrices(userId),
+      pgDb.getCustomProducts(userId),
+    ]);
+    const minPriceMap = {};
+    for (const p of prices) { if (p.min_price > 0) minPriceMap[p.product_id] = p.min_price; }
+    for (const cp of customProducts) { if (cp.min_price > 0) minPriceMap[`custom-${cp.id}`] = cp.min_price; }
+
+    for (const item of items) {
+      const minPrice = minPriceMap[item.product_id];
+      if (minPrice && item.unit_price > 0 && item.unit_price < minPrice) {
+        return res.status(400).json({
+          error: `Cannot honor this pricing. The minimum allowed price for "${item.product_name}" is $${minPrice.toFixed(2)}.`
+        });
+      }
+    }
+  }
+
   // If this is a return, require original receipt and enforce 14-day policy
   let original_transaction_id = null;
   let original_sale_date = null;

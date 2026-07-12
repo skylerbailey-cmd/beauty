@@ -273,16 +273,6 @@
     .tab-content { display: none; }
     .tab-content.show { display: block; }
 
-    /* ── Price setup ─── */
-    .price-row {
-      display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border);
-      font-family: system-ui, sans-serif; font-size: .85rem;
-    }
-    .price-row .pr-name { flex: 1; }
-    .price-row .pr-brand { font-size: .7rem; color: var(--mid); text-transform: uppercase; }
-    .price-row input { width: 100px; padding: 6px 10px; border: 1.5px solid var(--border); border-radius: 6px; font-size: .85rem; text-align: right; outline: none; }
-    .price-row input:focus { border-color: var(--rose); }
-
     /* ── Transaction history table ─── */
     .tx-type-sale { color: var(--success); font-weight: 600; }
     .tx-type-return { color: var(--danger); font-weight: 600; }
@@ -393,7 +383,6 @@
     <button class="active" onclick="switchTab('register')">Register</button>
     <button onclick="switchTab('history')">Transactions</button>
     <button onclick="switchTab('reports')">Reports</button>
-    <button onclick="switchTab('prices')">Prices</button>
     <button onclick="switchTab('settings')">Settings</button>
   </div>
 
@@ -662,28 +651,17 @@
             </div>
             <div class="brand-products-panel" id="brandPanel-hydrasphere" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:400px;overflow-y:auto"></div>
           </div>
+          <!-- Custom Products inline -->
+          <div class="brand-config-row">
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
+              <input type="checkbox" checked disabled style="accent-color:var(--rose-dk)" />
+              <div style="flex:1"><div style="font-weight:600;font-size:.88rem;color:var(--dark)">Custom Products</div><div style="font-size:.72rem;color:var(--mid)">Your own products</div></div>
+              <button onclick="toggleBrandProducts('custom')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--rose-dk)">Manage</button>
+            </div>
+            <div class="brand-products-panel" id="brandPanel-custom" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:500px;overflow-y:auto">
+            </div>
+          </div>
         </div>
-      </div>
-
-      <!-- Custom Products -->
-      <div class="report-card" style="margin-top:16px">
-        <h3>Custom Products</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Add your own products that aren't in the catalog.</p>
-        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
-          <input type="text" id="customProdName" placeholder="Product name" style="flex:1;min-width:150px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
-          <input type="number" id="customProdPrice" placeholder="Price" step="0.01" min="0" style="width:90px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;text-align:right">
-          <button class="btn btn-confirm" onclick="addCustomProduct()">Add</button>
-        </div>
-        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;font-family:system-ui,sans-serif;font-size:.82rem">
-          <label style="display:flex;align-items:center;gap:6px;padding:6px 12px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer;color:var(--mid);transition:all .2s" onmouseover="this.style.borderColor='var(--rose)'" onmouseout="this.style.borderColor='var(--border)'">
-            <span>Upload Image</span>
-            <input type="file" id="customProdFile" accept="image/*" onchange="previewCustomImage(this)" style="display:none">
-          </label>
-          <span style="color:var(--mid)">or</span>
-          <input type="text" id="customProdImage" placeholder="Paste image URL" style="flex:1;padding:6px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none">
-          <img id="customProdPreview" style="display:none;width:36px;height:36px;border-radius:6px;object-fit:cover;border:1px solid var(--border)">
-        </div>
-        <div id="customProductList"></div>
       </div>
 
       <!-- Employees -->
@@ -712,19 +690,6 @@
     </div>
   </div>
 
-  <!-- ─── PRICES TAB ─── -->
-  <div class="tab-content" id="tab-prices">
-    <div style="max-width:700px;margin:0 auto;padding:20px">
-      <div class="report-card">
-        <h3>Product Prices</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:16px">Set prices for each product. Products without prices cannot be added to sales.</p>
-        <div id="priceList"></div>
-        <div style="margin-top:16px;text-align:right">
-          <button class="btn btn-confirm" onclick="savePrices()">Save All Prices</button>
-        </div>
-      </div>
-    </div>
-  </div>
 </div>
 
 <!-- ─── Price Edit Modal ─── -->
@@ -889,6 +854,7 @@ function renderProducts() {
       <div class="p-brand">${p.brand}</div>
       <div class="p-name">${p.name}</div>
       <div class="p-price">$${(p.price > 0 ? p.price : p.retailPrice).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+      ${p.minPrice > 0 ? `<div style="font-family:system-ui,sans-serif;font-size:.68rem;color:var(--rose-dk);margin-top:2px">Min: $${p.minPrice.toFixed(2)}</div>` : ''}
     </div>
   `).join('');
 }
@@ -925,10 +891,10 @@ function confirmPriceEdit() {
     alert('Please enter a valid price.');
     return;
   }
-  // Enforce min price (except $0 which is explicitly allowed)
+  // Enforce min price
   const minPrice = pendingProduct.minPrice || 0;
   if (minPrice > 0 && price > 0 && price < minPrice) {
-    alert(`Price cannot be below the minimum of $${minPrice.toFixed(2)}. Set to $0 to give away free.`);
+    alert(`Cannot honor this pricing. The minimum allowed price for "${pendingProduct.name}" is $${minPrice.toFixed(2)}.`);
     return;
   }
 
@@ -973,6 +939,13 @@ function editCartPrice(idx) {
   if (newPrice === null) return;
   const parsed = parseFloat(newPrice);
   if (isNaN(parsed) || parsed < 0) return;
+  // Enforce min price
+  const product = products.find(p => p.id === item.product_id);
+  const minPrice = product?.minPrice || 0;
+  if (minPrice > 0 && parsed > 0 && parsed < minPrice) {
+    alert(`Cannot honor this pricing. The minimum allowed price for "${item.product_name}" is $${minPrice.toFixed(2)}.`);
+    return;
+  }
   cart[idx].unit_price = parsed;
   renderCart();
 }
@@ -1458,51 +1431,6 @@ async function toggleEmployee(id, currentlyActive) {
   loadEmployees();
 }
 
-// ─── Clock History ──────────────────────────────────────────────────────────
-// ─── Prices ─────────────────────────────────────────────────────────────────
-function renderPrices() {
-  const list = document.getElementById('priceList');
-  const brands = [...new Set(products.map(p => p.brand))].sort();
-
-  let html = '';
-  for (const brand of brands) {
-    html += `<div style="font-family:system-ui,sans-serif;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--rose);margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border)">${brand}</div>`;
-    const brandProds = products.filter(p => p.brand === brand);
-    for (const p of brandProds) {
-      html += `
-        <div class="price-row">
-          <div class="pr-name">${p.name}<br><span style="font-size:.72rem;color:var(--mid)">Retail: $${(p.retailPrice || 0).toLocaleString()}</span></div>
-          <div>$</div>
-          <input type="number" step="0.01" min="0" value="${p.price && p.price !== p.retailPrice ? p.price : ''}" data-id="${p.id}" placeholder="${p.retailPrice || '0.00'}">
-        </div>
-      `;
-    }
-  }
-  list.innerHTML = html;
-}
-
-async function savePrices() {
-  const inputs = document.querySelectorAll('#priceList input[data-id]');
-  const prices = [];
-  inputs.forEach(input => {
-    const val = parseFloat(input.value);
-    if (!isNaN(val) && val >= 0) {
-      prices.push({ product_id: input.dataset.id, price: val });
-    }
-  });
-
-  await fetch(`${API}/api/pos/products/prices/bulk`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ prices }),
-  });
-
-  await loadProducts();
-  renderPrices();
-  alert('Prices saved!');
-}
-
 // ─── Transactions History ───────────────────────────────────────────────────
 async function loadTransactions() {
   const start = document.getElementById('histStart').value;
@@ -1607,8 +1535,16 @@ function switchTab(tabName) {
 
   if (tabName === 'history') loadTransactions();
   if (tabName === 'reports') loadReports();
-  if (tabName === 'settings') { loadEmployees(); loadStoreSettings(); renderBrandCheckboxes(); renderCustomProductList(); }
-  if (tabName === 'prices') renderPrices();
+  if (tabName === 'settings') {
+    loadEmployees();
+    loadStoreSettings();
+    renderBrandCheckboxes();
+    // Auto-expand brand product panels so prices/min prices are visible
+    for (const brand of selectedBrands) {
+      const panel = document.getElementById(`brandPanel-${brand}`);
+      if (panel) { renderBrandProductPanel(brand); panel.style.display = 'block'; }
+    }
+  }
 }
 
 // ─── Brand Product Panels ───────────────────────────────────────────────────
@@ -1626,7 +1562,13 @@ function toggleBrandProducts(brandKey) {
 
 function renderBrandProductPanel(brandKey) {
   const panel = document.getElementById(`brandPanel-${brandKey}`);
-  const displayName = BRAND_KEY_TO_DISPLAY[brandKey];
+
+  // Custom products panel
+  if (brandKey === 'custom') {
+    renderCustomProductPanel(panel);
+    return;
+  }
+
   const brandProds = products.filter(p => (BRAND_KEY_MAP[p.brand] || p.brand.toLowerCase()) === brandKey && !p.isCustom);
 
   panel.innerHTML = `<div style="display:grid;grid-template-columns:auto 1fr 80px 80px;gap:4px 8px;align-items:center;font-family:system-ui,sans-serif;font-size:.8rem;padding:4px 0">
@@ -1644,6 +1586,53 @@ function renderBrandProductPanel(brandKey) {
       <input type="number" value="${p.minPrice > 0 ? p.minPrice : ''}" step="0.01" min="0" data-id="${p.id}" data-field="min_price" onchange="saveSinglePrice('${p.id}')" placeholder="0" style="width:100%;padding:4px 6px;border:1px solid ${p.minPrice > 0 ? 'var(--rose)' : 'var(--border)'};border-radius:4px;font-size:.8rem;text-align:right;outline:none;${p.minPrice > 0 ? 'background:#fff5f5' : ''}">
     </div>
   `).join('') || '<div style="color:var(--mid);font-family:system-ui,sans-serif;font-size:.85rem;padding:12px;text-align:center">No products in this brand</div>';
+}
+
+function renderCustomProductPanel(panel) {
+  const customs = products.filter(p => p.isCustom);
+
+  let html = `
+    <div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+      <div style="font-family:system-ui,sans-serif;font-size:.78rem;font-weight:600;text-transform:uppercase;color:var(--mid);margin-bottom:8px">Add New Product</div>
+      <div style="display:grid;grid-template-columns:1fr 80px 80px;gap:6px;margin-bottom:6px">
+        <input type="text" id="customProdName" placeholder="Product name" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none">
+        <input type="number" id="customProdPrice" placeholder="Price" step="0.01" min="0" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none;text-align:right">
+        <input type="number" id="customProdMinPrice" placeholder="Min $" step="0.01" min="0" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none;text-align:right">
+      </div>
+      <div style="display:flex;gap:6px;align-items:center">
+        <label style="display:flex;align-items:center;gap:4px;padding:4px 10px;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid)">
+          Upload Image
+          <input type="file" id="customProdFile" accept="image/*" onchange="previewCustomImage(this)" style="display:none">
+        </label>
+        <span style="font-size:.78rem;color:var(--mid)">or</span>
+        <input type="text" id="customProdImage" placeholder="Image URL" style="flex:1;padding:4px 10px;border:1px solid var(--border);border-radius:6px;font-size:.78rem;font-family:system-ui,sans-serif;outline:none">
+        <img id="customProdPreview" style="display:none;width:28px;height:28px;border-radius:4px;object-fit:cover;border:1px solid var(--border)">
+        <button class="btn btn-confirm" style="padding:5px 14px;font-size:.8rem" onclick="addCustomProduct()">Add</button>
+      </div>
+    </div>`;
+
+  if (customs.length > 0) {
+    html += `<div style="display:grid;grid-template-columns:1fr 80px 80px auto;gap:4px 8px;align-items:center;font-family:system-ui,sans-serif;font-size:.8rem;padding:4px 0">
+      <div style="font-weight:700;font-size:.7rem;text-transform:uppercase;color:var(--mid)">Product</div>
+      <div style="font-weight:700;font-size:.7rem;text-transform:uppercase;color:var(--mid);text-align:right">Price</div>
+      <div style="font-weight:700;font-size:.7rem;text-transform:uppercase;color:var(--mid);text-align:right">Min Price</div>
+      <div></div>
+    </div>`;
+    html += customs.map(p => `
+      <div style="display:grid;grid-template-columns:1fr 80px 80px auto;gap:4px 8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
+        <div style="display:flex;align-items:center;gap:6px;min-width:0">
+          ${p.image ? `<img src="${p.image}" style="width:28px;height:28px;border-radius:4px;object-fit:cover;flex-shrink:0" onerror="this.style.display='none'">` : ''}
+          <span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</span>
+        </div>
+        <div style="text-align:right">$${(p.price || 0).toFixed(2)}</div>
+        <div style="text-align:right;${p.minPrice > 0 ? 'color:var(--rose-dk)' : 'color:var(--mid)'}">$${(p.minPrice || 0).toFixed(2)}</div>
+        <button onclick="deleteCustomProduct(${p.customId})" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:.9rem">&times;</button>
+      </div>
+    `).join('');
+  } else {
+    html += '<div style="color:var(--mid);font-family:system-ui,sans-serif;font-size:.82rem;text-align:center;padding:8px">No custom products yet</div>';
+  }
+  panel.innerHTML = html;
 }
 
 async function toggleProductVisibility(productId, visible) {
@@ -1691,38 +1680,35 @@ function previewCustomImage(input) {
 async function addCustomProduct() {
   const name = document.getElementById('customProdName').value.trim();
   const price = parseFloat(document.getElementById('customProdPrice').value) || 0;
+  const min_price = parseFloat(document.getElementById('customProdMinPrice')?.value) || 0;
   const image = customProdImageData || document.getElementById('customProdImage').value.trim();
   if (!name) return alert('Product name required');
 
   await fetch(`${API}/api/pos/products/custom`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-    body: JSON.stringify({ name, price, image }),
+    body: JSON.stringify({ name, price, min_price, image }),
   });
   document.getElementById('customProdName').value = '';
   document.getElementById('customProdPrice').value = '';
+  if (document.getElementById('customProdMinPrice')) document.getElementById('customProdMinPrice').value = '';
   document.getElementById('customProdImage').value = '';
   document.getElementById('customProdFile').value = '';
   document.getElementById('customProdPreview').style.display = 'none';
   customProdImageData = '';
   await loadProducts();
-  renderCustomProductList();
+  renderBrandProductPanel('custom');
 }
 
-function renderCustomProductList() {
-  const list = document.getElementById('customProductList');
-  const customs = products.filter(p => p.isCustom);
-  if (customs.length === 0) {
-    list.innerHTML = '<div style="color:var(--mid);font-family:system-ui,sans-serif;font-size:.82rem;text-align:center;padding:8px">No custom products yet</div>';
-    return;
-  }
-  list.innerHTML = customs.map(p => `
-    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
-      ${p.image ? `<img src="${p.image}" style="width:32px;height:32px;border-radius:4px;object-fit:cover" onerror="this.style.display='none'">` : ''}
-      <div style="flex:1;font-weight:600">${p.name}</div>
-      <div style="color:var(--mid)">$${(p.price || 0).toFixed(2)}</div>
-    </div>
-  `).join('');
+async function deleteCustomProduct(customId) {
+  if (!confirm('Remove this custom product?')) return;
+  await fetch(`${API}/api/pos/products/custom/${customId}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ active: 0 }),
+  });
+  await loadProducts();
+  renderBrandProductPanel('custom');
 }
+
 
 // ─── Leaderboard ────────────────────────────────────────────────────────────
 function renderLeaderboard(employees) {
