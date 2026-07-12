@@ -1052,9 +1052,9 @@ function batchDateOf(b, fallback) {
 }
 
 async function fetchMaverickBatches(dbaId, from, to, token) {
-  // Omit the date filter when from/to are null (Maverick then returns the last
-  // 5 days) — used as a probe to see if any batches exist at all.
-  const dateFilter = (from && to) ? `?filter[date][gte]=${from}&filter[date][lte]=${to}&per-page=50` : '?per-page=50';
+  // Maverick filters batches by the settlement field "batch.date" (per the docs
+  // note). Omit it when from/to are null (then it returns the last 5 days).
+  const dateFilter = (from && to) ? `?filter[batch.date][gte]=${from}&filter[batch.date][lte]=${to}&per-page=50` : '?per-page=50';
   const url = `${MAVERICK_BASE}/api/reporting/batches/${encodeURIComponent(dbaId)}${dateFilter}`;
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
   const text = await resp.text();
@@ -1145,12 +1145,19 @@ router.get('/reconciliation-audit', async (req, res) => {
     return res.json({ configured: true, from, to, error: e.message });
   }
 
+  // Each record is a settled transaction: { amount, type: 'debit'|'credit', date,
+  // batch: { id, date } }. A 'credit' is a refund back to the cardholder, so it
+  // subtracts from the merchant's net settled amount.
   const merchantByDate = {};
   for (const b of batches) {
     const d = batchDateOf(b, to);
-    merchantByDate[d] = merchantByDate[d] || { total: 0, batches: 0 };
-    merchantByDate[d].total += batchAmount(b);
-    merchantByDate[d].batches += 1;
+    const mag = Math.abs(batchAmount(b));
+    const type = String(b.type || '').toLowerCase();
+    const signed = /credit|refund|return|void|reversal/.test(type) ? -mag : mag;
+    if (!merchantByDate[d]) merchantByDate[d] = { total: 0, txns: 0, batchIds: new Set() };
+    merchantByDate[d].total += signed;
+    merchantByDate[d].txns += 1;
+    if (b.batch && b.batch.id) merchantByDate[d].batchIds.add(b.batch.id);
   }
 
   // POS side
@@ -1173,7 +1180,8 @@ router.get('/reconciliation-audit', async (req, res) => {
     return {
       date: d,
       merchant_total: Math.round(m * 100) / 100,
-      merchant_batches: merchantByDate[d]?.batches || 0,
+      merchant_batches: merchantByDate[d]?.batchIds?.size || 0,
+      merchant_txns: merchantByDate[d]?.txns || 0,
       pos_total: Math.round(p * 100) / 100,
       pos_sale_count: posByDate[d]?.sale_count || 0,
       pos_return_count: posByDate[d]?.return_count || 0,
