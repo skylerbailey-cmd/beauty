@@ -33,6 +33,19 @@ router.get('/debug/session', (req, res) => {
 
 router.use(requireAuth);
 
+// Migrate Postgres data if userId changed (e.g. after redeploy)
+const migratedUsers = new Set();
+router.use(async (req, res, next) => {
+  const userId = req.session.userId;
+  if (userId && !migratedUsers.has(userId)) {
+    migratedUsers.add(userId);
+    try { await pgDb.migrateUserIdIfNeeded(userId); } catch (e) {
+      console.error('[pos] Migration check failed:', e.message);
+    }
+  }
+  next();
+});
+
 // ─── Products (with prices) ────────────────────────────────────────────────
 
 router.get('/products', async (req, res) => {

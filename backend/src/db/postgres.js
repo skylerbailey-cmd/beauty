@@ -753,9 +753,42 @@ async function setProductVisibility(productId, userId, visible) {
   );
 }
 
+// ─── User ID Migration ──────────────────────────────────────────────────────
+// SQLite generates a new UUID on redeploy. Migrate Postgres data to the new userId.
+async function migrateUserIdIfNeeded(newUserId) {
+  if (!pool) return;
+  // Check if new userId already has data
+  const existing = await query('SELECT COUNT(*) as cnt FROM pos_product_prices WHERE user_id = $1', [newUserId]);
+  if (existing.rows[0]?.cnt > 0) return; // already has data, no migration needed
+
+  // Find the old userId that has data (pick the one with the most product prices)
+  const oldUser = await query(`
+    SELECT user_id, COUNT(*) as cnt FROM pos_product_prices
+    WHERE user_id != $1 AND user_id != ''
+    GROUP BY user_id ORDER BY cnt DESC LIMIT 1
+  `, [newUserId]);
+  if (oldUser.rows.length === 0) return; // no old data to migrate
+
+  const oldUserId = oldUser.rows[0].user_id;
+  console.log(`[postgres] Migrating POS data from user ${oldUserId} to ${newUserId}`);
+
+  const tables = [
+    'pos_product_prices', 'pos_employees', 'pos_custom_products',
+    'pos_product_visibility', 'pos_transactions', 'pos_settings',
+    'pos_commission_plans', 'customers', 'welcome_emails', 'campaigns',
+  ];
+  for (const table of tables) {
+    try {
+      await query(`UPDATE ${table} SET user_id = $1 WHERE user_id = $2`, [newUserId, oldUserId]);
+    } catch (_) { /* table might not exist yet */ }
+  }
+  console.log(`[postgres] Migration complete: ${oldUserId} -> ${newUserId}`);
+}
+
 module.exports = {
   pool,
   initSchema,
+  migrateUserIdIfNeeded,
   // Customers
   findOrCreateCustomer,
   addCustomerProducts,
