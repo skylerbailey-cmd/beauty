@@ -18,6 +18,7 @@ router.use(requireAuth);
 // ─── Products (with prices) ────────────────────────────────────────────────
 
 router.get('/products', async (req, res) => {
+  try {
   const userId = req.session.userId;
   const [prices, visibility, customProducts] = await Promise.all([
     pgDb.getProductPrices(userId),
@@ -67,6 +68,22 @@ router.get('/products', async (req, res) => {
     });
   }
   res.json({ products: allProducts });
+  } catch (err) {
+    console.error('[pos] Products error:', err.message);
+    // Fallback: return catalog products without prices/visibility from Postgres
+    const allProducts = [];
+    for (const [brandKey, prods] of Object.entries(PRODUCTS)) {
+      for (const prod of prods) {
+        allProducts.push({
+          id: prod.id, name: prod.name, brand: prod.brand || brandKey,
+          description: prod.description, image: prod.image,
+          retailPrice: prod.retailPrice || 0, price: prod.retailPrice || 0,
+          minPrice: 0, cost: 0, visible: true, isCustom: false,
+        });
+      }
+    }
+    res.json({ products: allProducts });
+  }
 });
 
 router.post('/products/price', async (req, res) => {

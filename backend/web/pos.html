@@ -824,12 +824,19 @@ async function init() {
 
 // ─── Products ───────────────────────────────────────────────────────────────
 async function loadProducts() {
-  const resp = await fetch(`${API}/api/pos/products`, { credentials: 'include' });
-  const data = await resp.json();
-  products = data.products || [];
+  try {
+    const resp = await fetch(`${API}/api/pos/products`, { credentials: 'include' });
+    const data = await resp.json();
+    products = data.products || [];
+  } catch (err) {
+    console.error('[pos] Failed to load products:', err);
+    products = [];
+  }
   renderBrandFilters();
   renderProducts();
 }
+
+const BRAND_KEY_MAP = { 'Avologi': 'avologi', 'Avinichi': 'avinichi', 'HydraSphere Plus': 'hydrasphere' };
 
 function renderBrandFilters() {
   const brands = [...new Set(products.map(p => p.brand))].filter(b => selectedBrands.includes(BRAND_KEY_MAP[b] || b.toLowerCase())).sort();
@@ -847,8 +854,6 @@ function filterBrand(brand) {
 function filterProducts() {
   renderProducts();
 }
-
-const BRAND_KEY_MAP = { 'Avologi': 'avologi', 'Avinichi': 'avinichi', 'HydraSphere Plus': 'hydrasphere' };
 
 function renderProducts() {
   const search = document.getElementById('searchInput').value.toLowerCase();
