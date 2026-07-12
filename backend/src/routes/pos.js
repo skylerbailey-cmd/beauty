@@ -1339,6 +1339,9 @@ router.get('/reconciliation-day', async (req, res) => {
     unmatched_merchant: unmatchedMerchant,
     unmatched_pos_total: sum(unmatchedPos, p => p.dir === 'credit' ? -p.amount : p.amount),
     unmatched_merchant_total: sum(unmatchedMerchant, m => m.dir === 'credit' ? -m.amount : m.amount),
+    // Raw merchant records for this day, so we can inspect status/reject fields
+    // on failed transactions that shouldn't count.
+    raw_merchant: batches,
   });
 });
 

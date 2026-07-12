@@ -2648,7 +2648,12 @@ async function openDayDrilldown(date) {
           <thead><tr><th>Batch #</th><th>Type</th><th>Card</th><th>Brand</th><th style="text-align:right">Amount</th></tr></thead>
           <tbody>${merchRows}</tbody>
         </table>
-      </div>`;
+      </div>
+
+      <details style="margin-top:16px">
+        <summary style="cursor:pointer;font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)">Show raw merchant records for this day (${(data.raw_merchant || []).length})</summary>
+        <pre style="white-space:pre-wrap;word-break:break-word;margin-top:8px;max-height:320px;overflow:auto;background:#fbf7f2;padding:10px;border-radius:6px;border:1px solid var(--border);font-size:.72rem">${escapeHtml(JSON.stringify(data.raw_merchant || [], null, 2))}</pre>
+      </details>`;
   } catch (err) {
     body.innerHTML = `<div style="padding:20px;color:var(--danger);font-family:system-ui,sans-serif">Failed: ${escapeHtml(err.message)}</div>`;
   }
