@@ -906,17 +906,39 @@ router.post('/import-transactions', async (req, res) => {
 
 const MAVERICK_BASE = 'https://dashboard.maverickpayments.com';
 
-// Pull the numeric total out of a Maverick batch object, tolerating the
-// several field names their API may use.
-function batchAmount(b) {
-  const keys = ['net', 'netAmount', 'total', 'totalAmount', 'amount', 'settledAmount', 'batchAmount'];
-  for (const k of keys) {
-    if (b && b[k] != null && !isNaN(Number(b[k]))) return Number(b[k]);
-  }
-  return 0;
+function numVal(v) {
+  if (typeof v === 'number') return v;
+  if (typeof v === 'string') { const n = parseFloat(v.replace(/[",$\s]/g, '')); return isNaN(n) ? null : n; }
+  return null;
 }
+
+// Maverick's batch amount field/name isn't fixed in the docs and may be nested,
+// so deep-search for the most likely settled-amount field while skipping fee/
+// tax/count/card/id fields.
+function batchAmount(b) {
+  if (!b || typeof b !== 'object') return 0;
+  const found = []; // { key, val, depth }
+  const walk = (o, depth) => {
+    if (!o || typeof o !== 'object' || Array.isArray(o) || depth > 2) return;
+    for (const [k, v] of Object.entries(o)) {
+      const lk = k.toLowerCase();
+      const skip = /fee|tax|count|(^|[^a-z])id([^a-z]|$)|bin|number|brand|category|organization|date|name|last4|expir/.test(lk);
+      const val = numVal(v);
+      if (val != null && !skip) found.push({ k: lk, val, depth });
+      else if (v && typeof v === 'object') walk(v, depth + 1);
+    }
+  };
+  walk(b, 0);
+  const pick = (re) => {
+    const c = found.filter(f => re.test(f.k)).sort((a, b) => a.depth - b.depth);
+    return c.length ? c[0].val : null;
+  };
+  const v = pick(/netamount|^net$|netsale/) ?? pick(/settled/) ?? pick(/totalamount|^total$|totalsale/) ?? pick(/sale/) ?? pick(/^amount$/) ?? pick(/volume|gross/);
+  return v == null ? 0 : v;
+}
+
 function batchCount(b) {
-  const keys = ['count', 'transactionCount', 'totalCount', 'transactions'];
+  const keys = ['count', 'transactionCount', 'totalCount', 'transactions', 'itemCount', 'salesCount'];
   for (const k of keys) {
     const v = b && b[k];
     if (typeof v === 'number') return v;
@@ -1028,6 +1050,7 @@ async function fetchMaverickBatches(dbaId, from, to, token) {
     ok: resp.ok,
     status: resp.status,
     batches: resp.ok ? (Array.isArray(data) ? data : (data?.items || data?.batches || [])) : [],
+    raw: data,
     error: resp.ok ? null : ((data && (data.message || data.name)) || `Maverick returned ${resp.status}`),
   };
 }
@@ -1074,6 +1097,7 @@ router.get('/reconciliation-audit', async (req, res) => {
   // Merchant side
   let batches = [];
   let usedDbaId = dbaId;
+  let rawResponse = null;
   try {
     let r = await fetchMaverickBatches(dbaId, from, to, token);
     // If the configured id isn't accessible (e.g. it's a merchant id, not the
@@ -1091,6 +1115,7 @@ router.get('/reconciliation-audit', async (req, res) => {
     }
     if (!r.ok) return res.json({ configured: true, from, to, error: r.error });
     batches = r.batches;
+    rawResponse = r.raw;
   } catch (e) {
     return res.json({ configured: true, from, to, error: e.message });
   }
@@ -1142,7 +1167,15 @@ router.get('/reconciliation-audit', async (req, res) => {
   totals.pos = Math.round(totals.pos * 100) / 100;
   totals.difference = Math.round((totals.merchant - totals.pos) * 100) / 100;
 
-  res.json({ configured: true, from, to, days, totals, dba_id: usedDbaId });
+  // Diagnostic: raw batch count + a sample object + the top-level response keys,
+  // so we can map Maverick's actual amount field if the totals look wrong.
+  const debug = {
+    batch_count: batches.length,
+    response_keys: rawResponse && typeof rawResponse === 'object' ? Object.keys(rawResponse) : [],
+    sample: batches[0] || null,
+  };
+
+  res.json({ configured: true, from, to, days, totals, dba_id: usedDbaId, _debug: debug });
 });
 
 module.exports = router;

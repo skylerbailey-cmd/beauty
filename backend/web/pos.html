@@ -548,6 +548,7 @@
             <thead><tr><th>Date</th><th>Merchant Settled</th><th>POS Card (net)</th><th>Difference</th><th>Status</th><th>Explanation</th></tr></thead>
             <tbody id="batchBody"></tbody>
           </table>
+          <div id="batchDebug" style="display:none;margin-top:14px;padding:12px;background:#fff6e0;border:1px solid #f0d48a;border-radius:8px;font-family:system-ui,sans-serif;font-size:.8rem;color:#6b5518"></div>
         </div>
       </div>
 
@@ -2605,6 +2606,21 @@ function renderAudit(data) {
       <td style="font-size:.8rem;color:var(--mid)">${d.explanation || ''}</td>
     </tr>
   `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No batches or card sales in this range</td></tr>';
+
+  // Diagnostic: if the merchant total is $0, show what Maverick actually returned
+  const dbg = data._debug || {};
+  const debugEl = document.getElementById('batchDebug');
+  if ((t.merchant || 0) === 0) {
+    if (!dbg.batch_count) {
+      debugEl.style.display = 'block';
+      debugEl.innerHTML = `<b>Diagnostic:</b> Maverick returned <b>0 batches</b> for this range (response keys: ${(dbg.response_keys || []).join(', ') || 'none'}). The DBA id or date range may be off, or there were genuinely no settled batches these days.`;
+    } else {
+      debugEl.style.display = 'block';
+      debugEl.innerHTML = `<b>Diagnostic:</b> Maverick returned <b>${dbg.batch_count} batch record(s)</b> but no amount was read. Here is one raw record so I can map the correct amount field — please copy this to me:<pre style="white-space:pre-wrap;word-break:break-word;margin-top:8px;max-height:280px;overflow:auto;background:#fff;padding:8px;border-radius:6px;border:1px solid #eadb9a">${escapeHtml(JSON.stringify(dbg.sample, null, 2))}</pre>`;
+    }
+  } else {
+    debugEl.style.display = 'none';
+  }
 }
 
 // ─── Tab Switching ──────────────────────────────────────────────────────────
