@@ -13,6 +13,18 @@ function requireAuth(req, res, next) {
   next();
 }
 
+// Debug endpoint (no auth)
+router.get('/debug/products-sample', async (req, res) => {
+  try {
+    const userId = '24f18ae0-c5c5-420b-b9b3-1f4ea2c74112';
+    const prices = await pgDb.getProductPrices(userId);
+    const sample = prices.slice(0, 3).map(p => ({ product_id: p.product_id, price: p.price, min_price: p.min_price }));
+    res.json({ price_count: prices.length, sample, db_connected: true });
+  } catch (err) {
+    res.json({ error: err.message, db_connected: false });
+  }
+});
+
 router.use(requireAuth);
 
 // ─── Products (with prices) ────────────────────────────────────────────────
