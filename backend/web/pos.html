@@ -517,11 +517,13 @@
         <input type="number" id="histMax" placeholder="Max $" min="0" step="0.01" oninput="applyTxFilters()" style="width:90px">
         <button class="btn btn-confirm" style="padding:8px 16px" onclick="loadTransactions()">Filter</button>
         <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="clearTxFilters()">Clear</button>
-        <button class="btn btn-confirm" style="padding:8px 16px" onclick="exportTransactionsCSV()">Export CSV</button>
       </div>
       <div class="report-card">
-        <h3>Transaction History</h3>
-        <div id="txSummary" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:10px"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <h3 style="margin:0">Transaction History</h3>
+          <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportTransactionsCSV()">Export CSV</button>
+        </div>
+        <div id="txSummary" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:10px 0"></div>
         <table class="report-table">
           <thead><tr><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Items</th><th>Subtotal</th><th>Total</th><th></th></tr></thead>
           <tbody id="txHistoryBody"></tbody>
