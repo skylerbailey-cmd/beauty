@@ -13,6 +13,7 @@ const emailRoutes = require('./routes/emails');
 const webhookRoutes = require('./routes/webhook');
 const { router: welcomeRoutes } = require('./routes/welcome');
 const posRoutes = require('./routes/pos');
+const { initSchema: initPostgres } = require('./db/postgres');
 const { getAllUsers } = require('./db');
 const { setupGmailWatch } = require('./services/gmail');
 
@@ -140,6 +141,13 @@ async function restoreGmailWatches() {
 
 app.listen(PORT, async () => {
   console.log(`[server] Glow SF backend running on port ${PORT}`);
+
+  // Initialize Postgres schema for POS/CRM
+  try {
+    await initPostgres();
+  } catch (err) {
+    console.error('[startup] Postgres init error:', err.message);
+  }
 
   // Restore watches after server is ready
   try {

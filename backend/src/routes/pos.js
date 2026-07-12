@@ -2,10 +2,8 @@
 
 const express = require('express');
 const router = express.Router();
-const posDb = require('../db/pos');
+const pgDb = require('../db/postgres');
 const { PRODUCTS } = require('./welcome');
-const { findOrCreateCustomer, addCustomerProducts, getCustomerByEmail } = require('../db');
-const nodemailer = require('nodemailer');
 
 // Auth middleware
 function requireAuth(req, res, next) {
@@ -19,9 +17,9 @@ router.use(requireAuth);
 
 // ─── Products (with prices) ────────────────────────────────────────────────
 
-router.get('/products', (req, res) => {
+router.get('/products', async (req, res) => {
   const userId = req.session.userId;
-  const prices = posDb.getProductPrices(userId);
+  const prices = await pgDb.getProductPrices(userId);
   const priceMap = {};
   for (const p of prices) priceMap[p.product_id] = p;
 
@@ -44,81 +42,53 @@ router.get('/products', (req, res) => {
   res.json({ products: allProducts });
 });
 
-router.post('/products/price', (req, res) => {
-  const userId = req.session.userId;
+router.post('/products/price', async (req, res) => {
   const { product_id, price, cost } = req.body;
   if (!product_id || price === undefined) {
     return res.status(400).json({ error: 'product_id and price required' });
   }
-  posDb.setProductPrice(product_id, parseFloat(price), parseFloat(cost || 0), userId);
+  await pgDb.setProductPrice(product_id, parseFloat(price), parseFloat(cost || 0), req.session.userId);
   res.json({ ok: true });
 });
 
-router.post('/products/prices/bulk', (req, res) => {
-  const userId = req.session.userId;
+router.post('/products/prices/bulk', async (req, res) => {
   const { prices } = req.body;
   if (!Array.isArray(prices)) return res.status(400).json({ error: 'prices array required' });
   for (const p of prices) {
-    posDb.setProductPrice(p.product_id, parseFloat(p.price), parseFloat(p.cost || 0), userId);
+    await pgDb.setProductPrice(p.product_id, parseFloat(p.price), parseFloat(p.cost || 0), req.session.userId);
   }
   res.json({ ok: true });
 });
 
 // ─── Employees ─────────────────────────────────────────────────────────────
 
-router.get('/employees', (req, res) => {
-  res.json({ employees: posDb.getEmployees(req.session.userId) });
+router.get('/employees', async (req, res) => {
+  res.json({ employees: await pgDb.getEmployees(req.session.userId) });
 });
 
-router.post('/employees', (req, res) => {
+router.post('/employees', async (req, res) => {
   const { name, pin, role } = req.body;
   if (!name || !pin) return res.status(400).json({ error: 'name and pin required' });
   if (pin.length < 4) return res.status(400).json({ error: 'PIN must be at least 4 digits' });
-  const employee = posDb.createEmployee(name, pin, role, req.session.userId);
+  const employee = await pgDb.createEmployee(name, pin, role, req.session.userId);
   res.json({ employee });
 });
 
-router.put('/employees/:id', (req, res) => {
-  posDb.updateEmployee(parseInt(req.params.id), req.body);
+router.put('/employees/:id', async (req, res) => {
+  await pgDb.updateEmployee(parseInt(req.params.id), req.body);
   res.json({ ok: true });
 });
 
-router.post('/employees/verify', (req, res) => {
+router.post('/employees/verify', async (req, res) => {
   const { pin } = req.body;
-  const employee = posDb.verifyEmployeePin(pin, req.session.userId);
+  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId);
   if (!employee) return res.status(401).json({ error: 'Invalid PIN' });
   res.json({ employee });
 });
 
-// ─── Clock In/Out ──────────────────────────────────────────────────────────
-
-router.post('/clock/in', (req, res) => {
-  const { employee_id } = req.body;
-  const entry = posDb.clockIn(employee_id, req.session.userId);
-  res.json({ entry });
-});
-
-router.post('/clock/out', (req, res) => {
-  const { employee_id } = req.body;
-  posDb.clockOut(employee_id);
-  res.json({ ok: true });
-});
-
-router.get('/clock/status/:employeeId', (req, res) => {
-  const entry = posDb.getOpenClockEntry(parseInt(req.params.employeeId));
-  res.json({ clocked_in: !!entry, entry });
-});
-
-router.get('/clock/entries', (req, res) => {
-  const { start, end } = req.query;
-  const startDate = start || new Date(Date.now() - 30 * 86400000).toISOString();
-  const endDate = end || new Date().toISOString();
-  res.json({ entries: posDb.getClockEntries(req.session.userId, startDate, endDate) });
-});
-
 // ─── Transactions ──────────────────────────────────────────────────────────
 
-router.post('/transactions', (req, res) => {
+router.post('/transactions', async (req, res) => {
   const userId = req.session.userId;
   const { type, employee_id, employees: employeeAssignments, customer_name, customer_email, items, payment_method, notes, tax_rate, discount_amount, original_receipt } = req.body;
 
@@ -133,14 +103,13 @@ router.post('/transactions', (req, res) => {
     if (!original_receipt) {
       return res.status(400).json({ error: 'Original receipt number is required for returns' });
     }
-    const orig = posDb.getTransactionByReceipt(original_receipt, userId);
+    const orig = await pgDb.getTransactionByReceipt(original_receipt, userId);
     if (!orig) {
       return res.status(404).json({ error: 'Original receipt not found' });
     }
     if (orig.type !== 'sale') {
       return res.status(400).json({ error: 'Can only return against a sale receipt' });
     }
-    // Enforce 14-day return window
     const saleDate = new Date(orig.created_at);
     const daysSince = (Date.now() - saleDate.getTime()) / (1000 * 60 * 60 * 24);
     if (daysSince > 14) {
@@ -157,7 +126,7 @@ router.post('/transactions', (req, res) => {
   const tax_amount = Math.round(taxable * rate * 100) / 100;
   const total = Math.round((taxable + tax_amount) * 100) / 100;
 
-  const { id, receipt_number } = posDb.createTransaction({
+  const { id, receipt_number } = await pgDb.createTransaction({
     type: type || 'sale',
     employee_id,
     customer_name: customer_name || '',
@@ -184,7 +153,7 @@ router.post('/transactions', (req, res) => {
     line_total: i.unit_price * (i.quantity || 1) - (i.discount || 0),
   }));
 
-  posDb.addTransactionItems(id, txItems);
+  await pgDb.addTransactionItems(id, txItems);
 
   // Record employee commissions
   if (employeeAssignments && employeeAssignments.length > 0) {
@@ -193,7 +162,6 @@ router.post('/transactions', (req, res) => {
       if (ea.commission_type === 'dollar') {
         commissionAmount = ea.commission_value || 0;
       } else {
-        // percent of total
         commissionAmount = Math.round(total * (ea.commission_value || 100) / 100 * 100) / 100;
       }
       return {
@@ -203,10 +171,9 @@ router.post('/transactions', (req, res) => {
         commission_amount: commissionAmount,
       };
     });
-    posDb.addTransactionEmployees(id, empRecords);
+    await pgDb.addTransactionEmployees(id, empRecords);
   } else if (employee_id) {
-    // Legacy single employee — give them 100%
-    posDb.addTransactionEmployees(id, [{
+    await pgDb.addTransactionEmployees(id, [{
       employee_id,
       commission_type: 'percent',
       commission_value: 100,
@@ -214,20 +181,20 @@ router.post('/transactions', (req, res) => {
     }]);
   }
 
-  // Also record in CRM if customer info provided and it's a sale
+  // Also record in CRM (Postgres)
   if (type !== 'return' && customer_email) {
     try {
-      const customer = findOrCreateCustomer(customer_name, customer_email, userId);
+      const customer = await pgDb.findOrCreateCustomer(customer_name, customer_email, userId);
       const productsForCrm = txItems.map(i => ({ id: i.product_id, name: i.product_name }));
-      addCustomerProducts(customer.id, productsForCrm);
+      await pgDb.addCustomerProducts(customer.id, productsForCrm);
     } catch (_) { /* non-critical */ }
   }
 
-  const tx = posDb.getTransaction(id);
+  const tx = await pgDb.getTransaction(id);
   res.json({ transaction: tx });
 });
 
-router.get('/transactions', (req, res) => {
+router.get('/transactions', async (req, res) => {
   const { type, start, end, employee_id, limit } = req.query;
   const opts = {};
   if (type) opts.type = type;
@@ -235,17 +202,17 @@ router.get('/transactions', (req, res) => {
   if (end) opts.endDate = end;
   if (employee_id) opts.employeeId = parseInt(employee_id);
   if (limit) opts.limit = parseInt(limit);
-  res.json({ transactions: posDb.getTransactions(req.session.userId, opts) });
+  res.json({ transactions: await pgDb.getTransactions(req.session.userId, opts) });
 });
 
-router.get('/transactions/:id', (req, res) => {
-  const tx = posDb.getTransaction(parseInt(req.params.id));
+router.get('/transactions/:id', async (req, res) => {
+  const tx = await pgDb.getTransaction(parseInt(req.params.id));
   if (!tx) return res.status(404).json({ error: 'Transaction not found' });
   res.json({ transaction: tx });
 });
 
-router.get('/transactions/receipt/:number', (req, res) => {
-  const tx = posDb.getTransactionByReceipt(req.params.number, req.session.userId);
+router.get('/transactions/receipt/:number', async (req, res) => {
+  const tx = await pgDb.getTransactionByReceipt(req.params.number, req.session.userId);
   if (!tx) return res.status(404).json({ error: 'Transaction not found' });
   res.json({ transaction: tx });
 });
@@ -288,7 +255,7 @@ async function sendGmail(user, toEmail, subject, htmlBody) {
 // ─── Email Receipt ─────────────────────────────────────────────────────────
 
 router.post('/transactions/:id/email', async (req, res) => {
-  const tx = posDb.getTransaction(parseInt(req.params.id));
+  const tx = await pgDb.getTransaction(parseInt(req.params.id));
   if (!tx) return res.status(404).json({ error: 'Transaction not found' });
 
   const email = req.body.email || tx.customer_email;
@@ -300,7 +267,7 @@ router.post('/transactions/:id/email', async (req, res) => {
     return res.status(403).json({ error: 'Gmail not connected. Please connect Gmail via the Welcome Emails page first.' });
   }
 
-  const settings = posDb.getSettings(req.session.userId);
+  const settings = await pgDb.getSettings(req.session.userId);
   const storeName = settings.store_name || user.company_name || 'Glow SF';
   const footer = settings.receipt_footer || 'Thank you for your purchase!';
   const tz = settings.timezone || 'America/Los_Angeles';
@@ -358,7 +325,7 @@ router.post('/transactions/:id/email', async (req, res) => {
 // ─── Email Product Instructions ─────────────────────────────────────────────
 
 router.post('/transactions/:id/instructions', async (req, res) => {
-  const tx = posDb.getTransaction(parseInt(req.params.id));
+  const tx = await pgDb.getTransaction(parseInt(req.params.id));
   if (!tx) return res.status(404).json({ error: 'Transaction not found' });
 
   const email = req.body.email || tx.customer_email;
@@ -370,10 +337,9 @@ router.post('/transactions/:id/instructions', async (req, res) => {
     return res.status(403).json({ error: 'Gmail not connected. Please connect Gmail via the Welcome Emails page first.' });
   }
 
-  const settings = posDb.getSettings(req.session.userId);
+  const settings = await pgDb.getSettings(req.session.userId);
   const storeName = settings.store_name || user.company_name || 'Glow SF';
 
-  // Look up product instructions from the catalog
   const allProducts = [];
   for (const [, products] of Object.entries(PRODUCTS)) {
     for (const p of products) allProducts.push(p);
@@ -426,51 +392,51 @@ router.post('/transactions/:id/instructions', async (req, res) => {
 
 // ─── Reports ───────────────────────────────────────────────────────────────
 
-router.get('/reports/sales', (req, res) => {
+router.get('/reports/sales', async (req, res) => {
   const { start, end } = req.query;
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
-  res.json({ report: posDb.getSalesReport(req.session.userId, startDate, endDate) });
+  res.json({ report: await pgDb.getSalesReport(req.session.userId, startDate, endDate) });
 });
 
-router.get('/reports/employees', (req, res) => {
+router.get('/reports/employees', async (req, res) => {
   const { start, end } = req.query;
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
-  res.json({ report: posDb.getEmployeeSalesReport(req.session.userId, startDate, endDate) });
+  res.json({ report: await pgDb.getEmployeeSalesReport(req.session.userId, startDate, endDate) });
 });
 
-router.get('/reports/products', (req, res) => {
+router.get('/reports/products', async (req, res) => {
   const { start, end } = req.query;
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
-  res.json({ report: posDb.getTopProductsReport(req.session.userId, startDate, endDate) });
+  res.json({ report: await pgDb.getTopProductsReport(req.session.userId, startDate, endDate) });
 });
 
-router.get('/reports/customers', (req, res) => {
+router.get('/reports/customers', async (req, res) => {
   const { start, end } = req.query;
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
-  res.json({ report: posDb.getCustomerReport(req.session.userId, startDate, endDate) });
+  res.json({ report: await pgDb.getCustomerReport(req.session.userId, startDate, endDate) });
 });
 
 // ─── Settings ──────────────────────────────────────────────────────────────
 
-router.get('/settings', (req, res) => {
-  res.json({ settings: posDb.getSettings(req.session.userId) });
+router.get('/settings', async (req, res) => {
+  res.json({ settings: await pgDb.getSettings(req.session.userId) });
 });
 
-router.post('/settings', (req, res) => {
-  posDb.updateSettings(req.session.userId, req.body);
-  res.json({ settings: posDb.getSettings(req.session.userId) });
+router.post('/settings', async (req, res) => {
+  await pgDb.updateSettings(req.session.userId, req.body);
+  res.json({ settings: await pgDb.getSettings(req.session.userId) });
 });
 
 // ─── Customer Lookup ───────────────────────────────────────────────────────
 
-router.get('/customers/search', (req, res) => {
+router.get('/customers/search', async (req, res) => {
   const { q } = req.query;
   if (!q) return res.json({ customers: [] });
-  const customer = getCustomerByEmail(q, req.session.userId);
+  const customer = await pgDb.getCustomerByEmail(q, req.session.userId);
   res.json({ customers: customer ? [customer] : [] });
 });
 
