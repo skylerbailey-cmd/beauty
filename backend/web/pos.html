@@ -244,8 +244,8 @@
     .report-table tr:hover td { background: var(--cream); }
 
     .date-range { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; font-family: system-ui, sans-serif; font-size: .85rem; }
-    .date-range input { padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-family: system-ui, sans-serif; font-size: .85rem; outline: none; }
-    .date-range input:focus { border-color: var(--rose); }
+    .date-range input, .date-range select { padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-family: system-ui, sans-serif; font-size: .85rem; outline: none; background: var(--white); color: var(--dark); }
+    .date-range input:focus, .date-range select:focus { border-color: var(--rose); }
     .date-range .btn { padding: 8px 16px; }
 
     /* ── Manage employees panel ─── */
@@ -490,15 +490,33 @@
   <!-- ─── TRANSACTIONS TAB ─── -->
   <div class="tab-content" id="tab-history">
     <div style="max-width:1000px;margin:0 auto;padding:20px">
-      <div class="date-range">
+      <div class="date-range" style="flex-wrap:wrap">
         <label>From:</label>
         <input type="date" id="histStart">
         <label>To:</label>
         <input type="date" id="histEnd">
         <button class="btn btn-confirm" onclick="loadTransactions()">Filter</button>
+        <span style="border-left:1px solid var(--border);height:22px;margin:0 2px"></span>
+        <select id="histType" onchange="applyTxFilters()">
+          <option value="">All types</option>
+          <option value="sale">Sales only</option>
+          <option value="return">Returns only</option>
+        </select>
+        <select id="histEmployee" onchange="applyTxFilters()">
+          <option value="">All employees</option>
+        </select>
+        <select id="histPayment" onchange="applyTxFilters()">
+          <option value="">All payments</option>
+          <option value="card">Card</option>
+          <option value="cash">Cash</option>
+          <option value="other">Other</option>
+        </select>
+        <input type="text" id="histSearch" placeholder="Search receipt or customer…" oninput="applyTxFilters()" style="min-width:200px">
+        <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="clearTxFilters()">Clear</button>
       </div>
       <div class="report-card">
         <h3>Transaction History</h3>
+        <div id="txSummary" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:10px"></div>
         <table class="report-table">
           <thead><tr><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Items</th><th>Subtotal</th><th>Total</th><th></th></tr></thead>
           <tbody id="txHistoryBody"></tbody>
@@ -1623,13 +1641,57 @@ async function toggleEmployee(id, currentlyActive) {
 }
 
 // ─── Transactions History ───────────────────────────────────────────────────
+let histTransactions = []; // full set for the selected date range (filtered client-side)
+
 async function loadTransactions() {
   const start = document.getElementById('histStart').value;
   const end = document.getElementById('histEnd').value;
-  const resp = await fetch(`${API}/api/pos/transactions?start=${start}T00:00:00&end=${end}T23:59:59`, { credentials: 'include' });
+  const resp = await fetch(`${API}/api/pos/transactions?start=${start}T00:00:00&end=${end}T23:59:59&limit=1000`, { credentials: 'include' });
   const data = await resp.json();
+  histTransactions = data.transactions || [];
+  populateHistEmployeeFilter();
+  applyTxFilters();
+}
+
+// Fill the employee filter with the employees that actually appear in the results.
+function populateHistEmployeeFilter() {
+  const sel = document.getElementById('histEmployee');
+  if (!sel) return;
+  const current = sel.value;
+  const names = new Set();
+  histTransactions.forEach(tx => (tx.employees || []).forEach(e => names.add(e.employee_name)));
+  const sorted = [...names].sort();
+  sel.innerHTML = '<option value="">All employees</option>' + sorted.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+  if (sorted.includes(current)) sel.value = current;
+}
+
+function clearTxFilters() {
+  document.getElementById('histType').value = '';
+  document.getElementById('histEmployee').value = '';
+  document.getElementById('histPayment').value = '';
+  document.getElementById('histSearch').value = '';
+  applyTxFilters();
+}
+
+function applyTxFilters() {
+  const type = document.getElementById('histType').value;
+  const emp = document.getElementById('histEmployee').value;
+  const pay = document.getElementById('histPayment').value;
+  const q = document.getElementById('histSearch').value.trim().toLowerCase();
+
+  const rows = histTransactions.filter(tx => {
+    if (type && tx.type !== type) return false;
+    if (emp && !(tx.employees || []).some(e => e.employee_name === emp)) return false;
+    if (pay && (tx.payment_method || '') !== pay) return false;
+    if (q) {
+      const hay = `${tx.receipt_number} ${tx.customer_name || ''} ${tx.customer_email || ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
   const body = document.getElementById('txHistoryBody');
-  body.innerHTML = (data.transactions || []).map(tx => `
+  body.innerHTML = rows.map(tx => `
     <tr>
       <td style="font-family:monospace">${tx.receipt_number}</td>
       <td>${new Date(tx.created_at).toLocaleString()}</td>
@@ -1645,7 +1707,16 @@ async function loadTransactions() {
         <button onclick="startDeleteTransaction(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--danger);text-decoration:underline;font-size:.82rem">Delete</button>
       </td>
     </tr>
-  `).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--mid)">No transactions</td></tr>';
+  `).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--mid)">No transactions match your filters</td></tr>';
+
+  // Summary line
+  const saleTotal = rows.filter(t => t.type === 'sale').reduce((s, t) => s + t.total, 0);
+  const returnTotal = rows.filter(t => t.type === 'return').reduce((s, t) => s + t.total, 0);
+  const summary = document.getElementById('txSummary');
+  if (summary) {
+    summary.textContent = `${rows.length} transaction${rows.length !== 1 ? 's' : ''} · Sales $${saleTotal.toFixed(2)}`
+      + (returnTotal ? ` · Returns $${returnTotal.toFixed(2)} · Net $${(saleTotal - returnTotal).toFixed(2)}` : '');
+  }
 }
 
 async function viewReceipt(txId) {
