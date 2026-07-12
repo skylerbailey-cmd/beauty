@@ -2,18 +2,34 @@
 
 const { Pool } = require('pg');
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+// Railway may inject DATABASE_URL, DATABASE_PUBLIC_URL, or POSTGRES_URL
+const connectionString = process.env.DATABASE_URL || process.env.DATABASE_PUBLIC_URL || process.env.POSTGRES_URL;
+
+if (!connectionString) {
+  console.warn('[postgres] No DATABASE_URL found. Postgres features will be unavailable.');
+}
+
+const pool = connectionString ? new Pool({
+  connectionString,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-});
+}) : null;
+
+// Helper: returns empty result if pool not available
+async function query(text, params) {
+  if (!pool) return { rows: [] };
+  return pool.query(text, params);
+}
 
 // Test connection on startup
-pool.query('SELECT NOW()')
-  .then(r => console.log(`[postgres] Connected: ${r.rows[0].now}`))
-  .catch(err => console.error('[postgres] Connection failed:', err.message));
+if (pool) {
+  pool.query('SELECT NOW()')
+    .then(r => console.log(`[postgres] Connected: ${r.rows[0].now}`))
+    .catch(err => console.error('[postgres] Connection failed:', err.message));
+}
 
 async function initSchema() {
-  await pool.query(`
+  if (!pool) { console.warn('[postgres] Skipping schema init — no connection'); return; }
+  await query(`
     -- Customers (shared CRM)
     CREATE TABLE IF NOT EXISTS customers (
       id SERIAL PRIMARY KEY,
@@ -173,7 +189,7 @@ async function initSchema() {
     );
   `);
   // Migrations for existing DBs
-  const migrate = async (sql) => { try { await pool.query(sql); } catch (_) {} };
+  const migrate = async (sql) => { try { await query(sql); } catch (_) {} };
   await migrate('ALTER TABLE pos_employees ADD COLUMN IF NOT EXISTS commission_rate REAL DEFAULT 0');
   await migrate('ALTER TABLE pos_product_prices ADD COLUMN IF NOT EXISTS min_price REAL DEFAULT 0');
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS card_last4 TEXT DEFAULT \'\'');
@@ -185,16 +201,16 @@ async function initSchema() {
 
 async function findOrCreateCustomer(name, email, userId) {
   const existing = userId
-    ? (await pool.query('SELECT * FROM customers WHERE email = $1 AND user_id = $2', [email, userId])).rows[0]
-    : (await pool.query('SELECT * FROM customers WHERE email = $1', [email])).rows[0];
+    ? (await query('SELECT * FROM customers WHERE email = $1 AND user_id = $2', [email, userId])).rows[0]
+    : (await query('SELECT * FROM customers WHERE email = $1', [email])).rows[0];
   if (existing) {
     if (name && name !== existing.name) {
-      await pool.query('UPDATE customers SET name = $1, updated_at = NOW() WHERE id = $2', [name, existing.id]);
+      await query('UPDATE customers SET name = $1, updated_at = NOW() WHERE id = $2', [name, existing.id]);
       existing.name = name;
     }
     return existing;
   }
-  const result = await pool.query(
+  const result = await query(
     'INSERT INTO customers (name, email, user_id) VALUES ($1, $2, $3) ON CONFLICT (user_id, email) DO UPDATE SET name = EXCLUDED.name RETURNING *',
     [name || '', email, userId || '']
   );
@@ -203,7 +219,7 @@ async function findOrCreateCustomer(name, email, userId) {
 
 async function addCustomerProducts(customerId, products) {
   for (const p of products) {
-    await pool.query(
+    await query(
       'INSERT INTO customer_products (customer_id, product_id, product_name) VALUES ($1, $2, $3) ON CONFLICT (customer_id, product_id) DO NOTHING',
       [customerId, p.id, p.name]
     );
@@ -212,27 +228,27 @@ async function addCustomerProducts(customerId, products) {
 
 async function getCustomers(userId) {
   const customers = userId
-    ? (await pool.query('SELECT * FROM customers WHERE user_id = $1 ORDER BY updated_at DESC', [userId])).rows
-    : (await pool.query('SELECT * FROM customers ORDER BY updated_at DESC')).rows;
+    ? (await query('SELECT * FROM customers WHERE user_id = $1 ORDER BY updated_at DESC', [userId])).rows
+    : (await query('SELECT * FROM customers ORDER BY updated_at DESC')).rows;
   for (const c of customers) {
-    c.products = (await pool.query('SELECT * FROM customer_products WHERE customer_id = $1 ORDER BY purchased_at DESC', [c.id])).rows;
+    c.products = (await query('SELECT * FROM customer_products WHERE customer_id = $1 ORDER BY purchased_at DESC', [c.id])).rows;
   }
   return customers;
 }
 
 async function getCustomer(id) {
-  const c = (await pool.query('SELECT * FROM customers WHERE id = $1', [id])).rows[0];
+  const c = (await query('SELECT * FROM customers WHERE id = $1', [id])).rows[0];
   if (!c) return null;
-  c.products = (await pool.query('SELECT * FROM customer_products WHERE customer_id = $1 ORDER BY purchased_at DESC', [id])).rows;
+  c.products = (await query('SELECT * FROM customer_products WHERE customer_id = $1 ORDER BY purchased_at DESC', [id])).rows;
   return c;
 }
 
 async function getCustomerByEmail(email, userId) {
   const c = userId
-    ? (await pool.query('SELECT * FROM customers WHERE email = $1 AND user_id = $2', [email, userId])).rows[0]
-    : (await pool.query('SELECT * FROM customers WHERE email = $1', [email])).rows[0];
+    ? (await query('SELECT * FROM customers WHERE email = $1 AND user_id = $2', [email, userId])).rows[0]
+    : (await query('SELECT * FROM customers WHERE email = $1', [email])).rows[0];
   if (!c) return null;
-  c.products = (await pool.query('SELECT * FROM customer_products WHERE customer_id = $1 ORDER BY purchased_at DESC', [c.id])).rows;
+  c.products = (await query('SELECT * FROM customer_products WHERE customer_id = $1 ORDER BY purchased_at DESC', [c.id])).rows;
   return c;
 }
 
@@ -251,21 +267,21 @@ async function updateCustomer(id, fields) {
   if (sets.length === 0) return;
   sets.push('updated_at = NOW()');
   params.push(id);
-  await pool.query(`UPDATE customers SET ${sets.join(', ')} WHERE id = $${idx}`, params);
+  await query(`UPDATE customers SET ${sets.join(', ')} WHERE id = $${idx}`, params);
 }
 
 // ─── Employees ──────────────────────────────────────────────────────────────
 
 async function getEmployees(userId) {
-  return (await pool.query('SELECT * FROM pos_employees WHERE user_id = $1 ORDER BY name', [userId])).rows;
+  return (await query('SELECT * FROM pos_employees WHERE user_id = $1 ORDER BY name', [userId])).rows;
 }
 
 async function getEmployee(id) {
-  return (await pool.query('SELECT * FROM pos_employees WHERE id = $1', [id])).rows[0];
+  return (await query('SELECT * FROM pos_employees WHERE id = $1', [id])).rows[0];
 }
 
 async function createEmployee(name, pin, role, commissionRate, userId) {
-  const result = await pool.query(
+  const result = await query(
     'INSERT INTO pos_employees (name, pin, role, commission_rate, user_id) VALUES ($1, $2, $3, $4, $5) RETURNING *',
     [name, pin, role || 'sales', commissionRate || 0, userId]
   );
@@ -286,21 +302,21 @@ async function updateEmployee(id, fields) {
   }
   if (sets.length === 0) return;
   params.push(id);
-  await pool.query(`UPDATE pos_employees SET ${sets.join(', ')} WHERE id = $${idx}`, params);
+  await query(`UPDATE pos_employees SET ${sets.join(', ')} WHERE id = $${idx}`, params);
 }
 
 async function verifyEmployeePin(pin, userId) {
-  return (await pool.query('SELECT * FROM pos_employees WHERE pin = $1 AND user_id = $2 AND active = 1', [pin, userId])).rows[0];
+  return (await query('SELECT * FROM pos_employees WHERE pin = $1 AND user_id = $2 AND active = 1', [pin, userId])).rows[0];
 }
 
 // ─── Product Prices ─────────────────────────────────────────────────────────
 
 async function getProductPrices(userId) {
-  return (await pool.query('SELECT * FROM pos_product_prices WHERE user_id = $1', [userId])).rows;
+  return (await query('SELECT * FROM pos_product_prices WHERE user_id = $1', [userId])).rows;
 }
 
 async function setProductPrice(productId, price, minPrice, cost, userId) {
-  await pool.query(
+  await query(
     `INSERT INTO pos_product_prices (product_id, price, min_price, cost, user_id) VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (product_id, user_id) DO UPDATE SET price = EXCLUDED.price, min_price = EXCLUDED.min_price, cost = EXCLUDED.cost`,
     [productId, price, minPrice || 0, cost || 0, userId]
@@ -310,13 +326,13 @@ async function setProductPrice(productId, price, minPrice, cost, userId) {
 // ─── Transactions ───────────────────────────────────────────────────────────
 
 async function generateReceiptNumber() {
-  const result = await pool.query("SELECT COALESCE(MAX(CAST(receipt_number AS INTEGER)), 1000) as num FROM pos_transactions WHERE receipt_number ~ '^[0-9]+$'");
+  const result = await query("SELECT COALESCE(MAX(CAST(receipt_number AS INTEGER)), 1000) as num FROM pos_transactions WHERE receipt_number ~ '^[0-9]+$'");
   return String((result.rows[0]?.num || 1000) + 1);
 }
 
 async function createTransaction(txData) {
   const receiptNumber = await generateReceiptNumber();
-  const result = await pool.query(
+  const result = await query(
     `INSERT INTO pos_transactions
       (type, employee_id, customer_id, customer_name, customer_email,
        subtotal, tax_rate, tax_amount, discount_amount, total,
@@ -337,7 +353,7 @@ async function createTransaction(txData) {
 
 async function addTransactionItems(transactionId, items) {
   for (const item of items) {
-    await pool.query(
+    await query(
       `INSERT INTO pos_transaction_items (transaction_id, product_id, product_name, brand, quantity, unit_price, discount, line_total)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
       [transactionId, item.product_id, item.product_name, item.brand || '', item.quantity || 1, item.unit_price, item.discount || 0, item.line_total]
@@ -347,7 +363,7 @@ async function addTransactionItems(transactionId, items) {
 
 async function addTransactionEmployees(transactionId, employees) {
   for (const emp of employees) {
-    await pool.query(
+    await query(
       `INSERT INTO pos_transaction_employees (transaction_id, employee_id, commission_type, commission_value, commission_amount)
        VALUES ($1,$2,$3,$4,$5)`,
       [transactionId, emp.employee_id, emp.commission_type || 'percent', emp.commission_value || 100, emp.commission_amount || 0]
@@ -356,10 +372,10 @@ async function addTransactionEmployees(transactionId, employees) {
 }
 
 async function getTransaction(id) {
-  const tx = (await pool.query('SELECT * FROM pos_transactions WHERE id = $1', [id])).rows[0];
+  const tx = (await query('SELECT * FROM pos_transactions WHERE id = $1', [id])).rows[0];
   if (!tx) return null;
-  tx.items = (await pool.query('SELECT * FROM pos_transaction_items WHERE transaction_id = $1', [id])).rows;
-  tx.employees = (await pool.query(
+  tx.items = (await query('SELECT * FROM pos_transaction_items WHERE transaction_id = $1', [id])).rows;
+  tx.employees = (await query(
     `SELECT te.*, e.name as employee_name FROM pos_transaction_employees te
      JOIN pos_employees e ON te.employee_id = e.id WHERE te.transaction_id = $1`, [id]
   )).rows;
@@ -367,10 +383,10 @@ async function getTransaction(id) {
 }
 
 async function getTransactionByReceipt(receiptNumber, userId) {
-  const tx = (await pool.query('SELECT * FROM pos_transactions WHERE receipt_number = $1 AND user_id = $2', [receiptNumber, userId])).rows[0];
+  const tx = (await query('SELECT * FROM pos_transactions WHERE receipt_number = $1 AND user_id = $2', [receiptNumber, userId])).rows[0];
   if (!tx) return null;
-  tx.items = (await pool.query('SELECT * FROM pos_transaction_items WHERE transaction_id = $1', [tx.id])).rows;
-  tx.employees = (await pool.query(
+  tx.items = (await query('SELECT * FROM pos_transaction_items WHERE transaction_id = $1', [tx.id])).rows;
+  tx.employees = (await query(
     `SELECT te.*, e.name as employee_name FROM pos_transaction_employees te
      JOIN pos_employees e ON te.employee_id = e.id WHERE te.transaction_id = $1`, [tx.id]
   )).rows;
@@ -389,13 +405,13 @@ async function getTransactions(userId, opts = {}) {
   if (employeeId) { where += ` AND t.employee_id = $${idx}`; params.push(employeeId); idx++; }
   params.push(limit);
 
-  const transactions = (await pool.query(`
+  const transactions = (await query(`
     SELECT t.* FROM pos_transactions t ${where} ORDER BY t.created_at DESC LIMIT $${idx}
   `, params)).rows;
 
   for (const tx of transactions) {
-    tx.items = (await pool.query('SELECT * FROM pos_transaction_items WHERE transaction_id = $1', [tx.id])).rows;
-    tx.employees = (await pool.query(
+    tx.items = (await query('SELECT * FROM pos_transaction_items WHERE transaction_id = $1', [tx.id])).rows;
+    tx.employees = (await query(
       `SELECT te.*, e.name as employee_name FROM pos_transaction_employees te
        JOIN pos_employees e ON te.employee_id = e.id WHERE te.transaction_id = $1`, [tx.id]
     )).rows;
@@ -406,7 +422,7 @@ async function getTransactions(userId, opts = {}) {
 // ─── Reports ────────────────────────────────────────────────────────────────
 
 async function getSalesReport(userId, startDate, endDate) {
-  const result = await pool.query(`
+  const result = await query(`
     SELECT
       COUNT(CASE WHEN type = 'sale' THEN 1 END) as total_sales,
       COUNT(CASE WHEN type = 'return' THEN 1 END) as total_returns,
@@ -423,7 +439,7 @@ async function getSalesReport(userId, startDate, endDate) {
 }
 
 async function getEmployeeSalesReport(userId, startDate, endDate) {
-  return (await pool.query(`
+  return (await query(`
     SELECT
       e.id as employee_id, e.name as employee_name,
       COUNT(DISTINCT CASE WHEN t.type = 'sale' THEN t.id END) as sale_count,
@@ -443,7 +459,7 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
 }
 
 async function getTopProductsReport(userId, startDate, endDate) {
-  return (await pool.query(`
+  return (await query(`
     SELECT ti.product_id, ti.product_name, ti.brand,
       SUM(CASE WHEN t.type = 'sale' THEN ti.quantity ELSE -ti.quantity END) as units_sold,
       SUM(CASE WHEN t.type = 'sale' THEN ti.line_total ELSE -ti.line_total END) as revenue
@@ -457,7 +473,7 @@ async function getTopProductsReport(userId, startDate, endDate) {
 }
 
 async function getCustomerReport(userId, startDate, endDate) {
-  return (await pool.query(`
+  return (await query(`
     SELECT customer_name, customer_email,
       COUNT(CASE WHEN type = 'sale' THEN 1 END) as purchases,
       COUNT(CASE WHEN type = 'return' THEN 1 END) as returns,
@@ -474,10 +490,10 @@ async function getCustomerReport(userId, startDate, endDate) {
 // ─── Settings ───────────────────────────────────────────────────────────────
 
 async function getSettings(userId) {
-  let result = await pool.query('SELECT * FROM pos_settings WHERE user_id = $1', [userId]);
+  let result = await query('SELECT * FROM pos_settings WHERE user_id = $1', [userId]);
   if (result.rows.length === 0) {
-    await pool.query('INSERT INTO pos_settings (user_id) VALUES ($1) ON CONFLICT DO NOTHING', [userId]);
-    result = await pool.query('SELECT * FROM pos_settings WHERE user_id = $1', [userId]);
+    await query('INSERT INTO pos_settings (user_id) VALUES ($1) ON CONFLICT DO NOTHING', [userId]);
+    result = await query('SELECT * FROM pos_settings WHERE user_id = $1', [userId]);
   }
   return result.rows[0];
 }
@@ -495,23 +511,23 @@ async function updateSettings(userId, fields) {
     }
   }
   if (sets.length === 0) return;
-  await pool.query(`INSERT INTO pos_settings (user_id) VALUES ($${idx}) ON CONFLICT DO NOTHING`, [userId]);
+  await query(`INSERT INTO pos_settings (user_id) VALUES ($${idx}) ON CONFLICT DO NOTHING`, [userId]);
   params.push(userId);
-  await pool.query(`UPDATE pos_settings SET ${sets.join(', ')} WHERE user_id = $${idx}`, params);
+  await query(`UPDATE pos_settings SET ${sets.join(', ')} WHERE user_id = $${idx}`, params);
 }
 
 // ─── Additional Customer queries ────────────────────────────────────────────
 
 async function updateCustomerNotes(id, notes) {
-  await pool.query('UPDATE customers SET notes = $1, updated_at = NOW() WHERE id = $2', [notes, id]);
+  await query('UPDATE customers SET notes = $1, updated_at = NOW() WHERE id = $2', [notes, id]);
 }
 
 async function getCustomersByProduct(productId, userId) {
   const rows = userId
-    ? (await pool.query(`SELECT DISTINCT c.* FROM customers c JOIN customer_products cp ON c.id = cp.customer_id WHERE cp.product_id = $1 AND c.user_id = $2 ORDER BY c.updated_at DESC`, [productId, userId])).rows
-    : (await pool.query(`SELECT DISTINCT c.* FROM customers c JOIN customer_products cp ON c.id = cp.customer_id WHERE cp.product_id = $1 ORDER BY c.updated_at DESC`, [productId])).rows;
+    ? (await query(`SELECT DISTINCT c.* FROM customers c JOIN customer_products cp ON c.id = cp.customer_id WHERE cp.product_id = $1 AND c.user_id = $2 ORDER BY c.updated_at DESC`, [productId, userId])).rows
+    : (await query(`SELECT DISTINCT c.* FROM customers c JOIN customer_products cp ON c.id = cp.customer_id WHERE cp.product_id = $1 ORDER BY c.updated_at DESC`, [productId])).rows;
   for (const c of rows) {
-    c.products = (await pool.query('SELECT * FROM customer_products WHERE customer_id = $1 ORDER BY purchased_at DESC', [c.id])).rows;
+    c.products = (await query('SELECT * FROM customer_products WHERE customer_id = $1 ORDER BY purchased_at DESC', [c.id])).rows;
   }
   return rows;
 }
@@ -524,24 +540,24 @@ async function getCustomersByProducts(productIds, userId) {
     whereExtra = ` AND c.user_id = $${params.length + 1}`;
     params.push(userId);
   }
-  const rows = (await pool.query(`SELECT DISTINCT c.* FROM customers c JOIN customer_products cp ON c.id = cp.customer_id WHERE cp.product_id IN (${placeholders})${whereExtra} ORDER BY c.updated_at DESC`, params)).rows;
+  const rows = (await query(`SELECT DISTINCT c.* FROM customers c JOIN customer_products cp ON c.id = cp.customer_id WHERE cp.product_id IN (${placeholders})${whereExtra} ORDER BY c.updated_at DESC`, params)).rows;
   for (const c of rows) {
-    c.products = (await pool.query('SELECT * FROM customer_products WHERE customer_id = $1 ORDER BY purchased_at DESC', [c.id])).rows;
+    c.products = (await query('SELECT * FROM customer_products WHERE customer_id = $1 ORDER BY purchased_at DESC', [c.id])).rows;
   }
   return rows;
 }
 
 async function getUniqueCustomerEmails(userId) {
   if (userId) {
-    return (await pool.query('SELECT DISTINCT email FROM customers WHERE user_id = $1 ORDER BY email', [userId])).rows.map(r => r.email);
+    return (await query('SELECT DISTINCT email FROM customers WHERE user_id = $1 ORDER BY email', [userId])).rows.map(r => r.email);
   }
-  return (await pool.query('SELECT DISTINCT customer_email FROM welcome_emails ORDER BY customer_email')).rows.map(r => r.customer_email);
+  return (await query('SELECT DISTINCT customer_email FROM welcome_emails ORDER BY customer_email')).rows.map(r => r.customer_email);
 }
 
 // ─── Welcome Emails ─────────────────────────────────────────────────────────
 
 async function saveWelcomeEmail({ customer_name, customer_email, products, user_id }) {
-  const result = await pool.query(
+  const result = await query(
     'INSERT INTO welcome_emails (customer_name, customer_email, products, user_id) VALUES ($1, $2, $3, $4) RETURNING id',
     [customer_name, customer_email, JSON.stringify(products), user_id || '']
   );
@@ -550,15 +566,15 @@ async function saveWelcomeEmail({ customer_name, customer_email, products, user_
 
 async function getWelcomeEmails(userId, limit = 50) {
   if (userId) {
-    return (await pool.query('SELECT * FROM welcome_emails WHERE user_id = $1 ORDER BY sent_at DESC LIMIT $2', [userId, limit])).rows;
+    return (await query('SELECT * FROM welcome_emails WHERE user_id = $1 ORDER BY sent_at DESC LIMIT $2', [userId, limit])).rows;
   }
-  return (await pool.query('SELECT * FROM welcome_emails ORDER BY sent_at DESC LIMIT $1', [limit])).rows;
+  return (await query('SELECT * FROM welcome_emails ORDER BY sent_at DESC LIMIT $1', [limit])).rows;
 }
 
 // ─── Campaigns ──────────────────────────────────────────────────────────────
 
 async function saveCampaign({ subject, body, recipient_count, user_id }) {
-  const result = await pool.query(
+  const result = await query(
     'INSERT INTO campaigns (subject, body, recipient_count, user_id) VALUES ($1, $2, $3, $4) RETURNING id',
     [subject, body, recipient_count, user_id || '']
   );
@@ -567,19 +583,19 @@ async function saveCampaign({ subject, body, recipient_count, user_id }) {
 
 async function getCampaigns(userId, limit = 50) {
   if (userId) {
-    return (await pool.query('SELECT * FROM campaigns WHERE user_id = $1 ORDER BY sent_at DESC LIMIT $2', [userId, limit])).rows;
+    return (await query('SELECT * FROM campaigns WHERE user_id = $1 ORDER BY sent_at DESC LIMIT $2', [userId, limit])).rows;
   }
-  return (await pool.query('SELECT * FROM campaigns ORDER BY sent_at DESC LIMIT $1', [limit])).rows;
+  return (await query('SELECT * FROM campaigns ORDER BY sent_at DESC LIMIT $1', [limit])).rows;
 }
 
 // ─── Custom Products ────────────────────────────────────────────────────────
 
 async function getCustomProducts(userId) {
-  return (await pool.query('SELECT * FROM pos_custom_products WHERE user_id = $1 AND active = 1 ORDER BY name', [userId])).rows;
+  return (await query('SELECT * FROM pos_custom_products WHERE user_id = $1 AND active = 1 ORDER BY name', [userId])).rows;
 }
 
 async function createCustomProduct(fields, userId) {
-  const result = await pool.query(
+  const result = await query(
     'INSERT INTO pos_custom_products (name, brand, description, image, price, min_price, user_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
     [fields.name, fields.brand || 'Custom', fields.description || '', fields.image || '', fields.price || 0, fields.min_price || 0, userId]
   );
@@ -596,17 +612,17 @@ async function updateCustomProduct(id, fields) {
   }
   if (sets.length === 0) return;
   params.push(id);
-  await pool.query(`UPDATE pos_custom_products SET ${sets.join(', ')} WHERE id = $${idx}`, params);
+  await query(`UPDATE pos_custom_products SET ${sets.join(', ')} WHERE id = $${idx}`, params);
 }
 
 // ─── Product Visibility ─────────────────────────────────────────────────────
 
 async function getProductVisibility(userId) {
-  return (await pool.query('SELECT * FROM pos_product_visibility WHERE user_id = $1', [userId])).rows;
+  return (await query('SELECT * FROM pos_product_visibility WHERE user_id = $1', [userId])).rows;
 }
 
 async function setProductVisibility(productId, userId, visible) {
-  await pool.query(
+  await query(
     `INSERT INTO pos_product_visibility (product_id, user_id, visible) VALUES ($1, $2, $3)
      ON CONFLICT (product_id, user_id) DO UPDATE SET visible = EXCLUDED.visible`,
     [productId, userId, visible ? 1 : 0]

@@ -103,8 +103,16 @@ app.use('/api/pos', posRoutes);
 app.use('/webhook', webhookRoutes);
 
 // Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', app: 'Glow SF Backend', timestamp: new Date().toISOString() });
+app.get('/health', async (req, res) => {
+  let pgStatus = 'not configured';
+  try {
+    const { pool } = require('./db/postgres');
+    if (pool) {
+      await pool.query('SELECT 1');
+      pgStatus = 'connected';
+    }
+  } catch (err) { pgStatus = 'error: ' + err.message; }
+  res.json({ status: 'ok', app: 'Glow SF Backend', postgres: pgStatus, timestamp: new Date().toISOString() });
 });
 
 // 404 handler
