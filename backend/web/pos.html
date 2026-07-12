@@ -327,7 +327,7 @@
 <body>
 
 <header>
-  <div style="position:relative" id="appSwitcherWrap">
+  <div style="position:relative;display:none" id="appSwitcherWrap">
     <button class="app-switch-btn" onclick="toggleAppSwitcher()" title="Switch app">
       <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
     </button>
@@ -590,12 +590,20 @@
       </div>
 
       <div class="report-card">
-        <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
           <h3 style="margin:0">Customers</h3>
-          <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportCustomersCSV()">Export CSV</button>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <label style="font-size:.8rem;color:var(--mid);font-family:system-ui,sans-serif">Purchased:</label>
+            <select id="custProductFilter" onchange="applyCustomerProductFilter()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none;max-width:220px">
+              <option value="">All items</option>
+            </select>
+            <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportCustomersCSV()">Export CSV</button>
+            <button class="btn" style="padding:7px 14px;font-size:.82rem;background:var(--gold);color:#fff" onclick="openMassEmail()">Mass Email</button>
+          </div>
         </div>
-        <table class="report-table" style="margin-top:12px">
-          <thead><tr><th>Customer</th><th>Email</th><th>Purchases</th><th>Returns</th><th>Total Spent</th></tr></thead>
+        <div id="custFilterSummary" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin-top:8px"></div>
+        <table class="report-table" style="margin-top:8px">
+          <thead><tr><th>Customer</th><th>Email</th><th>Purchases</th><th>Returns</th><th>Total Spent</th><th>Items</th></tr></thead>
           <tbody id="custReportBody"></tbody>
         </table>
       </div>
@@ -879,6 +887,28 @@
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeTxEdit()">Cancel</button>
       <button class="btn btn-confirm" onclick="saveTxEdit()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Mass Email Modal ─── -->
+<div class="modal-overlay" id="massEmailModal">
+  <div class="modal" style="max-width:560px">
+    <h2>Mass Email</h2>
+    <p class="sub" id="massEmailCount" style="font-family:system-ui,sans-serif;font-size:.84rem;color:var(--mid);margin-bottom:12px"></p>
+    <div class="field">
+      <label>Subject</label>
+      <input type="text" id="massEmailSubject" placeholder="e.g. A little something for you, {name}!">
+    </div>
+    <div class="field">
+      <label>Message</label>
+      <textarea id="massEmailBody" rows="8" placeholder="Hi {name},&#10;&#10;Write your message here…" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;font-family:system-ui,sans-serif;outline:none;resize:vertical"></textarea>
+      <div style="font-size:.74rem;color:var(--mid);font-family:system-ui,sans-serif;margin-top:4px">Use <b>{name}</b> to insert each customer's name. Everyone gets their own separate email (they won't see each other).</div>
+    </div>
+    <div id="massEmailStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;min-height:1em;margin-top:4px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeMassEmail()">Cancel</button>
+      <button class="btn btn-confirm" id="massEmailSendBtn" onclick="sendMassEmail()">Send</button>
     </div>
   </div>
 </div>
@@ -1859,26 +1889,19 @@ function exportTransactionsCSV() {
   downloadCSV(`transactions-${company}-${new Date().toISOString().slice(0, 10)}.csv`, rows);
 }
 
-async function exportCustomersCSV() {
-  try {
-    const resp = await fetch(`${API}/api/welcome/customers`, { credentials: 'include' });
-    const data = await resp.json();
-    const customers = data.customers || [];
-    const rows = [['Name', 'Email', 'Phone', 'Address', 'Notes', 'Products', 'Created', 'Last Updated']];
-    customers.forEach(c => {
-      rows.push([
-        c.name || '', c.email || '', c.phone || '', c.address || '', c.notes || '',
-        (c.products || []).map(p => p.product_name).join('; '),
-        c.created_at ? new Date(c.created_at).toLocaleDateString() : '',
-        c.updated_at ? new Date(c.updated_at).toLocaleDateString() : '',
-      ]);
-    });
-    if (rows.length === 1) { alert('No customers to export.'); return; }
-    const company = (currentUser?.companyName || 'company').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-    downloadCSV(`customers-${company}-${new Date().toISOString().slice(0, 10)}.csv`, rows);
-  } catch (err) {
-    alert('Failed to export customers: ' + err.message);
-  }
+function exportCustomersCSV() {
+  const list = custFiltered || [];
+  const rows = [['Name', 'Email', 'Purchases', 'Returns', 'Total Spent', 'Items Purchased']];
+  list.forEach(c => {
+    rows.push([
+      c.customer_name || '', c.customer_email || '', c.purchases, c.returns,
+      Number(c.total_spent).toFixed(2),
+      (c.products || []).map(p => p.product_name).join('; '),
+    ]);
+  });
+  if (rows.length === 1) { alert('No customers to export. Adjust the date range/filter first.'); return; }
+  const company = (currentUser?.companyName || 'company').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+  downloadCSV(`customers-${company}-${new Date().toISOString().slice(0, 10)}.csv`, rows);
 }
 
 // ─── Transaction Edit / Delete (manager-gated) ──────────────────────────────
@@ -2200,16 +2223,104 @@ async function loadReports() {
     </tr>
   `).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--mid)">No data</td></tr>';
 
-  // Customer report
-  document.getElementById('custReportBody').innerHTML = customers.map(c => `
+  // Customer report — store, populate product filter, and render (with filter)
+  custReportData = customers;
+  populateCustProductFilter();
+  applyCustomerProductFilter();
+}
+
+// ─── Customers: product filter + mass email ─────────────────────────────────
+let custReportData = [];  // full customer report for the date range
+let custFiltered = [];    // customers after the product filter
+
+function populateCustProductFilter() {
+  const sel = document.getElementById('custProductFilter');
+  if (!sel) return;
+  const current = sel.value;
+  const map = new Map();
+  custReportData.forEach(c => (c.products || []).forEach(p => { if (!map.has(p.product_id)) map.set(p.product_id, p.product_name); }));
+  const opts = [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  sel.innerHTML = '<option value="">All items</option>' + opts.map(([id, name]) => `<option value="${escapeHtml(id)}">${escapeHtml(name)}</option>`).join('');
+  if ([...map.keys()].includes(current)) sel.value = current;
+}
+
+function applyCustomerProductFilter() {
+  const pid = document.getElementById('custProductFilter').value;
+  custFiltered = pid
+    ? custReportData.filter(c => (c.products || []).some(p => p.product_id === pid))
+    : custReportData.slice();
+  renderCustomers(custFiltered);
+
+  const sel = document.getElementById('custProductFilter');
+  const label = pid ? (sel.options[sel.selectedIndex]?.text || 'item') : null;
+  const withEmail = custFiltered.filter(c => c.customer_email).length;
+  document.getElementById('custFilterSummary').textContent =
+    `${custFiltered.length} customer${custFiltered.length !== 1 ? 's' : ''}` +
+    (label ? ` who purchased “${label}”` : '') + ` · ${withEmail} with an email`;
+}
+
+function renderCustomers(list) {
+  document.getElementById('custReportBody').innerHTML = list.map(c => `
     <tr>
-      <td style="font-weight:600">${c.customer_name}</td>
-      <td>${c.customer_email}</td>
+      <td style="font-weight:600">${escapeHtml(c.customer_name)}</td>
+      <td>${escapeHtml(c.customer_email)}</td>
       <td>${c.purchases}</td>
       <td>${c.returns}</td>
-      <td style="font-weight:600">$${c.total_spent.toFixed(2)}</td>
+      <td style="font-weight:600">$${Number(c.total_spent).toFixed(2)}</td>
+      <td style="font-size:.78rem;color:var(--mid)">${(c.products || []).map(p => escapeHtml(p.product_name)).join(', ')}</td>
     </tr>
-  `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--mid)">No data</td></tr>';
+  `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No customers match this filter</td></tr>';
+}
+
+// ─── Mass Email ─────────────────────────────────────────────────────────────
+function openMassEmail() {
+  const recipients = (custFiltered || []).filter(c => c.customer_email);
+  if (recipients.length === 0) {
+    alert('No customers with an email address in the current filter.');
+    return;
+  }
+  document.getElementById('massEmailCount').textContent = `This will send a separate email to ${recipients.length} customer${recipients.length !== 1 ? 's' : ''} in your current filter.`;
+  document.getElementById('massEmailSubject').value = '';
+  document.getElementById('massEmailBody').value = '';
+  document.getElementById('massEmailStatus').textContent = '';
+  document.getElementById('massEmailSendBtn').textContent = `Send to ${recipients.length}`;
+  document.getElementById('massEmailSendBtn').disabled = false;
+  document.getElementById('massEmailModal').classList.add('show');
+}
+function closeMassEmail() {
+  document.getElementById('massEmailModal').classList.remove('show');
+}
+
+async function sendMassEmail() {
+  const subject = document.getElementById('massEmailSubject').value.trim();
+  const message = document.getElementById('massEmailBody').value.trim();
+  const statusEl = document.getElementById('massEmailStatus');
+  if (!subject || !message) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Enter a subject and message.'; return; }
+
+  const recipients = (custFiltered || []).filter(c => c.customer_email)
+    .map(c => ({ name: c.customer_name, email: c.customer_email }));
+  if (recipients.length === 0) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'No recipients.'; return; }
+
+  const btn = document.getElementById('massEmailSendBtn');
+  btn.disabled = true;
+  statusEl.style.color = 'var(--mid)';
+  statusEl.textContent = `Sending to ${recipients.length}…`;
+  try {
+    const resp = await fetch(`${API}/api/pos/mass-email`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ recipients, subject, message }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    statusEl.style.color = 'var(--success)';
+    statusEl.textContent = `Sent ${data.sent} of ${data.total}.` + (data.errors && data.errors.length ? ` Some failed: ${data.errors.join('; ')}` : '');
+    if (!data.errors || data.errors.length === 0) setTimeout(closeMassEmail, 1500);
+    else btn.disabled = false;
+  } catch (err) {
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = 'Failed: ' + err.message;
+    btn.disabled = false;
+  }
 }
 
 // ─── Tab Switching ──────────────────────────────────────────────────────────

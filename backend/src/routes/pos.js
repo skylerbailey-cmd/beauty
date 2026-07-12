@@ -666,6 +666,51 @@ router.post('/transactions/:id/welcome', async (req, res) => {
   }
 });
 
+// ─── Mass Email (to a filtered customer list, sent individually) ────────────
+
+router.post('/mass-email', async (req, res) => {
+  const userId = req.session.userId;
+  const { recipients, subject, message } = req.body;
+  if (!Array.isArray(recipients) || recipients.length === 0) {
+    return res.status(400).json({ error: 'No recipients selected.' });
+  }
+  if (!subject || !subject.trim() || !message || !message.trim()) {
+    return res.status(400).json({ error: 'Subject and message are required.' });
+  }
+
+  const user = await getSendingUser(userId);
+  if (!user?.refresh_token) {
+    return res.status(403).json({ error: 'Gmail is not connected for this company. Connect this company\'s Gmail on the Emails page first.' });
+  }
+
+  // De-dupe by email
+  const seen = new Set();
+  const list = recipients.filter(r => {
+    const e = (r.email || '').trim().toLowerCase();
+    if (!e || seen.has(e)) return false;
+    seen.add(e);
+    return true;
+  });
+
+  let sent = 0;
+  const errors = [];
+  for (const r of list) {
+    const to = (r.email || '').trim();
+    const name = r.name || '';
+    const subj = subject.replace(/\{name\}/g, name || 'there');
+    const bodyText = message.replace(/\{name\}/g, name || 'there').replace(/\n/g, '<br>');
+    const html = `<div style="font-family:Georgia,serif;color:#2c2022;max-width:600px;margin:0 auto;line-height:1.6;font-size:15px">${bodyText}</div>`;
+    try {
+      await sendGmail(user, to, subj, html);
+      await pgDb.logSentEmail({ user_id: userId, to_email: to, to_name: name, subject: subj, body: html, kind: 'campaign' });
+      sent++;
+    } catch (e) {
+      errors.push(`${to}: ${e.message}`);
+    }
+  }
+  res.json({ ok: true, sent, total: list.length, errors: errors.slice(0, 5) });
+});
+
 // ─── Reports ───────────────────────────────────────────────────────────────
 
 router.get('/reports/sales', async (req, res) => {

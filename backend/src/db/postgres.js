@@ -661,7 +661,7 @@ async function getTopProductsReport(userId, startDate, endDate) {
 }
 
 async function getCustomerReport(userId, startDate, endDate) {
-  return (await query(`
+  const customers = (await query(`
     SELECT customer_name, customer_email,
       COUNT(CASE WHEN type = 'sale' THEN 1 END) as purchases,
       COUNT(CASE WHEN type = 'return' THEN 1 END) as returns,
@@ -673,6 +673,25 @@ async function getCustomerReport(userId, startDate, endDate) {
       AND customer_name != ''
     GROUP BY customer_name, customer_email ORDER BY total_spent DESC
   `, [userId, startDate, endDate])).rows;
+
+  // Attach the distinct products each customer purchased (sales only) in range
+  const prodRows = (await query(`
+    SELECT DISTINCT t.customer_name, t.customer_email, ti.product_id, ti.product_name
+    FROM pos_transaction_items ti
+    JOIN pos_transactions t ON ti.transaction_id = t.id
+    WHERE t.user_id = $1 AND t.type = 'sale'
+      AND COALESCE(t.original_sale_date, t.created_at) >= $2
+      AND COALESCE(t.original_sale_date, t.created_at) <= $3
+  `, [userId, startDate, endDate])).rows;
+  const byCustomer = {};
+  for (const r of prodRows) {
+    const key = `${r.customer_name}|${r.customer_email}`;
+    (byCustomer[key] = byCustomer[key] || []).push({ product_id: r.product_id, product_name: r.product_name });
+  }
+  for (const c of customers) {
+    c.products = byCustomer[`${c.customer_name}|${c.customer_email}`] || [];
+  }
+  return customers;
 }
 
 // Returns where the credited employees differ from the original sale.
