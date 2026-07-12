@@ -598,6 +598,7 @@ router.post('/transactions/:id/email', async (req, res) => {
   try {
     const subject = `${tx.type === 'return' ? 'Return' : 'Sales'} Receipt #${tx.receipt_number} | ${storeName}`;
     await sendGmail(user, email, subject, html);
+    await pgDb.logSentEmail({ user_id: req.session.userId, to_email: email, to_name: tx.customer_name || '', subject, body: html, kind: 'receipt' });
     res.json({ ok: true, sent_to: email });
   } catch (err) {
     console.error('[pos] Email receipt error:', err.message);
@@ -646,6 +647,7 @@ router.post('/transactions/:id/welcome', async (req, res) => {
 
   try {
     await sendGmail(user, email, subject, emailBody);
+    await pgDb.logSentEmail({ user_id: userId, to_email: email, to_name: customerName, subject, body: emailBody, kind: 'welcome' });
     // Record in history + CRM, matching the Welcome Emails tool behavior
     try {
       await pgDb.saveWelcomeEmail({

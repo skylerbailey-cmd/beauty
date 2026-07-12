@@ -170,6 +170,19 @@ async function initSchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_pg_we_user ON welcome_emails(user_id);
 
+    -- Full log of customer-facing emails actually sent (with the exact body)
+    CREATE TABLE IF NOT EXISTS sent_emails (
+      id SERIAL PRIMARY KEY,
+      user_id TEXT DEFAULT '',
+      to_email TEXT DEFAULT '',
+      to_name TEXT DEFAULT '',
+      subject TEXT DEFAULT '',
+      body TEXT DEFAULT '',
+      kind TEXT DEFAULT 'welcome',
+      sent_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_pg_sent_user ON sent_emails(user_id, sent_at DESC);
+
     -- Campaigns history
     CREATE TABLE IF NOT EXISTS campaigns (
       id SERIAL PRIMARY KEY,
@@ -857,6 +870,34 @@ async function getWelcomeEmails(userId, limit = 50) {
   return (await query('SELECT * FROM welcome_emails ORDER BY sent_at DESC LIMIT $1', [limit])).rows;
 }
 
+// ─── Sent Emails log ────────────────────────────────────────────────────────
+
+async function logSentEmail({ user_id, to_email, to_name, subject, body, kind }) {
+  try {
+    const result = await query(
+      `INSERT INTO sent_emails (user_id, to_email, to_name, subject, body, kind)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [user_id || '', to_email || '', to_name || '', subject || '', body || '', kind || 'welcome']
+    );
+    return result.rows[0]?.id;
+  } catch (e) {
+    console.error('[postgres] logSentEmail failed:', e.message);
+    return null;
+  }
+}
+
+async function getSentEmails(userId, limit = 200) {
+  return (await query(
+    `SELECT id, to_email, to_name, subject, kind, sent_at
+     FROM sent_emails WHERE user_id = $1 ORDER BY sent_at DESC LIMIT $2`,
+    [userId, limit]
+  )).rows;
+}
+
+async function getSentEmail(id, userId) {
+  return (await query('SELECT * FROM sent_emails WHERE id = $1 AND user_id = $2', [id, userId])).rows[0] || null;
+}
+
 // ─── Campaigns ──────────────────────────────────────────────────────────────
 
 async function saveCampaign({ subject, body, recipient_count, user_id }) {
@@ -1044,6 +1085,9 @@ module.exports = {
   // Welcome Emails & Campaigns
   saveWelcomeEmail,
   getWelcomeEmails,
+  logSentEmail,
+  getSentEmails,
+  getSentEmail,
   saveCampaign,
   getCampaigns,
   // Employees

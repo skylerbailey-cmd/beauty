@@ -1160,6 +1160,12 @@ router.post('/send', async (req, res) => {
       requestBody: { raw: encodedMessage },
     });
 
+    // Log the exact email that was sent (for the Sent Emails tab)
+    await pgDb.logSentEmail({
+      user_id: userId, to_email: customerEmail, to_name: customerName || '',
+      subject, body: emailBody, kind: 'welcome',
+    });
+
     // Save to history (Postgres)
     await pgDb.saveWelcomeEmail({
       customer_name: customerName || '',
@@ -1201,6 +1207,23 @@ router.get('/history', async (req, res) => {
       sentAt: e.sent_at,
     })),
   });
+});
+
+// GET /api/welcome/sent — list all emails sent to customers (metadata only)
+router.get('/sent', async (req, res) => {
+  const userId = req.session?.userId;
+  if (!userId) return res.status(401).json({ error: 'Not authenticated' });
+  const emails = await pgDb.getSentEmails(userId);
+  res.json({ emails });
+});
+
+// GET /api/welcome/sent/:id — the exact email that was sent (with body)
+router.get('/sent/:id', async (req, res) => {
+  const userId = req.session?.userId;
+  if (!userId) return res.status(401).json({ error: 'Not authenticated' });
+  const email = await pgDb.getSentEmail(parseInt(req.params.id), userId);
+  if (!email) return res.status(404).json({ error: 'Email not found' });
+  res.json({ email });
 });
 
 // GET /api/welcome/campaigns — list past campaigns
