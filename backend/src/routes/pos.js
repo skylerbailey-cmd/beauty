@@ -330,14 +330,14 @@ router.post('/transactions', async (req, res) => {
 
   await pgDb.addTransactionItems(id, txItems);
 
-  // Record employee commissions
+  // Record employee commissions — based on the pre-tax SUBTOTAL (tax excluded)
   if (employeeAssignments && employeeAssignments.length > 0) {
     const empRecords = employeeAssignments.map(ea => {
       let commissionAmount = 0;
       if (ea.commission_type === 'dollar') {
         commissionAmount = ea.commission_value || 0;
       } else {
-        commissionAmount = Math.round(total * (ea.commission_value || 100) / 100 * 100) / 100;
+        commissionAmount = Math.round(subtotal * (ea.commission_value || 100) / 100 * 100) / 100;
       }
       return {
         employee_id: ea.employee_id,
@@ -352,7 +352,7 @@ router.post('/transactions', async (req, res) => {
       employee_id,
       commission_type: 'percent',
       commission_value: 100,
-      commission_amount: total,
+      commission_amount: subtotal,
     }]);
   }
 
@@ -450,9 +450,17 @@ async function getSendingUser(userId) {
   const { getUser, updateUserTokens } = require('../db');
   const user = getUser(userId);
   if (user && !user.refresh_token) {
+    // SQLite lost the token (redeploy) — restore this company's own token
     try {
       const rt = await pgDb.getGmailToken(userId);
       if (rt) { updateUserTokens(userId, null, rt); user.refresh_token = rt; }
+    } catch (_) {}
+  } else if (user && user.refresh_token) {
+    // Back-fill: persist an already-connected token to Postgres so the
+    // connection survives future redeploys without a reconnect.
+    try {
+      const rt = await pgDb.getGmailToken(userId);
+      if (!rt) await pgDb.saveGmailToken(userId, user.refresh_token, user.email);
     } catch (_) {}
   }
   return user;
@@ -531,7 +539,7 @@ router.post('/transactions/:id/email', async (req, res) => {
       <div style="padding:20px 0">
         <p style="font-size:.85rem;color:#6b5057;margin:0 0 4px">Receipt #: <strong>${tx.receipt_number}</strong></p>
         <p style="font-size:.85rem;color:#6b5057;margin:0 0 4px">Date: ${dateStr}</p>
-        ${employeeNames ? `<p style="font-size:.85rem;color:#6b5057;margin:0 0 4px">Sales Associate${tx.employees.length > 1 ? 's' : ''}: <strong>${employeeNames}</strong></p>` : ''}
+        ${employeeNames ? `<p style="font-size:.85rem;color:#6b5057;margin:0 0 4px">Employee${tx.employees.length > 1 ? 's' : ''}: <strong>${employeeNames}</strong></p>` : ''}
         ${tx.customer_name ? `<p style="font-size:.85rem;color:#6b5057;margin:0 0 4px">Customer: <strong>${tx.customer_name}</strong></p>` : ''}
         <div style="margin-top:12px">
         <table style="width:100%;border-collapse:collapse;font-size:.88rem">

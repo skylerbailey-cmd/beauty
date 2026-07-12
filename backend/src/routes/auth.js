@@ -222,6 +222,18 @@ router.get('/me', (req, res) => {
     return res.status(404).json({ error: 'User not found' });
   }
 
+  // Back-fill an already-connected Gmail token into Postgres (fire-and-forget)
+  // so the connection survives future redeploys without a reconnect.
+  if (user.refresh_token) {
+    (async () => {
+      try {
+        const pgDb = require('../db/postgres');
+        const rt = await pgDb.getGmailToken(userId);
+        if (!rt) await pgDb.saveGmailToken(userId, user.refresh_token, user.email);
+      } catch (_) {}
+    })();
+  }
+
   // Don't expose tokens
   res.json({
     id: user.id,

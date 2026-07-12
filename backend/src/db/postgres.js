@@ -478,7 +478,7 @@ async function updateTransaction(id, userId, data) {
     await addTransactionEmployees(id, employees.map(ea => {
       const commissionAmount = ea.commission_type === 'dollar'
         ? (ea.commission_value || 0)
-        : Math.round(total * (ea.commission_value || 100) / 100 * 100) / 100;
+        : Math.round(subtotal * (ea.commission_value || 100) / 100 * 100) / 100;
       return {
         employee_id: ea.employee_id,
         commission_type: ea.commission_type || 'percent',

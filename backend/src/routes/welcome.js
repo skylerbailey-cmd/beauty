@@ -1112,6 +1112,12 @@ router.post('/send', async (req, res) => {
       const rt = await pgDb.getGmailToken(userId);
       if (rt) { updateUserTokens(userId, null, rt); user.refresh_token = rt; }
     } catch (_) {}
+  } else {
+    // Back-fill an already-connected token so it survives future redeploys
+    try {
+      const rt = await pgDb.getGmailToken(userId);
+      if (!rt) await pgDb.saveGmailToken(userId, user.refresh_token, user.email);
+    } catch (_) {}
   }
   if (!user.refresh_token) {
     return res.status(403).json({ error: 'Gmail is not connected for this company. Please connect this company\'s Gmail first.', needsGmailConnect: true });
