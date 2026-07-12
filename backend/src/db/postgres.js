@@ -180,6 +180,19 @@ async function initSchema() {
     );
     CREATE INDEX IF NOT EXISTS idx_pg_camp_user ON campaigns(user_id);
 
+    -- Employee commission plans (tiered/special rules)
+    -- plan_type: 'flat' (use base_rate always), 'daily_threshold' (if day sales > threshold, use tier_rate, else base_rate)
+    CREATE TABLE IF NOT EXISTS pos_commission_plans (
+      id SERIAL PRIMARY KEY,
+      employee_id INTEGER NOT NULL REFERENCES pos_employees(id),
+      plan_type TEXT NOT NULL DEFAULT 'flat',
+      base_rate REAL NOT NULL DEFAULT 35,
+      tier_rate REAL DEFAULT 40,
+      tier_threshold REAL DEFAULT 0,
+      user_id TEXT DEFAULT ''
+    );
+    CREATE INDEX IF NOT EXISTS idx_pg_commplan_emp ON pos_commission_plans(employee_id);
+
     -- POS store settings
     CREATE TABLE IF NOT EXISTS pos_settings (
       user_id TEXT PRIMARY KEY,
@@ -447,9 +460,10 @@ async function getSalesReport(userId, startDate, endDate) {
 }
 
 async function getEmployeeSalesReport(userId, startDate, endDate) {
-  return (await query(`
+  // Get base report from the standard query
+  const baseReport = (await query(`
     SELECT
-      e.id as employee_id, e.name as employee_name,
+      e.id as employee_id, e.name as employee_name, e.commission_rate,
       COUNT(DISTINCT CASE WHEN t.type = 'sale' THEN t.id END) as sale_count,
       COUNT(DISTINCT CASE WHEN t.type = 'return' THEN t.id END) as return_count,
       COALESCE(SUM(CASE WHEN t.type = 'sale' THEN te.commission_amount ELSE 0 END), 0) as sales_total,
@@ -464,6 +478,25 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
     WHERE e.user_id = $4
     GROUP BY e.id ORDER BY net_total DESC
   `, [userId, startDate, endDate, userId])).rows;
+
+  // Check for special commission plans and recalculate those employees
+  const plans = await getAllCommissionPlans(userId);
+  const planByEmp = {};
+  for (const p of plans) planByEmp[p.employee_id] = p;
+
+  for (const row of baseReport) {
+    if (planByEmp[row.employee_id]) {
+      const recalc = await calculateEmployeeCommission(row.employee_id, userId, startDate, endDate);
+      row.sales_total = recalc.sales_total;
+      row.returns_total = recalc.returns_total;
+      row.net_total = recalc.net_total;
+      row.has_special_plan = true;
+    }
+  }
+
+  // Re-sort after recalc
+  baseReport.sort((a, b) => b.net_total - a.net_total);
+  return baseReport;
 }
 
 async function getTopProductsReport(userId, startDate, endDate) {
@@ -522,6 +555,89 @@ async function updateSettings(userId, fields) {
   await query(`INSERT INTO pos_settings (user_id) VALUES ($${idx}) ON CONFLICT DO NOTHING`, [userId]);
   params.push(userId);
   await query(`UPDATE pos_settings SET ${sets.join(', ')} WHERE user_id = $${idx}`, params);
+}
+
+// ─── Commission Plans ───────────────────────────────────────────────────────
+
+async function getCommissionPlan(employeeId) {
+  return (await query('SELECT * FROM pos_commission_plans WHERE employee_id = $1', [employeeId])).rows[0] || null;
+}
+
+async function setCommissionPlan(employeeId, plan, userId) {
+  await query(
+    `INSERT INTO pos_commission_plans (employee_id, plan_type, base_rate, tier_rate, tier_threshold, user_id)
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (id) DO NOTHING`,
+    [employeeId, plan.plan_type, plan.base_rate, plan.tier_rate || 0, plan.tier_threshold || 0, userId]
+  );
+  // Delete old and insert fresh (simpler than upsert on employee_id)
+  await query('DELETE FROM pos_commission_plans WHERE employee_id = $1', [employeeId]);
+  await query(
+    `INSERT INTO pos_commission_plans (employee_id, plan_type, base_rate, tier_rate, tier_threshold, user_id)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [employeeId, plan.plan_type, plan.base_rate, plan.tier_rate || 0, plan.tier_threshold || 0, userId]
+  );
+}
+
+async function getAllCommissionPlans(userId) {
+  return (await query('SELECT * FROM pos_commission_plans WHERE user_id = $1', [userId])).rows;
+}
+
+// Calculate actual commission for an employee over a date range,
+// respecting daily threshold tiers
+async function calculateEmployeeCommission(employeeId, userId, startDate, endDate) {
+  const plan = await getCommissionPlan(employeeId);
+
+  // Get all transactions this employee was on
+  const txResult = await query(`
+    SELECT t.id, t.type, t.total, t.created_at, te.commission_value, te.commission_amount
+    FROM pos_transactions t
+    JOIN pos_transaction_employees te ON t.id = te.transaction_id
+    WHERE te.employee_id = $1 AND t.user_id = $2
+      AND COALESCE(t.original_sale_date, t.created_at) >= $3
+      AND COALESCE(t.original_sale_date, t.created_at) <= $4
+  `, [employeeId, userId, startDate, endDate]);
+
+  if (!plan || plan.plan_type === 'flat') {
+    // Simple: sum up commission_amount as recorded
+    let salesTotal = 0, returnsTotal = 0, saleCount = 0, returnCount = 0;
+    for (const tx of txResult.rows) {
+      if (tx.type === 'sale') { salesTotal += tx.commission_amount; saleCount++; }
+      else { returnsTotal += tx.commission_amount; returnCount++; }
+    }
+    return { sale_count: saleCount, return_count: returnCount, sales_total: salesTotal, returns_total: returnsTotal, net_total: salesTotal - returnsTotal };
+  }
+
+  if (plan.plan_type === 'daily_threshold') {
+    // Group transactions by calendar day
+    const byDay = {};
+    for (const tx of txResult.rows) {
+      const day = new Date(tx.created_at).toISOString().slice(0, 10);
+      if (!byDay[day]) byDay[day] = [];
+      byDay[day].push(tx);
+    }
+
+    let salesTotal = 0, returnsTotal = 0, saleCount = 0, returnCount = 0;
+    for (const [, dayTxs] of Object.entries(byDay)) {
+      // Calculate day's net credited sales (using the % of sale assigned to this employee)
+      const dayNetSales = dayTxs.reduce((sum, tx) => {
+        const empShare = tx.total * (tx.commission_value / 100);
+        return sum + (tx.type === 'sale' ? empShare : -empShare);
+      }, 0);
+
+      const rate = dayNetSales > plan.tier_threshold ? plan.tier_rate : plan.base_rate;
+
+      for (const tx of dayTxs) {
+        const empShare = tx.total * (tx.commission_value / 100);
+        const commission = empShare * (rate / 100);
+        if (tx.type === 'sale') { salesTotal += commission; saleCount++; }
+        else { returnsTotal += commission; returnCount++; }
+      }
+    }
+    return { sale_count: saleCount, return_count: returnCount, sales_total: salesTotal, returns_total: returnsTotal, net_total: salesTotal - returnsTotal };
+  }
+
+  return { sale_count: 0, return_count: 0, sales_total: 0, returns_total: 0, net_total: 0 };
 }
 
 // ─── Additional Customer queries ────────────────────────────────────────────
@@ -680,6 +796,11 @@ module.exports = {
   // Settings
   getSettings,
   updateSettings,
+  // Commission Plans
+  getCommissionPlan,
+  setCommissionPlan,
+  getAllCommissionPlans,
+  calculateEmployeeCommission,
   // Custom Products
   getCustomProducts,
   createCustomProduct,
