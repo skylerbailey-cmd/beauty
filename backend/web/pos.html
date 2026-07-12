@@ -649,10 +649,12 @@
           <span id="maverickConnStatus" style="font-weight:600"></span>
         </p>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <input type="text" id="maverickDbaId" placeholder="DBA ID" style="width:200px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+          <input type="text" id="maverickDbaId" placeholder="DBA ID (e.g. 333359)" style="width:200px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
           <input type="password" id="maverickToken" placeholder="Access token (leave blank to keep current)" autocomplete="off" style="flex:1;min-width:220px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
           <button class="btn btn-confirm" onclick="saveMaverick()">Save</button>
+          <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border)" onclick="lookupDbas()">Look up DBAs</button>
         </div>
+        <div id="maverickDbaList" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
         <div id="maverickSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
       </div>
     </div>
@@ -2397,6 +2399,25 @@ async function saveMaverick() {
     statusEl.style.color = 'var(--success)';
     statusEl.textContent = 'Saved.';
     initBatchTab();
+  } catch (err) {
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = 'Failed: ' + err.message;
+  }
+}
+
+async function lookupDbas() {
+  const statusEl = document.getElementById('maverickSaveStatus');
+  const listEl = document.getElementById('maverickDbaList');
+  statusEl.style.color = 'var(--mid)';
+  statusEl.textContent = 'Looking up DBAs… (save your token first if you just entered it)';
+  listEl.innerHTML = '';
+  try {
+    const resp = await fetch(`${API}/api/pos/maverick/dbas`, { credentials: 'include' });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Lookup failed');
+    statusEl.textContent = '';
+    if (!data.dbas || data.dbas.length === 0) { listEl.innerHTML = '<span style="color:var(--mid);font-family:system-ui,sans-serif;font-size:.82rem">No DBAs returned.</span>'; return; }
+    listEl.innerHTML = data.dbas.map(d => `<button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);font-size:.8rem;padding:6px 10px" onclick="document.getElementById('maverickDbaId').value='${escapeHtml(String(d.id))}'">${escapeHtml(d.name || 'DBA')} — #${escapeHtml(String(d.id))}</button>`).join('');
   } catch (err) {
     statusEl.style.color = 'var(--danger)';
     statusEl.textContent = 'Failed: ' + err.message;

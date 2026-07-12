@@ -830,6 +830,24 @@ function batchCount(b) {
   return null;
 }
 
+// List the DBAs available to the saved token, so the user can pick the right
+// dbaId for the reporting endpoints instead of guessing.
+router.get('/maverick/dbas', async (req, res) => {
+  const settings = await pgDb.getSettings(req.session.userId);
+  const token = (settings.maverick_token || '').trim();
+  if (!token) return res.status(400).json({ error: 'Save your Maverick access token first.' });
+  try {
+    const resp = await fetch(`${MAVERICK_BASE}/api/dba`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+    const text = await resp.text();
+    let data; try { data = JSON.parse(text); } catch (_) { data = null; }
+    if (!resp.ok) return res.status(502).json({ error: (data && (data.message || data.name)) || `Maverick returned ${resp.status}` });
+    const items = Array.isArray(data) ? data : (data?.items || []);
+    res.json({ dbas: items.map(d => ({ id: d.id, name: d.name })) });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 router.get('/reconciliation', async (req, res) => {
   const userId = req.session.userId;
   const settings = await pgDb.getSettings(userId);
