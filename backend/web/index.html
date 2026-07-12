@@ -2479,6 +2479,10 @@
     }
     renderWebsites(currentUser?.websites || []);
     renderBrandCheckboxes(currentUser?.brands || ['avologi', 'avinichi', 'hydrasphere']);
+    // Inside the POS Emails tab, default to the Sent Emails view
+    if (typeof IS_EMBEDDED !== 'undefined' && IS_EMBEDDED) {
+      switchTab('sent');
+    }
   }
 
   // ── Sidebar tab switching ───────────────────────────────────────────────────
