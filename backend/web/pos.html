@@ -500,7 +500,7 @@
       <div class="report-card">
         <h3>Transaction History</h3>
         <table class="report-table">
-          <thead><tr><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Items</th><th>Total</th><th></th></tr></thead>
+          <thead><tr><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Items</th><th>Subtotal</th><th>Total</th><th></th></tr></thead>
           <tbody id="txHistoryBody"></tbody>
         </table>
       </div>
@@ -685,6 +685,12 @@
             <option value="manager">Manager</option>
           </select>
           <button class="btn btn-confirm" onclick="addEmployee()">Add</button>
+        </div>
+        <div id="empImportRow" style="display:none;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <span style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)">Copy employees from another company:</span>
+          <select id="empImportSource" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none"></select>
+          <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border)" onclick="importEmployees()">Copy</button>
+          <span id="empImportStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--success)"></span>
         </div>
         <div class="emp-list" id="empList"></div>
       </div>
@@ -1499,6 +1505,7 @@ async function loadEmployees() {
   const resp = await fetch(`${API}/api/pos/employees`, { credentials: 'include' });
   const data = await resp.json();
   allEmployees = data.employees || [];
+  renderEmpImportOptions();
   const list = document.getElementById('empList');
   if (!data.employees || data.employees.length === 0) {
     list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--mid);font-family:system-ui,sans-serif">No employees yet. Add one above.</div>';
@@ -1514,6 +1521,41 @@ async function loadEmployees() {
       <button onclick="toggleEmployee(${e.id}, ${e.active})" style="border:none;background:none;cursor:pointer;font-size:.78rem;color:${e.active ? 'var(--danger)' : 'var(--success)'};text-decoration:underline">${e.active ? 'Deactivate' : 'Activate'}</button>
     </div>
   `).join('');
+}
+
+// Populate the "copy employees from another company" dropdown from the other
+// companies linked in this browser.
+function renderEmpImportOptions() {
+  const row = document.getElementById('empImportRow');
+  const sel = document.getElementById('empImportSource');
+  if (!row || !sel) return;
+  const others = getLinkedAccounts().filter(a => a.email && a.email !== currentUser?.email);
+  if (others.length === 0) { row.style.display = 'none'; return; }
+  row.style.display = 'flex';
+  sel.innerHTML = others.map(a => `<option value="${escapeHtml(a.email)}">${escapeHtml(a.companyName) || escapeHtml(a.email)}</option>`).join('');
+}
+
+async function importEmployees() {
+  const sourceEmail = document.getElementById('empImportSource').value;
+  if (!sourceEmail) return;
+  const statusEl = document.getElementById('empImportStatus');
+  if (!confirm(`Copy all employees from "${sourceEmail}" into this company? Existing employees with the same name are skipped.`)) return;
+  statusEl.style.color = 'var(--mid)';
+  statusEl.textContent = 'Copying...';
+  try {
+    const resp = await fetch(`${API}/api/pos/employees/import-from`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ source_email: sourceEmail }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    statusEl.style.color = 'var(--success)';
+    statusEl.textContent = `Copied ${data.imported} employee${data.imported !== 1 ? 's' : ''}${data.skipped ? `, skipped ${data.skipped} duplicate${data.skipped !== 1 ? 's' : ''}` : ''}.`;
+    loadEmployees();
+  } catch (err) {
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = 'Failed: ' + err.message;
+  }
 }
 
 async function addEmployee() {
@@ -1595,6 +1637,7 @@ async function loadTransactions() {
       <td>${tx.employees && tx.employees.length > 0 ? tx.employees.map(e => e.employee_name).join(', ') : '-'}</td>
       <td>${tx.customer_name || '-'}</td>
       <td>${tx.items.length}</td>
+      <td>$${(tx.subtotal || 0).toFixed(2)}</td>
       <td style="font-weight:600">$${tx.total.toFixed(2)}</td>
       <td style="white-space:nowrap">
         <button onclick="viewReceipt(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--rose);text-decoration:underline;font-size:.82rem">View</button>
@@ -1602,7 +1645,7 @@ async function loadTransactions() {
         <button onclick="startDeleteTransaction(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--danger);text-decoration:underline;font-size:.82rem">Delete</button>
       </td>
     </tr>
-  `).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--mid)">No transactions</td></tr>';
+  `).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--mid)">No transactions</td></tr>';
 }
 
 async function viewReceipt(txId) {

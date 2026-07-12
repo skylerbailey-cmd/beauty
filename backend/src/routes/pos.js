@@ -195,6 +195,36 @@ router.post('/employees/verify', async (req, res) => {
   res.json({ employee });
 });
 
+// Copy employees from another company (identified by its login email) into the
+// current company. Skips employees that already exist here (matched by name).
+router.post('/employees/import-from', async (req, res) => {
+  const userId = req.session.userId;
+  const { source_email } = req.body;
+  if (!source_email) return res.status(400).json({ error: 'source_email is required' });
+
+  // Resolve the source company's stable id from its email (works even if its
+  // SQLite row was reset on a redeploy, since ids are deterministic).
+  const { findOrCreateUserByEmail } = require('../db');
+  const { user: sourceUser } = findOrCreateUserByEmail(String(source_email).trim().toLowerCase());
+  if (!sourceUser) return res.status(404).json({ error: 'That company was not found.' });
+  if (sourceUser.id === userId) return res.status(400).json({ error: 'Cannot import from the same company.' });
+
+  const [sourceEmployees, existing] = await Promise.all([
+    pgDb.getEmployees(sourceUser.id),
+    pgDb.getEmployees(userId),
+  ]);
+  const existingNames = new Set(existing.map(e => e.name.trim().toLowerCase()));
+
+  let imported = 0, skipped = 0;
+  for (const emp of sourceEmployees) {
+    if (existingNames.has(emp.name.trim().toLowerCase())) { skipped++; continue; }
+    await pgDb.createEmployee(emp.name, emp.pin, emp.role, emp.commission_rate, userId);
+    existingNames.add(emp.name.trim().toLowerCase());
+    imported++;
+  }
+  res.json({ ok: true, imported, skipped, source_count: sourceEmployees.length });
+});
+
 // ─── Transactions ──────────────────────────────────────────────────────────
 
 router.post('/transactions', async (req, res) => {
