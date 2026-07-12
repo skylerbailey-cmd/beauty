@@ -383,6 +383,7 @@
     <button class="active" onclick="switchTab('register')">Register</button>
     <button onclick="switchTab('history')">Transactions</button>
     <button onclick="switchTab('reports')">Reports</button>
+    <button onclick="switchTab('emails')">Emails</button>
     <button onclick="switchTab('settings')">Settings</button>
   </div>
 
@@ -495,7 +496,6 @@
         <input type="date" id="histStart">
         <label>To:</label>
         <input type="date" id="histEnd">
-        <button class="btn btn-confirm" onclick="loadTransactions()">Filter</button>
         <span style="border-left:1px solid var(--border);height:22px;margin:0 2px"></span>
         <select id="histType" onchange="applyTxFilters()">
           <option value="">All types</option>
@@ -515,6 +515,7 @@
         <input type="text" id="histCard" placeholder="Card last 4" maxlength="4" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'');applyTxFilters()" style="width:100px">
         <input type="number" id="histMin" placeholder="Min $" min="0" step="0.01" oninput="applyTxFilters()" style="width:90px">
         <input type="number" id="histMax" placeholder="Max $" min="0" step="0.01" oninput="applyTxFilters()" style="width:90px">
+        <button class="btn btn-confirm" style="padding:8px 16px" onclick="loadTransactions()">Filter</button>
         <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="clearTxFilters()">Clear</button>
         <button class="btn btn-confirm" style="padding:8px 16px" onclick="exportTransactionsCSV()">Export CSV</button>
       </div>
@@ -606,6 +607,11 @@
         </table>
       </div>
     </div>
+  </div>
+
+  <!-- ─── EMAILS TAB (embedded Email Suite) ─── -->
+  <div class="tab-content" id="tab-emails">
+    <iframe id="emailsFrame" data-src="/?embed=1" title="Emails" style="width:100%;height:calc(100vh - 120px);border:0;display:block"></iframe>
   </div>
 
   <!-- ─── SETTINGS TAB ─── -->
@@ -1726,12 +1732,14 @@ async function loadTransactions() {
   applyTxFilters();
 }
 
-// Fill the employee filter with the employees that actually appear in the results.
+// Fill the employee filter with ALL active employees (plus any names present in
+// the results, e.g. an employee who was later deactivated).
 function populateHistEmployeeFilter() {
   const sel = document.getElementById('histEmployee');
   if (!sel) return;
   const current = sel.value;
   const names = new Set();
+  allEmployees.filter(e => e.active).forEach(e => names.add(e.name));
   histTransactions.forEach(tx => (tx.employees || []).forEach(e => names.add(e.employee_name)));
   const sorted = [...names].sort();
   sel.innerHTML = '<option value="">All employees</option>' + sorted.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
@@ -2211,6 +2219,10 @@ function switchTab(tabName) {
 
   if (tabName === 'history') loadTransactions();
   if (tabName === 'reports') loadReports();
+  if (tabName === 'emails') {
+    const f = document.getElementById('emailsFrame');
+    if (f && !f.src) f.src = f.dataset.src; // load once, on first open
+  }
   if (tabName === 'settings') {
     loadEmployees();
     loadStoreSettings();
@@ -2698,6 +2710,9 @@ async function switchAccount(email) {
     renderBrandCheckboxes();     // sync the Settings-tab brand checkboxes
     loadProducts();
     loadEmployees();
+    // Reset the embedded Emails tab so it reloads for the newly selected company
+    const ef = document.getElementById('emailsFrame');
+    if (ef && ef.src) { ef.removeAttribute('src'); }
   } catch (err) { alert('Failed to switch account: ' + err.message); }
   document.getElementById('companySwitcherMenu').classList.remove('show');
 }

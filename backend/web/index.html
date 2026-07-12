@@ -1746,7 +1746,16 @@
   if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
     document.body.classList.add('is-mobile');
   }
+  // Embedded mode: when shown inside the POS "Emails" tab, hide our own top
+  // header/app-switcher so only the sidebar tabs + content appear.
+  if (new URLSearchParams(location.search).get('embed') === '1') {
+    document.body.classList.add('embedded');
+  }
 </script>
+<style>
+  body.embedded > header { display: none !important; }
+  body.embedded { background: transparent; }
+</style>
 
 <header>
   <div style="position:relative" id="appSwitcherWrap">
