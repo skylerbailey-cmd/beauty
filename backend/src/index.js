@@ -98,7 +98,18 @@ app.use(async (req, res, next) => {
 const webDir = path.join(__dirname, '../web');
 const webDirAlt = path.join(__dirname, '../../web');
 const fs = require('fs');
-app.use(express.static(fs.existsSync(webDir) ? webDir : webDirAlt));
+app.use(express.static(fs.existsSync(webDir) ? webDir : webDirAlt, {
+  etag: true,
+  setHeaders: (res, filePath) => {
+    // Never cache HTML, so redeploys take effect immediately (incl. the
+    // embedded Emails iframe) without a hard refresh.
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  },
+}));
 
 app.use('/auth', authRoutes);
 app.use('/api/emails', emailRoutes);
