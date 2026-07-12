@@ -757,11 +757,8 @@ async function setProductVisibility(productId, userId, visible) {
 // SQLite generates a new UUID on redeploy. Migrate Postgres data to the new userId.
 async function migrateUserIdIfNeeded(newUserId) {
   if (!pool) return;
-  // Check if new userId already has data
-  const existing = await query('SELECT COUNT(*) as cnt FROM pos_product_prices WHERE user_id = $1', [newUserId]);
-  if (existing.rows[0]?.cnt > 0) return; // already has data, no migration needed
 
-  // Find the old userId that has data (pick the one with the most product prices)
+  // Find any old userId that has data but doesn't match current user
   const oldUser = await query(`
     SELECT user_id, COUNT(*) as cnt FROM pos_product_prices
     WHERE user_id != $1 AND user_id != ''
@@ -781,6 +778,8 @@ async function migrateUserIdIfNeeded(newUserId) {
     }
   } catch (_) {}
 
+  // Delete any placeholder data for the new userId before migrating old data
+  // (new userId may have empty default rows that conflict with unique constraints)
   const tables = [
     'pos_product_prices', 'pos_employees', 'pos_custom_products',
     'pos_product_visibility', 'pos_transactions',
@@ -788,6 +787,7 @@ async function migrateUserIdIfNeeded(newUserId) {
   ];
   for (const table of tables) {
     try {
+      await query(`DELETE FROM ${table} WHERE user_id = $1`, [newUserId]);
       await query(`UPDATE ${table} SET user_id = $1 WHERE user_id = $2`, [newUserId, oldUserId]);
     } catch (_) { /* table might not exist yet */ }
   }

@@ -14,7 +14,11 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.glowsf.app",
       "infoPlist": {
-        "UIBackgroundModes": ["remote-notification"]
+        "UIBackgroundModes": [
+          "remote-notification",
+          "remote-notification"
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -39,6 +43,14 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "b55a1150-e57e-4ad8-a49f-a434aaccba21"
+      }
     }
   }
 }
