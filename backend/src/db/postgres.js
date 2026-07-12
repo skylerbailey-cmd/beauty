@@ -123,6 +123,7 @@ async function initSchema() {
       receipt_number TEXT NOT NULL,
       original_transaction_id INTEGER REFERENCES pos_transactions(id),
       original_sale_date TIMESTAMPTZ,
+      employees_changed INTEGER DEFAULT 0,
       user_id TEXT DEFAULT '',
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
@@ -226,6 +227,7 @@ async function initSchema() {
   await migrate('ALTER TABLE pos_employees ADD COLUMN IF NOT EXISTS commission_rate REAL DEFAULT 0');
   await migrate('ALTER TABLE pos_product_prices ADD COLUMN IF NOT EXISTS min_price REAL DEFAULT 0');
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS card_last4 TEXT DEFAULT \'\'');
+  await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS employees_changed INTEGER DEFAULT 0');
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_address TEXT DEFAULT ''");
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS tax_rate REAL DEFAULT 0.0875');
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS theme TEXT DEFAULT 'rose'");
@@ -367,14 +369,30 @@ async function generateReceiptNumber() {
   return String((result.rows[0]?.num || 1000) + 1);
 }
 
+// Ensure a receipt number is unique (returns can collide on "R<num>" if a sale
+// is returned more than once — append -2, -3, … in that case).
+async function uniqueReceiptNumber(base) {
+  let candidate = base;
+  let n = 1;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const exists = (await query('SELECT 1 FROM pos_transactions WHERE receipt_number = $1 LIMIT 1', [candidate])).rows.length > 0;
+    if (!exists) return candidate;
+    n += 1;
+    candidate = `${base}-${n}`;
+  }
+}
+
 async function createTransaction(txData) {
-  const receiptNumber = await generateReceiptNumber();
+  const receiptNumber = txData.receipt_number
+    ? await uniqueReceiptNumber(txData.receipt_number)
+    : await generateReceiptNumber();
   const result = await query(
     `INSERT INTO pos_transactions
       (type, employee_id, customer_id, customer_name, customer_email,
        subtotal, tax_rate, tax_amount, discount_amount, total,
-       payment_method, card_last4, notes, receipt_number, original_transaction_id, original_sale_date, user_id)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id, receipt_number`,
+       payment_method, card_last4, notes, receipt_number, original_transaction_id, original_sale_date, employees_changed, user_id)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id, receipt_number`,
     [
       txData.type || 'sale', txData.employee_id || null, txData.customer_id || null,
       txData.customer_name || '', txData.customer_email || '',
@@ -382,7 +400,7 @@ async function createTransaction(txData) {
       txData.discount_amount || 0, txData.total,
       txData.payment_method || 'card', txData.card_last4 || '', txData.notes || '',
       receiptNumber, txData.original_transaction_id || null,
-      txData.original_sale_date || null, txData.user_id,
+      txData.original_sale_date || null, txData.employees_changed ? 1 : 0, txData.user_id,
     ]
   );
   return { id: result.rows[0].id, receipt_number: result.rows[0].receipt_number };
@@ -547,9 +565,10 @@ async function getSalesReport(userId, startDate, endDate) {
     SELECT
       COUNT(CASE WHEN type = 'sale' THEN 1 END) as total_sales,
       COUNT(CASE WHEN type = 'return' THEN 1 END) as total_returns,
-      COALESCE(SUM(CASE WHEN type = 'sale' THEN total ELSE 0 END), 0) as sales_revenue,
-      COALESCE(SUM(CASE WHEN type = 'return' THEN total ELSE 0 END), 0) as returns_total,
-      COALESCE(SUM(CASE WHEN type = 'sale' THEN total ELSE -total END), 0) as net_revenue,
+      -- Revenue figures EXCLUDE tax (tax is reported separately as net_tax)
+      COALESCE(SUM(CASE WHEN type = 'sale' THEN total - tax_amount ELSE 0 END), 0) as sales_revenue,
+      COALESCE(SUM(CASE WHEN type = 'return' THEN total - tax_amount ELSE 0 END), 0) as returns_total,
+      COALESCE(SUM(CASE WHEN type = 'sale' THEN total - tax_amount ELSE -(total - tax_amount) END), 0) as net_revenue,
       COALESCE(SUM(CASE WHEN type = 'sale' THEN tax_amount ELSE -tax_amount END), 0) as net_tax
     FROM pos_transactions
     WHERE user_id = $1
@@ -575,7 +594,7 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
       AND t.user_id = $1
       AND COALESCE(t.original_sale_date, t.created_at) >= $2
       AND COALESCE(t.original_sale_date, t.created_at) <= $3
-    WHERE e.user_id = $4
+    WHERE e.user_id = $4 AND e.active = 1
     GROUP BY e.id ORDER BY net_total DESC
   `, [userId, startDate, endDate, userId])).rows;
 
@@ -626,6 +645,32 @@ async function getCustomerReport(userId, startDate, endDate) {
       AND customer_name != ''
     GROUP BY customer_name, customer_email ORDER BY total_spent DESC
   `, [userId, startDate, endDate])).rows;
+}
+
+// Returns where the credited employees differ from the original sale.
+async function getFlaggedReturns(userId, startDate, endDate) {
+  const rows = (await query(`
+    SELECT r.id, r.receipt_number, r.created_at, r.total, r.tax_amount,
+           orig.receipt_number as original_receipt
+    FROM pos_transactions r
+    LEFT JOIN pos_transactions orig ON r.original_transaction_id = orig.id
+    WHERE r.user_id = $1 AND r.type = 'return' AND r.employees_changed = 1
+      AND COALESCE(r.original_sale_date, r.created_at) >= $2
+      AND COALESCE(r.original_sale_date, r.created_at) <= $3
+    ORDER BY r.created_at DESC
+  `, [userId, startDate, endDate])).rows;
+  for (const r of rows) {
+    r.return_employees = (await query(
+      `SELECT e.name FROM pos_transaction_employees te JOIN pos_employees e ON te.employee_id = e.id WHERE te.transaction_id = $1`, [r.id]
+    )).rows.map(x => x.name);
+    r.sale_employees = r.original_receipt ? (await query(
+      `SELECT e.name FROM pos_transaction_employees te
+       JOIN pos_employees e ON te.employee_id = e.id
+       JOIN pos_transactions orig ON te.transaction_id = orig.id
+       WHERE orig.receipt_number = $1 AND orig.user_id = $2`, [r.original_receipt, userId]
+    )).rows.map(x => x.name) : [];
+  }
+  return rows;
 }
 
 // ─── Settings ───────────────────────────────────────────────────────────────
@@ -1009,6 +1054,7 @@ module.exports = {
   getEmployeeSalesReport,
   getTopProductsReport,
   getCustomerReport,
+  getFlaggedReturns,
   // Settings
   getSettings,
   updateSettings,

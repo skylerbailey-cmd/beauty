@@ -229,7 +229,7 @@ router.post('/employees/import-from', async (req, res) => {
 
 router.post('/transactions', async (req, res) => {
   const userId = req.session.userId;
-  const { type, employee_id, employees: employeeAssignments, customer_name, customer_email, items, payment_method, card_last4, notes, tax_rate, discount_amount, original_receipt } = req.body;
+  const { type, employee_id, employees: employeeAssignments, customer_name, customer_email, items, payment_method, card_last4, notes, tax_rate, discount_amount, original_receipt, manager_name, manager_pin } = req.body;
 
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'At least one item required' });
@@ -268,6 +268,8 @@ router.post('/transactions', async (req, res) => {
   // If this is a return, require original receipt and enforce 14-day policy
   let original_transaction_id = null;
   let original_sale_date = null;
+  let receiptOverride = null;
+  let employeesChanged = false;
   if (type === 'return') {
     if (!original_receipt) {
       return res.status(400).json({ error: 'Original receipt number is required for returns' });
@@ -284,8 +286,34 @@ router.post('/transactions', async (req, res) => {
     if (daysSince > 14) {
       return res.status(400).json({ error: `Return window expired. Sale was ${Math.floor(daysSince)} days ago (14-day limit).` });
     }
+
+    // Require the last 4 of the card, and match it to the original sale.
+    if (!card_last4 || card_last4.length !== 4) {
+      return res.status(400).json({ error: 'Enter the last 4 digits of the card used for this return.' });
+    }
+    if (orig.card_last4 && card_last4 !== orig.card_last4) {
+      const manager = await verifyManager(userId, manager_name, manager_pin);
+      if (!manager) {
+        return res.status(403).json({
+          error: `Card ****${card_last4} does not match the card on the original sale (****${orig.card_last4}). A manager must approve this return.`,
+          needsManagerOverride: true,
+        });
+      }
+    }
+
     original_transaction_id = orig.id;
     original_sale_date = orig.created_at;
+    // Return receipt = "R" + the original sale's receipt number
+    receiptOverride = 'R' + orig.receipt_number;
+
+    // Flag if the employees credited on the return differ from the sale
+    const origIds = new Set((orig.employees || []).map(e => e.employee_id));
+    const retIds = new Set(
+      (Array.isArray(employeeAssignments) && employeeAssignments.length
+        ? employeeAssignments.map(e => e.employee_id)
+        : (employee_id ? [employee_id] : []))
+    );
+    employeesChanged = origIds.size !== retIds.size || [...retIds].some(id => !origIds.has(id));
   }
 
   // Use tax rate from settings if not explicitly provided
@@ -315,6 +343,8 @@ router.post('/transactions', async (req, res) => {
     notes: notes || '',
     original_transaction_id,
     original_sale_date,
+    receipt_number: receiptOverride,
+    employees_changed: employeesChanged,
     user_id: userId,
   });
 
@@ -662,6 +692,13 @@ router.get('/reports/customers', async (req, res) => {
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
   res.json({ report: await pgDb.getCustomerReport(req.session.userId, startDate, endDate) });
+});
+
+router.get('/reports/flagged-returns', async (req, res) => {
+  const { start, end } = req.query;
+  const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+  const endDate = end || new Date().toISOString();
+  res.json({ report: await pgDb.getFlaggedReturns(req.session.userId, startDate, endDate) });
 });
 
 // ─── Employee Personal Report (PIN-protected) ─────────────────────────────

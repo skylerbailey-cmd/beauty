@@ -417,7 +417,7 @@
             <h3 style="font-family:system-ui,sans-serif;margin-bottom:4px">Lookup Original Receipt</h3>
             <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:16px">Enter the receipt number from the original sale to process a return. Returns must be within 14 days of purchase.</p>
             <div style="display:flex;gap:8px">
-              <input type="text" id="returnReceiptInput" class="search-bar" placeholder="Receipt # (e.g. R20260711-1234)" style="margin-bottom:0;flex:1" onkeydown="if(event.key==='Enter')lookupReceipt()">
+              <input type="text" id="returnReceiptInput" class="search-bar" placeholder="Sale receipt # (e.g. 1042)" style="margin-bottom:0;flex:1" onkeydown="if(event.key==='Enter')lookupReceipt()">
               <button class="btn btn-confirm" onclick="lookupReceipt()" style="white-space:nowrap">Look Up</button>
             </div>
             <div id="returnLookupError" style="display:none;margin-top:10px;padding:10px 14px;background:#fce4ec;border-radius:8px;font-family:system-ui,sans-serif;font-size:.85rem;color:var(--danger)"></div>
@@ -511,7 +511,10 @@
           <option value="cash">Cash</option>
           <option value="other">Other</option>
         </select>
-        <input type="text" id="histSearch" placeholder="Search receipt or customer…" oninput="applyTxFilters()" style="min-width:200px">
+        <input type="text" id="histSearch" placeholder="Search receipt or customer…" oninput="applyTxFilters()" style="min-width:180px">
+        <input type="text" id="histCard" placeholder="Card last 4" maxlength="4" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'');applyTxFilters()" style="width:100px">
+        <input type="number" id="histMin" placeholder="Min $" min="0" step="0.01" oninput="applyTxFilters()" style="width:90px">
+        <input type="number" id="histMax" placeholder="Max $" min="0" step="0.01" oninput="applyTxFilters()" style="width:90px">
         <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="clearTxFilters()">Clear</button>
       </div>
       <div class="report-card">
@@ -583,6 +586,15 @@
         <table class="report-table">
           <thead><tr><th>Customer</th><th>Email</th><th>Purchases</th><th>Returns</th><th>Total Spent</th></tr></thead>
           <tbody id="custReportBody"></tbody>
+        </table>
+      </div>
+
+      <div class="report-card" id="flaggedReturnsCard" style="display:none">
+        <h3>⚠️ Returns With Changed Employees</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">These returns were credited to different employees than the original sale.</p>
+        <table class="report-table">
+          <thead><tr><th>Return #</th><th>Date</th><th>Original Sale</th><th>Sale Employees</th><th>Return Employees</th><th>Total</th></tr></thead>
+          <tbody id="flaggedReturnsBody"></tbody>
         </table>
       </div>
     </div>
@@ -1122,17 +1134,26 @@ function setMode(mode) {
   document.getElementById('saleView').style.display = mode === 'sale' ? 'block' : 'none';
   document.getElementById('returnView').style.display = mode === 'return' ? 'block' : 'none';
 
+  const cardInput = document.getElementById('cardLast4');
   if (mode === 'return') {
     // Clear cart and reset return lookup
     cart = [];
     renderCart();
     returnOriginalTx = null;
+    saleEmployees = [];
+    empManuallyEdited = false;
+    renderSaleEmployees();
     document.getElementById('returnReceiptInput').value = '';
     document.getElementById('returnLookupResult').style.display = 'none';
     document.getElementById('returnLookupError').style.display = 'none';
+    // Returns always require the last 4 of the card used
+    document.getElementById('cardLast4Wrap').style.display = 'block';
+    if (cardInput) { cardInput.value = ''; cardInput.placeholder = 'Last 4 of card used'; }
     document.getElementById('returnReceiptInput').focus();
   } else {
     returnOriginalTx = null;
+    if (cardInput) cardInput.placeholder = 'Last 4 of card #';
+    document.getElementById('cardLast4Wrap').style.display = paymentMethod === 'card' ? 'block' : 'none';
   }
 }
 
@@ -1186,6 +1207,16 @@ async function lookupReceipt() {
     // Pre-fill customer info
     document.getElementById('custName').value = tx.customer_name || '';
     document.getElementById('custEmail').value = tx.customer_email || '';
+
+    // Auto-fill the employees that were on the original sale
+    saleEmployees = (tx.employees || []).map(e => ({
+      employee_id: e.employee_id,
+      name: e.employee_name,
+      commission_type: 'percent',
+      commission_value: e.commission_value || 0,
+    }));
+    empManuallyEdited = false;
+    renderSaleEmployees();
 
     resultEl.style.display = 'block';
   } catch (err) {
@@ -1258,7 +1289,13 @@ async function processTransaction() {
 
   // Validate card last4
   const cardLast4 = document.getElementById('cardLast4').value.trim();
-  if (paymentMethod === 'card' && currentMode !== 'return' && cardLast4.length !== 4) {
+  if (currentMode === 'return') {
+    if (cardLast4.length !== 4) {
+      alert('Enter the last 4 digits of the card used for this return.');
+      document.getElementById('cardLast4').focus();
+      return;
+    }
+  } else if (paymentMethod === 'card' && cardLast4.length !== 4) {
     alert('Please enter the last 4 digits of the credit card.');
     document.getElementById('cardLast4').focus();
     return;
@@ -1281,6 +1318,12 @@ async function processTransaction() {
     original_receipt: returnOriginalTx?.receipt_number || null,
   };
 
+  submitTransaction(body);
+}
+
+let pendingTxBody = null; // held while a manager approves a card-mismatch return
+
+async function submitTransaction(body) {
   try {
     const resp = await fetch(`${API}/api/pos/transactions`, {
       method: 'POST',
@@ -1289,6 +1332,11 @@ async function processTransaction() {
       body: JSON.stringify(body),
     });
     const data = await resp.json();
+    if (resp.status === 403 && data.needsManagerOverride) {
+      pendingTxBody = body;
+      openManagerAuth('return-override', null, data.error);
+      return;
+    }
     if (!resp.ok) throw new Error(data.error);
     lastTransaction = data.transaction;
     showReceipt(data.transaction);
@@ -1296,12 +1344,13 @@ async function processTransaction() {
     cart = [];
     saleEmployees = [];
     empManuallyEdited = false;
+    pendingTxBody = null;
     renderSaleEmployees();
     renderCart();
     document.getElementById('custName').value = '';
     document.getElementById('custEmail').value = '';
     document.getElementById('cardLast4').value = '';
-    if (currentMode === 'return') {
+    if (body.type === 'return') {
       returnOriginalTx = null;
       document.getElementById('returnReceiptInput').value = '';
       document.getElementById('returnLookupResult').style.display = 'none';
@@ -1683,6 +1732,9 @@ function clearTxFilters() {
   document.getElementById('histEmployee').value = '';
   document.getElementById('histPayment').value = '';
   document.getElementById('histSearch').value = '';
+  document.getElementById('histCard').value = '';
+  document.getElementById('histMin').value = '';
+  document.getElementById('histMax').value = '';
   applyTxFilters();
 }
 
@@ -1691,13 +1743,19 @@ function applyTxFilters() {
   const emp = document.getElementById('histEmployee').value;
   const pay = document.getElementById('histPayment').value;
   const q = document.getElementById('histSearch').value.trim().toLowerCase();
+  const card = document.getElementById('histCard').value.trim();
+  const min = parseFloat(document.getElementById('histMin').value);
+  const max = parseFloat(document.getElementById('histMax').value);
 
   const rows = histTransactions.filter(tx => {
     if (type && tx.type !== type) return false;
     if (emp && !(tx.employees || []).some(e => e.employee_name === emp)) return false;
     if (pay && (tx.payment_method || '') !== pay) return false;
+    if (card && (tx.card_last4 || '') !== card) return false;
+    if (!isNaN(min) && tx.total < min) return false;
+    if (!isNaN(max) && tx.total > max) return false;
     if (q) {
-      const hay = `${tx.receipt_number} ${tx.customer_name || ''} ${tx.customer_email || ''}`.toLowerCase();
+      const hay = `${tx.receipt_number} ${tx.customer_name || ''} ${tx.customer_email || ''} ${tx.card_last4 || ''}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -1755,7 +1813,8 @@ function startDeleteTransaction(txId) {
 
 function openManagerAuth(type, txId, msg) {
   managerAction = { type, txId };
-  document.getElementById('managerAuthTitle').textContent = type === 'delete' ? 'Delete Transaction' : 'Edit Transaction';
+  const titles = { delete: 'Delete Transaction', edit: 'Edit Transaction', 'return-override': 'Manager Override — Card Mismatch' };
+  document.getElementById('managerAuthTitle').textContent = titles[type] || 'Manager Authorization';
   document.getElementById('managerAuthMsg').textContent = msg;
   document.getElementById('managerAuthName').value = '';
   document.getElementById('managerAuthPin').value = '';
@@ -1787,6 +1846,13 @@ async function submitManagerAuth() {
     closeManagerAuth();
     if (action.type === 'delete') {
       await performDeleteTransaction(action.txId);
+    } else if (action.type === 'return-override') {
+      // Re-submit the held return with the manager's approval
+      if (pendingTxBody) {
+        pendingTxBody.manager_name = name;
+        pendingTxBody.manager_pin = pin;
+        await submitTransaction(pendingTxBody);
+      }
     } else {
       await openTxEdit(action.txId);
     }
@@ -1994,17 +2060,37 @@ async function loadReports() {
   const end = document.getElementById('rptEnd').value;
   const qs = `start=${start}T00:00:00&end=${end}T23:59:59`;
 
-  const [salesResp, empResp, prodResp, custResp] = await Promise.all([
+  const [salesResp, empResp, prodResp, custResp, flaggedResp] = await Promise.all([
     fetch(`${API}/api/pos/reports/sales?${qs}`, { credentials: 'include' }),
     fetch(`${API}/api/pos/reports/employees?${qs}`, { credentials: 'include' }),
     fetch(`${API}/api/pos/reports/products?${qs}`, { credentials: 'include' }),
     fetch(`${API}/api/pos/reports/customers?${qs}`, { credentials: 'include' }),
+    fetch(`${API}/api/pos/reports/flagged-returns?${qs}`, { credentials: 'include' }),
   ]);
 
   const sales = (await salesResp.json()).report || {};
   const employees = (await empResp.json()).report || [];
   const prods = (await prodResp.json()).report || [];
   const customers = (await custResp.json()).report || [];
+  const flagged = (await flaggedResp.json()).report || [];
+
+  // Flagged returns (employees changed vs original sale)
+  const flaggedCard = document.getElementById('flaggedReturnsCard');
+  if (flagged.length > 0) {
+    flaggedCard.style.display = '';
+    document.getElementById('flaggedReturnsBody').innerHTML = flagged.map(r => `
+      <tr>
+        <td style="font-family:monospace">${r.receipt_number}</td>
+        <td>${new Date(r.created_at).toLocaleString()}</td>
+        <td style="font-family:monospace">${r.original_receipt || '-'}</td>
+        <td>${(r.sale_employees || []).join(', ') || '-'}</td>
+        <td>${(r.return_employees || []).join(', ') || '-'}</td>
+        <td>$${(r.total || 0).toFixed(2)}</td>
+      </tr>
+    `).join('');
+  } else {
+    flaggedCard.style.display = 'none';
+  }
 
   // Sales summary
   document.getElementById('salesSummary').innerHTML = `
