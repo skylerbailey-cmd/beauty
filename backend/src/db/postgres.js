@@ -772,9 +772,18 @@ async function migrateUserIdIfNeeded(newUserId) {
   const oldUserId = oldUser.rows[0].user_id;
   console.log(`[postgres] Migrating POS data from user ${oldUserId} to ${newUserId}`);
 
+  // Handle pos_settings specially — user_id is PRIMARY KEY, so delete blank new row first
+  try {
+    const oldSettings = await query('SELECT * FROM pos_settings WHERE user_id = $1', [oldUserId]);
+    if (oldSettings.rows.length > 0) {
+      await query('DELETE FROM pos_settings WHERE user_id = $1', [newUserId]);
+      await query('UPDATE pos_settings SET user_id = $1 WHERE user_id = $2', [newUserId, oldUserId]);
+    }
+  } catch (_) {}
+
   const tables = [
     'pos_product_prices', 'pos_employees', 'pos_custom_products',
-    'pos_product_visibility', 'pos_transactions', 'pos_settings',
+    'pos_product_visibility', 'pos_transactions',
     'pos_commission_plans', 'customers', 'welcome_emails', 'campaigns',
   ];
   for (const table of tables) {

@@ -739,6 +739,37 @@
   </div>
 </div>
 
+<!-- ─── Employee Edit Modal ─── -->
+<div class="modal-overlay" id="empEditModal">
+  <div class="modal" style="max-width:420px">
+    <h2>Edit Employee</h2>
+    <input type="hidden" id="empEditId">
+    <div class="field">
+      <label>Name</label>
+      <input type="text" id="empEditName">
+    </div>
+    <div class="field">
+      <label>PIN</label>
+      <input type="text" id="empEditPin" maxlength="6">
+    </div>
+    <div class="field">
+      <label>Role</label>
+      <select id="empEditRole" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.95rem;font-family:system-ui,sans-serif;outline:none">
+        <option value="sales">Sales</option>
+        <option value="manager">Manager</option>
+      </select>
+    </div>
+    <div class="field">
+      <label>Commission Rate (%)</label>
+      <input type="number" id="empEditCommission" step="0.5" min="0" max="100">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeEmpEdit()">Cancel</button>
+      <button class="btn btn-confirm" onclick="saveEmpEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- Hidden receipt for printing -->
 <div id="printReceipt" class="receipt-print" style="display:none"></div>
 
@@ -785,9 +816,10 @@ async function init() {
     }
 
     document.getElementById('posMain').style.display = 'block';
+    // Load settings first (triggers userId migration on backend), then products/employees
+    await loadStoreSettings();
     loadProducts();
     loadEmployees();
-    loadStoreSettings();
 
     const today = new Date().toISOString().slice(0, 10);
     const thirtyAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
@@ -1396,7 +1428,8 @@ async function loadEmployees() {
       <div class="emp-role">${e.role}</div>
       <div style="font-size:.78rem;color:var(--mid);font-family:system-ui,sans-serif">${e.commission_rate || 0}% comm</div>
       <span class="emp-status ${e.active ? 'active' : 'inactive'}">${e.active ? 'Active' : 'Inactive'}</span>
-      <button onclick="toggleEmployee(${e.id}, ${e.active})" style="border:none;background:none;cursor:pointer;font-size:.78rem;color:var(--rose);text-decoration:underline">${e.active ? 'Deactivate' : 'Activate'}</button>
+      <button onclick="editEmployee(${e.id})" style="border:none;background:none;cursor:pointer;font-size:.78rem;color:var(--rose);text-decoration:underline">Edit</button>
+      <button onclick="toggleEmployee(${e.id}, ${e.active})" style="border:none;background:none;cursor:pointer;font-size:.78rem;color:${e.active ? 'var(--danger)' : 'var(--success)'};text-decoration:underline">${e.active ? 'Deactivate' : 'Activate'}</button>
     </div>
   `).join('');
 }
@@ -1418,6 +1451,40 @@ async function addEmployee() {
   document.getElementById('newEmpName').value = '';
   document.getElementById('newEmpPin').value = '';
   document.getElementById('newEmpCommission').value = '';
+  loadEmployees();
+}
+
+function editEmployee(id) {
+  const emp = allEmployees.find(e => e.id === id);
+  if (!emp) return;
+  document.getElementById('empEditId').value = id;
+  document.getElementById('empEditName').value = emp.name;
+  document.getElementById('empEditPin').value = emp.pin;
+  document.getElementById('empEditRole').value = emp.role || 'sales';
+  document.getElementById('empEditCommission').value = emp.commission_rate || 0;
+  document.getElementById('empEditModal').classList.add('show');
+}
+
+function closeEmpEdit() {
+  document.getElementById('empEditModal').classList.remove('show');
+}
+
+async function saveEmpEdit() {
+  const id = document.getElementById('empEditId').value;
+  const name = document.getElementById('empEditName').value.trim();
+  const pin = document.getElementById('empEditPin').value.trim();
+  const role = document.getElementById('empEditRole').value;
+  const commission_rate = parseFloat(document.getElementById('empEditCommission').value) || 0;
+  if (!name) return alert('Name is required');
+  if (!pin || pin.length < 4) return alert('PIN must be at least 4 digits');
+
+  await fetch(`${API}/api/pos/employees/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ name, pin, role, commission_rate }),
+  });
+  closeEmpEdit();
   loadEmployees();
 }
 
@@ -1539,11 +1606,6 @@ function switchTab(tabName) {
     loadEmployees();
     loadStoreSettings();
     renderBrandCheckboxes();
-    // Auto-expand brand product panels so prices/min prices are visible
-    for (const brand of selectedBrands) {
-      const panel = document.getElementById(`brandPanel-${brand}`);
-      if (panel) { renderBrandProductPanel(brand); panel.style.display = 'block'; }
-    }
   }
 }
 
