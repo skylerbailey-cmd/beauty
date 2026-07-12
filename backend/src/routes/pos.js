@@ -3,7 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const pgDb = require('../db/postgres');
-const { PRODUCTS } = require('./welcome');
+const { PRODUCTS, generateWelcomeEmailBody } = require('./welcome');
 
 // Auth middleware
 function requireAuth(req, res, next) {
@@ -33,14 +33,19 @@ router.get('/debug/session', (req, res) => {
 
 router.use(requireAuth);
 
-// Migrate Postgres data if userId changed (e.g. after redeploy)
-const migratedUsers = new Set();
+// One-time, non-destructive bridge: reattach any orphaned pre-migration dataset
+// to this (now-stable) company account. Never pulls another company's data.
+const bridgedUsers = new Set();
 router.use(async (req, res, next) => {
   const userId = req.session.userId;
-  if (userId && !migratedUsers.has(userId)) {
-    migratedUsers.add(userId);
-    try { await pgDb.migrateUserIdIfNeeded(userId); } catch (e) {
-      console.error('[pos] Migration check failed:', e.message);
+  if (userId && !bridgedUsers.has(userId)) {
+    bridgedUsers.add(userId);
+    try {
+      const { getUser } = require('../db');
+      const companyName = getUser(userId)?.company_name || '';
+      await pgDb.bridgeLegacyData(userId, companyName);
+    } catch (e) {
+      console.error('[pos] Legacy data bridge failed:', e.message);
     }
   }
   next();
@@ -200,6 +205,12 @@ router.post('/transactions', async (req, res) => {
     return res.status(400).json({ error: 'At least one item required' });
   }
 
+  // An employee must be assigned before a transaction can be completed.
+  const hasEmployee = (Array.isArray(employeeAssignments) && employeeAssignments.some(e => e && e.employee_id)) || !!employee_id;
+  if (!hasEmployee) {
+    return res.status(400).json({ error: 'At least one employee must be added to complete this transaction.' });
+  }
+
   if (payment_method === 'card' && type !== 'return' && (!card_last4 || card_last4.length !== 4)) {
     return res.status(400).json({ error: 'Last 4 digits of credit card required for card payments' });
   }
@@ -324,7 +335,7 @@ router.post('/transactions', async (req, res) => {
     } catch (_) { /* non-critical */ }
   }
 
-  const tx = await pgDb.getTransaction(id);
+  const tx = await pgDb.getTransaction(id, userId);
   res.json({ transaction: tx });
 });
 
@@ -340,9 +351,58 @@ router.get('/transactions', async (req, res) => {
 });
 
 router.get('/transactions/:id', async (req, res) => {
-  const tx = await pgDb.getTransaction(parseInt(req.params.id));
+  const tx = await pgDb.getTransaction(parseInt(req.params.id), req.session.userId);
   if (!tx) return res.status(404).json({ error: 'Transaction not found' });
   res.json({ transaction: tx });
+});
+
+// ─── Manager-gated Edit / Delete ────────────────────────────────────────────
+
+// Verify a manager's name + PIN for the current company. Returns the manager
+// employee record or null.
+async function verifyManager(userId, name, pin) {
+  if (!pin) return null;
+  const emp = await pgDb.verifyEmployeePin(pin, userId);
+  if (!emp || emp.role !== 'manager') return null;
+  // Name must match the PIN's employee (case-insensitive, trimmed) when provided
+  if (name && emp.name.trim().toLowerCase() !== String(name).trim().toLowerCase()) return null;
+  return emp;
+}
+
+router.post('/manager/verify', async (req, res) => {
+  const { name, pin } = req.body;
+  const manager = await verifyManager(req.session.userId, name, pin);
+  if (!manager) return res.status(401).json({ error: 'Manager name and code do not match a manager for this store.' });
+  res.json({ ok: true, manager: { id: manager.id, name: manager.name } });
+});
+
+router.put('/transactions/:id', async (req, res) => {
+  const userId = req.session.userId;
+  const { manager_name, manager_pin } = req.body;
+  const manager = await verifyManager(userId, manager_name, manager_pin);
+  if (!manager) return res.status(403).json({ error: 'Only a manager can edit a transaction. Manager name and code did not match.' });
+
+  const hasEmployee = Array.isArray(req.body.employees) && req.body.employees.some(e => e && e.employee_id);
+  if (!hasEmployee) return res.status(400).json({ error: 'At least one employee must be assigned to the transaction.' });
+
+  try {
+    const tx = await pgDb.updateTransaction(parseInt(req.params.id), userId, req.body);
+    if (!tx) return res.status(404).json({ error: 'Transaction not found' });
+    res.json({ transaction: tx });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/transactions/:id', async (req, res) => {
+  const userId = req.session.userId;
+  const { manager_name, manager_pin } = req.body;
+  const manager = await verifyManager(userId, manager_name, manager_pin);
+  if (!manager) return res.status(403).json({ error: 'Only a manager can delete a transaction. Manager name and code did not match.' });
+
+  const ok = await pgDb.deleteTransaction(parseInt(req.params.id), userId);
+  if (!ok) return res.status(404).json({ error: 'Transaction not found' });
+  res.json({ ok: true });
 });
 
 router.get('/transactions/receipt/:number', async (req, res) => {
@@ -389,7 +449,7 @@ async function sendGmail(user, toEmail, subject, htmlBody) {
 // ─── Email Receipt ─────────────────────────────────────────────────────────
 
 router.post('/transactions/:id/email', async (req, res) => {
-  const tx = await pgDb.getTransaction(parseInt(req.params.id));
+  const tx = await pgDb.getTransaction(parseInt(req.params.id), req.session.userId);
   if (!tx) return res.status(404).json({ error: 'Transaction not found' });
 
   const email = req.body.email || tx.customer_email;
@@ -463,71 +523,63 @@ router.post('/transactions/:id/email', async (req, res) => {
   }
 });
 
-// ─── Email Product Instructions ─────────────────────────────────────────────
+// ─── Send Welcome Email ─────────────────────────────────────────────────────
+// Generates the SAME personalized welcome email as the Welcome Emails tool,
+// straight from the transaction's products, and sends it via Gmail.
 
-router.post('/transactions/:id/instructions', async (req, res) => {
-  const tx = await pgDb.getTransaction(parseInt(req.params.id));
+router.post('/transactions/:id/welcome', async (req, res) => {
+  const userId = req.session.userId;
+  const tx = await pgDb.getTransaction(parseInt(req.params.id), userId);
   if (!tx) return res.status(404).json({ error: 'Transaction not found' });
 
   const email = req.body.email || tx.customer_email;
   if (!email) return res.status(400).json({ error: 'Email address required' });
 
+  const customerName = (req.body.customer_name || tx.customer_name || '').trim();
+  if (!customerName) return res.status(400).json({ error: 'Customer name is required to send a welcome email.' });
+
   const { getUser } = require('../db');
-  const user = getUser(req.session.userId);
+  const user = getUser(userId);
   if (!user?.refresh_token) {
     return res.status(403).json({ error: 'Gmail not connected. Please connect Gmail via the Welcome Emails page first.' });
   }
 
-  const settings = await pgDb.getSettings(req.session.userId);
-  const storeName = settings.store_name || user.company_name || 'Glow SF';
+  // Only catalog products can drive the personalized routine (custom products
+  // have no usage data). Use the transaction's line items.
+  const selectedProductIds = tx.items.map(i => i.product_id);
 
-  const allProducts = [];
-  for (const [, products] of Object.entries(PRODUCTS)) {
-    for (const p of products) allProducts.push(p);
+  let emailBody, selectedProducts;
+  try {
+    ({ emailBody, selectedProducts } = generateWelcomeEmailBody({
+      customerEmail: email,
+      customerName,
+      selectedProductIds,
+      userId,
+    }));
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
   }
 
-  const instructionSections = tx.items.map(item => {
-    const catalogProduct = allProducts.find(p => p.id === item.product_id);
-    if (!catalogProduct) return '';
-    return `
-      <div style="margin-bottom:24px;padding:20px;border:1px solid #e8d5d9;border-radius:12px;background:#fdf9f5">
-        <h3 style="margin:0 0 4px;font-size:1rem;color:#9e5567">${catalogProduct.name}</h3>
-        <p style="margin:0 0 12px;font-size:.78rem;color:#6b5057;font-style:italic">${catalogProduct.brand}</p>
-        ${catalogProduct.howToUse ? `<div style="margin-bottom:12px"><strong style="font-size:.82rem;color:#2c2022">How to Use:</strong><p style="margin:4px 0 0;font-size:.88rem;color:#2c2022;line-height:1.6">${catalogProduct.howToUse}</p></div>` : ''}
-        ${catalogProduct.benefits ? `<div><strong style="font-size:.82rem;color:#2c2022">Benefits:</strong><p style="margin:4px 0 0;font-size:.85rem;color:#6b5057;line-height:1.5">${catalogProduct.benefits}</p></div>` : ''}
-        ${catalogProduct.frequency ? `<p style="margin:8px 0 0;font-size:.82rem;color:#9e5567"><strong>Recommended frequency:</strong> ${catalogProduct.frequency}</p>` : ''}
-      </div>
-    `;
-  }).filter(Boolean).join('');
-
-  if (!instructionSections) {
-    return res.status(400).json({ error: 'No product instructions available for items in this transaction' });
-  }
-
-  const html = `
-    <div style="max-width:600px;margin:0 auto;font-family:Georgia,serif;color:#2c2022">
-      <div style="text-align:center;padding:24px 0;border-bottom:2px solid #c97d8a">
-        <h1 style="margin:0;font-size:1.4rem;color:#9e5567">${storeName}</h1>
-        <p style="margin:4px 0 0;font-size:.85rem;color:#6b5057">Your Product Instructions</p>
-      </div>
-      <div style="padding:24px 0">
-        <p style="font-size:.92rem;color:#2c2022;margin:0 0 20px;line-height:1.5">
-          Thank you for your purchase! Here are the usage instructions for your products.
-        </p>
-        ${instructionSections}
-      </div>
-      <div style="text-align:center;padding:16px 0;border-top:1px solid #e8d5d9;font-size:.8rem;color:#6b5057">
-        Questions? Reply to this email and we'll be happy to help.
-      </div>
-    </div>
-  `;
+  const storeName = (await pgDb.getSettings(userId)).store_name || user.company_name || 'our store';
+  const subject = user.company_name ? `Welcome to ${user.company_name}!` : 'Welcome!';
 
   try {
-    await sendGmail(user, email, `Your Product Instructions | ${storeName}`, html);
+    await sendGmail(user, email, subject, emailBody);
+    // Record in history + CRM, matching the Welcome Emails tool behavior
+    try {
+      await pgDb.saveWelcomeEmail({
+        customer_name: customerName,
+        customer_email: email,
+        products: selectedProducts.map(p => p.name),
+        user_id: userId,
+      });
+      const customer = await pgDb.findOrCreateCustomer(customerName, email, userId);
+      await pgDb.addCustomerProducts(customer.id, selectedProducts.map(p => ({ id: p.id, name: p.name })));
+    } catch (_) { /* non-critical */ }
     res.json({ ok: true, sent_to: email });
   } catch (err) {
-    console.error('[pos] Instructions email error:', err.message);
-    res.status(500).json({ error: 'Failed to send instructions email: ' + err.message });
+    console.error('[pos] Welcome email error:', err.message);
+    res.status(500).json({ error: 'Failed to send welcome email: ' + err.message });
   }
 });
 

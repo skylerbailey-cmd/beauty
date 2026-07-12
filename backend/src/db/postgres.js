@@ -204,6 +204,13 @@ async function initSchema() {
       theme TEXT DEFAULT 'rose',
       brands TEXT DEFAULT '["avologi","avinichi","hydrasphere"]'
     );
+
+    -- Registry of stable (email-derived) user IDs, so the one-time legacy-data
+    -- bridge can tell a real account from an orphaned pre-migration dataset.
+    CREATE TABLE IF NOT EXISTS pos_known_users (
+      user_id TEXT PRIMARY KEY,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
   `);
   // Migrations for existing DBs
   const migrate = async (sql) => { try { await query(sql); } catch (_) {} };
@@ -392,8 +399,12 @@ async function addTransactionEmployees(transactionId, employees) {
   }
 }
 
-async function getTransaction(id) {
-  const tx = (await query('SELECT * FROM pos_transactions WHERE id = $1', [id])).rows[0];
+async function getTransaction(id, userId) {
+  // When userId is provided, scope by company so one company can't read
+  // another company's transaction by guessing its numeric id.
+  const tx = userId
+    ? (await query('SELECT * FROM pos_transactions WHERE id = $1 AND user_id = $2', [id, userId])).rows[0]
+    : (await query('SELECT * FROM pos_transactions WHERE id = $1', [id])).rows[0];
   if (!tx) return null;
   tx.items = (await query('SELECT * FROM pos_transaction_items WHERE transaction_id = $1', [id])).rows;
   tx.employees = (await query(
@@ -401,6 +412,86 @@ async function getTransaction(id) {
      JOIN pos_employees e ON te.employee_id = e.id WHERE te.transaction_id = $1`, [id]
   )).rows;
   return tx;
+}
+
+// Manager-gated edit. Scoped by userId (company). Recomputes totals from the
+// edited line items using the transaction's existing tax rate. Returns the
+// updated transaction, or null if it doesn't exist / belong to this company.
+async function updateTransaction(id, userId, data) {
+  const existing = (await query('SELECT * FROM pos_transactions WHERE id = $1 AND user_id = $2', [id, userId])).rows[0];
+  if (!existing) return null;
+
+  const items = Array.isArray(data.items) ? data.items : [];
+  if (items.length === 0) throw new Error('At least one item is required');
+
+  const rate = existing.tax_rate ?? 0.0875;
+  const disc = data.discount_amount !== undefined ? parseFloat(data.discount_amount || 0) : existing.discount_amount;
+  const subtotal = items.reduce((sum, i) => sum + (i.unit_price * (i.quantity || 1) - (i.discount || 0)), 0);
+  const taxable = subtotal - disc;
+  const tax_amount = Math.round(taxable * rate * 100) / 100;
+  const total = Math.round((taxable + tax_amount) * 100) / 100;
+
+  const employees = Array.isArray(data.employees) ? data.employees : [];
+  const primaryEmp = employees.length ? employees[0].employee_id : existing.employee_id;
+
+  await query(
+    `UPDATE pos_transactions SET
+       customer_name = $1, customer_email = $2, subtotal = $3, tax_amount = $4,
+       discount_amount = $5, total = $6, payment_method = $7, card_last4 = $8,
+       notes = $9, employee_id = $10
+     WHERE id = $11 AND user_id = $12`,
+    [
+      data.customer_name ?? existing.customer_name,
+      data.customer_email ?? existing.customer_email,
+      subtotal, tax_amount, disc, total,
+      data.payment_method ?? existing.payment_method,
+      data.card_last4 ?? existing.card_last4,
+      data.notes ?? existing.notes,
+      primaryEmp, id, userId,
+    ]
+  );
+
+  // Replace line items
+  await query('DELETE FROM pos_transaction_items WHERE transaction_id = $1', [id]);
+  await addTransactionItems(id, items.map(i => ({
+    product_id: i.product_id,
+    product_name: i.product_name,
+    brand: i.brand || '',
+    quantity: i.quantity || 1,
+    unit_price: i.unit_price,
+    discount: i.discount || 0,
+    line_total: i.unit_price * (i.quantity || 1) - (i.discount || 0),
+  })));
+
+  // Replace employee commissions
+  await query('DELETE FROM pos_transaction_employees WHERE transaction_id = $1', [id]);
+  if (employees.length) {
+    await addTransactionEmployees(id, employees.map(ea => {
+      const commissionAmount = ea.commission_type === 'dollar'
+        ? (ea.commission_value || 0)
+        : Math.round(total * (ea.commission_value || 100) / 100 * 100) / 100;
+      return {
+        employee_id: ea.employee_id,
+        commission_type: ea.commission_type || 'percent',
+        commission_value: ea.commission_value || 100,
+        commission_amount: commissionAmount,
+      };
+    }));
+  }
+
+  return getTransaction(id, userId);
+}
+
+// Manager-gated delete. Scoped by userId (company).
+async function deleteTransaction(id, userId) {
+  const existing = (await query('SELECT id FROM pos_transactions WHERE id = $1 AND user_id = $2', [id, userId])).rows[0];
+  if (!existing) return false;
+  // Detach any returns that referenced this sale so the FK doesn't block deletion
+  await query('UPDATE pos_transactions SET original_transaction_id = NULL WHERE original_transaction_id = $1', [id]);
+  await query('DELETE FROM pos_transaction_employees WHERE transaction_id = $1', [id]);
+  await query('DELETE FROM pos_transaction_items WHERE transaction_id = $1', [id]);
+  await query('DELETE FROM pos_transactions WHERE id = $1 AND user_id = $2', [id, userId]);
+  return true;
 }
 
 async function getTransactionByReceipt(receiptNumber, userId) {
@@ -753,33 +844,20 @@ async function setProductVisibility(productId, userId, visible) {
   );
 }
 
-// ─── User ID Migration ──────────────────────────────────────────────────────
-// SQLite generates a new UUID on redeploy. Migrate Postgres data to the new userId.
-async function migrateUserIdIfNeeded(newUserId) {
-  if (!pool) return;
+// ─── Legacy data bridge ───────────────────────────────────────────────────
+// Move every user-scoped row from one userId to another.
+async function migrateDataBetweenUsers(oldUserId, newUserId) {
+  if (!pool || !oldUserId || oldUserId === newUserId) return;
 
-  // Find any old userId that has data but doesn't match current user
-  const oldUser = await query(`
-    SELECT user_id, COUNT(*) as cnt FROM pos_product_prices
-    WHERE user_id != $1 AND user_id != ''
-    GROUP BY user_id ORDER BY cnt DESC LIMIT 1
-  `, [newUserId]);
-  if (oldUser.rows.length === 0) return; // no old data to migrate
-
-  const oldUserId = oldUser.rows[0].user_id;
-  console.log(`[postgres] Migrating POS data from user ${oldUserId} to ${newUserId}`);
-
-  // Handle pos_settings specially — user_id is PRIMARY KEY, so delete blank new row first
+  // pos_settings.user_id is a PRIMARY KEY, so clear the destination row first
   try {
-    const oldSettings = await query('SELECT * FROM pos_settings WHERE user_id = $1', [oldUserId]);
+    const oldSettings = await query('SELECT 1 FROM pos_settings WHERE user_id = $1', [oldUserId]);
     if (oldSettings.rows.length > 0) {
       await query('DELETE FROM pos_settings WHERE user_id = $1', [newUserId]);
       await query('UPDATE pos_settings SET user_id = $1 WHERE user_id = $2', [newUserId, oldUserId]);
     }
   } catch (_) {}
 
-  // Delete any placeholder data for the new userId before migrating old data
-  // (new userId may have empty default rows that conflict with unique constraints)
   const tables = [
     'pos_product_prices', 'pos_employees', 'pos_custom_products',
     'pos_product_visibility', 'pos_transactions',
@@ -791,13 +869,76 @@ async function migrateUserIdIfNeeded(newUserId) {
       await query(`UPDATE ${table} SET user_id = $1 WHERE user_id = $2`, [newUserId, oldUserId]);
     } catch (_) { /* table might not exist yet */ }
   }
-  console.log(`[postgres] Migration complete: ${oldUserId} -> ${newUserId}`);
+}
+
+// Since user IDs are now stable (derived from the login email), data no longer
+// churns across redeploys. This one-time, NON-destructive bridge reattaches a
+// pre-existing orphaned dataset to its rightful company, and — crucially —
+// never pulls another company's data:
+//   • It registers each stable userId in pos_known_users.
+//   • It only considers "legacy" datasets that are NOT known stable users.
+//   • It only claims a legacy dataset when it is unambiguous: either its store
+//     name matches this company's name, or it is the only legacy dataset.
+async function bridgeLegacyData(newUserId, companyName) {
+  if (!pool || !newUserId) return;
+
+  // Register this account as a known stable user.
+  await query('INSERT INTO pos_known_users (user_id) VALUES ($1) ON CONFLICT DO NOTHING', [newUserId]);
+
+  // If this account already has data, there is nothing to bridge.
+  const hasData = (await query(
+    `SELECT 1 FROM pos_transactions WHERE user_id = $1
+     UNION SELECT 1 FROM pos_product_prices WHERE user_id = $1 LIMIT 1`, [newUserId]
+  )).rows.length > 0;
+  if (hasData) return;
+
+  // Candidate legacy datasets: have data, aren't this user, aren't a known stable user.
+  const legacy = (await query(`
+    SELECT DISTINCT user_id FROM (
+      SELECT user_id FROM pos_product_prices
+      UNION SELECT user_id FROM pos_transactions
+      UNION SELECT user_id FROM pos_custom_products
+      UNION SELECT user_id FROM pos_employees
+    ) d
+    WHERE user_id <> '' AND user_id <> $1
+      AND user_id NOT IN (SELECT user_id FROM pos_known_users)
+  `, [newUserId])).rows.map(r => r.user_id);
+  if (legacy.length === 0) return;
+
+  // Look up each legacy dataset's store name so we can attribute it safely.
+  const legacyInfo = [];
+  for (const uid of legacy) {
+    const s = (await query('SELECT store_name FROM pos_settings WHERE user_id = $1', [uid])).rows[0];
+    legacyInfo.push({ uid, store: (s?.store_name || '').trim().toLowerCase() });
+  }
+
+  let target = null;
+  const name = (companyName || '').trim().toLowerCase();
+  if (name) {
+    // Prefer an exact store-name match.
+    const matches = legacyInfo.filter(l => l.store && l.store === name);
+    if (matches.length === 1) {
+      target = matches[0].uid;
+    } else if (matches.length === 0 && legacyInfo.length === 1 && !legacyInfo[0].store) {
+      // Only claim a single, truly UNATTRIBUTED dataset (no store name of its own).
+      // Never let a named company grab a dataset that belongs to a different store.
+      target = legacyInfo[0].uid;
+    }
+  } else if (legacyInfo.length === 1) {
+    // This account has no company name; safe only when there's exactly one orphan.
+    target = legacyInfo[0].uid;
+  }
+  if (!target) return; // ambiguous — never risk cross-company corruption
+
+  await migrateDataBetweenUsers(target, newUserId);
+  console.log(`[postgres] Bridged legacy POS data ${target} -> ${newUserId} (${companyName || 'unnamed'})`);
 }
 
 module.exports = {
   pool,
   initSchema,
-  migrateUserIdIfNeeded,
+  bridgeLegacyData,
+  migrateDataBetweenUsers,
   // Customers
   findOrCreateCustomer,
   addCustomerProducts,
@@ -830,6 +971,8 @@ module.exports = {
   getTransaction,
   getTransactionByReceipt,
   getTransactions,
+  updateTransaction,
+  deleteTransaction,
   // Reports
   getSalesReport,
   getEmployeeSalesReport,

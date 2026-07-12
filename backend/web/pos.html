@@ -405,6 +405,14 @@
         </div>
         <!-- Return mode: receipt lookup -->
         <div id="returnView" style="display:none">
+          <div style="max-width:500px;margin-bottom:16px;padding:14px 16px;background:#fff6e0;border:1px solid #f0d48a;border-left:4px solid var(--gold);border-radius:10px;font-family:system-ui,sans-serif">
+            <div style="font-weight:700;font-size:.85rem;color:#8a6d1f;margin-bottom:6px">⚠️ Before processing a return</div>
+            <ul style="margin:0;padding-left:18px;font-size:.82rem;color:#6b5518;line-height:1.5">
+              <li>Inspect each item — make sure nothing has been <strong>opened or used</strong>.</li>
+              <li>Ask the customer if they'd like to do an <strong>exchange</strong> instead.</li>
+              <li>Exchanges are only allowed within <strong>7 days</strong> of purchase.</li>
+            </ul>
+          </div>
           <div class="report-card" style="max-width:500px">
             <h3 style="font-family:system-ui,sans-serif;margin-bottom:4px">Lookup Original Receipt</h3>
             <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:16px">Enter the receipt number from the original sale to process a return. Returns must be within 14 days of purchase.</p>
@@ -447,8 +455,8 @@
         </div>
         <div class="cart-footer">
           <div class="customer-section">
-            <input type="text" id="custName" placeholder="Customer name (optional)">
-            <input type="email" id="custEmail" placeholder="Customer email (optional)">
+            <input type="text" id="custName" placeholder="Customer name">
+            <input type="email" id="custEmail" placeholder="Customer email">
           </div>
           <!-- Employee assignment -->
           <div class="employee-assign" style="margin-bottom:12px">
@@ -726,7 +734,7 @@
     <div class="receipt-actions">
       <button class="btn" style="background:var(--rose);color:white" onclick="printReceipt()">Print</button>
       <button class="btn" style="background:var(--gold);color:white" onclick="emailReceipt()">Email Receipt</button>
-      <button class="btn" style="background:var(--success);color:white" id="sendInstructionsBtn" onclick="showInstructionsForm()">Send Instructions</button>
+      <button class="btn" style="background:var(--success);color:white" id="sendInstructionsBtn" onclick="showInstructionsForm()">Send Welcome Email</button>
       <button class="btn btn-cancel" onclick="closeReceipt()">Done</button>
     </div>
     <div id="emailReceiptForm" style="display:none;margin-top:12px">
@@ -766,6 +774,59 @@
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeEmpEdit()">Cancel</button>
       <button class="btn btn-confirm" onclick="saveEmpEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Manager Authorization Modal ─── -->
+<div class="modal-overlay" id="managerAuthModal">
+  <div class="modal" style="max-width:400px">
+    <h2 id="managerAuthTitle">Manager Authorization</h2>
+    <p class="sub" id="managerAuthMsg" style="font-family:system-ui,sans-serif;font-size:.84rem;color:var(--mid);margin-bottom:8px">A manager must approve this action.</p>
+    <div class="field">
+      <label>Manager Name</label>
+      <input type="text" id="managerAuthName" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Manager Code (PIN)</label>
+      <input type="password" id="managerAuthPin" maxlength="6" autocomplete="off" onkeydown="if(event.key==='Enter')submitManagerAuth()">
+    </div>
+    <div id="managerAuthError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger);min-height:1em"></div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeManagerAuth()">Cancel</button>
+      <button class="btn btn-confirm" onclick="submitManagerAuth()">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Transaction Edit Modal ─── -->
+<div class="modal-overlay" id="txEditModal">
+  <div class="modal" style="max-width:660px">
+    <h2>Edit Transaction <span id="txEditReceipt" style="font-size:.82rem;color:var(--mid);font-weight:400"></span></h2>
+    <div style="display:flex;gap:12px">
+      <div class="field" style="flex:1"><label>Customer Name</label><input type="text" id="txEditCustName"></div>
+      <div class="field" style="flex:1"><label>Customer Email</label><input type="email" id="txEditCustEmail"></div>
+    </div>
+    <label style="font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid)">Items</label>
+    <div id="txEditItems" style="margin:6px 0"></div>
+    <div style="display:flex;gap:6px;margin-bottom:12px">
+      <select id="txEditNewItem" style="flex:1;padding:7px 8px;border:1px solid var(--border);border-radius:6px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none"></select>
+      <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border)" onclick="txEditAddItem()">+ Add Item</button>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <label style="font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid)">Employees</label>
+      <button onclick="txEditAddEmployee()" style="background:none;border:none;cursor:pointer;color:var(--rose);font-family:system-ui,sans-serif;font-size:.78rem;text-decoration:underline">+ Add</button>
+    </div>
+    <div id="txEditEmployees" style="margin-bottom:12px"></div>
+    <div class="cart-totals" style="font-family:system-ui,sans-serif;font-size:.9rem;border-top:1px solid var(--border);padding-top:10px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Subtotal</span><span id="txEditSubtotal">$0.00</span></div>
+      <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span id="txEditTaxLabel">Tax</span><span id="txEditTax">$0.00</span></div>
+      <div style="display:flex;justify-content:space-between;font-weight:700;font-size:1.05rem"><span>Total</span><span id="txEditTotal">$0.00</span></div>
+    </div>
+    <div id="txEditError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger);min-height:1em;margin-top:6px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeTxEdit()">Cancel</button>
+      <button class="btn btn-confirm" onclick="saveTxEdit()">Save Changes</button>
     </div>
   </div>
 </div>
@@ -1081,7 +1142,11 @@ async function lookupReceipt() {
     document.getElementById('returnOrigReceipt').textContent = tx.receipt_number;
     document.getElementById('returnOrigDate').textContent = saleDate.toLocaleDateString();
     document.getElementById('returnOrigCustomer').textContent = tx.customer_name ? `Customer: ${tx.customer_name}` : '';
-    document.getElementById('returnOrigDaysLeft').innerHTML = `<span style="color:${daysLeft <= 3 ? 'var(--danger)' : 'var(--success)'}">${daysLeft} day${daysLeft !== 1 ? 's' : ''} left to return</span>`;
+    const exchangeDaysLeft = Math.max(0, Math.ceil(7 - daysSince));
+    const exchangeOk = daysSince <= 7;
+    document.getElementById('returnOrigDaysLeft').innerHTML =
+      `<span style="color:${daysLeft <= 3 ? 'var(--danger)' : 'var(--success)'}">${daysLeft} day${daysLeft !== 1 ? 's' : ''} left to return</span>` +
+      ` &nbsp;·&nbsp; <span style="color:${exchangeOk ? 'var(--success)' : 'var(--danger)'}">${exchangeOk ? `Exchange available (${exchangeDaysLeft} day${exchangeDaysLeft !== 1 ? 's' : ''} left)` : 'Exchange window expired (7-day limit)'}</span>`;
     document.getElementById('returnOrigTotal').textContent = `$${tx.total.toFixed(2)}`;
 
     document.getElementById('returnItemsBody').innerHTML = tx.items.map((item, i) => `
@@ -1135,6 +1200,23 @@ function setPayment(method) {
 // ─── Transaction ────────────────────────────────────────────────────────────
 async function processTransaction() {
   if (cart.length === 0) return;
+
+  // An employee must be assigned before the transaction can be completed.
+  if (saleEmployees.length === 0) {
+    alert('Please add at least one employee to this transaction before completing it.');
+    return;
+  }
+
+  // Return checklist reminder
+  if (currentMode === 'return') {
+    const proceed = confirm(
+      'Return checklist:\n\n' +
+      '• Have you inspected the items to confirm nothing has been opened or used?\n' +
+      '• Did you offer the customer an exchange instead? (Exchanges are only allowed within 7 days of purchase.)\n\n' +
+      'Click OK to continue with the return.'
+    );
+    if (!proceed) return;
+  }
 
   // Validate employee commissions
   const employeeAssignments = saleEmployees.map(se => ({
@@ -1264,13 +1346,13 @@ function printReceipt() {
   setTimeout(() => { printEl.style.display = 'none'; }, 500);
 }
 
-let emailMode = 'receipt'; // 'receipt' or 'instructions'
+let emailMode = 'receipt'; // 'receipt' or 'welcome'
 
 function showInstructionsForm() {
-  emailMode = 'instructions';
+  emailMode = 'welcome';
   const form = document.getElementById('emailReceiptForm');
   form.style.display = 'block';
-  document.getElementById('emailSendBtn').textContent = 'Send Instructions';
+  document.getElementById('emailSendBtn').textContent = 'Send Welcome Email';
   document.getElementById('emailStatus').textContent = '';
 }
 
@@ -1290,8 +1372,8 @@ async function sendReceiptEmailOrInstructions() {
   statusEl.textContent = 'Sending...';
   statusEl.style.color = 'var(--mid)';
 
-  const endpoint = emailMode === 'instructions'
-    ? `${API}/api/pos/transactions/${lastTransaction.id}/instructions`
+  const endpoint = emailMode === 'welcome'
+    ? `${API}/api/pos/transactions/${lastTransaction.id}/welcome`
     : `${API}/api/pos/transactions/${lastTransaction.id}/email`;
 
   try {
@@ -1299,11 +1381,11 @@ async function sendReceiptEmailOrInstructions() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, customer_name: lastTransaction.customer_name || '' }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error);
-    const label = emailMode === 'instructions' ? 'Instructions' : 'Receipt';
+    const label = emailMode === 'welcome' ? 'Welcome email' : 'Receipt';
     statusEl.textContent = `${label} sent to ${email}`;
     statusEl.style.color = 'var(--success)';
   } catch (err) {
@@ -1514,7 +1596,11 @@ async function loadTransactions() {
       <td>${tx.customer_name || '-'}</td>
       <td>${tx.items.length}</td>
       <td style="font-weight:600">$${tx.total.toFixed(2)}</td>
-      <td><button onclick="viewReceipt(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--rose);text-decoration:underline;font-size:.82rem">View</button></td>
+      <td style="white-space:nowrap">
+        <button onclick="viewReceipt(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--rose);text-decoration:underline;font-size:.82rem">View</button>
+        <button onclick="startEditTransaction(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--gold-dk,#b8860b);text-decoration:underline;font-size:.82rem">Edit</button>
+        <button onclick="startDeleteTransaction(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--danger);text-decoration:underline;font-size:.82rem">Delete</button>
+      </td>
     </tr>
   `).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--mid)">No transactions</td></tr>';
 }
@@ -1525,6 +1611,236 @@ async function viewReceipt(txId) {
   if (data.transaction) {
     lastTransaction = data.transaction;
     showReceipt(data.transaction);
+  }
+}
+
+// ─── Transaction Edit / Delete (manager-gated) ──────────────────────────────
+let managerAction = null;   // { type: 'edit'|'delete', txId }
+let managerCreds = null;    // { name, pin } captured after manager verification
+let editTx = null;          // working copy of the transaction being edited
+
+function startEditTransaction(txId) {
+  openManagerAuth('edit', txId, 'Only a manager can edit a transaction. Enter the manager name and code.');
+}
+function startDeleteTransaction(txId) {
+  openManagerAuth('delete', txId, 'Only a manager can delete a transaction. Enter the manager name and code.');
+}
+
+function openManagerAuth(type, txId, msg) {
+  managerAction = { type, txId };
+  document.getElementById('managerAuthTitle').textContent = type === 'delete' ? 'Delete Transaction' : 'Edit Transaction';
+  document.getElementById('managerAuthMsg').textContent = msg;
+  document.getElementById('managerAuthName').value = '';
+  document.getElementById('managerAuthPin').value = '';
+  document.getElementById('managerAuthError').textContent = '';
+  document.getElementById('managerAuthModal').classList.add('show');
+  setTimeout(() => document.getElementById('managerAuthName').focus(), 50);
+}
+function closeManagerAuth() {
+  document.getElementById('managerAuthModal').classList.remove('show');
+  managerAction = null;
+}
+
+async function submitManagerAuth() {
+  const name = document.getElementById('managerAuthName').value.trim();
+  const pin = document.getElementById('managerAuthPin').value.trim();
+  const errEl = document.getElementById('managerAuthError');
+  errEl.textContent = '';
+  if (!name || !pin) { errEl.textContent = 'Enter the manager name and code.'; return; }
+
+  try {
+    const resp = await fetch(`${API}/api/pos/manager/verify`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ name, pin }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Verification failed');
+    managerCreds = { name, pin };
+    const action = managerAction;
+    closeManagerAuth();
+    if (action.type === 'delete') {
+      await performDeleteTransaction(action.txId);
+    } else {
+      await openTxEdit(action.txId);
+    }
+  } catch (err) {
+    errEl.textContent = err.message;
+  }
+}
+
+async function performDeleteTransaction(txId) {
+  if (!confirm('Are you sure you want to permanently delete this transaction? This cannot be undone.')) { managerCreds = null; return; }
+  try {
+    const resp = await fetch(`${API}/api/pos/transactions/${txId}`, {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ manager_name: managerCreds.name, manager_pin: managerCreds.pin }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    managerCreds = null;
+    loadTransactions();
+  } catch (err) {
+    alert('Failed to delete: ' + err.message);
+  }
+}
+
+async function openTxEdit(txId) {
+  try {
+    const resp = await fetch(`${API}/api/pos/transactions/${txId}`, { credentials: 'include' });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    const tx = data.transaction;
+    editTx = {
+      id: tx.id,
+      receipt_number: tx.receipt_number,
+      tax_rate: tx.tax_rate ?? (storeSettings.tax_rate ?? 0.0875),
+      customer_name: tx.customer_name || '',
+      customer_email: tx.customer_email || '',
+      items: tx.items.map(i => ({ product_id: i.product_id, product_name: i.product_name, brand: i.brand || '', quantity: i.quantity, unit_price: i.unit_price })),
+      employees: (tx.employees || []).map(e => ({ employee_id: e.employee_id, name: e.employee_name, commission_type: 'percent', commission_value: e.commission_value || 0 })),
+    };
+    document.getElementById('txEditReceipt').textContent = '#' + tx.receipt_number;
+    document.getElementById('txEditCustName').value = editTx.customer_name;
+    document.getElementById('txEditCustEmail').value = editTx.customer_email;
+    document.getElementById('txEditError').textContent = '';
+    const picker = document.getElementById('txEditNewItem');
+    picker.innerHTML = products.filter(p => p.visible !== false).map(p => `<option value="${p.id}">${p.name} — $${(p.price || 0).toFixed(2)}</option>`).join('');
+    renderTxEditItems();
+    renderTxEditEmployees();
+    document.getElementById('txEditModal').classList.add('show');
+  } catch (err) {
+    alert('Failed to load transaction: ' + err.message);
+  }
+}
+function closeTxEdit() {
+  document.getElementById('txEditModal').classList.remove('show');
+  editTx = null; managerCreds = null;
+}
+
+function txEditTotals() {
+  const subtotal = editTx.items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+  const tax = Math.round(subtotal * editTx.tax_rate * 100) / 100;
+  const total = Math.round((subtotal + tax) * 100) / 100;
+  return { subtotal, tax, total };
+}
+
+function renderTxEditItems() {
+  const c = document.getElementById('txEditItems');
+  if (editTx.items.length === 0) {
+    c.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);padding:4px 0">No items</div>';
+  } else {
+    c.innerHTML = editTx.items.map((it, i) => `
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;font-family:system-ui,sans-serif;font-size:.82rem">
+        <div style="flex:1">${it.product_name}<br><span style="font-size:.7rem;color:var(--mid)">${it.brand || ''}</span></div>
+        <input type="number" min="1" value="${it.quantity}" onchange="txEditItemQty(${i},this.value)" style="width:48px;padding:5px;border:1px solid var(--border);border-radius:6px;text-align:center;outline:none">
+        <span style="color:var(--mid)">×&nbsp;$</span>
+        <input type="number" min="0" step="0.01" value="${it.unit_price}" onchange="txEditItemPrice(${i},this.value)" style="width:78px;padding:5px;border:1px solid var(--border);border-radius:6px;text-align:right;outline:none">
+        <span style="width:64px;text-align:right">$${(it.unit_price * it.quantity).toFixed(2)}</span>
+        <button onclick="txEditRemoveItem(${i})" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:1rem">&times;</button>
+      </div>`).join('');
+  }
+  renderTxEditTotalsDisplay();
+}
+
+function renderTxEditTotalsDisplay() {
+  const { subtotal, tax, total } = txEditTotals();
+  document.getElementById('txEditSubtotal').textContent = `$${subtotal.toFixed(2)}`;
+  document.getElementById('txEditTax').textContent = `$${tax.toFixed(2)}`;
+  document.getElementById('txEditTaxLabel').textContent = `Tax (${(editTx.tax_rate * 100).toFixed(2)}%)`;
+  document.getElementById('txEditTotal').textContent = `$${total.toFixed(2)}`;
+  renderTxEditEmployees(); // dollar amounts depend on total
+}
+
+function txEditItemQty(i, v) { editTx.items[i].quantity = Math.max(1, parseInt(v) || 1); renderTxEditItems(); }
+function txEditItemPrice(i, v) { editTx.items[i].unit_price = Math.max(0, parseFloat(v) || 0); renderTxEditItems(); }
+function txEditRemoveItem(i) { editTx.items.splice(i, 1); renderTxEditItems(); }
+function txEditAddItem() {
+  const id = document.getElementById('txEditNewItem').value;
+  const p = products.find(x => x.id === id);
+  if (!p) return;
+  editTx.items.push({ product_id: p.id, product_name: p.name, brand: p.brand || '', quantity: 1, unit_price: p.price || 0 });
+  renderTxEditItems();
+}
+
+function renderTxEditEmployees() {
+  const container = document.getElementById('txEditEmployees');
+  if (!container || !editTx) return;
+  const activeEmps = allEmployees.filter(e => e.active);
+  if (editTx.employees.length === 0) {
+    container.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);padding:4px 0">No employees assigned</div>';
+    return;
+  }
+  const { total } = txEditTotals();
+  const totalPct = editTx.employees.reduce((s, e) => s + (e.commission_value || 0), 0);
+  const pctOk = Math.abs(totalPct - 100) < 0.01;
+  container.innerHTML = editTx.employees.map((se, i) => {
+    const dollarAmt = total > 0 ? (total * (se.commission_value || 0) / 100) : 0;
+    return `
+    <div style="display:flex;gap:4px;align-items:center;margin-bottom:6px;font-family:system-ui,sans-serif;font-size:.82rem">
+      <select onchange="editTx.employees[${i}].employee_id=parseInt(this.value);editTx.employees[${i}].name=this.options[this.selectedIndex].text" style="flex:1;padding:5px 6px;border:1px solid var(--border);border-radius:6px;font-size:.8rem;outline:none">
+        ${activeEmps.map(e => `<option value="${e.id}" ${e.id === se.employee_id ? 'selected' : ''}>${e.name}</option>`).join('')}
+      </select>
+      <input type="number" value="${se.commission_value}" min="0" max="100" step="0.01" oninput="txEditEmpPct(${i},this.value)" style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:6px;text-align:right;outline:none" title="Percent">
+      <span style="font-size:.78rem;color:var(--mid)">%</span>
+      <input type="number" value="${dollarAmt.toFixed(2)}" min="0" step="0.01" oninput="txEditEmpDollar(${i},this.value)" style="width:70px;padding:5px 4px;border:1px solid var(--border);border-radius:6px;text-align:right;outline:none" title="Dollar amount">
+      <span style="font-size:.78rem;color:var(--mid)">$</span>
+      <button onclick="txEditRemoveEmployee(${i})" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:1rem;padding:0 2px">&times;</button>
+    </div>`;
+  }).join('') + `
+    <div style="font-family:system-ui,sans-serif;font-size:.75rem;margin-top:4px;color:${pctOk ? 'var(--success)' : 'var(--danger)'}">
+      Total: ${totalPct.toFixed(1)}% ${pctOk ? '' : '(must equal 100%)'}
+    </div>`;
+}
+
+function txEditEmpPct(i, v) { editTx.employees[i].commission_value = parseFloat(v) || 0; renderTxEditEmployees(); }
+function txEditEmpDollar(i, v) {
+  const { total } = txEditTotals();
+  const dollars = parseFloat(v) || 0;
+  editTx.employees[i].commission_value = total > 0 ? Math.round(dollars / total * 100 * 100) / 100 : 0;
+  renderTxEditEmployees();
+}
+function txEditRemoveEmployee(i) { editTx.employees.splice(i, 1); renderTxEditEmployees(); }
+function txEditAddEmployee() {
+  const assigned = editTx.employees.map(e => e.employee_id);
+  const available = allEmployees.filter(e => e.active && !assigned.includes(e.id));
+  if (available.length === 0) { alert('All employees are already assigned.'); return; }
+  editTx.employees.push({ employee_id: available[0].id, name: available[0].name, commission_type: 'percent', commission_value: 0 });
+  const even = Math.round(100 / editTx.employees.length * 100) / 100;
+  editTx.employees.forEach(e => e.commission_value = even);
+  const rem = 100 - even * editTx.employees.length;
+  if (Math.abs(rem) > 0.001) editTx.employees[0].commission_value += rem;
+  renderTxEditEmployees();
+}
+
+async function saveTxEdit() {
+  const errEl = document.getElementById('txEditError');
+  errEl.textContent = '';
+  if (!editTx) return;
+  if (editTx.items.length === 0) { errEl.textContent = 'Add at least one item.'; return; }
+  if (editTx.employees.length === 0) { errEl.textContent = 'Assign at least one employee.'; return; }
+  const totalPct = editTx.employees.reduce((s, e) => s + (e.commission_value || 0), 0);
+  if (Math.abs(totalPct - 100) > 0.01) { errEl.textContent = `Employee percentages must total 100% (currently ${totalPct.toFixed(1)}%).`; return; }
+  if (!managerCreds) { errEl.textContent = 'Manager authorization expired. Please close and try again.'; return; }
+
+  const body = {
+    manager_name: managerCreds.name,
+    manager_pin: managerCreds.pin,
+    customer_name: document.getElementById('txEditCustName').value.trim(),
+    customer_email: document.getElementById('txEditCustEmail').value.trim(),
+    items: editTx.items.map(i => ({ product_id: i.product_id, product_name: i.product_name, brand: i.brand, quantity: i.quantity, unit_price: i.unit_price })),
+    employees: editTx.employees.map(e => ({ employee_id: e.employee_id, commission_type: 'percent', commission_value: e.commission_value })),
+  };
+  try {
+    const resp = await fetch(`${API}/api/pos/transactions/${editTx.id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    closeTxEdit();
+    loadTransactions();
+  } catch (err) {
+    errEl.textContent = err.message;
   }
 }
 

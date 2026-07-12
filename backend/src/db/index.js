@@ -436,8 +436,12 @@ function findOrCreateUserByEmail(email, companyName) {
   let user = getUserByEmail(email);
   let isNew = false;
   if (!user) {
-    const { v4: uuidv4 } = require('uuid');
-    const id = uuidv4();
+    // Derive a STABLE id from the email. SQLite is ephemeral on Railway and is
+    // recreated on every redeploy; a deterministic id keeps each company's
+    // Postgres data (keyed by user_id) correctly associated across redeploys,
+    // and keeps different companies (different emails) isolated from each other.
+    const { v5: uuidv5 } = require('uuid');
+    const id = uuidv5('mailto:' + email.trim().toLowerCase(), uuidv5.URL);
     db.prepare(`
       INSERT INTO users (id, email, company_name) VALUES (?, ?, ?)
     `).run(id, email, companyName || null);

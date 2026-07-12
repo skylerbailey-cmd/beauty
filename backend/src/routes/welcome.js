@@ -731,30 +731,30 @@ const TIPS_BANK = [
 ];
 
 // POST /api/welcome/generate — build a templated welcome email (no AI)
-router.post('/generate', (req, res) => {
-  const { customerEmail, customerName, selectedProductIds: rawProductIds, includeSuggestions } = req.body;
-
+// Build the personalized welcome email HTML for a set of products.
+// Shared by the /generate route and the POS welcome-email endpoint.
+// Throws an Error (with a user-friendly message) on invalid input.
+function generateWelcomeEmailBody({ customerEmail, customerName, selectedProductIds: rawProductIds, includeSuggestions, userId }) {
   // Expand the thermal set into its individual product IDs
-  const selectedProductIds = rawProductIds.flatMap(id =>
+  const selectedProductIds = (rawProductIds || []).flatMap(id =>
     id === 'hydrasphere-mineralift-thermal-set'
       ? ['hydrasphere-mineralift-thermal-mask', 'hydrasphere-mineralift-thermal-serum', 'hydrasphere-mineralift-thermal-cream']
       : [id]
   );
 
   if (!customerEmail || typeof customerEmail !== 'string') {
-    return res.status(400).json({ error: 'customerEmail is required' });
+    throw new Error('customerEmail is required');
   }
   if (!customerName || typeof customerName !== 'string' || !customerName.trim()) {
-    return res.status(400).json({ error: 'customerName is required' });
+    throw new Error('customerName is required');
   }
   if (!Array.isArray(selectedProductIds) || selectedProductIds.length === 0) {
-    return res.status(400).json({ error: 'At least one product must be selected' });
+    throw new Error('At least one product must be selected');
   }
 
   // Get company name and theme from session user
   let companyName = 'our store';
   let userTheme = 'rose';
-  const userId = req.session?.userId;
   if (userId) {
     const { getUser } = require('../db');
     const user = getUser(userId);
@@ -774,7 +774,7 @@ router.post('/generate', (req, res) => {
     .filter(Boolean);
 
   if (selectedProducts.length === 0) {
-    return res.status(400).json({ error: 'No valid products matched the selected IDs' });
+    throw new Error('No valid products matched the selected IDs');
   }
 
   const name = customerName.trim();
@@ -1060,13 +1060,28 @@ router.post('/generate', (req, res) => {
   // ── Assemble ──────────────────────────────────────────────────────────
   const emailBody = [welcomeHtml, synergyHtml, routineSection, tipsHtml, consultationHtml, signOffHtml].filter(Boolean).join('\n\n');
 
-  res.json({
-    success: true,
+  return {
     customerEmail,
     customerName: name,
-    selectedProducts: selectedProducts.map(p => ({ id: p.id, name: p.name, brand: p.brand })),
+    selectedProducts,
     emailBody,
-  });
+  };
+}
+
+// POST /api/welcome/generate — build the personalized welcome email preview
+router.post('/generate', (req, res) => {
+  try {
+    const result = generateWelcomeEmailBody({ ...req.body, userId: req.session?.userId });
+    res.json({
+      success: true,
+      customerEmail: result.customerEmail,
+      customerName: result.customerName,
+      selectedProducts: result.selectedProducts.map(p => ({ id: p.id, name: p.name, brand: p.brand })),
+      emailBody: result.emailBody,
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // POST /api/welcome/send — send the welcome email via the logged-in user's Gmail
@@ -1307,10 +1322,15 @@ router.get('/customers', async (req, res) => {
   res.json({ customers });
 });
 
+// Ensure a customer belongs to the current company (data isolation).
+function ownsCustomer(customer, userId) {
+  return customer && (!customer.user_id || !userId || customer.user_id === userId);
+}
+
 // GET /api/welcome/customers/:id — get single customer
 router.get('/customers/:id', async (req, res) => {
   const customer = await pgDb.getCustomer(parseInt(req.params.id));
-  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+  if (!customer || !ownsCustomer(customer, req.session?.userId)) return res.status(404).json({ error: 'Customer not found' });
   res.json({ customer });
 });
 
@@ -1318,6 +1338,8 @@ router.get('/customers/:id', async (req, res) => {
 router.patch('/customers/:id/notes', async (req, res) => {
   const { notes } = req.body;
   if (typeof notes !== 'string') return res.status(400).json({ error: 'notes is required' });
+  const customer = await pgDb.getCustomer(parseInt(req.params.id));
+  if (!customer || !ownsCustomer(customer, req.session?.userId)) return res.status(404).json({ error: 'Customer not found' });
   await pgDb.updateCustomerNotes(parseInt(req.params.id), notes);
   res.json({ success: true });
 });
@@ -1326,7 +1348,7 @@ router.patch('/customers/:id/notes', async (req, res) => {
 router.patch('/customers/:id', async (req, res) => {
   const id = parseInt(req.params.id);
   const customer = await pgDb.getCustomer(id);
-  if (!customer) return res.status(404).json({ error: 'Customer not found' });
+  if (!customer || !ownsCustomer(customer, req.session?.userId)) return res.status(404).json({ error: 'Customer not found' });
 
   const { name, email, phone, address, notes } = req.body;
   await pgDb.updateCustomer(id, { name, email, phone, address, notes });
@@ -1421,4 +1443,4 @@ router.get('/debug', (req, res) => {
   });
 });
 
-module.exports = { router, PRODUCTS };
+module.exports = { router, PRODUCTS, generateWelcomeEmailBody };
