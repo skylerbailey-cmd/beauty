@@ -1084,7 +1084,7 @@ function renderProducts() {
       <div class="p-brand">${p.brand}</div>
       <div class="p-name">${p.name}</div>
       <div class="p-price">$${(p.price > 0 ? p.price : p.retailPrice).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
-      ${p.minPrice > 0 ? `<div style="font-family:system-ui,sans-serif;font-size:.68rem;color:var(--rose-dk);margin-top:2px">Min: $${p.minPrice.toFixed(2)}</div>` : ''}
+      ${p.minPrice > 0 ? `<div style="font-family:system-ui,sans-serif;font-size:.68rem;color:var(--rose-dk);margin-top:2px">Min: $${money(p.minPrice)}</div>` : ''}
     </div>
   `).join('');
 }
@@ -1103,7 +1103,7 @@ function addToCart(productId) {
   let retailText = product.retailPrice > 0
     ? `Website price: $${product.retailPrice.toLocaleString('en-US', {minimumFractionDigits: 2})}`
     : 'No website price set';
-  if (product.minPrice > 0) retailText += ` | Min: $${product.minPrice.toFixed(2)}`;
+  if (product.minPrice > 0) retailText += ` | Min: $${money(product.minPrice)}`;
   document.getElementById('priceEditRetail').textContent = retailText;
   document.getElementById('priceEditInput').value = product.price > 0 ? product.price.toFixed(2) : (product.retailPrice > 0 ? product.retailPrice.toFixed(2) : '');
   document.getElementById('priceEditModal').classList.add('show');
@@ -1124,7 +1124,7 @@ function confirmPriceEdit() {
   // Enforce min price
   const minPrice = pendingProduct.minPrice || 0;
   if (minPrice > 0 && price > 0 && price < minPrice) {
-    alert(`Cannot honor this pricing. The minimum allowed price for "${pendingProduct.name}" is $${minPrice.toFixed(2)}.`);
+    alert(`Cannot honor this pricing. The minimum allowed price for "${pendingProduct.name}" is $${money(minPrice)}.`);
     return;
   }
 
@@ -1173,7 +1173,7 @@ function editCartPrice(idx) {
   const product = products.find(p => p.id === item.product_id);
   const minPrice = product?.minPrice || 0;
   if (minPrice > 0 && parsed > 0 && parsed < minPrice) {
-    alert(`Cannot honor this pricing. The minimum allowed price for "${item.product_name}" is $${minPrice.toFixed(2)}.`);
+    alert(`Cannot honor this pricing. The minimum allowed price for "${item.product_name}" is $${money(minPrice)}.`);
     return;
   }
   cart[idx].unit_price = parsed;
@@ -1196,7 +1196,7 @@ function renderCart() {
           <span>${item.quantity}</span>
           <button onclick="changeQty(${i}, 1)">+</button>
         </div>
-        <div class="ci-price" onclick="editCartPrice(${i})" style="cursor:pointer" title="Click to edit price">$${(item.unit_price * item.quantity).toFixed(2)}</div>
+        <div class="ci-price" onclick="editCartPrice(${i})" style="cursor:pointer" title="Click to edit price">$${money((item.unit_price * item.quantity))}</div>
         <button class="ci-remove" onclick="removeFromCart(${i})">&times;</button>
       </div>
     `).join('');
@@ -1210,9 +1210,9 @@ function updateCartTotals() {
   const tax = Math.round(subtotal * taxRate * 100) / 100;
   const total = Math.round((subtotal + tax) * 100) / 100;
 
-  document.getElementById('cartSubtotal').textContent = `$${subtotal.toFixed(2)}`;
-  document.getElementById('cartTax').textContent = `$${tax.toFixed(2)}`;
-  document.getElementById('cartTotal').textContent = `$${total.toFixed(2)}`;
+  document.getElementById('cartSubtotal').textContent = `$${money(subtotal)}`;
+  document.getElementById('cartTax').textContent = `$${money(tax)}`;
+  document.getElementById('cartTotal').textContent = `$${money(total)}`;
   // Update tax label
   const taxLabel = document.querySelector('.cart-row:nth-child(2) span:first-child');
   if (taxLabel) taxLabel.textContent = `Tax (${taxPctStr(taxRate)}%)`;
@@ -1293,15 +1293,15 @@ async function lookupReceipt() {
     document.getElementById('returnOrigDaysLeft').innerHTML =
       `<span style="color:${daysLeft <= 3 ? 'var(--danger)' : 'var(--success)'}">${daysLeft} day${daysLeft !== 1 ? 's' : ''} left to return</span>` +
       ` &nbsp;·&nbsp; <span style="color:${exchangeOk ? 'var(--success)' : 'var(--danger)'}">${exchangeOk ? `Exchange available (${exchangeDaysLeft} day${exchangeDaysLeft !== 1 ? 's' : ''} left)` : 'Exchange window expired (7-day limit)'}</span>`;
-    document.getElementById('returnOrigTotal').textContent = `$${tx.total.toFixed(2)}`;
+    document.getElementById('returnOrigTotal').textContent = `$${money(tx.total)}`;
 
     document.getElementById('returnItemsBody').innerHTML = tx.items.map((item, i) => `
       <tr>
         <td><input type="checkbox" checked data-idx="${i}" class="return-item-cb" style="width:16px;height:16px;accent-color:var(--danger)"></td>
         <td>${item.product_name}<br><span style="font-size:.72rem;color:var(--mid)">${item.brand}</span></td>
         <td>${item.quantity}</td>
-        <td>$${item.unit_price.toFixed(2)}</td>
-        <td>$${item.line_total.toFixed(2)}</td>
+        <td>$${money(item.unit_price)}</td>
+        <td>$${money(item.line_total)}</td>
       </tr>
     `).join('');
 
@@ -1489,15 +1489,15 @@ function showReceipt(tx) {
   `;
 
   for (const item of tx.items) {
-    html += `<div class="r-row"><span>${item.product_name} x${item.quantity}</span><span>$${item.line_total.toFixed(2)}</span></div>`;
+    html += `<div class="r-row"><span>${item.product_name} x${item.quantity}</span><span>$${money(item.line_total)}</span></div>`;
   }
 
   html += `
     <div class="r-line"></div>
-    <div class="r-row"><span>Subtotal:</span><span>$${tx.subtotal.toFixed(2)}</span></div>
-    <div class="r-row"><span>Tax (${taxPct}%):</span><span>$${tx.tax_amount.toFixed(2)}</span></div>
+    <div class="r-row"><span>Subtotal:</span><span>$${money(tx.subtotal)}</span></div>
+    <div class="r-row"><span>Tax (${taxPct}%):</span><span>$${money(tx.tax_amount)}</span></div>
     <div class="r-line"></div>
-    <div class="r-row r-total"><span>TOTAL:</span><span>$${tx.total.toFixed(2)}</span></div>
+    <div class="r-row r-total"><span>TOTAL:</span><span>$${money(tx.total)}</span></div>
     <div class="r-row"><span>Payment:</span><span>${tx.payment_method.toUpperCase()}${tx.card_last4 ? ' ****' + tx.card_last4 : ''}</span></div>
     <div class="r-line"></div>
     <div class="r-center" style="font-size:.75rem;margin-top:8px">${storeSettings.receipt_footer || 'Thank you for your purchase!'}</div>
@@ -1878,8 +1878,8 @@ function applyTxFilters() {
       <td>${tx.employees && tx.employees.length > 0 ? tx.employees.map(e => e.employee_name).join(', ') : '-'}</td>
       <td>${tx.customer_name || '-'}</td>
       <td>${tx.items.length}</td>
-      <td>$${(tx.subtotal || 0).toFixed(2)}</td>
-      <td style="font-weight:600">$${tx.total.toFixed(2)}</td>
+      <td>$${money((tx.subtotal || 0))}</td>
+      <td style="font-weight:600">$${money(tx.total)}</td>
       <td style="white-space:nowrap">
         <button onclick="viewReceipt(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--rose);text-decoration:underline;font-size:.82rem">View</button>
         <button onclick="startEditTransaction(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--gold-dk,#b8860b);text-decoration:underline;font-size:.82rem">Edit</button>
@@ -1893,8 +1893,8 @@ function applyTxFilters() {
   const returnTotal = rows.filter(t => t.type === 'return').reduce((s, t) => s + t.total, 0);
   const summary = document.getElementById('txSummary');
   if (summary) {
-    summary.textContent = `${rows.length} transaction${rows.length !== 1 ? 's' : ''} · Sales $${saleTotal.toFixed(2)}`
-      + (returnTotal ? ` · Returns $${returnTotal.toFixed(2)} · Net $${(saleTotal - returnTotal).toFixed(2)}` : '');
+    summary.textContent = `${rows.length} transaction${rows.length !== 1 ? 's' : ''} · Sales $${money(saleTotal)}`
+      + (returnTotal ? ` · Returns $${money(returnTotal)} · Net $${money((saleTotal - returnTotal))}` : '');
   }
 }
 
@@ -2156,7 +2156,7 @@ async function openTxEdit(txId) {
     document.getElementById('txEditCustEmail').value = editTx.customer_email;
     document.getElementById('txEditError').textContent = '';
     const picker = document.getElementById('txEditNewItem');
-    picker.innerHTML = products.filter(p => p.visible !== false).map(p => `<option value="${p.id}">${p.name} — $${(p.price || 0).toFixed(2)}</option>`).join('');
+    picker.innerHTML = products.filter(p => p.visible !== false).map(p => `<option value="${p.id}">${p.name} — $${money((p.price || 0))}</option>`).join('');
     renderTxEditItems();
     renderTxEditEmployees();
     document.getElementById('txEditModal').classList.add('show');
@@ -2187,7 +2187,7 @@ function renderTxEditItems() {
         <input type="number" min="1" value="${it.quantity}" onchange="txEditItemQty(${i},this.value)" style="width:48px;padding:5px;border:1px solid var(--border);border-radius:6px;text-align:center;outline:none">
         <span style="color:var(--mid)">×&nbsp;$</span>
         <input type="number" min="0" step="0.01" value="${it.unit_price}" onchange="txEditItemPrice(${i},this.value)" style="width:78px;padding:5px;border:1px solid var(--border);border-radius:6px;text-align:right;outline:none">
-        <span style="width:64px;text-align:right">$${(it.unit_price * it.quantity).toFixed(2)}</span>
+        <span style="width:64px;text-align:right">$${money((it.unit_price * it.quantity))}</span>
         <button onclick="txEditRemoveItem(${i})" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:1rem">&times;</button>
       </div>`).join('');
   }
@@ -2196,10 +2196,10 @@ function renderTxEditItems() {
 
 function renderTxEditTotalsDisplay() {
   const { subtotal, tax, total } = txEditTotals();
-  document.getElementById('txEditSubtotal').textContent = `$${subtotal.toFixed(2)}`;
-  document.getElementById('txEditTax').textContent = `$${tax.toFixed(2)}`;
+  document.getElementById('txEditSubtotal').textContent = `$${money(subtotal)}`;
+  document.getElementById('txEditTax').textContent = `$${money(tax)}`;
   document.getElementById('txEditTaxLabel').textContent = `Tax (${(editTx.tax_rate * 100).toFixed(2)}%)`;
-  document.getElementById('txEditTotal').textContent = `$${total.toFixed(2)}`;
+  document.getElementById('txEditTotal').textContent = `$${money(total)}`;
   renderTxEditEmployees(); // dollar amounts depend on total
 }
 
@@ -2344,7 +2344,7 @@ async function loadReports() {
         <td style="font-family:monospace">${r.original_receipt || '-'}</td>
         <td>${(r.sale_employees || []).join(', ') || '-'}</td>
         <td>${(r.return_employees || []).join(', ') || '-'}</td>
-        <td>$${(r.total || 0).toFixed(2)}</td>
+        <td>$${money((r.total || 0))}</td>
       </tr>
     `).join('');
   } else {
@@ -2355,10 +2355,10 @@ async function loadReports() {
   document.getElementById('salesSummary').innerHTML = `
     <div class="stat-box"><div class="stat-val">${sales.total_sales || 0}</div><div class="stat-lbl">Total Sales</div></div>
     <div class="stat-box"><div class="stat-val">${sales.total_returns || 0}</div><div class="stat-lbl">Returns</div></div>
-    <div class="stat-box"><div class="stat-val">$${(sales.sales_revenue || 0).toFixed(2)}</div><div class="stat-lbl">Gross Revenue</div></div>
-    <div class="stat-box"><div class="stat-val">$${(sales.returns_total || 0).toFixed(2)}</div><div class="stat-lbl">Returns Total</div></div>
-    <div class="stat-box"><div class="stat-val">$${(sales.net_revenue || 0).toFixed(2)}</div><div class="stat-lbl">Net Revenue</div></div>
-    <div class="stat-box"><div class="stat-val">$${(sales.net_tax || 0).toFixed(2)}</div><div class="stat-lbl">Tax Collected</div></div>
+    <div class="stat-box"><div class="stat-val">$${money((sales.sales_revenue || 0))}</div><div class="stat-lbl">Gross Revenue</div></div>
+    <div class="stat-box"><div class="stat-val">$${money((sales.returns_total || 0))}</div><div class="stat-lbl">Returns Total</div></div>
+    <div class="stat-box"><div class="stat-val">$${money((sales.net_revenue || 0))}</div><div class="stat-lbl">Net Revenue</div></div>
+    <div class="stat-box"><div class="stat-val">$${money((sales.net_tax || 0))}</div><div class="stat-lbl">Tax Collected</div></div>
   `;
 
   // Employee commissions are manager-gated — only render/reveal when unlocked
@@ -2373,7 +2373,7 @@ async function loadReports() {
       <td style="font-weight:600">${p.product_name}</td>
       <td>${p.brand}</td>
       <td>${p.units_sold}</td>
-      <td style="font-weight:600">$${p.revenue.toFixed(2)}</td>
+      <td style="font-weight:600">$${money(p.revenue)}</td>
     </tr>
   `).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--mid)">No data</td></tr>';
 
@@ -2420,7 +2420,7 @@ function renderCustomers(list) {
       <td>${escapeHtml(c.customer_email)}</td>
       <td>${c.purchases}</td>
       <td>${c.returns}</td>
-      <td style="font-weight:600">$${Number(c.total_spent).toFixed(2)}</td>
+      <td style="font-weight:600">$${money(Number(c.total_spent))}</td>
       <td style="font-size:.78rem;color:var(--mid)">${(c.products || []).map(p => escapeHtml(p.product_name)).join(', ')}</td>
     </tr>
   `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No customers match this filter</td></tr>';
@@ -2591,10 +2591,10 @@ function renderAudit(data) {
   }
 
   document.getElementById('batchSummary').innerHTML = `
-    <div class="stat-box"><div class="stat-val">$${(t.merchant || 0).toFixed(2)}</div><div class="stat-lbl">Merchant Settled (total)</div></div>
-    <div class="stat-box"><div class="stat-val">$${(t.pos || 0).toFixed(2)}</div><div class="stat-lbl">POS Card Sales (net)</div></div>
+    <div class="stat-box"><div class="stat-val">$${money((t.merchant || 0))}</div><div class="stat-lbl">Merchant Settled (total)</div></div>
+    <div class="stat-box"><div class="stat-val">$${money((t.pos || 0))}</div><div class="stat-lbl">POS Card Sales (net)</div></div>
     <div class="stat-box" style="${(t.difference || 0) === 0 ? 'background:#e8f5e9' : 'background:#fce4ec'}">
-      <div class="stat-val" style="color:${(t.difference || 0) === 0 ? 'var(--success)' : 'var(--danger)'}">${(t.difference || 0) > 0 ? '+' : ''}$${(t.difference || 0).toFixed(2)}</div>
+      <div class="stat-val" style="color:${(t.difference || 0) === 0 ? 'var(--success)' : 'var(--danger)'}">${(t.difference || 0) > 0 ? '+' : ''}$${money((t.difference || 0))}</div>
       <div class="stat-lbl">Difference (Merchant − POS)</div>
     </div>
     <div class="stat-box" style="${mismatches ? 'background:#fce4ec' : 'background:#e8f5e9'}">
@@ -2607,9 +2607,9 @@ function renderAudit(data) {
   document.getElementById('batchBody').innerHTML = rows.map(d => `
     <tr style="${d.matched ? '' : 'background:#fff6f8'}">
       <td>${d.date}</td>
-      <td>$${d.merchant_total.toFixed(2)}<br><span style="font-size:.7rem;color:var(--mid)">${d.merchant_batches} batch${d.merchant_batches === 1 ? '' : 'es'}</span></td>
-      <td>$${d.pos_total.toFixed(2)}<br><span style="font-size:.7rem;color:var(--mid)">${d.pos_sale_count} sale${d.pos_sale_count === 1 ? '' : 's'}${d.pos_return_count ? ', ' + d.pos_return_count + ' return' + (d.pos_return_count === 1 ? '' : 's') : ''}</span></td>
-      <td style="font-weight:600;color:${d.matched ? 'var(--mid)' : 'var(--danger)'}">${d.difference > 0 ? '+' : ''}$${d.difference.toFixed(2)}</td>
+      <td>$${money(d.merchant_total)}<br><span style="font-size:.7rem;color:var(--mid)">${d.merchant_batches} batch${d.merchant_batches === 1 ? '' : 'es'}</span></td>
+      <td>$${money(d.pos_total)}<br><span style="font-size:.7rem;color:var(--mid)">${d.pos_sale_count} sale${d.pos_sale_count === 1 ? '' : 's'}${d.pos_return_count ? ', ' + d.pos_return_count + ' return' + (d.pos_return_count === 1 ? '' : 's') : ''}</span></td>
+      <td style="font-weight:600;color:${d.matched ? 'var(--mid)' : 'var(--danger)'}">${d.difference > 0 ? '+' : ''}$${money(d.difference)}</td>
       <td>${d.matched ? '<span style="color:var(--success);font-weight:600">✓ Match</span>' : '<span style="color:var(--danger);font-weight:600">⚠ Mismatch</span>'}</td>
       <td style="font-size:.8rem;color:var(--mid)">${d.explanation || ''}</td>
     </tr>
@@ -2714,8 +2714,8 @@ function renderCustomProductPanel(panel) {
           ${p.image ? `<img src="${p.image}" style="width:28px;height:28px;border-radius:4px;object-fit:cover;flex-shrink:0" onerror="this.style.display='none'">` : ''}
           <span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</span>
         </div>
-        <div style="text-align:right">$${(p.price || 0).toFixed(2)}</div>
-        <div style="text-align:right;${p.minPrice > 0 ? 'color:var(--rose-dk)' : 'color:var(--mid)'}">$${(p.minPrice || 0).toFixed(2)}</div>
+        <div style="text-align:right">$${money((p.price || 0))}</div>
+        <div style="text-align:right;${p.minPrice > 0 ? 'color:var(--rose-dk)' : 'color:var(--mid)'}">$${money((p.minPrice || 0))}</div>
         <button onclick="deleteCustomProduct(${p.customId})" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:.9rem">&times;</button>
       </div>
     `).join('');
@@ -2820,7 +2820,7 @@ function renderLeaderboard(employees) {
           <div style="width:${pct}%;height:100%;background:var(--rose);border-radius:4px;transition:width .3s"></div>
         </div>
       </div>
-      <span style="font-weight:700;color:var(--dark);min-width:80px;text-align:right">$${e.net_total.toFixed(2)}</span>
+      <span style="font-weight:700;color:var(--dark);min-width:80px;text-align:right">$${money(e.net_total)}</span>
       <span style="font-size:.75rem;color:var(--mid)">${e.sale_count} sales</span>
     </div>`;
   }).join('');
@@ -2834,9 +2834,9 @@ function renderManagerCommissions() {
       <td style="font-weight:600">${e.employee_name}</td>
       <td>${e.sale_count}</td>
       <td>${e.return_count}</td>
-      <td>$${Number(e.sales_total).toFixed(2)}</td>
-      <td>$${Number(e.returns_total).toFixed(2)}</td>
-      <td style="font-weight:600">$${Number(e.net_total).toFixed(2)}</td>
+      <td>$${money(Number(e.sales_total))}</td>
+      <td>$${money(Number(e.returns_total))}</td>
+      <td style="font-weight:600">$${money(Number(e.net_total))}</td>
     </tr>
   `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No data</td></tr>';
 }
@@ -2881,9 +2881,9 @@ async function unlockPersonalReport() {
           <td style="font-weight:600">${e.employee_name}</td>
           <td>${e.sale_count}</td>
           <td>${e.return_count}</td>
-          <td>$${Number(e.sales_total).toFixed(2)}</td>
-          <td>$${Number(e.returns_total).toFixed(2)}</td>
-          <td style="font-weight:600">$${Number(e.net_total).toFixed(2)}</td>
+          <td>$${money(Number(e.sales_total))}</td>
+          <td>$${money(Number(e.returns_total))}</td>
+          <td style="font-weight:600">$${money(Number(e.net_total))}</td>
         </tr>
       `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No data</td></tr>';
       document.getElementById('empPersonalReport').style.display = 'block';
@@ -2921,6 +2921,9 @@ let storeSettings = { store_name: '', store_address: '', receipt_footer: 'Thank 
 
 // Format a decimal tax rate (e.g. 0.081875) as a trimmed percent string ("8.1875")
 function taxPctStr(rate) { return String(parseFloat(((rate || 0) * 100).toFixed(4))); }
+
+// Format a money amount with thousands separators, e.g. 15146.25 -> "15,146.25"
+function money(n) { return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
 async function loadStoreSettings() {
   try {

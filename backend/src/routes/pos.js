@@ -5,6 +5,9 @@ const router = express.Router();
 const pgDb = require('../db/postgres');
 const { PRODUCTS, generateWelcomeEmailBody } = require('./welcome');
 
+// Format a money amount with thousands separators (e.g. 15146.25 -> "15,146.25")
+function money(n) { return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+
 // Auth middleware
 function requireAuth(req, res, next) {
   if (!req.session?.userId) {
@@ -259,7 +262,7 @@ router.post('/transactions', async (req, res) => {
       const minPrice = minPriceMap[item.product_id];
       if (minPrice && item.unit_price > 0 && item.unit_price < minPrice) {
         return res.status(400).json({
-          error: `Cannot honor this pricing. The minimum allowed price for "${item.product_name}" is $${minPrice.toFixed(2)}.`
+          error: `Cannot honor this pricing. The minimum allowed price for "${item.product_name}" is $${money(minPrice)}.`
         });
       }
     }
@@ -555,8 +558,8 @@ router.post('/transactions/:id/email', async (req, res) => {
   const itemRows = tx.items.map(i =>
     `<tr><td style="padding:8px;border-bottom:1px solid #eee">${i.product_name}</td>` +
     `<td style="padding:8px;border-bottom:1px solid #eee;text-align:center">${i.quantity}</td>` +
-    `<td style="padding:8px;border-bottom:1px solid #eee;text-align:right">$${i.unit_price.toFixed(2)}</td>` +
-    `<td style="padding:8px;border-bottom:1px solid #eee;text-align:right">$${i.line_total.toFixed(2)}</td></tr>`
+    `<td style="padding:8px;border-bottom:1px solid #eee;text-align:right">$${money(i.unit_price)}</td>` +
+    `<td style="padding:8px;border-bottom:1px solid #eee;text-align:right">$${money(i.line_total)}</td></tr>`
   ).join('');
 
   const html = `
@@ -583,9 +586,9 @@ router.post('/transactions/:id/email', async (req, res) => {
         </table>
         </div>
         <div style="margin-top:16px;text-align:right;font-size:.9rem">
-          <p style="margin:4px 0">Subtotal: <strong>$${tx.subtotal.toFixed(2)}</strong></p>
-          <p style="margin:4px 0">Tax (${parseFloat((tx.tax_rate * 100).toFixed(4))}%): <strong>$${tx.tax_amount.toFixed(2)}</strong></p>
-          <p style="margin:8px 0 0;font-size:1.1rem;color:#9e5567"><strong>Total: $${tx.total.toFixed(2)}</strong></p>
+          <p style="margin:4px 0">Subtotal: <strong>$${money(tx.subtotal)}</strong></p>
+          <p style="margin:4px 0">Tax (${parseFloat((tx.tax_rate * 100).toFixed(4))}%): <strong>$${money(tx.tax_amount)}</strong></p>
+          <p style="margin:8px 0 0;font-size:1.1rem;color:#9e5567"><strong>Total: $${money(tx.total)}</strong></p>
         </div>
         <p style="margin-top:16px;font-size:.82rem;color:#6b5057">Payment: ${tx.payment_method}${tx.card_last4 ? ` ****${tx.card_last4}` : ''}</p>
       </div>
@@ -1114,8 +1117,8 @@ router.get('/reconciliation-audit', async (req, res) => {
     let explanation = '';
     if (!matched) {
       explanation = diff > 0
-        ? `Merchant settled $${diff.toFixed(2)} MORE than the POS recorded — a card sale was likely processed on the terminal but not entered in the POS.`
-        : `POS recorded $${Math.abs(diff).toFixed(2)} MORE than the merchant settled — a POS card sale may not have batched/settled yet, or a terminal charge was voided/declined.`;
+        ? `Merchant settled $${money(diff)} MORE than the POS recorded — a card sale was likely processed on the terminal but not entered in the POS.`
+        : `POS recorded $${money(Math.abs(diff))} MORE than the merchant settled — a POS card sale may not have batched/settled yet, or a terminal charge was voided/declined.`;
     }
     return {
       date: d,
