@@ -937,29 +937,25 @@ function batchAmount(b) {
   return v == null ? 0 : v;
 }
 
-// A batch record that was rejected/declined was never actually processed and
-// must be excluded from the settled total. Maverick marks these with a
-// `reject` object, e.g. { code: "0197", codeDescription: "..." }; successful
-// records have no reject field at all.
+// A batch record that didn't actually go through must be excluded from the
+// settled total. Maverick flags these with a `reject` object (e.g.
+// { code: "0197" }). Observed behavior: a reject flag on a REFUND/credit means
+// the refund didn't fund (exclude it), but a reject flag on a SALE/debit is
+// informational — those still settled (keep them). We therefore only exclude
+// reject-flagged credits/refunds/reversals.
 function isRejected(b) {
   if (!b || typeof b !== 'object') return false;
 
-  // Primary signal: a `reject` object with a non-zero code (e.g. "0197").
-  // Successful records have no reject object; an all-zero code = no error.
+  const type = String(b.type || '').toLowerCase();
+  const isCreditLike = /credit|refund|return|void|reversal/.test(type);
+
   if (b.reject && typeof b.reject === 'object') {
     const code = b.reject.code != null ? String(b.reject.code).trim() : '';
-    if (code !== '' && !/^0+$/.test(code)) return true;
+    const hasReject = code !== '' && !/^0+$/.test(code); // non-zero reject code
+    if (hasReject && isCreditLike) return true;
   }
 
-  const meaningful = (v) => {
-    if (v == null) return false;
-    const s = String(v).trim().toLowerCase();
-    return s !== '' && s !== '0' && s !== 'null' && s !== 'none' && s !== 'false' && s !== 'n/a' && s !== 'approved';
-  };
-  for (const [k, v] of Object.entries(b)) {
-    const lk = k.toLowerCase();
-    if (typeof v !== 'object' && /reject|declin/.test(lk) && meaningful(v)) return true;
-  }
+  // An explicit declined/rejected status also excludes (any type).
   const st = b.status;
   const stStr = (st && typeof st === 'object') ? String(st.status || '') : String(st || '');
   if (/declin|reject/i.test(stStr)) return true;
