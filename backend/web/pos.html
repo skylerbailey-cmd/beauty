@@ -516,6 +516,7 @@
         <input type="number" id="histMin" placeholder="Min $" min="0" step="0.01" oninput="applyTxFilters()" style="width:90px">
         <input type="number" id="histMax" placeholder="Max $" min="0" step="0.01" oninput="applyTxFilters()" style="width:90px">
         <button class="btn btn-confirm" style="padding:8px 16px" onclick="loadTransactions()">Filter</button>
+        <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="showAllTransactions()">Show All</button>
         <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="clearTxFilters()">Clear</button>
         <button class="btn" style="background:var(--gold);color:#fff;padding:8px 16px" onclick="runAudit()">Run Batch Audit</button>
         <span id="batchStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)"></span>
@@ -550,22 +551,6 @@
         </div>
       </div>
 
-      <!-- Maverick connection config -->
-      <div class="report-card" id="maverickConfigCard">
-        <h3>Maverick Payments Connection</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
-          Connect this company's Maverick account to reconcile batches against recorded sales. The token is stored securely on the server and never shown again.
-          <span id="maverickConnStatus" style="font-weight:600"></span>
-        </p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <input type="text" id="maverickDbaId" placeholder="DBA ID" style="width:200px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
-          <input type="password" id="maverickToken" placeholder="Access token (leave blank to keep current)" autocomplete="off" style="flex:1;min-width:220px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
-          <button class="btn btn-confirm" onclick="saveMaverick()">Save</button>
-          <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border)" onclick="lookupDbas()">Look up DBAs</button>
-        </div>
-        <div id="maverickDbaList" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
-        <div id="maverickSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
-      </div>
     </div>
   </div>
 
@@ -582,6 +567,12 @@
 
       <div class="stat-grid" id="salesSummary"></div>
 
+      <!-- Sales Leaderboard (always visible) -->
+      <div class="report-card">
+        <h3>Sales Leaderboard</h3>
+        <div id="leaderboard" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+
       <!-- Employee Sales & Commissions (Manager/Employee view — locked) -->
       <div class="report-card">
         <h3>Employee Sales &amp; Commissions</h3>
@@ -596,23 +587,18 @@
         <div id="empPersonalReport" style="display:none;margin-top:12px">
           <div style="font-family:system-ui,sans-serif;font-size:.88rem;font-weight:600;color:var(--dark);margin-bottom:8px" id="empPersonalName"></div>
           <table class="report-table">
-            <thead><tr><th>Employee</th><th>Sales</th><th>Returns</th><th>Sales Commission</th><th>Returns</th><th>Net Commission</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Comm %</th><th>Sales</th><th>Returns</th><th>Sales Commission</th><th>Returns Commission</th><th>Net Commission</th></tr></thead>
             <tbody id="empPersonalBody"></tbody>
           </table>
         </div>
       </div>
 
-      <!-- Manager-only: full leaderboard + commissions (revealed after a manager unlocks above) -->
+      <!-- Manager-only: full commissions table (revealed after a manager unlocks above) -->
       <div id="managerCommissionsSection" style="display:none">
-        <div class="report-card">
-          <h3>Sales Leaderboard</h3>
-          <div id="leaderboard" style="display:flex;flex-direction:column;gap:8px"></div>
-        </div>
-
         <div class="report-card">
           <h3>Employee Commissions &amp; Sales</h3>
           <table class="report-table">
-            <thead><tr><th>Employee</th><th>Sales</th><th>Returns</th><th>Sales Commission</th><th>Returns</th><th>Net Commission</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Comm %</th><th>Sales</th><th>Returns</th><th>Sales Commission</th><th>Returns Commission</th><th>Net Commission</th></tr></thead>
             <tbody id="empReportBody"></tbody>
           </table>
         </div>
@@ -787,6 +773,23 @@
           <input type="checkbox" id="showInactiveEmps" onchange="loadEmployees()" style="accent-color:var(--rose-dk)"> Show deactivated employees
         </label>
         <div class="emp-list" id="empList"></div>
+      </div>
+
+      <!-- Maverick Payments connection (for batch reconciliation) -->
+      <div class="report-card" id="maverickConfigCard" style="margin-top:16px">
+        <h3>Maverick Payments Connection</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
+          Connect this company's Maverick account to reconcile batches against recorded sales (Transactions → Run Batch Audit). The token is stored securely on the server and never shown again.
+          <span id="maverickConnStatus" style="font-weight:600"></span>
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="text" id="maverickDbaId" placeholder="DBA ID" style="width:200px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+          <input type="password" id="maverickToken" placeholder="Access token (leave blank to keep current)" autocomplete="off" style="flex:1;min-width:220px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+          <button class="btn btn-confirm" onclick="saveMaverick()">Save</button>
+          <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border)" onclick="lookupDbas()">Look up DBAs</button>
+        </div>
+        <div id="maverickDbaList" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
+        <div id="maverickSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
       </div>
 
       <!-- Sign Out -->
@@ -1007,11 +1010,9 @@ async function init() {
     loadEmployees();
 
     const today = new Date().toISOString().slice(0, 10);
-    const thirtyAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-    const twoWeeksAgo = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
-    document.getElementById('histStart').value = twoWeeksAgo;
+    document.getElementById('histStart').value = today;
     document.getElementById('histEnd').value = today;
-    document.getElementById('rptStart').value = thirtyAgo;
+    document.getElementById('rptStart').value = today;
     document.getElementById('rptEnd').value = today;
   } catch (err) {
     console.error('[pos] Auth check failed:', err);
@@ -1801,11 +1802,18 @@ let filteredTransactions = []; // current filtered view (for CSV export)
 async function loadTransactions() {
   const start = document.getElementById('histStart').value;
   const end = document.getElementById('histEnd').value;
-  const resp = await fetch(`${API}/api/pos/transactions?start=${start}T00:00:00&end=${end}T23:59:59&limit=1000`, { credentials: 'include' });
+  const resp = await fetch(`${API}/api/pos/transactions?start=${start}T00:00:00&end=${end}T23:59:59&limit=2000`, { credentials: 'include' });
   const data = await resp.json();
   histTransactions = data.transactions || [];
   populateHistEmployeeFilter();
   applyTxFilters();
+}
+
+// Widen the range to everything (e.g. to see imported / historical transactions)
+function showAllTransactions() {
+  document.getElementById('histStart').value = '2020-01-01';
+  document.getElementById('histEnd').value = new Date().toISOString().slice(0, 10);
+  loadTransactions();
 }
 
 // Fill the employee filter with ALL active employees (plus any names present in
@@ -1874,7 +1882,7 @@ function applyTxFilters() {
         <button onclick="startDeleteTransaction(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--danger);text-decoration:underline;font-size:.82rem">Delete</button>
       </td>
     </tr>
-  `).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--mid)">No transactions match your filters</td></tr>';
+  `).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--mid)">No transactions in this date range. Click <b>Show All</b> above to see historical/imported transactions.</td></tr>';
 
   // Summary line
   const saleTotal = rows.filter(t => t.type === 'sale').reduce((s, t) => s + t.total, 0);
@@ -2349,8 +2357,9 @@ async function loadReports() {
     <div class="stat-box"><div class="stat-val">$${money((sales.net_tax || 0))}</div><div class="stat-lbl">Tax Collected</div></div>
   `;
 
-  // Employee commissions are manager-gated — only render/reveal when unlocked
+  // Leaderboard is always visible; commissions table is manager-gated
   lastEmployeesReport = employees;
+  renderLeaderboard(employees);
   if (managerReportsUnlocked) {
     renderManagerCommissions();
   }
@@ -2605,7 +2614,7 @@ function switchTab(tabName) {
   document.getElementById(`tab-${tabName}`).classList.add('show');
   event.target.classList.add('active');
 
-  if (tabName === 'history') { loadTransactions(); refreshMaverickConnState(); }
+  if (tabName === 'history') loadTransactions();
   if (tabName === 'reports') loadReports();
   if (tabName === 'emails') {
     const f = document.getElementById('emailsFrame');
@@ -2808,18 +2817,30 @@ function renderLeaderboard(employees) {
 }
 
 // Render the manager-only leaderboard + commissions table from the last report
-function renderManagerCommissions() {
-  renderLeaderboard(lastEmployeesReport);
-  document.getElementById('empReportBody').innerHTML = lastEmployeesReport.map(e => `
+// Commission earned = credited amount × the employee's commission % from
+// Settings (unless a special commission plan already applied it server-side).
+function commissionAmt(e, amount) {
+  if (e.has_special_plan) return Number(amount) || 0;
+  const rate = Number(e.commission_rate) || 0;
+  return (Number(amount) || 0) * rate / 100;
+}
+function commissionRow(e) {
+  return `
     <tr>
       <td style="font-weight:600">${e.employee_name}</td>
+      <td>${Number(e.commission_rate) || 0}%</td>
       <td>${e.sale_count}</td>
       <td>${e.return_count}</td>
-      <td>$${money(Number(e.sales_total))}</td>
-      <td>$${money(Number(e.returns_total))}</td>
-      <td style="font-weight:600">$${money(Number(e.net_total))}</td>
-    </tr>
-  `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No data</td></tr>';
+      <td>$${money(commissionAmt(e, e.sales_total))}</td>
+      <td>$${money(commissionAmt(e, e.returns_total))}</td>
+      <td style="font-weight:600">$${money(commissionAmt(e, e.net_total))}</td>
+    </tr>`;
+}
+
+function renderManagerCommissions() {
+  document.getElementById('empReportBody').innerHTML =
+    lastEmployeesReport.map(commissionRow).join('') ||
+    '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No data</td></tr>';
 }
 
 // ─── Employee Personal Report / Manager unlock ──────────────────────────────
@@ -2856,17 +2877,10 @@ async function unlockPersonalReport() {
       // Sales employees see only their own personal sales
       managerReportsUnlocked = false;
       document.getElementById('managerCommissionsSection').style.display = 'none';
-      document.getElementById('empPersonalName').textContent = `${data.employee.name} — Personal Sales`;
-      document.getElementById('empPersonalBody').innerHTML = (data.report || []).map(e => `
-        <tr>
-          <td style="font-weight:600">${e.employee_name}</td>
-          <td>${e.sale_count}</td>
-          <td>${e.return_count}</td>
-          <td>$${money(Number(e.sales_total))}</td>
-          <td>$${money(Number(e.returns_total))}</td>
-          <td style="font-weight:600">$${money(Number(e.net_total))}</td>
-        </tr>
-      `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No data</td></tr>';
+      document.getElementById('empPersonalName').textContent = `${data.employee.name} — Personal Sales & Commission`;
+      document.getElementById('empPersonalBody').innerHTML =
+        (data.report || []).map(commissionRow).join('') ||
+        '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No data</td></tr>';
       document.getElementById('empPersonalReport').style.display = 'block';
     }
   } catch (err) {
@@ -2925,6 +2939,7 @@ async function loadStoreSettings() {
     renderBrandFilters();
     renderProducts();
     updateCartTotals();
+    refreshMaverickConnState();
   } catch (_) {}
 }
 
