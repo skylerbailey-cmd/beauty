@@ -297,16 +297,6 @@
       }
     }
 
-    /* ── Theme options ─── */
-    .theme-options { display: flex; flex-direction: column; gap: 12px; }
-    .theme-option { display: flex; align-items: center; gap: 14px; padding: 14px 16px; border: 2px solid var(--border); border-radius: 12px; cursor: pointer; transition: all .2s; background: var(--white); }
-    .theme-option:hover { border-color: var(--mid); }
-    .theme-option.active { border-color: var(--rose); background: var(--rose-lt); }
-    .theme-swatch { display: flex; gap: 4px; flex-shrink: 0; }
-    .theme-swatch span { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgba(0,0,0,.08); }
-    .theme-label { font-size: .88rem; font-weight: 600; color: var(--dark); }
-    .theme-desc { font-size: .75rem; color: var(--mid); margin-top: 2px; }
-
     /* ── Company switcher ─── */
     .company-switcher { position: relative; display: inline-block; }
     .company-switcher-btn {
@@ -489,6 +479,9 @@
             <button class="pay-btn" onclick="setPayment('cash')" data-method="cash">Cash</button>
             <button class="pay-btn" onclick="setPayment('other')" data-method="other">Other</button>
           </div>
+          <div id="cardLast4Wrap" style="margin-bottom:12px">
+            <input type="text" id="cardLast4" placeholder="Last 4 of card #" maxlength="4" pattern="[0-9]{4}" style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;text-align:center;letter-spacing:4px" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+          </div>
           <button class="checkout-btn sale" id="checkoutBtn" onclick="processTransaction()" disabled>
             Complete Sale
           </button>
@@ -530,12 +523,36 @@
 
       <div class="stat-grid" id="salesSummary"></div>
 
+      <!-- Leaderboard -->
       <div class="report-card">
-        <h3>Employee Commissions & Sales</h3>
+        <h3>Sales Leaderboard</h3>
+        <div id="leaderboard" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+
+      <div class="report-card">
+        <h3>Employee Commissions &amp; Sales</h3>
         <table class="report-table">
           <thead><tr><th>Employee</th><th>Sales</th><th>Returns</th><th>Sales Commission</th><th>Returns</th><th>Net Commission</th></tr></thead>
           <tbody id="empReportBody"></tbody>
         </table>
+      </div>
+
+      <!-- Employee Personal View (PIN-locked) -->
+      <div class="report-card">
+        <h3>My Sales (Employee View)</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Enter your name and PIN to view your personal sales report.</p>
+        <div id="empPersonalLocked" style="display:flex;gap:8px;align-items:center">
+          <input type="password" id="empPersonalPin" placeholder="Your PIN" maxlength="6" style="width:120px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;text-align:center">
+          <button class="btn btn-confirm" onclick="unlockPersonalReport()">Unlock</button>
+          <span id="empPersonalError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger)"></span>
+        </div>
+        <div id="empPersonalReport" style="display:none;margin-top:12px">
+          <div style="font-family:system-ui,sans-serif;font-size:.88rem;font-weight:600;color:var(--dark);margin-bottom:8px" id="empPersonalName"></div>
+          <table class="report-table">
+            <thead><tr><th>Employee</th><th>Sales</th><th>Returns</th><th>Sales Commission</th><th>Returns</th><th>Net Commission</th></tr></thead>
+            <tbody id="empPersonalBody"></tbody>
+          </table>
+        </div>
       </div>
 
       <div class="report-card">
@@ -558,112 +575,110 @@
 
   <!-- ─── SETTINGS TAB ─── -->
   <div class="tab-content" id="tab-settings">
-    <div style="max-width:700px;margin:0 auto;padding:20px">
+    <div style="max-width:900px;margin:0 auto;padding:20px">
 
       <!-- Store Settings -->
       <div class="report-card">
         <h3>Store Settings</h3>
-        <div class="field" style="margin-bottom:16px">
-          <label style="display:block;font-family:system-ui,sans-serif;font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Store Name</label>
-          <div style="display:flex;gap:8px">
-            <input type="text" id="settingsStoreName" placeholder="Your store name" style="flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
-            <button class="btn btn-confirm" style="padding:10px 18px;font-size:.82rem" onclick="saveStoreSettings()">Save</button>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="field">
+            <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Store Name</label>
+            <input type="text" id="settingsStoreName" placeholder="Your store name" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
+          </div>
+          <div class="field">
+            <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Company Name</label>
+            <input type="text" id="settingsCompanyName" placeholder="Company name" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
+          </div>
+          <div class="field">
+            <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Receipt Footer Text</label>
+            <input type="text" id="settingsReceiptFooter" placeholder="Thank you for your purchase!" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
+          </div>
+          <div class="field">
+            <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Timezone</label>
+            <select id="settingsTimezone" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
+              <option value="America/Los_Angeles">Pacific Time</option>
+              <option value="America/Denver">Mountain Time</option>
+              <option value="America/Chicago">Central Time</option>
+              <option value="America/New_York">Eastern Time</option>
+              <option value="America/Anchorage">Alaska Time</option>
+              <option value="Pacific/Honolulu">Hawaii Time</option>
+              <option value="Europe/London">London (GMT)</option>
+              <option value="Europe/Paris">Paris (CET)</option>
+              <option value="Asia/Tokyo">Tokyo (JST)</option>
+              <option value="Asia/Dubai">Dubai (GST)</option>
+              <option value="Asia/Jerusalem">Israel (IST)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Theme</label>
+            <select id="settingsTheme" onchange="selectTheme(this.value)" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
+              <option value="rose">Rose &amp; Gold</option>
+              <option value="earth">Earth &amp; Turquoise</option>
+              <option value="lavender">Lavender Spa</option>
+              <option value="ocean">Ocean Breeze</option>
+              <option value="sage">Sage Garden</option>
+            </select>
           </div>
         </div>
-        <div class="field" style="margin-bottom:16px">
-          <label style="display:block;font-family:system-ui,sans-serif;font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Receipt Footer Text</label>
-          <input type="text" id="settingsReceiptFooter" placeholder="Thank you for your purchase!" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
-        </div>
-        <div class="field" style="margin-bottom:16px">
-          <label style="display:block;font-family:system-ui,sans-serif;font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Timezone</label>
-          <select id="settingsTimezone" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
-            <option value="America/Los_Angeles">Pacific Time (Los Angeles)</option>
-            <option value="America/Denver">Mountain Time (Denver)</option>
-            <option value="America/Chicago">Central Time (Chicago)</option>
-            <option value="America/New_York">Eastern Time (New York)</option>
-            <option value="America/Anchorage">Alaska Time</option>
-            <option value="Pacific/Honolulu">Hawaii Time</option>
-            <option value="Europe/London">London (GMT)</option>
-            <option value="Europe/Paris">Paris (CET)</option>
-            <option value="Asia/Tokyo">Tokyo (JST)</option>
-            <option value="Asia/Dubai">Dubai (GST)</option>
-            <option value="Asia/Jerusalem">Israel (IST)</option>
-          </select>
-        </div>
-        <div class="field" style="margin-bottom:0">
-          <label style="display:block;font-family:system-ui,sans-serif;font-size:.78rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Company Name</label>
-          <div style="display:flex;gap:8px">
-            <input type="text" id="settingsCompanyName" placeholder="Company name" style="flex:1;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
-            <button class="btn btn-confirm" style="padding:10px 18px;font-size:.82rem" onclick="saveCompanyName()">Save</button>
-          </div>
-          <p style="font-family:system-ui,sans-serif;font-size:.75rem;color:var(--mid);margin-top:4px">This is the company name used across all apps.</p>
+        <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
+          <button class="btn btn-confirm" style="padding:9px 24px;font-size:.85rem" onclick="saveStoreSettings();saveCompanyName()">Save Settings</button>
         </div>
       </div>
 
-      <!-- Brands -->
+      <!-- Brands & Products -->
       <div class="report-card" style="margin-top:16px">
-        <h3>Product Brands</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Select which brands appear in the register and across all apps.</p>
+        <h3>Product Brands &amp; Catalog</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Select brands and configure which products are available. Set prices and minimum price thresholds.</p>
         <div id="brandCheckboxes" style="display:flex;flex-direction:column;gap:10px">
-          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream);transition:all .2s">
-            <input type="checkbox" value="avologi" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--rose-dk)" />
-            <div>
-              <div style="font-weight:600;font-size:.88rem;color:var(--dark)">Avologi</div>
-              <div style="font-size:.76rem;color:var(--mid);margin-top:2px">Advanced youth-restoring LED and laser devices</div>
+          <div class="brand-config-row" data-brand-key="avologi">
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
+              <input type="checkbox" value="avologi" onchange="saveBrands()" style="accent-color:var(--rose-dk)" />
+              <div style="flex:1"><div style="font-weight:600;font-size:.88rem;color:var(--dark)">Avologi</div><div style="font-size:.72rem;color:var(--mid)">LED and laser devices</div></div>
+              <button onclick="toggleBrandProducts('avologi')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--rose-dk)">Products</button>
             </div>
-          </label>
-          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream);transition:all .2s">
-            <input type="checkbox" value="avinichi" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--rose-dk)" />
-            <div>
-              <div style="font-weight:600;font-size:.88rem;color:var(--dark)">Avinichi</div>
-              <div style="font-size:.76rem;color:var(--mid);margin-top:2px">Noni-infused luxury skincare products</div>
+            <div class="brand-products-panel" id="brandPanel-avologi" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:400px;overflow-y:auto"></div>
+          </div>
+          <div class="brand-config-row" data-brand-key="avinichi">
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
+              <input type="checkbox" value="avinichi" onchange="saveBrands()" style="accent-color:var(--rose-dk)" />
+              <div style="flex:1"><div style="font-weight:600;font-size:.88rem;color:var(--dark)">Avinichi</div><div style="font-size:.72rem;color:var(--mid)">Noni-infused luxury skincare</div></div>
+              <button onclick="toggleBrandProducts('avinichi')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--rose-dk)">Products</button>
             </div>
-          </label>
-          <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream);transition:all .2s">
-            <input type="checkbox" value="hydrasphere" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--rose-dk)" />
-            <div>
-              <div style="font-weight:600;font-size:.88rem;color:var(--dark)">HydraSphere Plus</div>
-              <div style="font-size:.76rem;color:var(--mid);margin-top:2px">Hydrogen-infused skincare and SPF products</div>
+            <div class="brand-products-panel" id="brandPanel-avinichi" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:400px;overflow-y:auto"></div>
+          </div>
+          <div class="brand-config-row" data-brand-key="hydrasphere">
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
+              <input type="checkbox" value="hydrasphere" onchange="saveBrands()" style="accent-color:var(--rose-dk)" />
+              <div style="flex:1"><div style="font-weight:600;font-size:.88rem;color:var(--dark)">HydraSphere Plus</div><div style="font-size:.72rem;color:var(--mid)">Hydrogen-infused skincare &amp; SPF</div></div>
+              <button onclick="toggleBrandProducts('hydrasphere')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--rose-dk)">Products</button>
             </div>
-          </label>
+            <div class="brand-products-panel" id="brandPanel-hydrasphere" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:400px;overflow-y:auto"></div>
+          </div>
         </div>
       </div>
 
-      <!-- Theme -->
+      <!-- Custom Products -->
       <div class="report-card" style="margin-top:16px">
-        <h3>Theme</h3>
-        <div class="theme-options">
-          <div class="theme-option active" data-theme="rose" onclick="selectTheme('rose')">
-            <div class="theme-swatch"><span style="background:#c97d8a"></span><span style="background:#f2dde2"></span><span style="background:#c9a96e"></span></div>
-            <div><div class="theme-label">Rose &amp; Gold</div><div class="theme-desc">Classic pink, rose, and gold tones</div></div>
-          </div>
-          <div class="theme-option" data-theme="earth" onclick="selectTheme('earth')">
-            <div class="theme-swatch"><span style="background:#5a8a7d"></span><span style="background:#dceee9"></span><span style="background:#a0855b"></span></div>
-            <div><div class="theme-label">Earth &amp; Turquoise</div><div class="theme-desc">Brown, teal, and natural earth tones</div></div>
-          </div>
-          <div class="theme-option" data-theme="lavender" onclick="selectTheme('lavender')">
-            <div class="theme-swatch"><span style="background:#8b7bb5"></span><span style="background:#eee9f7"></span><span style="background:#b0a0d0"></span></div>
-            <div><div class="theme-label">Lavender Spa</div><div class="theme-desc">Soft purple, lilac, and calming violet tones</div></div>
-          </div>
-          <div class="theme-option" data-theme="ocean" onclick="selectTheme('ocean')">
-            <div class="theme-swatch"><span style="background:#3d7a8a"></span><span style="background:#daeef3"></span><span style="background:#5a9aaa"></span></div>
-            <div><div class="theme-label">Ocean Breeze</div><div class="theme-desc">Deep teal, aqua, and coastal blue tones</div></div>
-          </div>
-          <div class="theme-option" data-theme="sage" onclick="selectTheme('sage')">
-            <div class="theme-swatch"><span style="background:#6b8f71"></span><span style="background:#e2ede4"></span><span style="background:#8aaa8e"></span></div>
-            <div><div class="theme-label">Sage Garden</div><div class="theme-desc">Muted green, herbal, and botanical tones</div></div>
-          </div>
+        <h3>Custom Products</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Add your own products that aren't in the catalog.</p>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <input type="text" id="customProdName" placeholder="Product name" style="flex:1;min-width:150px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+          <input type="number" id="customProdPrice" placeholder="Price" step="0.01" min="0" style="width:90px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;text-align:right">
+          <input type="text" id="customProdImage" placeholder="Image URL (optional)" style="flex:1;min-width:150px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+          <button class="btn btn-confirm" onclick="addCustomProduct()">Add</button>
         </div>
+        <div id="customProductList"></div>
       </div>
 
       <!-- Employees -->
       <div class="report-card" style="margin-top:16px">
         <h3>Employees</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:16px">Add employees and manage their clock-in PINs.</p>
-        <div style="display:flex;gap:8px;margin-bottom:16px">
-          <input type="text" id="newEmpName" placeholder="Employee name" style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none">
-          <input type="text" id="newEmpPin" placeholder="4-digit PIN" maxlength="6" style="width:110px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;text-align:center">
-          <select id="newEmpRole" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none">
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Add employees with PINs and commission rates.</p>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <input type="text" id="newEmpName" placeholder="Name" style="flex:1;min-width:120px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+          <input type="text" id="newEmpPin" placeholder="PIN" maxlength="6" style="width:80px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;text-align:center">
+          <input type="number" id="newEmpCommission" placeholder="Comm %" step="0.5" min="0" max="100" style="width:80px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;text-align:right">
+          <select id="newEmpRole" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
             <option value="sales">Sales</option>
             <option value="manager">Manager</option>
           </select>
@@ -799,9 +814,8 @@ async function init() {
     document.getElementById('histEnd').value = today;
     document.getElementById('rptStart').value = thirtyAgo;
     document.getElementById('rptEnd').value = today;
-    document.getElementById('clockStart').value = thirtyAgo;
-    document.getElementById('clockEnd').value = today;
-  } catch (_) {
+  } catch (err) {
+    console.error('[pos] Auth check failed:', err);
     const savedTheme = localStorage.getItem('glowTheme');
     if (savedTheme) applyTheme(savedTheme);
     document.getElementById('loginGate').style.display = 'block';
@@ -840,8 +854,9 @@ function renderProducts() {
   const search = document.getElementById('searchInput').value.toLowerCase();
   const grid = document.getElementById('productGrid');
   const filtered = products.filter(p => {
+    if (p.visible === false) return false;
     const brandKey = BRAND_KEY_MAP[p.brand] || p.brand.toLowerCase();
-    if (!selectedBrands.includes(brandKey)) return false;
+    if (!p.isCustom && !selectedBrands.includes(brandKey)) return false;
     if (activeBrand && p.brand !== activeBrand) return false;
     if (search && !p.name.toLowerCase().includes(search) && !p.brand.toLowerCase().includes(search)) return false;
     return true;
@@ -868,9 +883,11 @@ function addToCart(productId) {
   pendingProduct = product;
   document.getElementById('priceEditName').textContent = product.name;
   document.getElementById('priceEditBrand').textContent = product.brand;
-  document.getElementById('priceEditRetail').textContent = product.retailPrice > 0
+  let retailText = product.retailPrice > 0
     ? `Website price: $${product.retailPrice.toLocaleString('en-US', {minimumFractionDigits: 2})}`
     : 'No website price set';
+  if (product.minPrice > 0) retailText += ` | Min: $${product.minPrice.toFixed(2)}`;
+  document.getElementById('priceEditRetail').textContent = retailText;
   document.getElementById('priceEditInput').value = product.price > 0 ? product.price.toFixed(2) : (product.retailPrice > 0 ? product.retailPrice.toFixed(2) : '');
   document.getElementById('priceEditModal').classList.add('show');
   setTimeout(() => document.getElementById('priceEditInput').focus(), 100);
@@ -885,6 +902,12 @@ function confirmPriceEdit() {
   const price = parseFloat(document.getElementById('priceEditInput').value);
   if (!pendingProduct || isNaN(price) || price < 0) {
     alert('Please enter a valid price.');
+    return;
+  }
+  // Enforce min price (except $0 which is explicitly allowed)
+  const minPrice = pendingProduct.minPrice || 0;
+  if (minPrice > 0 && price > 0 && price < minPrice) {
+    alert(`Price cannot be below the minimum of $${minPrice.toFixed(2)}. Set to $0 to give away free.`);
     return;
   }
 
@@ -1076,23 +1099,34 @@ function addReturnItemsToCart() {
 function setPayment(method) {
   paymentMethod = method;
   document.querySelectorAll('.pay-btn').forEach(b => b.classList.toggle('active', b.dataset.method === method));
+  document.getElementById('cardLast4Wrap').style.display = method === 'card' ? 'block' : 'none';
 }
 
 // ─── Transaction ────────────────────────────────────────────────────────────
 async function processTransaction() {
   if (cart.length === 0) return;
 
-  // Read employee commission values from the form
-  const empInputs = document.querySelectorAll('#saleEmployees .emp-assign-row');
-  const employeeAssignments = [];
-  empInputs.forEach(row => {
-    const empId = parseInt(row.dataset.empId);
-    const type = row.querySelector('.emp-comm-type')?.value || 'percent';
-    const val = parseFloat(row.querySelector('.emp-comm-val')?.value) || 0;
-    if (empId && val > 0) {
-      employeeAssignments.push({ employee_id: empId, commission_type: type, commission_value: val });
+  // Validate employee commissions
+  const employeeAssignments = saleEmployees.map(se => ({
+    employee_id: se.employee_id,
+    commission_type: 'percent',
+    commission_value: se.commission_value || 0,
+  }));
+  if (employeeAssignments.length > 0) {
+    const totalPct = employeeAssignments.reduce((s, e) => s + e.commission_value, 0);
+    if (Math.abs(totalPct - 100) > 0.01) {
+      alert(`Employee commission percentages must add up to 100%. Currently: ${totalPct.toFixed(1)}%`);
+      return;
     }
-  });
+  }
+
+  // Validate card last4
+  const cardLast4 = document.getElementById('cardLast4').value.trim();
+  if (paymentMethod === 'card' && currentMode !== 'return' && cardLast4.length !== 4) {
+    alert('Please enter the last 4 digits of the credit card.');
+    document.getElementById('cardLast4').focus();
+    return;
+  }
 
   const body = {
     type: currentMode,
@@ -1107,6 +1141,7 @@ async function processTransaction() {
       unit_price: i.unit_price,
     })),
     payment_method: paymentMethod,
+    card_last4: cardLast4,
     original_receipt: returnOriginalTx?.receipt_number || null,
   };
 
@@ -1124,10 +1159,12 @@ async function processTransaction() {
     // Reset cart, employees, and return state
     cart = [];
     saleEmployees = [];
+    empManuallyEdited = false;
     renderSaleEmployees();
     renderCart();
     document.getElementById('custName').value = '';
     document.getElementById('custEmail').value = '';
+    document.getElementById('cardLast4').value = '';
     if (currentMode === 'return') {
       returnOriginalTx = null;
       document.getElementById('returnReceiptInput').value = '';
@@ -1246,12 +1283,13 @@ function closeReceipt() {
 }
 
 // ─── Employee Assignment ────────────────────────────────────────────────────
+let empManuallyEdited = false;
+
 function addEmployeeToSale() {
   if (allEmployees.length === 0) {
     alert('No employees found. Add employees in the Settings tab first.');
     return;
   }
-  // Add first available employee not already assigned
   const assigned = saleEmployees.map(e => e.employee_id);
   const available = allEmployees.filter(e => e.active && !assigned.includes(e.id));
   if (available.length === 0) {
@@ -1262,14 +1300,51 @@ function addEmployeeToSale() {
     employee_id: available[0].id,
     name: available[0].name,
     commission_type: 'percent',
-    commission_value: saleEmployees.length === 0 ? 100 : 50,
+    commission_value: 0,
   });
+  // Auto-distribute evenly if not manually edited
+  if (!empManuallyEdited) {
+    const even = Math.round(100 / saleEmployees.length * 100) / 100;
+    saleEmployees.forEach(e => { e.commission_type = 'percent'; e.commission_value = even; });
+    // Fix rounding: give remainder to first
+    const remainder = 100 - even * saleEmployees.length;
+    if (Math.abs(remainder) > 0.001) saleEmployees[0].commission_value += remainder;
+  }
   renderSaleEmployees();
 }
 
 function removeEmployeeFromSale(idx) {
   saleEmployees.splice(idx, 1);
+  if (!empManuallyEdited && saleEmployees.length > 0) {
+    const even = Math.round(100 / saleEmployees.length * 100) / 100;
+    saleEmployees.forEach(e => { e.commission_type = 'percent'; e.commission_value = even; });
+    const remainder = 100 - even * saleEmployees.length;
+    if (Math.abs(remainder) > 0.001) saleEmployees[0].commission_value += remainder;
+  }
+  if (saleEmployees.length === 0) empManuallyEdited = false;
   renderSaleEmployees();
+}
+
+function empPercentChanged(idx, val) {
+  empManuallyEdited = true;
+  saleEmployees[idx].commission_type = 'percent';
+  saleEmployees[idx].commission_value = parseFloat(val) || 0;
+  renderSaleEmployees();
+}
+
+function empDollarChanged(idx, val) {
+  empManuallyEdited = true;
+  const total = getCartTotal();
+  const dollars = parseFloat(val) || 0;
+  saleEmployees[idx].commission_type = 'percent';
+  saleEmployees[idx].commission_value = total > 0 ? Math.round(dollars / total * 100 * 100) / 100 : 0;
+  renderSaleEmployees();
+}
+
+function getCartTotal() {
+  const subtotal = cart.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+  const tax = Math.round(subtotal * 0.0875 * 100) / 100;
+  return Math.round((subtotal + tax) * 100) / 100;
 }
 
 function renderSaleEmployees() {
@@ -1279,19 +1354,27 @@ function renderSaleEmployees() {
     container.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);padding:4px 0">No employees assigned</div>';
     return;
   }
-  container.innerHTML = saleEmployees.map((se, i) => `
-    <div class="emp-assign-row" data-emp-id="${se.employee_id}" style="display:flex;gap:6px;align-items:center;margin-bottom:6px;font-family:system-ui,sans-serif;font-size:.82rem">
-      <select onchange="saleEmployees[${i}].employee_id=parseInt(this.value);saleEmployees[${i}].name=this.options[this.selectedIndex].text" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none">
+  const total = getCartTotal();
+  const totalPct = saleEmployees.reduce((s, e) => s + (e.commission_value || 0), 0);
+  const pctOk = Math.abs(totalPct - 100) < 0.01;
+
+  container.innerHTML = saleEmployees.map((se, i) => {
+    const dollarAmt = total > 0 ? (total * (se.commission_value || 0) / 100) : 0;
+    return `
+    <div class="emp-assign-row" data-emp-id="${se.employee_id}" style="display:flex;gap:4px;align-items:center;margin-bottom:6px;font-family:system-ui,sans-serif;font-size:.82rem">
+      <select onchange="saleEmployees[${i}].employee_id=parseInt(this.value);saleEmployees[${i}].name=this.options[this.selectedIndex].text" style="flex:1;padding:5px 6px;border:1px solid var(--border);border-radius:6px;font-size:.8rem;font-family:system-ui,sans-serif;outline:none">
         ${activeEmps.map(e => `<option value="${e.id}" ${e.id === se.employee_id ? 'selected' : ''}>${e.name}</option>`).join('')}
       </select>
-      <select class="emp-comm-type" onchange="saleEmployees[${i}].commission_type=this.value" style="width:55px;padding:6px 4px;border:1px solid var(--border);border-radius:6px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none">
-        <option value="percent" ${se.commission_type === 'percent' ? 'selected' : ''}>%</option>
-        <option value="dollar" ${se.commission_type === 'dollar' ? 'selected' : ''}>$</option>
-      </select>
-      <input type="number" class="emp-comm-val" value="${se.commission_value}" min="0" step="1" onchange="saleEmployees[${i}].commission_value=parseFloat(this.value)" style="width:65px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:.82rem;text-align:right;outline:none">
-      <button onclick="removeEmployeeFromSale(${i})" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:1.1rem;padding:2px 4px">&times;</button>
-    </div>
-  `).join('');
+      <input type="number" class="emp-comm-val" value="${se.commission_value}" min="0" max="100" step="0.01" oninput="empPercentChanged(${i},this.value)" style="width:52px;padding:5px 4px;border:1px solid var(--border);border-radius:6px;font-size:.8rem;text-align:right;outline:none" title="Percent">
+      <span style="font-size:.78rem;color:var(--mid)">%</span>
+      <input type="number" value="${dollarAmt.toFixed(2)}" min="0" step="0.01" oninput="empDollarChanged(${i},this.value)" style="width:70px;padding:5px 4px;border:1px solid var(--border);border-radius:6px;font-size:.8rem;text-align:right;outline:none" title="Dollar amount">
+      <span style="font-size:.78rem;color:var(--mid)">$</span>
+      <button onclick="removeEmployeeFromSale(${i})" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:1rem;padding:0 2px">&times;</button>
+    </div>`;
+  }).join('') + `
+    <div style="font-family:system-ui,sans-serif;font-size:.75rem;margin-top:4px;color:${pctOk ? 'var(--success)' : 'var(--danger)'}">
+      Total: ${totalPct.toFixed(1)}% ${pctOk ? '' : '(must equal 100%)'}
+    </div>`;
 }
 
 // ─── Employees Management ───────────────────────────────────────────────────
@@ -1308,6 +1391,7 @@ async function loadEmployees() {
     <div class="emp-row">
       <div class="emp-name">${e.name}</div>
       <div class="emp-role">${e.role}</div>
+      <div style="font-size:.78rem;color:var(--mid);font-family:system-ui,sans-serif">${e.commission_rate || 0}% comm</div>
       <span class="emp-status ${e.active ? 'active' : 'inactive'}">${e.active ? 'Active' : 'Inactive'}</span>
       <button onclick="toggleEmployee(${e.id}, ${e.active})" style="border:none;background:none;cursor:pointer;font-size:.78rem;color:var(--rose);text-decoration:underline">${e.active ? 'Deactivate' : 'Activate'}</button>
     </div>
@@ -1318,6 +1402,7 @@ async function addEmployee() {
   const name = document.getElementById('newEmpName').value.trim();
   const pin = document.getElementById('newEmpPin').value.trim();
   const role = document.getElementById('newEmpRole').value;
+  const commission_rate = parseFloat(document.getElementById('newEmpCommission').value) || 0;
   if (!name || !pin) return alert('Name and PIN required');
   if (pin.length < 4) return alert('PIN must be at least 4 digits');
 
@@ -1325,10 +1410,11 @@ async function addEmployee() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ name, pin, role }),
+    body: JSON.stringify({ name, pin, role, commission_rate }),
   });
   document.getElementById('newEmpName').value = '';
   document.getElementById('newEmpPin').value = '';
+  document.getElementById('newEmpCommission').value = '';
   loadEmployees();
 }
 
@@ -1446,6 +1532,9 @@ async function loadReports() {
   `;
 
   // Employee report
+  // Render leaderboard
+  renderLeaderboard(employees);
+
   document.getElementById('empReportBody').innerHTML = employees.map(e => `
     <tr>
       <td style="font-weight:600">${e.employee_name}</td>
@@ -1488,8 +1577,170 @@ function switchTab(tabName) {
 
   if (tabName === 'history') loadTransactions();
   if (tabName === 'reports') loadReports();
-  if (tabName === 'settings') { loadEmployees(); loadStoreSettings(); renderBrandCheckboxes(); }
+  if (tabName === 'settings') { loadEmployees(); loadStoreSettings(); renderBrandCheckboxes(); renderCustomProductList(); }
   if (tabName === 'prices') renderPrices();
+}
+
+// ─── Brand Product Panels ───────────────────────────────────────────────────
+const BRAND_KEY_TO_DISPLAY = { avologi: 'Avologi', avinichi: 'Avinichi', hydrasphere: 'HydraSphere Plus' };
+
+function toggleBrandProducts(brandKey) {
+  const panel = document.getElementById(`brandPanel-${brandKey}`);
+  if (panel.style.display === 'none') {
+    renderBrandProductPanel(brandKey);
+    panel.style.display = 'block';
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+function renderBrandProductPanel(brandKey) {
+  const panel = document.getElementById(`brandPanel-${brandKey}`);
+  const displayName = BRAND_KEY_TO_DISPLAY[brandKey];
+  const brandProds = products.filter(p => (BRAND_KEY_MAP[p.brand] || p.brand.toLowerCase()) === brandKey && !p.isCustom);
+
+  panel.innerHTML = brandProds.map(p => `
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
+      <input type="checkbox" ${p.visible !== false ? 'checked' : ''} onchange="toggleProductVisibility('${p.id}',this.checked)" style="accent-color:var(--rose-dk)">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</div>
+        <div style="font-size:.72rem;color:var(--mid)">Retail: $${(p.retailPrice || 0).toLocaleString()}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;align-items:flex-end">
+        <div style="display:flex;gap:4px;align-items:center">
+          <span style="font-size:.72rem;color:var(--mid)">Price $</span>
+          <input type="number" value="${p.price || ''}" step="0.01" min="0" data-id="${p.id}" data-field="price" onchange="saveSinglePrice('${p.id}')" style="width:80px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:.8rem;text-align:right;outline:none">
+        </div>
+        <div style="display:flex;gap:4px;align-items:center">
+          <span style="font-size:.72rem;color:var(--mid)">Min $</span>
+          <input type="number" value="${p.minPrice || ''}" step="0.01" min="0" data-id="${p.id}" data-field="min_price" onchange="saveSinglePrice('${p.id}')" style="width:80px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:.8rem;text-align:right;outline:none">
+        </div>
+      </div>
+    </div>
+  `).join('') || '<div style="color:var(--mid);font-family:system-ui,sans-serif;font-size:.85rem;padding:12px;text-align:center">No products in this brand</div>';
+}
+
+async function toggleProductVisibility(productId, visible) {
+  await fetch(`${API}/api/pos/products/visibility`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ product_id: productId, visible }),
+  });
+  const p = products.find(pr => pr.id === productId);
+  if (p) p.visible = visible;
+  renderBrandFilters();
+  renderProducts();
+}
+
+async function saveSinglePrice(productId) {
+  const priceInput = document.querySelector(`input[data-id="${productId}"][data-field="price"]`);
+  const minInput = document.querySelector(`input[data-id="${productId}"][data-field="min_price"]`);
+  const price = parseFloat(priceInput?.value) || 0;
+  const min_price = parseFloat(minInput?.value) || 0;
+  await fetch(`${API}/api/pos/products/price`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ product_id: productId, price, min_price }),
+  });
+  const p = products.find(pr => pr.id === productId);
+  if (p) { p.price = price; p.minPrice = min_price; }
+  renderProducts();
+}
+
+// ─── Custom Products ────────────────────────────────────────────────────────
+async function addCustomProduct() {
+  const name = document.getElementById('customProdName').value.trim();
+  const price = parseFloat(document.getElementById('customProdPrice').value) || 0;
+  const image = document.getElementById('customProdImage').value.trim();
+  if (!name) return alert('Product name required');
+
+  await fetch(`${API}/api/pos/products/custom`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ name, price, image }),
+  });
+  document.getElementById('customProdName').value = '';
+  document.getElementById('customProdPrice').value = '';
+  document.getElementById('customProdImage').value = '';
+  await loadProducts();
+  renderCustomProductList();
+}
+
+function renderCustomProductList() {
+  const list = document.getElementById('customProductList');
+  const customs = products.filter(p => p.isCustom);
+  if (customs.length === 0) {
+    list.innerHTML = '<div style="color:var(--mid);font-family:system-ui,sans-serif;font-size:.82rem;text-align:center;padding:8px">No custom products yet</div>';
+    return;
+  }
+  list.innerHTML = customs.map(p => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
+      ${p.image ? `<img src="${p.image}" style="width:32px;height:32px;border-radius:4px;object-fit:cover" onerror="this.style.display='none'">` : ''}
+      <div style="flex:1;font-weight:600">${p.name}</div>
+      <div style="color:var(--mid)">$${(p.price || 0).toFixed(2)}</div>
+    </div>
+  `).join('');
+}
+
+// ─── Leaderboard ────────────────────────────────────────────────────────────
+function renderLeaderboard(employees) {
+  const container = document.getElementById('leaderboard');
+  const sorted = [...employees].filter(e => e.sale_count > 0 || e.net_total > 0).sort((a, b) => b.net_total - a.net_total);
+  if (sorted.length === 0) {
+    container.innerHTML = '<div style="text-align:center;color:var(--mid);font-family:system-ui,sans-serif;font-size:.85rem;padding:12px">No sales data yet</div>';
+    return;
+  }
+  const maxVal = sorted[0]?.net_total || 1;
+  container.innerHTML = sorted.map((e, i) => {
+    const pct = Math.max(5, (e.net_total / maxVal) * 100);
+    const medal = i === 0 ? '1st' : i === 1 ? '2nd' : i === 2 ? '3rd' : `${i + 1}th`;
+    return `<div style="display:flex;align-items:center;gap:10px;font-family:system-ui,sans-serif;font-size:.85rem">
+      <span style="width:30px;text-align:center;font-weight:700;color:${i < 3 ? 'var(--rose-dk)' : 'var(--mid)'}">${medal}</span>
+      <div style="flex:1">
+        <div style="font-weight:600;margin-bottom:2px">${e.employee_name}</div>
+        <div style="background:var(--border);border-radius:4px;height:8px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:var(--rose);border-radius:4px;transition:width .3s"></div>
+        </div>
+      </div>
+      <span style="font-weight:700;color:var(--dark);min-width:80px;text-align:right">$${e.net_total.toFixed(2)}</span>
+      <span style="font-size:.75rem;color:var(--mid)">${e.sale_count} sales</span>
+    </div>`;
+  }).join('');
+}
+
+// ─── Employee Personal Report ───────────────────────────────────────────────
+async function unlockPersonalReport() {
+  const pin = document.getElementById('empPersonalPin').value.trim();
+  const errorEl = document.getElementById('empPersonalError');
+  if (!pin) { errorEl.textContent = 'Enter your PIN'; return; }
+
+  const start = document.getElementById('rptStart').value;
+  const end = document.getElementById('rptEnd').value;
+
+  try {
+    const resp = await fetch(`${API}/api/pos/reports/employee-personal`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ pin, start: `${start}T00:00:00`, end: `${end}T23:59:59` }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+
+    errorEl.textContent = '';
+    document.getElementById('empPersonalName').textContent = data.role === 'manager'
+      ? `${data.employee.name} (Manager - All Employees)`
+      : `${data.employee.name} - Personal Sales`;
+    document.getElementById('empPersonalBody').innerHTML = (data.report || []).map(e => `
+      <tr>
+        <td style="font-weight:600">${e.employee_name}</td>
+        <td>${e.sale_count}</td>
+        <td>${e.return_count}</td>
+        <td>$${Number(e.sales_total).toFixed(2)}</td>
+        <td>$${Number(e.returns_total).toFixed(2)}</td>
+        <td style="font-weight:600">$${Number(e.net_total).toFixed(2)}</td>
+      </tr>
+    `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No data</td></tr>';
+    document.getElementById('empPersonalReport').style.display = 'block';
+  } catch (err) {
+    errorEl.textContent = err.message;
+    document.getElementById('empPersonalReport').style.display = 'none';
+  }
 }
 
 // ─── App Switcher ───────────────────────────────────────────────────────────
@@ -1564,9 +1815,8 @@ async function saveBrands() {
 
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
-  document.querySelectorAll('.theme-option').forEach(el => {
-    el.classList.toggle('active', el.dataset.theme === theme);
-  });
+  const dd = document.getElementById('settingsTheme');
+  if (dd) dd.value = theme;
 }
 
 async function selectTheme(theme) {

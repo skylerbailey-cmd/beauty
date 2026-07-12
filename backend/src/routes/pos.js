@@ -19,14 +19,21 @@ router.use(requireAuth);
 
 router.get('/products', async (req, res) => {
   const userId = req.session.userId;
-  const prices = await pgDb.getProductPrices(userId);
+  const [prices, visibility, customProducts] = await Promise.all([
+    pgDb.getProductPrices(userId),
+    pgDb.getProductVisibility(userId),
+    pgDb.getCustomProducts(userId),
+  ]);
   const priceMap = {};
   for (const p of prices) priceMap[p.product_id] = p;
+  const visMap = {};
+  for (const v of visibility) visMap[v.product_id] = v.visible;
 
   const allProducts = [];
   for (const [brandKey, products] of Object.entries(PRODUCTS)) {
     for (const prod of products) {
       const priceEntry = priceMap[prod.id];
+      const vis = visMap[prod.id];
       allProducts.push({
         id: prod.id,
         name: prod.name,
@@ -35,19 +42,39 @@ router.get('/products', async (req, res) => {
         image: prod.image,
         retailPrice: prod.retailPrice || 0,
         price: priceEntry?.price ?? prod.retailPrice ?? 0,
+        minPrice: priceEntry?.min_price ?? 0,
         cost: priceEntry?.cost ?? 0,
+        visible: vis === undefined ? true : !!vis,
+        isCustom: false,
       });
     }
+  }
+  // Add custom products
+  for (const cp of customProducts) {
+    allProducts.push({
+      id: `custom-${cp.id}`,
+      name: cp.name,
+      brand: cp.brand || 'Custom',
+      description: cp.description,
+      image: cp.image,
+      retailPrice: cp.price,
+      price: cp.price,
+      minPrice: cp.min_price || 0,
+      cost: 0,
+      visible: true,
+      isCustom: true,
+      customId: cp.id,
+    });
   }
   res.json({ products: allProducts });
 });
 
 router.post('/products/price', async (req, res) => {
-  const { product_id, price, cost } = req.body;
+  const { product_id, price, min_price, cost } = req.body;
   if (!product_id || price === undefined) {
     return res.status(400).json({ error: 'product_id and price required' });
   }
-  await pgDb.setProductPrice(product_id, parseFloat(price), parseFloat(cost || 0), req.session.userId);
+  await pgDb.setProductPrice(product_id, parseFloat(price), parseFloat(min_price || 0), parseFloat(cost || 0), req.session.userId);
   res.json({ ok: true });
 });
 
@@ -55,8 +82,37 @@ router.post('/products/prices/bulk', async (req, res) => {
   const { prices } = req.body;
   if (!Array.isArray(prices)) return res.status(400).json({ error: 'prices array required' });
   for (const p of prices) {
-    await pgDb.setProductPrice(p.product_id, parseFloat(p.price), parseFloat(p.cost || 0), req.session.userId);
+    await pgDb.setProductPrice(p.product_id, parseFloat(p.price), parseFloat(p.min_price || 0), parseFloat(p.cost || 0), req.session.userId);
   }
+  res.json({ ok: true });
+});
+
+// ─── Product Visibility ────────────────────────────────────────────────────
+
+router.post('/products/visibility', async (req, res) => {
+  const { product_id, visible } = req.body;
+  await pgDb.setProductVisibility(product_id, req.session.userId, visible);
+  res.json({ ok: true });
+});
+
+router.post('/products/visibility/bulk', async (req, res) => {
+  const { items } = req.body;
+  if (!Array.isArray(items)) return res.status(400).json({ error: 'items array required' });
+  for (const item of items) {
+    await pgDb.setProductVisibility(item.product_id, req.session.userId, item.visible);
+  }
+  res.json({ ok: true });
+});
+
+// ─── Custom Products ──────────────────────────────────────────────────────
+
+router.post('/products/custom', async (req, res) => {
+  const product = await pgDb.createCustomProduct(req.body, req.session.userId);
+  res.json({ product });
+});
+
+router.put('/products/custom/:id', async (req, res) => {
+  await pgDb.updateCustomProduct(parseInt(req.params.id), req.body);
   res.json({ ok: true });
 });
 
@@ -67,10 +123,10 @@ router.get('/employees', async (req, res) => {
 });
 
 router.post('/employees', async (req, res) => {
-  const { name, pin, role } = req.body;
+  const { name, pin, role, commission_rate } = req.body;
   if (!name || !pin) return res.status(400).json({ error: 'name and pin required' });
   if (pin.length < 4) return res.status(400).json({ error: 'PIN must be at least 4 digits' });
-  const employee = await pgDb.createEmployee(name, pin, role, req.session.userId);
+  const employee = await pgDb.createEmployee(name, pin, role, commission_rate, req.session.userId);
   res.json({ employee });
 });
 
@@ -90,10 +146,14 @@ router.post('/employees/verify', async (req, res) => {
 
 router.post('/transactions', async (req, res) => {
   const userId = req.session.userId;
-  const { type, employee_id, employees: employeeAssignments, customer_name, customer_email, items, payment_method, notes, tax_rate, discount_amount, original_receipt } = req.body;
+  const { type, employee_id, employees: employeeAssignments, customer_name, customer_email, items, payment_method, card_last4, notes, tax_rate, discount_amount, original_receipt } = req.body;
 
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'At least one item required' });
+  }
+
+  if (payment_method === 'card' && type !== 'return' && (!card_last4 || card_last4.length !== 4)) {
+    return res.status(400).json({ error: 'Last 4 digits of credit card required for card payments' });
   }
 
   // If this is a return, require original receipt and enforce 14-day policy
@@ -137,6 +197,7 @@ router.post('/transactions', async (req, res) => {
     discount_amount: disc,
     total,
     payment_method: payment_method || 'card',
+    card_last4: card_last4 || '',
     notes: notes || '',
     original_transaction_id,
     original_sale_date,
@@ -418,6 +479,30 @@ router.get('/reports/customers', async (req, res) => {
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
   res.json({ report: await pgDb.getCustomerReport(req.session.userId, startDate, endDate) });
+});
+
+// ─── Employee Personal Report (PIN-protected) ─────────────────────────────
+
+router.post('/reports/employee-personal', async (req, res) => {
+  const { pin, start, end } = req.body;
+  if (!pin) return res.status(400).json({ error: 'PIN required' });
+
+  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId);
+  if (!employee) return res.status(401).json({ error: 'Invalid PIN' });
+
+  const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+  const endDate = end || new Date().toISOString();
+
+  // Managers see all employees, sales see only their own
+  if (employee.role === 'manager') {
+    const report = await pgDb.getEmployeeSalesReport(req.session.userId, startDate, endDate);
+    res.json({ employee, role: 'manager', report });
+  } else {
+    // Single employee report
+    const report = await pgDb.getEmployeeSalesReport(req.session.userId, startDate, endDate);
+    const personal = report.filter(r => r.employee_id === employee.id);
+    res.json({ employee, role: 'sales', report: personal });
+  }
 });
 
 // ─── Settings ──────────────────────────────────────────────────────────────

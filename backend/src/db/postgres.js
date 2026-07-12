@@ -46,6 +46,7 @@ async function initSchema() {
       name TEXT NOT NULL,
       pin TEXT NOT NULL,
       role TEXT DEFAULT 'sales',
+      commission_rate REAL DEFAULT 0,
       user_id TEXT DEFAULT '',
       active INTEGER DEFAULT 1,
       created_at TIMESTAMPTZ DEFAULT NOW()
@@ -57,11 +58,35 @@ async function initSchema() {
       id SERIAL PRIMARY KEY,
       product_id TEXT NOT NULL,
       price REAL NOT NULL DEFAULT 0,
+      min_price REAL DEFAULT 0,
       cost REAL DEFAULT 0,
       user_id TEXT DEFAULT '',
       UNIQUE(product_id, user_id)
     );
     CREATE INDEX IF NOT EXISTS idx_pg_prices_user ON pos_product_prices(user_id);
+
+    -- Custom products
+    CREATE TABLE IF NOT EXISTS pos_custom_products (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      brand TEXT DEFAULT 'Custom',
+      description TEXT DEFAULT '',
+      image TEXT DEFAULT '',
+      price REAL DEFAULT 0,
+      min_price REAL DEFAULT 0,
+      user_id TEXT DEFAULT '',
+      active INTEGER DEFAULT 1,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_pg_custom_user ON pos_custom_products(user_id);
+
+    -- Brand product visibility (which catalog products are enabled)
+    CREATE TABLE IF NOT EXISTS pos_product_visibility (
+      product_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      visible INTEGER DEFAULT 1,
+      PRIMARY KEY(product_id, user_id)
+    );
 
     -- Transactions
     CREATE TABLE IF NOT EXISTS pos_transactions (
@@ -77,6 +102,7 @@ async function initSchema() {
       discount_amount REAL NOT NULL DEFAULT 0,
       total REAL NOT NULL DEFAULT 0,
       payment_method TEXT DEFAULT 'card',
+      card_last4 TEXT DEFAULT '',
       notes TEXT DEFAULT '',
       receipt_number TEXT NOT NULL,
       original_transaction_id INTEGER REFERENCES pos_transactions(id),
@@ -146,6 +172,12 @@ async function initSchema() {
       timezone TEXT DEFAULT 'America/Los_Angeles'
     );
   `);
+  // Migrations for existing DBs
+  const migrate = async (sql) => { try { await pool.query(sql); } catch (_) {} };
+  await migrate('ALTER TABLE pos_employees ADD COLUMN IF NOT EXISTS commission_rate REAL DEFAULT 0');
+  await migrate('ALTER TABLE pos_product_prices ADD COLUMN IF NOT EXISTS min_price REAL DEFAULT 0');
+  await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS card_last4 TEXT DEFAULT \'\'');
+
   console.log('[postgres] Schema initialized');
 }
 
@@ -232,16 +264,16 @@ async function getEmployee(id) {
   return (await pool.query('SELECT * FROM pos_employees WHERE id = $1', [id])).rows[0];
 }
 
-async function createEmployee(name, pin, role, userId) {
+async function createEmployee(name, pin, role, commissionRate, userId) {
   const result = await pool.query(
-    'INSERT INTO pos_employees (name, pin, role, user_id) VALUES ($1, $2, $3, $4) RETURNING *',
-    [name, pin, role || 'sales', userId]
+    'INSERT INTO pos_employees (name, pin, role, commission_rate, user_id) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+    [name, pin, role || 'sales', commissionRate || 0, userId]
   );
   return result.rows[0];
 }
 
 async function updateEmployee(id, fields) {
-  const allowed = ['name', 'pin', 'role', 'active'];
+  const allowed = ['name', 'pin', 'role', 'active', 'commission_rate'];
   const sets = [];
   const params = [];
   let idx = 1;
@@ -267,11 +299,11 @@ async function getProductPrices(userId) {
   return (await pool.query('SELECT * FROM pos_product_prices WHERE user_id = $1', [userId])).rows;
 }
 
-async function setProductPrice(productId, price, cost, userId) {
+async function setProductPrice(productId, price, minPrice, cost, userId) {
   await pool.query(
-    `INSERT INTO pos_product_prices (product_id, price, cost, user_id) VALUES ($1, $2, $3, $4)
-     ON CONFLICT (product_id, user_id) DO UPDATE SET price = EXCLUDED.price, cost = EXCLUDED.cost`,
-    [productId, price, cost || 0, userId]
+    `INSERT INTO pos_product_prices (product_id, price, min_price, cost, user_id) VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (product_id, user_id) DO UPDATE SET price = EXCLUDED.price, min_price = EXCLUDED.min_price, cost = EXCLUDED.cost`,
+    [productId, price, minPrice || 0, cost || 0, userId]
   );
 }
 
@@ -288,14 +320,14 @@ async function createTransaction(txData) {
     `INSERT INTO pos_transactions
       (type, employee_id, customer_id, customer_name, customer_email,
        subtotal, tax_rate, tax_amount, discount_amount, total,
-       payment_method, notes, receipt_number, original_transaction_id, original_sale_date, user_id)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id, receipt_number`,
+       payment_method, card_last4, notes, receipt_number, original_transaction_id, original_sale_date, user_id)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING id, receipt_number`,
     [
       txData.type || 'sale', txData.employee_id || null, txData.customer_id || null,
       txData.customer_name || '', txData.customer_email || '',
       txData.subtotal, txData.tax_rate ?? 0.0875, txData.tax_amount,
       txData.discount_amount || 0, txData.total,
-      txData.payment_method || 'card', txData.notes || '',
+      txData.payment_method || 'card', txData.card_last4 || '', txData.notes || '',
       receiptNumber, txData.original_transaction_id || null,
       txData.original_sale_date || null, txData.user_id,
     ]
@@ -540,6 +572,47 @@ async function getCampaigns(userId, limit = 50) {
   return (await pool.query('SELECT * FROM campaigns ORDER BY sent_at DESC LIMIT $1', [limit])).rows;
 }
 
+// ─── Custom Products ────────────────────────────────────────────────────────
+
+async function getCustomProducts(userId) {
+  return (await pool.query('SELECT * FROM pos_custom_products WHERE user_id = $1 AND active = 1 ORDER BY name', [userId])).rows;
+}
+
+async function createCustomProduct(fields, userId) {
+  const result = await pool.query(
+    'INSERT INTO pos_custom_products (name, brand, description, image, price, min_price, user_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
+    [fields.name, fields.brand || 'Custom', fields.description || '', fields.image || '', fields.price || 0, fields.min_price || 0, userId]
+  );
+  return result.rows[0];
+}
+
+async function updateCustomProduct(id, fields) {
+  const allowed = ['name', 'brand', 'description', 'image', 'price', 'min_price', 'active'];
+  const sets = [];
+  const params = [];
+  let idx = 1;
+  for (const key of allowed) {
+    if (fields[key] !== undefined) { sets.push(`${key} = $${idx}`); params.push(fields[key]); idx++; }
+  }
+  if (sets.length === 0) return;
+  params.push(id);
+  await pool.query(`UPDATE pos_custom_products SET ${sets.join(', ')} WHERE id = $${idx}`, params);
+}
+
+// ─── Product Visibility ─────────────────────────────────────────────────────
+
+async function getProductVisibility(userId) {
+  return (await pool.query('SELECT * FROM pos_product_visibility WHERE user_id = $1', [userId])).rows;
+}
+
+async function setProductVisibility(productId, userId, visible) {
+  await pool.query(
+    `INSERT INTO pos_product_visibility (product_id, user_id, visible) VALUES ($1, $2, $3)
+     ON CONFLICT (product_id, user_id) DO UPDATE SET visible = EXCLUDED.visible`,
+    [productId, userId, visible ? 1 : 0]
+  );
+}
+
 module.exports = {
   pool,
   initSchema,
@@ -583,4 +656,11 @@ module.exports = {
   // Settings
   getSettings,
   updateSettings,
+  // Custom Products
+  getCustomProducts,
+  createCustomProduct,
+  updateCustomProduct,
+  // Product Visibility
+  getProductVisibility,
+  setProductVisibility,
 };
