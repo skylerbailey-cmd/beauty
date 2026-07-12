@@ -2765,15 +2765,15 @@ async function deleteCustomProduct(customId) {
 // ─── Leaderboard ────────────────────────────────────────────────────────────
 function renderLeaderboard(employees) {
   const container = document.getElementById('leaderboard');
-  // Rank by gross sales credited (positive), so it's a clean "top seller" board
-  const sorted = [...employees].filter(e => (Number(e.sales_total) || 0) > 0).sort((a, b) => Number(b.sales_total) - Number(a.sales_total));
+  // Rank by NET sales (sales - returns) — same figure as "Net Sales" when unlocked
+  const sorted = [...employees].filter(e => e.sale_count > 0 || Number(e.net_total) !== 0).sort((a, b) => Number(b.net_total) - Number(a.net_total));
   if (sorted.length === 0) {
     container.innerHTML = '<div style="text-align:center;color:var(--mid);font-family:system-ui,sans-serif;font-size:.85rem;padding:12px">No sales data yet</div>';
     return;
   }
-  const maxVal = Number(sorted[0]?.sales_total) || 1;
+  const maxVal = Number(sorted[0]?.net_total) || 1;
   container.innerHTML = sorted.map((e, i) => {
-    const val = Number(e.sales_total) || 0;
+    const val = Number(e.net_total) || 0;
     const pct = Math.max(5, (val / maxVal) * 100);
     const medal = i === 0 ? '1st' : i === 1 ? '2nd' : i === 2 ? '3rd' : `${i + 1}th`;
     return `<div style="display:flex;align-items:center;gap:10px;font-family:system-ui,sans-serif;font-size:.85rem">

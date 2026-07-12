@@ -644,7 +644,9 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
       COUNT(DISTINCT CASE WHEN t.type = 'return' THEN t.id END) as return_count,
       COALESCE(SUM(CASE WHEN t.type = 'sale' THEN te.commission_amount ELSE 0 END), 0) as sales_total,
       COALESCE(SUM(CASE WHEN t.type = 'return' THEN te.commission_amount ELSE 0 END), 0) as returns_total,
-      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN te.commission_amount ELSE -te.commission_amount END), 0) as net_total
+      -- net = sales - returns; rows outside the date range (t IS NULL) must NOT
+      -- be subtracted, so use an explicit WHEN for returns and ELSE 0
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN te.commission_amount WHEN t.type = 'return' THEN -te.commission_amount ELSE 0 END), 0) as net_total
     FROM pos_employees e
     LEFT JOIN pos_transaction_employees te ON e.id = te.employee_id
     LEFT JOIN pos_transactions t ON te.transaction_id = t.id
