@@ -75,6 +75,11 @@ router.get('/google', (req, res) => {
   if (from === 'web') {
     req.session.oauthFrom = 'web';
   }
+  // Remember where to return after auth (only same-site relative paths allowed)
+  const ret = req.query.return;
+  if (typeof ret === 'string' && ret.startsWith('/') && !ret.startsWith('//')) {
+    req.session.oauthReturn = ret;
+  }
 
   const oauth2Client = createOAuthClient();
 
@@ -190,8 +195,10 @@ router.get('/google/callback', async (req, res) => {
     // Tokens are persisted per-company in Postgres instead.
 
     if (isWebLogin) {
-      // Redirect back to the web UI
-      return res.redirect('/');
+      // Redirect back to where the flow started (e.g. /pos.html), else the web UI
+      const dest = req.session.oauthReturn || '/';
+      delete req.session.oauthReturn;
+      return res.redirect(dest);
     }
 
     res.send(`

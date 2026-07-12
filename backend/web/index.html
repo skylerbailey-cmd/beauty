@@ -1748,8 +1748,17 @@
   }
   // Embedded mode: when shown inside the POS "Emails" tab, hide our own top
   // header/app-switcher so only the sidebar tabs + content appear.
-  if (new URLSearchParams(location.search).get('embed') === '1') {
+  var IS_EMBEDDED = new URLSearchParams(location.search).get('embed') === '1';
+  if (IS_EMBEDDED) {
     document.body.classList.add('embedded');
+  }
+  // Google's sign-in page cannot load inside an iframe, so the OAuth flow must
+  // run in the TOP-LEVEL window. When embedded in the POS, break out and return
+  // to /pos.html afterwards; otherwise navigate normally.
+  function connectGmail() {
+    var url = '/auth/google?from=web';
+    if (IS_EMBEDDED) url += '&return=' + encodeURIComponent('/pos.html');
+    (window.top || window).location.href = url;
   }
 </script>
 <style>
@@ -1944,7 +1953,7 @@
       <h2 class="card-title">Connect Your Gmail</h2>
       <p class="card-sub">To send welcome emails, you need to connect your Gmail account. This allows us to send emails on your behalf.</p>
       <div class="btn-row" style="justify-content:center;">
-        <button class="btn btn-primary" onclick="window.location.href='/auth/google?from=web'">Connect Gmail</button>
+        <button class="btn btn-primary" onclick="connectGmail()">Connect Gmail</button>
       </div>
     </div>
   </div>
@@ -3137,7 +3146,7 @@
           throw new Error('Session expired. Please sign in again.');
         }
         if (data.needsGmailConnect) {
-          window.location.href = '/auth/google?from=web';
+          connectGmail();
           return;
         }
         throw new Error(data.error || 'Unknown error');
