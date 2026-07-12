@@ -800,7 +800,7 @@ async function getCardSalesByDateRange(userId, fromStr, toStr, tz) {
 async function getCardTransactionsForDate(userId, dateStr, tz) {
   const timezone = tz || 'America/Los_Angeles';
   return (await query(`
-    SELECT id, type, total, card_last4, receipt_number, created_at
+    SELECT id, type, total, card_last4, receipt_number, customer_name, created_at
     FROM pos_transactions
     WHERE user_id = $1 AND payment_method = 'card'
       AND (created_at AT TIME ZONE $3)::date = $2::date

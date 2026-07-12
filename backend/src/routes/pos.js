@@ -1249,4 +1249,97 @@ router.get('/reconciliation-audit', async (req, res) => {
   res.json({ configured: true, from, to, days, totals, dba_id: usedDbaId, _debug: debug });
 });
 
+function last4Of(v) {
+  const digits = String(v || '').replace(/\D/g, '');
+  return digits.slice(-4);
+}
+
+// Drill-down for a single day: match the merchant's settled transactions to the
+// POS's card transactions, so mismatches can be traced to specific records.
+router.get('/reconciliation-day', async (req, res) => {
+  const userId = req.session.userId;
+  const settings = await pgDb.getSettings(userId);
+  const dbaId = (settings.maverick_dba_id || '').trim();
+  const token = (settings.maverick_token || '').trim();
+  const tz = settings.timezone || 'America/Los_Angeles';
+  if (!dbaId || !token) return res.json({ configured: false });
+
+  const date = (req.query.date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Valid date (YYYY-MM-DD) required' });
+
+  // Merchant settled transactions for the day
+  let batches = [];
+  try {
+    let r = await fetchMaverickBatches(dbaId, date, date, token);
+    if (r.ok && r.batches.length === 0) {
+      const probe = await fetchMaverickBatches(dbaId, null, null, token);
+      if (probe.ok) batches = probe.batches.filter(b => batchDateOf(b, null) === date);
+      else if (!r.ok) return res.json({ configured: true, date, error: r.error });
+    } else if (r.ok) {
+      batches = r.batches;
+    } else {
+      return res.json({ configured: true, date, error: r.error });
+    }
+  } catch (e) {
+    return res.json({ configured: true, date, error: e.message });
+  }
+
+  const merchant = batches
+    .filter(b => !isRejected(b))
+    .map(b => {
+      const type = String(b.type || '').toLowerCase();
+      const isCredit = /credit|refund|return|void|reversal/.test(type);
+      return {
+        amount: Math.abs(batchAmount(b)),
+        dir: isCredit ? 'credit' : 'debit',
+        last4: last4Of(b.card?.number),
+        batch_id: b.batch?.id || null,
+        reference: b.referenceNumber || null,
+        brand: b.card?.bin?.brand || null,
+      };
+    });
+
+  // POS card transactions for the day
+  const posRows = await pgDb.getCardTransactionsForDate(userId, date, tz);
+  const pos = posRows.map(t => ({
+    amount: Math.abs(Number(t.total) || 0),
+    dir: t.type === 'return' ? 'credit' : 'debit',
+    last4: last4Of(t.card_last4),
+    receipt: t.receipt_number,
+    customer: t.customer_name || '',
+    type: t.type,
+  }));
+
+  // Greedy match by (direction, amount); prefer a matching last-4 when present
+  const key = (x) => `${x.dir}:${Math.round(x.amount * 100)}`;
+  const byKey = {};
+  for (const m of merchant) (byKey[key(m)] = byKey[key(m)] || []).push(m);
+
+  const matched = [];
+  const unmatchedPos = [];
+  for (const p of pos) {
+    const bucket = byKey[key(p)];
+    if (bucket && bucket.length) {
+      let idx = p.last4 ? bucket.findIndex(m => m.last4 && m.last4 === p.last4) : -1;
+      if (idx < 0) idx = 0;
+      const m = bucket.splice(idx, 1)[0];
+      matched.push({ pos: p, merchant: m });
+    } else {
+      unmatchedPos.push(p);
+    }
+  }
+  const unmatchedMerchant = Object.values(byKey).flat();
+
+  const sum = (arr, f) => Math.round(arr.reduce((s, x) => s + f(x), 0) * 100) / 100;
+  res.json({
+    configured: true,
+    date,
+    matched_count: matched.length,
+    unmatched_pos: unmatchedPos,
+    unmatched_merchant: unmatchedMerchant,
+    unmatched_pos_total: sum(unmatchedPos, p => p.dir === 'credit' ? -p.amount : p.amount),
+    unmatched_merchant_total: sum(unmatchedMerchant, m => m.dir === 'credit' ? -m.amount : m.amount),
+  });
+});
+
 module.exports = router;
