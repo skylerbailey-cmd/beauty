@@ -247,6 +247,9 @@ async function initSchema() {
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS brands TEXT DEFAULT '[\"avologi\",\"avinichi\",\"hydrasphere\"]'");
   // New companies default to the current 8.1875% sales tax
   await migrate('ALTER TABLE pos_settings ALTER COLUMN tax_rate SET DEFAULT 0.081875');
+  // Maverick Payments reporting credentials (per company, server-side only)
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS maverick_dba_id TEXT DEFAULT ''");
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS maverick_token TEXT DEFAULT ''");
 
   // One-time data migrations, tracked so they run exactly once.
   await migrate('CREATE TABLE IF NOT EXISTS pos_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW())');
@@ -720,6 +723,42 @@ async function getFlaggedReturns(userId, startDate, endDate) {
   return rows;
 }
 
+// Card sales recorded in the POS for a single local calendar day (for batch
+// reconciliation). Amounts include tax, matching what the card was charged.
+async function getCardSalesForDate(userId, dateStr, tz) {
+  const timezone = tz || 'America/Los_Angeles';
+  const rows = (await query(`
+    SELECT
+      COUNT(*) FILTER (WHERE type = 'sale')   AS sale_count,
+      COUNT(*) FILTER (WHERE type = 'return') AS return_count,
+      COALESCE(SUM(CASE WHEN type = 'sale' THEN total ELSE 0 END), 0)    AS sales_total,
+      COALESCE(SUM(CASE WHEN type = 'return' THEN total ELSE 0 END), 0)  AS returns_total,
+      COALESCE(SUM(CASE WHEN type = 'sale' THEN total ELSE -total END), 0) AS net_total
+    FROM pos_transactions
+    WHERE user_id = $1 AND payment_method = 'card'
+      AND (created_at AT TIME ZONE $3)::date = $2::date
+  `, [userId, dateStr, timezone])).rows;
+  const r = rows[0] || {};
+  return {
+    sale_count: Number(r.sale_count || 0),
+    return_count: Number(r.return_count || 0),
+    sales_total: Number(r.sales_total || 0),
+    returns_total: Number(r.returns_total || 0),
+    net_total: Number(r.net_total || 0),
+  };
+}
+
+async function getCardTransactionsForDate(userId, dateStr, tz) {
+  const timezone = tz || 'America/Los_Angeles';
+  return (await query(`
+    SELECT id, type, total, card_last4, receipt_number, created_at
+    FROM pos_transactions
+    WHERE user_id = $1 AND payment_method = 'card'
+      AND (created_at AT TIME ZONE $3)::date = $2::date
+    ORDER BY created_at ASC
+  `, [userId, dateStr, timezone])).rows;
+}
+
 // ─── Settings ───────────────────────────────────────────────────────────────
 
 async function getSettings(userId) {
@@ -732,7 +771,7 @@ async function getSettings(userId) {
 }
 
 async function updateSettings(userId, fields) {
-  const allowed = ['store_name', 'store_address', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands'];
+  const allowed = ['store_name', 'store_address', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token'];
   const sets = [];
   const params = [];
   let idx = 1;
@@ -1136,6 +1175,8 @@ module.exports = {
   // Settings
   getSettings,
   updateSettings,
+  getCardSalesForDate,
+  getCardTransactionsForDate,
   // Commission Plans
   getCommissionPlan,
   setCommissionPlan,

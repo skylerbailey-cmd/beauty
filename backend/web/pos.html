@@ -383,6 +383,7 @@
     <button class="active" onclick="switchTab('register')">Register</button>
     <button onclick="switchTab('history')">Transactions</button>
     <button onclick="switchTab('reports')">Reports</button>
+    <button onclick="switchTab('batch')">Batch</button>
     <button onclick="switchTab('emails')">Emails</button>
     <button onclick="switchTab('settings')">Settings</button>
   </div>
@@ -615,6 +616,44 @@
           <thead><tr><th>Return #</th><th>Date</th><th>Original Sale</th><th>Sale Employees</th><th>Return Employees</th><th>Total</th></tr></thead>
           <tbody id="flaggedReturnsBody"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── BATCH RECONCILIATION TAB ─── -->
+  <div class="tab-content" id="tab-batch">
+    <div style="max-width:1000px;margin:0 auto;padding:20px">
+      <div class="date-range">
+        <label>Batch date:</label>
+        <input type="date" id="batchDate">
+        <button class="btn btn-confirm" onclick="runReconciliation()">Run Reconciliation</button>
+        <span id="batchStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)"></span>
+      </div>
+
+      <div id="batchResult" style="display:none">
+        <div class="stat-grid" id="batchSummary"></div>
+        <div class="report-card">
+          <h3>Maverick Batches — <span id="batchResultDate" style="font-weight:400;color:var(--mid)"></span></h3>
+          <table class="report-table">
+            <thead><tr><th>Batch ID</th><th>Date</th><th>Brand</th><th>Txns</th><th>Amount</th></tr></thead>
+            <tbody id="batchBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Maverick connection config -->
+      <div class="report-card" id="maverickConfigCard">
+        <h3>Maverick Payments Connection</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
+          Connect this company's Maverick account to reconcile daily batches against recorded sales. The token is stored securely on the server and never shown again.
+          <span id="maverickConnStatus" style="font-weight:600"></span>
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="text" id="maverickDbaId" placeholder="DBA ID" style="width:200px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+          <input type="password" id="maverickToken" placeholder="Access token (leave blank to keep current)" autocomplete="off" style="flex:1;min-width:220px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+          <button class="btn btn-confirm" onclick="saveMaverick()">Save</button>
+        </div>
+        <div id="maverickSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
       </div>
     </div>
   </div>
@@ -2323,6 +2362,107 @@ async function sendMassEmail() {
   }
 }
 
+// ─── Batch Reconciliation (Maverick) ────────────────────────────────────────
+let batchTabInitialized = false;
+
+function initBatchTab() {
+  if (!batchTabInitialized) {
+    document.getElementById('batchDate').value = new Date().toISOString().slice(0, 10);
+    batchTabInitialized = true;
+  }
+  // Reflect current Maverick connection state
+  document.getElementById('maverickDbaId').value = storeSettings.maverick_dba_id || '';
+  const connected = !!storeSettings.maverick_connected;
+  document.getElementById('maverickConnStatus').textContent = connected ? '✓ Connected' : '· Not connected';
+  document.getElementById('maverickConnStatus').style.color = connected ? 'var(--success)' : 'var(--mid)';
+}
+
+async function saveMaverick() {
+  const dba = document.getElementById('maverickDbaId').value.trim();
+  const token = document.getElementById('maverickToken').value.trim();
+  const statusEl = document.getElementById('maverickSaveStatus');
+  const body = { maverick_dba_id: dba };
+  if (token) body.maverick_token = token;
+  statusEl.style.color = 'var(--mid)';
+  statusEl.textContent = 'Saving…';
+  try {
+    const resp = await fetch(`${API}/api/pos/settings`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Save failed');
+    storeSettings = data.settings || storeSettings;
+    document.getElementById('maverickToken').value = '';
+    statusEl.style.color = 'var(--success)';
+    statusEl.textContent = 'Saved.';
+    initBatchTab();
+  } catch (err) {
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = 'Failed: ' + err.message;
+  }
+}
+
+async function runReconciliation() {
+  const date = document.getElementById('batchDate').value;
+  const statusEl = document.getElementById('batchStatus');
+  const resultEl = document.getElementById('batchResult');
+  if (!date) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Pick a date.'; return; }
+  statusEl.style.color = 'var(--mid)';
+  statusEl.textContent = 'Fetching batches…';
+  resultEl.style.display = 'none';
+  try {
+    const resp = await fetch(`${API}/api/pos/reconciliation?date=${encodeURIComponent(date)}`, { credentials: 'include' });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Request failed');
+    if (!data.configured) {
+      statusEl.style.color = 'var(--danger)';
+      statusEl.textContent = 'Connect your Maverick account below first (DBA ID + token).';
+      return;
+    }
+    if (data.error) {
+      statusEl.style.color = 'var(--danger)';
+      statusEl.textContent = 'Maverick error: ' + data.error;
+      return;
+    }
+    statusEl.textContent = '';
+    renderReconciliation(data);
+    resultEl.style.display = 'block';
+  } catch (err) {
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = 'Failed: ' + err.message;
+  }
+}
+
+function renderReconciliation(data) {
+  const pos = data.pos || {};
+  const mav = data.maverick || {};
+  const diff = data.difference || 0;
+  const matched = data.matched;
+  document.getElementById('batchResultDate').textContent = data.date;
+
+  document.getElementById('batchSummary').innerHTML = `
+    <div class="stat-box"><div class="stat-val">$${(mav.total || 0).toFixed(2)}</div><div class="stat-lbl">Maverick Settled (${mav.batch_count || 0} batch${(mav.batch_count === 1) ? '' : 'es'})</div></div>
+    <div class="stat-box"><div class="stat-val">$${(pos.net_total || 0).toFixed(2)}</div><div class="stat-lbl">POS Card Sales (net)</div></div>
+    <div class="stat-box" style="${matched ? 'background:#e8f5e9' : 'background:#fce4ec'}">
+      <div class="stat-val" style="color:${matched ? 'var(--success)' : 'var(--danger)'}">${matched ? '✓ $0.00' : (diff > 0 ? '+' : '') + '$' + diff.toFixed(2)}</div>
+      <div class="stat-lbl">${matched ? 'Matched' : 'Difference (Maverick − POS)'}</div>
+    </div>
+    <div class="stat-box"><div class="stat-val">${pos.sale_count || 0}/${pos.return_count || 0}</div><div class="stat-lbl">POS Card Sales / Returns</div></div>
+  `;
+
+  const rows = (mav.batches || []);
+  document.getElementById('batchBody').innerHTML = rows.map(b => `
+    <tr>
+      <td style="font-family:monospace">${b.id ?? '-'}</td>
+      <td>${(b.date || '').toString().slice(0, 10)}</td>
+      <td>${b.brand || '-'}</td>
+      <td>${b.count ?? '-'}</td>
+      <td style="font-weight:600">$${(b.amount || 0).toFixed(2)}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--mid)">No batches settled on this date</td></tr>';
+}
+
 // ─── Tab Switching ──────────────────────────────────────────────────────────
 function switchTab(tabName) {
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('show'));
@@ -2332,6 +2472,7 @@ function switchTab(tabName) {
 
   if (tabName === 'history') loadTransactions();
   if (tabName === 'reports') loadReports();
+  if (tabName === 'batch') initBatchTab();
   if (tabName === 'emails') {
     const f = document.getElementById('emailsFrame');
     if (f && !f.src) f.src = f.dataset.src; // load once, on first open

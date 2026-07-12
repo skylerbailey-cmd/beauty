@@ -777,13 +777,25 @@ router.post('/reports/employee-personal', async (req, res) => {
 
 // ─── Settings ──────────────────────────────────────────────────────────────
 
+// Never expose the Maverick token to the browser; report only whether it's set.
+function sanitizeSettings(s) {
+  if (!s) return s;
+  const { maverick_token, ...rest } = s;
+  return { ...rest, maverick_connected: !!(maverick_token && String(maverick_token).trim()) };
+}
+
 router.get('/settings', async (req, res) => {
-  res.json({ settings: await pgDb.getSettings(req.session.userId) });
+  res.json({ settings: sanitizeSettings(await pgDb.getSettings(req.session.userId)) });
 });
 
 router.post('/settings', async (req, res) => {
-  await pgDb.updateSettings(req.session.userId, req.body);
-  res.json({ settings: await pgDb.getSettings(req.session.userId) });
+  // Ignore an empty maverick_token so saving other settings doesn't wipe it
+  const body = { ...req.body };
+  if (body.maverick_token !== undefined && !String(body.maverick_token).trim()) {
+    delete body.maverick_token;
+  }
+  await pgDb.updateSettings(req.session.userId, body);
+  res.json({ settings: sanitizeSettings(await pgDb.getSettings(req.session.userId)) });
 });
 
 // ─── Customer Lookup ───────────────────────────────────────────────────────
@@ -793,6 +805,97 @@ router.get('/customers/search', async (req, res) => {
   if (!q) return res.json({ customers: [] });
   const customer = await pgDb.getCustomerByEmail(q, req.session.userId);
   res.json({ customers: customer ? [customer] : [] });
+});
+
+// ─── Maverick Batch Reconciliation ──────────────────────────────────────────
+
+const MAVERICK_BASE = 'https://dashboard.maverickpayments.com';
+
+// Pull the numeric total out of a Maverick batch object, tolerating the
+// several field names their API may use.
+function batchAmount(b) {
+  const keys = ['net', 'netAmount', 'total', 'totalAmount', 'amount', 'settledAmount', 'batchAmount'];
+  for (const k of keys) {
+    if (b && b[k] != null && !isNaN(Number(b[k]))) return Number(b[k]);
+  }
+  return 0;
+}
+function batchCount(b) {
+  const keys = ['count', 'transactionCount', 'totalCount', 'transactions'];
+  for (const k of keys) {
+    const v = b && b[k];
+    if (typeof v === 'number') return v;
+    if (Array.isArray(v)) return v.length;
+  }
+  return null;
+}
+
+router.get('/reconciliation', async (req, res) => {
+  const userId = req.session.userId;
+  const settings = await pgDb.getSettings(userId);
+  const dbaId = (settings.maverick_dba_id || '').trim();
+  const token = (settings.maverick_token || '').trim();
+  const tz = settings.timezone || 'America/Los_Angeles';
+
+  if (!dbaId || !token) {
+    return res.json({ configured: false });
+  }
+
+  // Date to reconcile (YYYY-MM-DD); default today in the store timezone
+  let date = (req.query.date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    date = new Date().toLocaleDateString('en-CA', { timeZone: tz }); // en-CA => YYYY-MM-DD
+  }
+
+  // POS side: card sales recorded for that day
+  const pos = await pgDb.getCardSalesForDate(userId, date, tz);
+
+  // Maverick side: batches settled on that date
+  const url = `${MAVERICK_BASE}/api/reporting/batches/${encodeURIComponent(dbaId)}?filter[date][gte]=${date}&filter[date][lte]=${date}`;
+  let batches = [];
+  let maverickError = null;
+  try {
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+    const text = await resp.text();
+    let data;
+    try { data = JSON.parse(text); } catch (_) { data = null; }
+    if (!resp.ok) {
+      maverickError = (data && (data.message || data.name)) || `Maverick API returned ${resp.status}`;
+    } else {
+      batches = Array.isArray(data) ? data : (data?.items || data?.batches || []);
+    }
+  } catch (e) {
+    maverickError = e.message;
+  }
+
+  if (maverickError) {
+    return res.json({ configured: true, date, pos, maverick: null, error: maverickError });
+  }
+
+  const maverickTotal = batches.reduce((s, b) => s + batchAmount(b), 0);
+  const batchList = batches.map(b => ({
+    id: b.id ?? b.batchId ?? null,
+    date: b.date ?? b.batchedOn ?? b.batchDate ?? date,
+    amount: batchAmount(b),
+    count: batchCount(b),
+    brand: b.card?.bin?.brand ?? b.brand ?? null,
+  }));
+
+  const posNet = pos.net_total;
+  const difference = Math.round((maverickTotal - posNet) * 100) / 100;
+
+  res.json({
+    configured: true,
+    date,
+    pos,
+    maverick: {
+      batch_count: batches.length,
+      total: Math.round(maverickTotal * 100) / 100,
+      batches: batchList,
+    },
+    difference,
+    matched: Math.abs(difference) < 0.01,
+  });
 });
 
 module.exports = router;
