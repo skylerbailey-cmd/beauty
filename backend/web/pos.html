@@ -2591,6 +2591,11 @@ function renderAudit(data) {
     } else {
       debugEl.innerHTML = `<b>Diagnostic:</b> Maverick returned <b>${dbg.batch_count} batch record(s)</b> but no amount was read. Here is one raw record so I can map the correct amount field — please copy this to me:<pre style="white-space:pre-wrap;word-break:break-word;margin-top:8px;max-height:280px;overflow:auto;background:#fff;padding:8px;border-radius:6px;border:1px solid #eadb9a">${escapeHtml(JSON.stringify(dbg.sample, null, 2))}</pre>`;
     }
+  } else if ((dbg.excluded_records || []).length > 0) {
+    const ex = dbg.excluded_records;
+    debugEl.style.display = 'block';
+    debugEl.innerHTML = `<b>Excluded ${ex.length} record(s) as rejected</b>, totaling <b>$${money(dbg.excluded_total || 0)}</b>. If any of these were actually valid transactions, tell me — here they are:`
+      + `<pre style="white-space:pre-wrap;word-break:break-word;margin-top:8px;max-height:260px;overflow:auto;background:#fff;padding:8px;border-radius:6px;border:1px solid #eadb9a">${escapeHtml(JSON.stringify(ex, null, 2))}</pre>`;
   } else {
     debugEl.style.display = 'none';
   }

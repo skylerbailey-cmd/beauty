@@ -1180,12 +1180,17 @@ router.get('/reconciliation-audit', async (req, res) => {
   // (never actually processed) are excluded.
   const merchantByDate = {};
   let rejectedExcluded = 0;
+  const excludedRecords = [];
   for (const b of batches) {
-    if (isRejected(b)) { rejectedExcluded++; continue; }
-    const d = batchDateOf(b, to);
-    const mag = Math.abs(batchAmount(b));
     const type = String(b.type || '').toLowerCase();
+    const mag = Math.abs(batchAmount(b));
     const signed = /credit|refund|return|void|reversal/.test(type) ? -mag : mag;
+    if (isRejected(b)) {
+      rejectedExcluded++;
+      if (excludedRecords.length < 100) excludedRecords.push({ date: batchDateOf(b, to), amount: signed, type, reject_code: b.reject?.code ?? null, reject_desc: b.reject?.codeDescription ?? null });
+      continue;
+    }
+    const d = batchDateOf(b, to);
     if (!merchantByDate[d]) merchantByDate[d] = { total: 0, txns: 0, batchIds: new Set() };
     merchantByDate[d].total += signed;
     merchantByDate[d].txns += 1;
@@ -1239,6 +1244,8 @@ router.get('/reconciliation-audit', async (req, res) => {
     batch_count: batches.length,
     response_keys: rawResponse && typeof rawResponse === 'object' ? Object.keys(rawResponse) : [],
     sample: batches[0] || null,
+    excluded_records: excludedRecords,
+    excluded_total: Math.round(excludedRecords.reduce((s, r) => s + (r.amount || 0), 0) * 100) / 100,
   };
 
   // If the selected range has no batches, probe recent batches (last 5 days)
