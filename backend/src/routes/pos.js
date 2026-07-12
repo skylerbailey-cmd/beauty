@@ -937,6 +937,26 @@ function batchAmount(b) {
   return v == null ? 0 : v;
 }
 
+// A batch record that was rejected/declined was never actually processed and
+// must be excluded from the settled total. Field name isn't fixed in the docs,
+// so check any reject/declined-style field with a meaningful value.
+function isRejected(b) {
+  if (!b || typeof b !== 'object') return false;
+  const meaningful = (v) => {
+    if (v == null) return false;
+    const s = String(v).trim().toLowerCase();
+    return s !== '' && s !== '0' && s !== 'null' && s !== 'none' && s !== 'false' && s !== 'n/a' && s !== 'approved';
+  };
+  for (const [k, v] of Object.entries(b)) {
+    const lk = k.toLowerCase();
+    if (typeof v !== 'object' && /reject|declin/.test(lk) && meaningful(v)) return true;
+  }
+  const st = b.status;
+  const stStr = (st && typeof st === 'object') ? String(st.status || '') : String(st || '');
+  if (/declin|reject/i.test(stStr)) return true;
+  return false;
+}
+
 function batchCount(b) {
   const keys = ['count', 'transactionCount', 'totalCount', 'transactions', 'itemCount', 'salesCount'];
   for (const k of keys) {
@@ -1147,9 +1167,12 @@ router.get('/reconciliation-audit', async (req, res) => {
 
   // Each record is a settled transaction: { amount, type: 'debit'|'credit', date,
   // batch: { id, date } }. A 'credit' is a refund back to the cardholder, so it
-  // subtracts from the merchant's net settled amount.
+  // subtracts from the merchant's net settled amount. Rejected/declined records
+  // (never actually processed) are excluded.
   const merchantByDate = {};
+  let rejectedExcluded = 0;
   for (const b of batches) {
+    if (isRejected(b)) { rejectedExcluded++; continue; }
     const d = batchDateOf(b, to);
     const mag = Math.abs(batchAmount(b));
     const type = String(b.type || '').toLowerCase();
@@ -1199,6 +1222,7 @@ router.get('/reconciliation-audit', async (req, res) => {
   totals.merchant = Math.round(totals.merchant * 100) / 100;
   totals.pos = Math.round(totals.pos * 100) / 100;
   totals.difference = Math.round((totals.merchant - totals.pos) * 100) / 100;
+  totals.rejected_excluded = rejectedExcluded;
 
   // Diagnostic: raw batch count + a sample object + the top-level response keys,
   // so we can map Maverick's actual amount field if the totals look wrong.

@@ -2531,7 +2531,8 @@ async function runAudit() {
 function renderAudit(data) {
   const t = data.totals || {};
   const mismatches = t.mismatches || 0;
-  document.getElementById('batchResultRange').textContent = `${data.from} → ${data.to}`;
+  const excluded = t.rejected_excluded || 0;
+  document.getElementById('batchResultRange').textContent = `${data.from} → ${data.to}` + (excluded ? ` · excluded ${excluded} rejected/declined` : '');
   // Reflect an auto-corrected DBA id
   if (data.dba_id) {
     storeSettings.maverick_dba_id = data.dba_id;
