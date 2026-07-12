@@ -187,7 +187,9 @@ async function initSchema() {
       store_address TEXT DEFAULT '',
       receipt_footer TEXT DEFAULT 'Thank you for your purchase!',
       timezone TEXT DEFAULT 'America/Los_Angeles',
-      tax_rate REAL DEFAULT 0.0875
+      tax_rate REAL DEFAULT 0.0875,
+      theme TEXT DEFAULT 'rose',
+      brands TEXT DEFAULT '["avologi","avinichi","hydrasphere"]'
     );
   `);
   // Migrations for existing DBs
@@ -197,6 +199,8 @@ async function initSchema() {
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS card_last4 TEXT DEFAULT \'\'');
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_address TEXT DEFAULT ''");
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS tax_rate REAL DEFAULT 0.0875');
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS theme TEXT DEFAULT 'rose'");
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS brands TEXT DEFAULT '[\"avologi\",\"avinichi\",\"hydrasphere\"]'");
 
   console.log('[postgres] Schema initialized');
 }
@@ -503,7 +507,7 @@ async function getSettings(userId) {
 }
 
 async function updateSettings(userId, fields) {
-  const allowed = ['store_name', 'store_address', 'receipt_footer', 'timezone', 'tax_rate'];
+  const allowed = ['store_name', 'store_address', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands'];
   const sets = [];
   const params = [];
   let idx = 1;

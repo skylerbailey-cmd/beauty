@@ -669,11 +669,19 @@
       <div class="report-card" style="margin-top:16px">
         <h3>Custom Products</h3>
         <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Add your own products that aren't in the catalog.</p>
-        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
           <input type="text" id="customProdName" placeholder="Product name" style="flex:1;min-width:150px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
           <input type="number" id="customProdPrice" placeholder="Price" step="0.01" min="0" style="width:90px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;text-align:right">
-          <input type="text" id="customProdImage" placeholder="Image URL (optional)" style="flex:1;min-width:150px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
           <button class="btn btn-confirm" onclick="addCustomProduct()">Add</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;font-family:system-ui,sans-serif;font-size:.82rem">
+          <label style="display:flex;align-items:center;gap:6px;padding:6px 12px;border:1.5px solid var(--border);border-radius:8px;cursor:pointer;color:var(--mid);transition:all .2s" onmouseover="this.style.borderColor='var(--rose)'" onmouseout="this.style.borderColor='var(--border)'">
+            <span>Upload Image</span>
+            <input type="file" id="customProdFile" accept="image/*" onchange="previewCustomImage(this)" style="display:none">
+          </label>
+          <span style="color:var(--mid)">or</span>
+          <input type="text" id="customProdImage" placeholder="Paste image URL" style="flex:1;padding:6px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none">
+          <img id="customProdPreview" style="display:none;width:36px;height:36px;border-radius:6px;object-fit:cover;border:1px solid var(--border)">
         </div>
         <div id="customProductList"></div>
       </div>
@@ -1668,10 +1676,26 @@ async function saveSinglePrice(productId) {
 }
 
 // ─── Custom Products ────────────────────────────────────────────────────────
+let customProdImageData = '';
+
+function previewCustomImage(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    customProdImageData = e.target.result;
+    const preview = document.getElementById('customProdPreview');
+    preview.src = customProdImageData;
+    preview.style.display = 'block';
+    document.getElementById('customProdImage').value = '';
+  };
+  reader.readAsDataURL(file);
+}
+
 async function addCustomProduct() {
   const name = document.getElementById('customProdName').value.trim();
   const price = parseFloat(document.getElementById('customProdPrice').value) || 0;
-  const image = document.getElementById('customProdImage').value.trim();
+  const image = customProdImageData || document.getElementById('customProdImage').value.trim();
   if (!name) return alert('Product name required');
 
   await fetch(`${API}/api/pos/products/custom`, {
@@ -1681,6 +1705,9 @@ async function addCustomProduct() {
   document.getElementById('customProdName').value = '';
   document.getElementById('customProdPrice').value = '';
   document.getElementById('customProdImage').value = '';
+  document.getElementById('customProdFile').value = '';
+  document.getElementById('customProdPreview').style.display = 'none';
+  customProdImageData = '';
   await loadProducts();
   renderCustomProductList();
 }
@@ -1790,7 +1817,14 @@ async function loadStoreSettings() {
     document.getElementById('settingsReceiptFooter').value = storeSettings.receipt_footer || '';
     document.getElementById('settingsTimezone').value = storeSettings.timezone || 'America/Los_Angeles';
     document.getElementById('settingsTaxRate').value = storeSettings.tax_rate != null ? (storeSettings.tax_rate * 100).toFixed(2) : '8.75';
-    // Update cart display with tax rate
+    // Restore theme and brands from Postgres (survives redeploys)
+    if (storeSettings.theme) applyTheme(storeSettings.theme);
+    if (storeSettings.brands) {
+      const b = typeof storeSettings.brands === 'string' ? JSON.parse(storeSettings.brands) : storeSettings.brands;
+      if (Array.isArray(b) && b.length > 0) selectedBrands = b;
+    }
+    renderBrandFilters();
+    renderProducts();
     updateCartTotals();
   } catch (_) {}
 }
@@ -1802,10 +1836,11 @@ async function saveStoreSettings() {
   const timezone = document.getElementById('settingsTimezone').value;
   const taxPct = parseFloat(document.getElementById('settingsTaxRate').value);
   const tax_rate = !isNaN(taxPct) ? taxPct / 100 : 0.0875;
+  const theme = document.getElementById('settingsTheme').value;
   try {
     const resp = await fetch(`${API}/api/pos/settings`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ store_name, store_address, receipt_footer, timezone, tax_rate }),
+      body: JSON.stringify({ store_name, store_address, receipt_footer, timezone, tax_rate, theme }),
     });
     const data = await resp.json();
     storeSettings = data.settings || storeSettings;
@@ -1831,13 +1866,13 @@ async function saveBrands() {
   }
   selectedBrands = brands;
   try {
-    await fetch(`${API}/auth/brands`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ brands }),
-    });
+    // Save to both SQLite (for welcome emails) and Postgres (for persistence)
+    await Promise.all([
+      fetch(`${API}/auth/brands`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ brands }) }),
+      fetch(`${API}/api/pos/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ brands: JSON.stringify(brands) }) }),
+    ]);
     if (currentUser) currentUser.brands = brands;
   } catch (_) {}
-  // Re-render products with new brand filter
   renderBrandFilters();
   renderProducts();
 }
@@ -1852,7 +1887,10 @@ async function selectTheme(theme) {
   applyTheme(theme);
   localStorage.setItem('glowTheme', theme);
   try {
-    await fetch(`${API}/auth/theme`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ theme }) });
+    await Promise.all([
+      fetch(`${API}/auth/theme`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ theme }) }),
+      fetch(`${API}/api/pos/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ theme }) }),
+    ]);
   } catch (_) {}
 }
 
