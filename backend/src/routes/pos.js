@@ -196,7 +196,12 @@ router.post('/transactions', async (req, res) => {
     original_sale_date = orig.created_at;
   }
 
-  const rate = tax_rate ?? 0.0875;
+  // Use tax rate from settings if not explicitly provided
+  let rate = tax_rate;
+  if (rate === undefined || rate === null) {
+    const settings = await pgDb.getSettings(userId);
+    rate = settings?.tax_rate ?? 0.0875;
+  }
   const subtotal = items.reduce((sum, i) => sum + (i.unit_price * (i.quantity || 1) - (i.discount || 0)), 0);
   const disc = parseFloat(discount_amount || 0);
   const taxable = subtotal - disc;
@@ -347,10 +352,12 @@ router.post('/transactions/:id/email', async (req, res) => {
 
   const settings = await pgDb.getSettings(req.session.userId);
   const storeName = settings.store_name || user.company_name || 'Glow SF';
+  const storeAddress = settings.store_address || '';
   const footer = settings.receipt_footer || 'Thank you for your purchase!';
   const tz = settings.timezone || 'America/Los_Angeles';
 
   const dateStr = new Date(tx.created_at).toLocaleString('en-US', { timeZone: tz, year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const employeeNames = (tx.employees || []).map(e => e.employee_name).join(', ');
 
   const itemRows = tx.items.map(i =>
     `<tr><td style="padding:8px;border-bottom:1px solid #eee">${i.product_name}</td>` +
@@ -363,11 +370,15 @@ router.post('/transactions/:id/email', async (req, res) => {
     <div style="max-width:500px;margin:0 auto;font-family:Georgia,serif;color:#2c2022">
       <div style="text-align:center;padding:24px 0;border-bottom:2px solid #c97d8a">
         <h1 style="margin:0;font-size:1.4rem;color:#9e5567">${storeName}</h1>
+        ${storeAddress ? `<p style="margin:4px 0 0;font-size:.78rem;color:#6b5057">${storeAddress}</p>` : ''}
         <p style="margin:4px 0 0;font-size:.85rem;color:#6b5057">${tx.type === 'return' ? 'Return Receipt' : 'Sales Receipt'}</p>
       </div>
       <div style="padding:20px 0">
         <p style="font-size:.85rem;color:#6b5057;margin:0 0 4px">Receipt #: <strong>${tx.receipt_number}</strong></p>
-        <p style="font-size:.85rem;color:#6b5057;margin:0 0 16px">Date: ${dateStr}</p>
+        <p style="font-size:.85rem;color:#6b5057;margin:0 0 4px">Date: ${dateStr}</p>
+        ${employeeNames ? `<p style="font-size:.85rem;color:#6b5057;margin:0 0 4px">Sales Associate${tx.employees.length > 1 ? 's' : ''}: <strong>${employeeNames}</strong></p>` : ''}
+        ${tx.customer_name ? `<p style="font-size:.85rem;color:#6b5057;margin:0 0 4px">Customer: <strong>${tx.customer_name}</strong></p>` : ''}
+        <div style="margin-top:12px">
         <table style="width:100%;border-collapse:collapse;font-size:.88rem">
           <thead><tr style="background:#f2dde2">
             <th style="padding:8px;text-align:left">Item</th>
@@ -377,12 +388,13 @@ router.post('/transactions/:id/email', async (req, res) => {
           </tr></thead>
           <tbody>${itemRows}</tbody>
         </table>
+        </div>
         <div style="margin-top:16px;text-align:right;font-size:.9rem">
           <p style="margin:4px 0">Subtotal: <strong>$${tx.subtotal.toFixed(2)}</strong></p>
-          <p style="margin:4px 0">Tax: <strong>$${tx.tax_amount.toFixed(2)}</strong></p>
+          <p style="margin:4px 0">Tax (${(tx.tax_rate * 100).toFixed(2)}%): <strong>$${tx.tax_amount.toFixed(2)}</strong></p>
           <p style="margin:8px 0 0;font-size:1.1rem;color:#9e5567"><strong>Total: $${tx.total.toFixed(2)}</strong></p>
         </div>
-        <p style="margin-top:16px;font-size:.82rem;color:#6b5057">Payment: ${tx.payment_method}</p>
+        <p style="margin-top:16px;font-size:.82rem;color:#6b5057">Payment: ${tx.payment_method}${tx.card_last4 ? ` ****${tx.card_last4}` : ''}</p>
       </div>
       <div style="text-align:center;padding:16px 0;border-top:1px solid #e8d5d9;font-size:.8rem;color:#6b5057">
         ${footer}

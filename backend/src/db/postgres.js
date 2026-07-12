@@ -184,8 +184,10 @@ async function initSchema() {
     CREATE TABLE IF NOT EXISTS pos_settings (
       user_id TEXT PRIMARY KEY,
       store_name TEXT DEFAULT '',
+      store_address TEXT DEFAULT '',
       receipt_footer TEXT DEFAULT 'Thank you for your purchase!',
-      timezone TEXT DEFAULT 'America/Los_Angeles'
+      timezone TEXT DEFAULT 'America/Los_Angeles',
+      tax_rate REAL DEFAULT 0.0875
     );
   `);
   // Migrations for existing DBs
@@ -193,6 +195,8 @@ async function initSchema() {
   await migrate('ALTER TABLE pos_employees ADD COLUMN IF NOT EXISTS commission_rate REAL DEFAULT 0');
   await migrate('ALTER TABLE pos_product_prices ADD COLUMN IF NOT EXISTS min_price REAL DEFAULT 0');
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS card_last4 TEXT DEFAULT \'\'');
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_address TEXT DEFAULT ''");
+  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS tax_rate REAL DEFAULT 0.0875');
 
   console.log('[postgres] Schema initialized');
 }
@@ -499,7 +503,7 @@ async function getSettings(userId) {
 }
 
 async function updateSettings(userId, fields) {
-  const allowed = ['store_name', 'receipt_footer', 'timezone'];
+  const allowed = ['store_name', 'store_address', 'receipt_footer', 'timezone', 'tax_rate'];
   const sets = [];
   const params = [];
   let idx = 1;

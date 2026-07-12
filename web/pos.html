@@ -589,6 +589,10 @@
             <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Company Name</label>
             <input type="text" id="settingsCompanyName" placeholder="Company name" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
           </div>
+          <div class="field" style="grid-column:1/-1">
+            <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Store Address</label>
+            <input type="text" id="settingsStoreAddress" placeholder="123 Main St, City, State ZIP" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
+          </div>
           <div class="field">
             <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Receipt Footer Text</label>
             <input type="text" id="settingsReceiptFooter" placeholder="Thank you for your purchase!" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
@@ -618,6 +622,10 @@
               <option value="ocean">Ocean Breeze</option>
               <option value="sage">Sage Garden</option>
             </select>
+          </div>
+          <div class="field">
+            <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Sales Tax Rate (%)</label>
+            <input type="number" id="settingsTaxRate" placeholder="8.75" step="0.01" min="0" max="20" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
           </div>
         </div>
         <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
@@ -987,12 +995,16 @@ function renderCart() {
 
 function updateCartTotals() {
   const subtotal = cart.reduce((s, i) => s + i.unit_price * i.quantity, 0);
-  const tax = Math.round(subtotal * 0.0875 * 100) / 100;
+  const taxRate = storeSettings.tax_rate ?? 0.0875;
+  const tax = Math.round(subtotal * taxRate * 100) / 100;
   const total = Math.round((subtotal + tax) * 100) / 100;
 
   document.getElementById('cartSubtotal').textContent = `$${subtotal.toFixed(2)}`;
   document.getElementById('cartTax').textContent = `$${tax.toFixed(2)}`;
   document.getElementById('cartTotal').textContent = `$${total.toFixed(2)}`;
+  // Update tax label
+  const taxLabel = document.querySelector('.cart-row:nth-child(2) span:first-child');
+  if (taxLabel) taxLabel.textContent = `Tax (${(taxRate * 100).toFixed(2)}%)`;
   document.getElementById('checkoutBtn').disabled = cart.length === 0;
 }
 
@@ -1186,18 +1198,23 @@ function showReceipt(tx) {
   const title = tx.type === 'return' ? 'Return Processed!' : 'Sale Complete!';
   document.getElementById('receiptModalTitle').textContent = title;
 
-  const companyName = storeSettings.store_name || document.getElementById('headerCompany').textContent || 'Glow SF';
+  const storeName = storeSettings.store_name || document.getElementById('headerCompany').textContent || 'Glow SF';
+  const storeAddr = storeSettings.store_address || '';
   const tz = storeSettings.timezone || 'America/Los_Angeles';
   const date = new Date(tx.created_at).toLocaleString('en-US', { timeZone: tz });
+  const empNames = (tx.employees && tx.employees.length > 0)
+    ? tx.employees.map(e => e.employee_name).join(', ') : '';
+  const taxPct = tx.tax_rate ? (tx.tax_rate * 100).toFixed(2) : ((storeSettings.tax_rate || 0.0875) * 100).toFixed(2);
 
   let html = `
-    <div class="r-center"><strong>${companyName}</strong></div>
+    <div class="r-center"><strong>${storeName}</strong></div>
+    ${storeAddr ? `<div class="r-center" style="font-size:.72rem">${storeAddr}</div>` : ''}
     <div class="r-center" style="font-size:.75rem">${tx.type === 'return' ? 'RETURN RECEIPT' : 'SALES RECEIPT'}</div>
     <div class="r-line"></div>
     <div class="r-row"><span>Receipt #:</span><span>${tx.receipt_number}</span></div>
     <div class="r-row"><span>Date:</span><span>${date}</span></div>
     ${tx.original_sale_date ? `<div class="r-row"><span>Orig. Sale:</span><span>${new Date(tx.original_sale_date).toLocaleDateString()}</span></div>` : ''}
-    ${tx.employees && tx.employees.length > 0 ? tx.employees.map(e => `<div class="r-row"><span>Employee:</span><span>${e.employee_name}</span></div>`).join('') : (tx.employee_name ? `<div class="r-row"><span>Employee:</span><span>${tx.employee_name}</span></div>` : '')}
+    ${empNames ? `<div class="r-row"><span>Associate${tx.employees.length > 1 ? 's' : ''}:</span><span>${empNames}</span></div>` : ''}
     ${tx.customer_name ? `<div class="r-row"><span>Customer:</span><span>${tx.customer_name}</span></div>` : ''}
     <div class="r-line"></div>
   `;
@@ -1209,11 +1226,10 @@ function showReceipt(tx) {
   html += `
     <div class="r-line"></div>
     <div class="r-row"><span>Subtotal:</span><span>$${tx.subtotal.toFixed(2)}</span></div>
-    ${tx.discount_amount > 0 ? `<div class="r-row"><span>Discount:</span><span>-$${tx.discount_amount.toFixed(2)}</span></div>` : ''}
-    <div class="r-row"><span>Tax:</span><span>$${tx.tax_amount.toFixed(2)}</span></div>
+    <div class="r-row"><span>Tax (${taxPct}%):</span><span>$${tx.tax_amount.toFixed(2)}</span></div>
     <div class="r-line"></div>
     <div class="r-row r-total"><span>TOTAL:</span><span>$${tx.total.toFixed(2)}</span></div>
-    <div class="r-row"><span>Payment:</span><span>${tx.payment_method.toUpperCase()}</span></div>
+    <div class="r-row"><span>Payment:</span><span>${tx.payment_method.toUpperCase()}${tx.card_last4 ? ' ****' + tx.card_last4 : ''}</span></div>
     <div class="r-line"></div>
     <div class="r-center" style="font-size:.75rem;margin-top:8px">${storeSettings.receipt_footer || 'Thank you for your purchase!'}</div>
   `;
@@ -1348,7 +1364,8 @@ function empDollarChanged(idx, val) {
 
 function getCartTotal() {
   const subtotal = cart.reduce((s, i) => s + i.unit_price * i.quantity, 0);
-  const tax = Math.round(subtotal * 0.0875 * 100) / 100;
+  const taxRate = storeSettings.tax_rate ?? 0.0875;
+  const tax = Math.round(subtotal * taxRate * 100) / 100;
   return Math.round((subtotal + tax) * 100) / 100;
 }
 
@@ -1761,7 +1778,7 @@ document.addEventListener('click', e => {
 });
 
 // ─── Store Settings ─────────────────────────────────────────────────────────
-let storeSettings = { store_name: '', receipt_footer: 'Thank you for your purchase!', timezone: 'America/Los_Angeles' };
+let storeSettings = { store_name: '', store_address: '', receipt_footer: 'Thank you for your purchase!', timezone: 'America/Los_Angeles', tax_rate: 0.0875 };
 
 async function loadStoreSettings() {
   try {
@@ -1769,25 +1786,32 @@ async function loadStoreSettings() {
     const data = await resp.json();
     storeSettings = data.settings || storeSettings;
     document.getElementById('settingsStoreName').value = storeSettings.store_name || '';
+    document.getElementById('settingsStoreAddress').value = storeSettings.store_address || '';
     document.getElementById('settingsReceiptFooter').value = storeSettings.receipt_footer || '';
     document.getElementById('settingsTimezone').value = storeSettings.timezone || 'America/Los_Angeles';
+    document.getElementById('settingsTaxRate').value = storeSettings.tax_rate != null ? (storeSettings.tax_rate * 100).toFixed(2) : '8.75';
+    // Update cart display with tax rate
+    updateCartTotals();
   } catch (_) {}
 }
 
 async function saveStoreSettings() {
   const store_name = document.getElementById('settingsStoreName').value.trim();
+  const store_address = document.getElementById('settingsStoreAddress').value.trim();
   const receipt_footer = document.getElementById('settingsReceiptFooter').value.trim();
   const timezone = document.getElementById('settingsTimezone').value;
+  const taxPct = parseFloat(document.getElementById('settingsTaxRate').value);
+  const tax_rate = !isNaN(taxPct) ? taxPct / 100 : 0.0875;
   try {
     const resp = await fetch(`${API}/api/pos/settings`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ store_name, receipt_footer, timezone }),
+      body: JSON.stringify({ store_name, store_address, receipt_footer, timezone, tax_rate }),
     });
     const data = await resp.json();
     storeSettings = data.settings || storeSettings;
-    // Flash success
+    updateCartTotals();
     const btn = document.querySelector('#tab-settings .btn-confirm');
-    if (btn) { btn.textContent = 'Saved!'; setTimeout(() => { btn.textContent = 'Save'; }, 1500); }
+    if (btn) { btn.textContent = 'Saved!'; setTimeout(() => { btn.textContent = 'Save Settings'; }, 1500); }
   } catch (err) { alert('Failed to save: ' + err.message); }
 }
 
