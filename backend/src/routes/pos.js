@@ -1036,9 +1036,19 @@ router.get('/reconciliation', async (req, res) => {
 // Date-range audit: compares each day's Maverick settled total to the POS's
 // recorded card sales, and explains any day that doesn't match.
 function batchDateOf(b, fallback) {
-  const v = b?.date || b?.batchedOn || b?.batchDate || b?.createdOn || b?.settledOn;
-  if (v) return String(v).slice(0, 10);
-  return fallback;
+  if (!b || typeof b !== 'object') return fallback;
+  const norm = (v) => { const m = v == null ? null : String(v).match(/\d{4}-\d{2}-\d{2}/); return m ? m[0] : null; };
+  const direct = norm(b.date || b.batchedOn || b.batchDate || b.createdOn || b.settledOn || b.processingDate || b.closedOn);
+  if (direct) return direct;
+  const walk = (o, depth) => {
+    if (!o || typeof o !== 'object' || Array.isArray(o) || depth > 2) return null;
+    for (const [k, v] of Object.entries(o)) {
+      if (/date|batched|settled|created|closed|process/i.test(k)) { const n = norm(v); if (n) return n; }
+    }
+    for (const v of Object.values(o)) { if (v && typeof v === 'object') { const n = walk(v, depth + 1); if (n) return n; } }
+    return null;
+  };
+  return walk(b, 0) || fallback;
 }
 
 async function fetchMaverickBatches(dbaId, from, to, token) {
@@ -1119,6 +1129,18 @@ router.get('/reconciliation-audit', async (req, res) => {
     if (!r.ok) return res.json({ configured: true, from, to, error: r.error });
     batches = r.batches;
     rawResponse = r.raw;
+
+    // Maverick's date filter can return an empty list even when batches exist
+    // (their batch date field/format differs from the documented filter[date]).
+    // Fall back to the no-filter request (last ~5 days) and filter client-side
+    // by each batch's actual settlement date.
+    if (batches.length === 0) {
+      const probe = await fetchMaverickBatches(usedDbaId, null, null, token);
+      if (probe.ok && probe.batches.length) {
+        batches = probe.batches.filter(b => { const d = batchDateOf(b, null); return d && d >= from && d <= to; });
+        rawResponse = rawResponse || probe.raw;
+      }
+    }
   } catch (e) {
     return res.json({ configured: true, from, to, error: e.message });
   }
