@@ -2567,11 +2567,16 @@ function renderAudit(data) {
   const dbg = data._debug || {};
   const debugEl = document.getElementById('batchDebug');
   if ((t.merchant || 0) === 0) {
+    debugEl.style.display = 'block';
     if (!dbg.batch_count) {
-      debugEl.style.display = 'block';
-      debugEl.innerHTML = `<b>Diagnostic:</b> Maverick returned <b>0 batches</b> for this range (response keys: ${(dbg.response_keys || []).join(', ') || 'none'}). The DBA id or date range may be off, or there were genuinely no settled batches these days.`;
+      if (dbg.recent_batch_count > 0) {
+        const dates = (dbg.recent_batch_dates || []).join(', ');
+        debugEl.innerHTML = `<b>Connection works.</b> No settled batches in <b>${data.from} → ${data.to}</b>, but your account has <b>${dbg.recent_batch_count}</b> recent batch(es)${dates ? ` dated: <b>${dates}</b>` : ''}.<br>Set the From/To dates to a range that includes those days and run the audit again. (Today's sales usually don't settle until the next business day.)`
+          + (dbg.recent_sample ? `<pre style="white-space:pre-wrap;word-break:break-word;margin-top:8px;max-height:240px;overflow:auto;background:#fff;padding:8px;border-radius:6px;border:1px solid #eadb9a">${escapeHtml(JSON.stringify(dbg.recent_sample, null, 2))}</pre>` : '');
+      } else {
+        debugEl.innerHTML = `<b>Diagnostic:</b> Maverick returned <b>0 batches</b> for this range and <b>none</b> in the last 5 days either (response keys: ${(dbg.response_keys || []).join(', ') || 'none'}). Either there are genuinely no settled batches yet, or the DBA id is off.`;
+      }
     } else {
-      debugEl.style.display = 'block';
       debugEl.innerHTML = `<b>Diagnostic:</b> Maverick returned <b>${dbg.batch_count} batch record(s)</b> but no amount was read. Here is one raw record so I can map the correct amount field — please copy this to me:<pre style="white-space:pre-wrap;word-break:break-word;margin-top:8px;max-height:280px;overflow:auto;background:#fff;padding:8px;border-radius:6px;border:1px solid #eadb9a">${escapeHtml(JSON.stringify(dbg.sample, null, 2))}</pre>`;
     }
   } else {

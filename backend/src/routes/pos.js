@@ -1042,7 +1042,10 @@ function batchDateOf(b, fallback) {
 }
 
 async function fetchMaverickBatches(dbaId, from, to, token) {
-  const url = `${MAVERICK_BASE}/api/reporting/batches/${encodeURIComponent(dbaId)}?filter[date][gte]=${from}&filter[date][lte]=${to}&per-page=50`;
+  // Omit the date filter when from/to are null (Maverick then returns the last
+  // 5 days) — used as a probe to see if any batches exist at all.
+  const dateFilter = (from && to) ? `?filter[date][gte]=${from}&filter[date][lte]=${to}&per-page=50` : '?per-page=50';
+  const url = `${MAVERICK_BASE}/api/reporting/batches/${encodeURIComponent(dbaId)}${dateFilter}`;
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
   const text = await resp.text();
   let data; try { data = JSON.parse(text); } catch (_) { data = null; }
@@ -1174,6 +1177,20 @@ router.get('/reconciliation-audit', async (req, res) => {
     response_keys: rawResponse && typeof rawResponse === 'object' ? Object.keys(rawResponse) : [],
     sample: batches[0] || null,
   };
+
+  // If the selected range has no batches, probe recent batches (last 5 days)
+  // to distinguish "wrong dates" from "no connection / no batches at all".
+  if (batches.length === 0) {
+    try {
+      const probe = await fetchMaverickBatches(usedDbaId, null, null, token);
+      if (probe.ok) {
+        debug.recent_batch_count = probe.batches.length;
+        debug.recent_sample = probe.batches[0] || null;
+        const dates = probe.batches.map(b => batchDateOf(b, null)).filter(Boolean).sort();
+        debug.recent_batch_dates = [...new Set(dates)];
+      }
+    } catch (_) { /* best effort */ }
+  }
 
   res.json({ configured: true, from, to, days, totals, dba_id: usedDbaId, _debug: debug });
 });
