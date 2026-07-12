@@ -807,6 +807,98 @@ router.get('/customers/search', async (req, res) => {
   res.json({ customers: customer ? [customer] : [] });
 });
 
+// ─── Import transactions from a prior-POS CSV export ────────────────────────
+
+function parseNum(v) {
+  if (v == null) return 0;
+  const n = parseFloat(String(v).replace(/[",$\s]/g, ''));
+  return isNaN(n) ? 0 : n;
+}
+function randomPin() {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+// Accepts already-parsed rows (array of objects with the export's columns).
+// Only imports rows whose LOCATION matches the current company, backdated to
+// their original date, de-duped by sale code. Creates employees as needed.
+router.post('/import-transactions', async (req, res) => {
+  const userId = req.session.userId;
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
+  if (!rows) return res.status(400).json({ error: 'rows array required' });
+
+  const settings = await pgDb.getSettings(userId);
+  const storeName = (settings.store_name || '').trim().toLowerCase();
+  const tz = settings.timezone || 'America/Los_Angeles';
+  if (!storeName) return res.status(400).json({ error: 'Set this company\'s Store Name in Settings first, so imports route to the right company.' });
+
+  const emps = await pgDb.getEmployees(userId);
+  const empByName = {};
+  for (const e of emps) empByName[e.name.trim().toLowerCase()] = e;
+
+  let imported = 0, skippedOther = 0, skippedDupe = 0, failed = 0;
+  const createdEmployees = new Set();
+
+  for (const row of rows) {
+    try {
+      const location = (row.location || '').trim().toLowerCase();
+      if (location !== storeName) { skippedOther++; continue; }
+
+      const receipt = (row.sale_code || '').trim();
+      if (!receipt) { skippedOther++; continue; }
+      if (await pgDb.receiptExists(receipt, userId)) { skippedDupe++; continue; }
+
+      const isReturn = String(row.type || '').toLowerCase().startsWith('refund') || String(row.type || '').toLowerCase() === 'return';
+      const subtotal = Math.abs(parseNum(row.sub_total));
+      const tax = Math.abs(parseNum(row.tax));
+      const total = Math.abs(parseNum(row.sale_total)) || (subtotal + tax);
+
+      // Payment method from the tender columns
+      let payment = 'card';
+      if (Math.abs(parseNum(row.credit)) > 0) payment = 'card';
+      else if (Math.abs(parseNum(row.cash)) > 0) payment = 'cash';
+      else if (Math.abs(parseNum(row.check)) > 0 || Math.abs(parseNum(row.store_credit)) > 0) payment = 'other';
+
+      // Employees (comma-separated names) — match or create
+      const names = String(row.associates || '').split(',').map(s => s.trim()).filter(Boolean);
+      const empIds = [];
+      for (const nm of names) {
+        const key = nm.toLowerCase();
+        let e = empByName[key];
+        if (!e) {
+          e = await pgDb.createEmployee(nm, randomPin(), 'sales', 0, userId);
+          empByName[key] = e;
+          createdEmployees.add(nm);
+        }
+        empIds.push(e.id);
+      }
+      const empRecords = empIds.map(id => {
+        const pct = Math.round(100 / empIds.length * 100) / 100;
+        return { employee_id: id, commission_type: 'percent', commission_value: pct, commission_amount: Math.round(subtotal * pct / 100 * 100) / 100 };
+      });
+
+      const items = [{ product_id: 'import', product_name: 'Imported (prior POS)', brand: '', quantity: 1, unit_price: subtotal, discount: 0, line_total: subtotal }];
+
+      await pgDb.importTransaction({
+        type: isReturn ? 'return' : 'sale',
+        receipt_number: receipt,
+        subtotal, tax_amount: tax, total,
+        payment_method: payment,
+        created_at: (row.date || '').trim(),
+        tz,
+        customer_name: row.customer || '',
+        user_id: userId,
+        items, employees: empRecords,
+        employee_id: empIds[0] || null,
+      });
+      imported++;
+    } catch (e) {
+      failed++;
+    }
+  }
+
+  res.json({ ok: true, imported, skipped_other_company: skippedOther, skipped_duplicate: skippedDupe, failed, created_employees: [...createdEmployees] });
+});
+
 // ─── Maverick Batch Reconciliation ──────────────────────────────────────────
 
 const MAVERICK_BASE = 'https://dashboard.maverickpayments.com';
@@ -914,6 +1006,99 @@ router.get('/reconciliation', async (req, res) => {
     difference,
     matched: Math.abs(difference) < 0.01,
   });
+});
+
+// Date-range audit: compares each day's Maverick settled total to the POS's
+// recorded card sales, and explains any day that doesn't match.
+function batchDateOf(b, fallback) {
+  const v = b?.date || b?.batchedOn || b?.batchDate || b?.createdOn || b?.settledOn;
+  if (v) return String(v).slice(0, 10);
+  return fallback;
+}
+
+router.get('/reconciliation-audit', async (req, res) => {
+  const userId = req.session.userId;
+  const settings = await pgDb.getSettings(userId);
+  const dbaId = (settings.maverick_dba_id || '').trim();
+  const token = (settings.maverick_token || '').trim();
+  const tz = settings.timezone || 'America/Los_Angeles';
+  if (!dbaId || !token) return res.json({ configured: false });
+
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+  let from = (req.query.from || '').trim();
+  let to = (req.query.to || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(to)) to = today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+    const d = new Date(to + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 6);
+    from = d.toISOString().slice(0, 10);
+  }
+  // Maverick caps the batch date filter at 30 days
+  if ((new Date(to) - new Date(from)) / 86400000 > 30) {
+    const d = new Date(to + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 30);
+    from = d.toISOString().slice(0, 10);
+  }
+
+  // Merchant side
+  const url = `${MAVERICK_BASE}/api/reporting/batches/${encodeURIComponent(dbaId)}?filter[date][gte]=${from}&filter[date][lte]=${to}&per-page=50`;
+  let batches = [];
+  try {
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+    const text = await resp.text();
+    let data; try { data = JSON.parse(text); } catch (_) { data = null; }
+    if (!resp.ok) return res.json({ configured: true, from, to, error: (data && (data.message || data.name)) || `Maverick returned ${resp.status}` });
+    batches = Array.isArray(data) ? data : (data?.items || data?.batches || []);
+  } catch (e) {
+    return res.json({ configured: true, from, to, error: e.message });
+  }
+
+  const merchantByDate = {};
+  for (const b of batches) {
+    const d = batchDateOf(b, to);
+    merchantByDate[d] = merchantByDate[d] || { total: 0, batches: 0 };
+    merchantByDate[d].total += batchAmount(b);
+    merchantByDate[d].batches += 1;
+  }
+
+  // POS side
+  const posDays = await pgDb.getCardSalesByDateRange(userId, from, to, tz);
+  const posByDate = {};
+  for (const p of posDays) posByDate[p.date] = p;
+
+  const allDates = [...new Set([...Object.keys(merchantByDate), ...Object.keys(posByDate)])].sort();
+  const days = allDates.map(d => {
+    const m = merchantByDate[d]?.total || 0;
+    const p = posByDate[d]?.net_total || 0;
+    const diff = Math.round((m - p) * 100) / 100;
+    const matched = Math.abs(diff) < 0.01;
+    let explanation = '';
+    if (!matched) {
+      explanation = diff > 0
+        ? `Merchant settled $${diff.toFixed(2)} MORE than the POS recorded — a card sale was likely processed on the terminal but not entered in the POS.`
+        : `POS recorded $${Math.abs(diff).toFixed(2)} MORE than the merchant settled — a POS card sale may not have batched/settled yet, or a terminal charge was voided/declined.`;
+    }
+    return {
+      date: d,
+      merchant_total: Math.round(m * 100) / 100,
+      merchant_batches: merchantByDate[d]?.batches || 0,
+      pos_total: Math.round(p * 100) / 100,
+      pos_sale_count: posByDate[d]?.sale_count || 0,
+      pos_return_count: posByDate[d]?.return_count || 0,
+      difference: diff,
+      matched,
+      explanation,
+    };
+  });
+
+  const totals = days.reduce((a, d) => {
+    a.merchant += d.merchant_total; a.pos += d.pos_total;
+    if (!d.matched) a.mismatches += 1;
+    return a;
+  }, { merchant: 0, pos: 0, mismatches: 0 });
+  totals.merchant = Math.round(totals.merchant * 100) / 100;
+  totals.pos = Math.round(totals.pos * 100) / 100;
+  totals.difference = Math.round((totals.merchant - totals.pos) * 100) / 100;
+
+  res.json({ configured: true, from, to, days, totals });
 });
 
 module.exports = router;

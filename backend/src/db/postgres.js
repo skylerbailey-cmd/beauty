@@ -437,6 +437,32 @@ async function createTransaction(txData) {
   return { id: result.rows[0].id, receipt_number: result.rows[0].receipt_number };
 }
 
+async function receiptExists(receiptNumber, userId) {
+  return (await query('SELECT 1 FROM pos_transactions WHERE receipt_number = $1 AND user_id = $2 LIMIT 1', [receiptNumber, userId])).rows.length > 0;
+}
+
+// Insert a historical transaction from an external export, with an explicit
+// receipt number and backdated created_at (interpreted in the store timezone).
+async function importTransaction(tx) {
+  const rate = tx.subtotal > 0 ? Math.round((tx.tax_amount / tx.subtotal) * 10000) / 10000 : 0;
+  const result = await query(
+    `INSERT INTO pos_transactions
+      (type, employee_id, customer_name, customer_email, subtotal, tax_rate, tax_amount,
+       discount_amount, total, payment_method, card_last4, notes, receipt_number, user_id, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, ($15)::timestamp AT TIME ZONE $16) RETURNING id`,
+    [
+      tx.type || 'sale', tx.employee_id || null, tx.customer_name || '', '',
+      tx.subtotal, rate, tx.tax_amount, 0, tx.total,
+      tx.payment_method || 'card', '', 'Imported from prior POS',
+      tx.receipt_number, tx.user_id, tx.created_at, tx.tz || 'America/Los_Angeles',
+    ]
+  );
+  const id = result.rows[0].id;
+  if (tx.items?.length) await addTransactionItems(id, tx.items);
+  if (tx.employees?.length) await addTransactionEmployees(id, tx.employees);
+  return id;
+}
+
 async function addTransactionItems(transactionId, items) {
   for (const item of items) {
     await query(
@@ -746,6 +772,27 @@ async function getCardSalesForDate(userId, dateStr, tz) {
     returns_total: Number(r.returns_total || 0),
     net_total: Number(r.net_total || 0),
   };
+}
+
+// Net card sales per local day over a range (for the batch audit).
+async function getCardSalesByDateRange(userId, fromStr, toStr, tz) {
+  const timezone = tz || 'America/Los_Angeles';
+  const rows = (await query(`
+    SELECT (created_at AT TIME ZONE $4)::date AS d,
+      COUNT(*) FILTER (WHERE type = 'sale')   AS sale_count,
+      COUNT(*) FILTER (WHERE type = 'return') AS return_count,
+      COALESCE(SUM(CASE WHEN type = 'sale' THEN total ELSE -total END), 0) AS net_total
+    FROM pos_transactions
+    WHERE user_id = $1 AND payment_method = 'card'
+      AND (created_at AT TIME ZONE $4)::date BETWEEN $2::date AND $3::date
+    GROUP BY d ORDER BY d
+  `, [userId, fromStr, toStr, timezone])).rows;
+  return rows.map(r => ({
+    date: (r.d instanceof Date ? r.d.toISOString().slice(0, 10) : String(r.d).slice(0, 10)),
+    sale_count: Number(r.sale_count || 0),
+    return_count: Number(r.return_count || 0),
+    net_total: Number(r.net_total || 0),
+  }));
 }
 
 async function getCardTransactionsForDate(userId, dateStr, tz) {
@@ -1166,6 +1213,8 @@ module.exports = {
   getTransactions,
   updateTransaction,
   deleteTransaction,
+  receiptExists,
+  importTransaction,
   // Reports
   getSalesReport,
   getEmployeeSalesReport,
@@ -1176,6 +1225,7 @@ module.exports = {
   getSettings,
   updateSettings,
   getCardSalesForDate,
+  getCardSalesByDateRange,
   getCardTransactionsForDate,
   // Commission Plans
   getCommissionPlan,

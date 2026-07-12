@@ -520,9 +520,14 @@
         <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="clearTxFilters()">Clear</button>
       </div>
       <div class="report-card">
-        <div style="display:flex;justify-content:space-between;align-items:center">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
           <h3 style="margin:0">Transaction History</h3>
-          <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportTransactionsCSV()">Export CSV</button>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span id="importStatus" style="font-family:system-ui,sans-serif;font-size:.8rem"></span>
+            <input type="file" id="importFile" accept=".csv" style="display:none" onchange="handleImportFile(this)">
+            <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:7px 14px;font-size:.82rem" onclick="document.getElementById('importFile').click()">Import CSV</button>
+            <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportTransactionsCSV()">Export CSV</button>
+          </div>
         </div>
         <div id="txSummary" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:10px 0"></div>
         <table class="report-table">
@@ -624,18 +629,21 @@
   <div class="tab-content" id="tab-batch">
     <div style="max-width:1000px;margin:0 auto;padding:20px">
       <div class="date-range">
-        <label>Batch date:</label>
-        <input type="date" id="batchDate">
-        <button class="btn btn-confirm" onclick="runReconciliation()">Run Reconciliation</button>
+        <label>From:</label>
+        <input type="date" id="batchFrom">
+        <label>To:</label>
+        <input type="date" id="batchTo">
+        <button class="btn btn-confirm" onclick="runAudit()">Run Audit</button>
         <span id="batchStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)"></span>
       </div>
 
       <div id="batchResult" style="display:none">
         <div class="stat-grid" id="batchSummary"></div>
         <div class="report-card">
-          <h3>Maverick Batches — <span id="batchResultDate" style="font-weight:400;color:var(--mid)"></span></h3>
+          <h3>Daily Reconciliation Audit <span id="batchResultRange" style="font-weight:400;color:var(--mid);font-size:.85rem"></span></h3>
+          <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Each day compares the merchant's settled card batches to the POS's recorded card sales (net of returns). Days that don't match are flagged with an explanation.</p>
           <table class="report-table">
-            <thead><tr><th>Batch ID</th><th>Date</th><th>Brand</th><th>Txns</th><th>Amount</th></tr></thead>
+            <thead><tr><th>Date</th><th>Merchant Settled</th><th>POS Card (net)</th><th>Difference</th><th>Status</th><th>Explanation</th></tr></thead>
             <tbody id="batchBody"></tbody>
           </table>
         </div>
@@ -1930,6 +1938,91 @@ function exportTransactionsCSV() {
   downloadCSV(`transactions-${company}-${new Date().toISOString().slice(0, 10)}.csv`, rows);
 }
 
+// ─── Import transactions from a prior-POS CSV ───────────────────────────────
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = '', inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQuotes = false; }
+      else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+      else if (c === '\r') { /* ignore */ }
+      else field += c;
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+async function handleImportFile(input) {
+  const file = input.files[0];
+  input.value = '';
+  if (!file) return;
+  const store = (storeSettings.store_name || '').trim().toLowerCase();
+  if (!store) { alert('Set this company\'s Store Name in Settings first, so the import knows which rows belong here.'); return; }
+
+  const text = await file.text();
+  const raw = parseCSV(text).filter(r => r.length > 1);
+  if (raw.length < 2) { alert('No rows found in that file.'); return; }
+  const header = raw[0].map(h => h.trim().toUpperCase());
+  const idx = n => header.indexOf(n);
+  const c = {
+    type: idx('TYPE'), location: idx('LOCATION'), date: idx('DATE'), sale_code: idx('SALE CODE'),
+    sub_total: idx('SUB TOTAL'), tax: idx('TAX'), sale_total: idx('SALE TOTAL'),
+    associates: idx('SALE ASSOCIATES'), customer: idx('CUSTOMER'),
+    cash: idx('CASH'), credit: idx('CREDIT'), check: idx('CHECK'), store_credit: idx('STORE CREDIT'),
+  };
+  if (c.sale_code < 0 || c.location < 0) { alert('This file doesn\'t look like a sales export (missing SALE CODE / LOCATION columns).'); return; }
+
+  const objs = raw.slice(1).map(r => ({
+    type: r[c.type], location: r[c.location], date: r[c.date], sale_code: r[c.sale_code],
+    sub_total: r[c.sub_total], tax: r[c.tax], sale_total: r[c.sale_total],
+    associates: c.associates >= 0 ? r[c.associates] : '', customer: c.customer >= 0 ? r[c.customer] : '',
+    cash: c.cash >= 0 ? r[c.cash] : '', credit: c.credit >= 0 ? r[c.credit] : '',
+    check: c.check >= 0 ? r[c.check] : '', store_credit: c.store_credit >= 0 ? r[c.store_credit] : '',
+  }));
+  const mine = objs.filter(o => (o.location || '').trim().toLowerCase() === store);
+  if (mine.length === 0) {
+    alert(`None of the ${objs.length} rows match the current company (${storeSettings.store_name}). Switch to the matching company and import again.`);
+    return;
+  }
+  if (!confirm(`Import ${mine.length} transactions for ${storeSettings.store_name}? (${objs.length - mine.length} rows for other companies are skipped; duplicates by sale code are skipped.)`)) return;
+  await importRows(mine);
+}
+
+async function importRows(rows) {
+  const statusEl = document.getElementById('importStatus');
+  const totals = { imported: 0, dupe: 0, failed: 0 };
+  const CHUNK = 40;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    statusEl.style.color = 'var(--mid)';
+    statusEl.textContent = `Importing ${Math.min(i + CHUNK, rows.length)} / ${rows.length}…`;
+    try {
+      const resp = await fetch(`${API}/api/pos/import-transactions`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ rows: rows.slice(i, i + CHUNK) }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Import failed');
+      totals.imported += data.imported || 0;
+      totals.dupe += data.skipped_duplicate || 0;
+      totals.failed += data.failed || 0;
+    } catch (err) {
+      statusEl.style.color = 'var(--danger)';
+      statusEl.textContent = 'Failed: ' + err.message;
+      return;
+    }
+  }
+  statusEl.style.color = 'var(--success)';
+  statusEl.textContent = `Imported ${totals.imported}${totals.dupe ? `, skipped ${totals.dupe} duplicate(s)` : ''}${totals.failed ? `, ${totals.failed} failed` : ''}.`;
+  loadTransactions();
+}
+
 function exportCustomersCSV() {
   const list = custFiltered || [];
   const rows = [['Name', 'Email', 'Purchases', 'Returns', 'Total Spent', 'Items Purchased']];
@@ -2369,11 +2462,15 @@ let batchTabInitialized = false;
 
 function initBatchTab() {
   if (!batchTabInitialized) {
-    document.getElementById('batchDate').value = new Date().toISOString().slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
+    const weekAgo = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+    document.getElementById('batchFrom').value = weekAgo;
+    document.getElementById('batchTo').value = today;
     batchTabInitialized = true;
   }
-  // Reflect current Maverick connection state
-  document.getElementById('maverickDbaId').value = storeSettings.maverick_dba_id || '';
+  // Reflect current Maverick connection state (prefill Glow SF's known DBA id)
+  const suggestedDba = (storeSettings.store_name || '').toLowerCase().includes('glow') ? '333359' : '';
+  document.getElementById('maverickDbaId').value = storeSettings.maverick_dba_id || suggestedDba;
   const connected = !!storeSettings.maverick_connected;
   document.getElementById('maverickConnStatus').textContent = connected ? '✓ Connected' : '· Not connected';
   document.getElementById('maverickConnStatus').style.color = connected ? 'var(--success)' : 'var(--mid)';
@@ -2424,16 +2521,17 @@ async function lookupDbas() {
   }
 }
 
-async function runReconciliation() {
-  const date = document.getElementById('batchDate').value;
+async function runAudit() {
+  const from = document.getElementById('batchFrom').value;
+  const to = document.getElementById('batchTo').value;
   const statusEl = document.getElementById('batchStatus');
   const resultEl = document.getElementById('batchResult');
-  if (!date) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Pick a date.'; return; }
+  if (!from || !to) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Pick a date range.'; return; }
   statusEl.style.color = 'var(--mid)';
   statusEl.textContent = 'Fetching batches…';
   resultEl.style.display = 'none';
   try {
-    const resp = await fetch(`${API}/api/pos/reconciliation?date=${encodeURIComponent(date)}`, { credentials: 'include' });
+    const resp = await fetch(`${API}/api/pos/reconciliation-audit?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { credentials: 'include' });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Request failed');
     if (!data.configured) {
@@ -2447,7 +2545,7 @@ async function runReconciliation() {
       return;
     }
     statusEl.textContent = '';
-    renderReconciliation(data);
+    renderAudit(data);
     resultEl.style.display = 'block';
   } catch (err) {
     statusEl.style.color = 'var(--danger)';
@@ -2455,33 +2553,35 @@ async function runReconciliation() {
   }
 }
 
-function renderReconciliation(data) {
-  const pos = data.pos || {};
-  const mav = data.maverick || {};
-  const diff = data.difference || 0;
-  const matched = data.matched;
-  document.getElementById('batchResultDate').textContent = data.date;
+function renderAudit(data) {
+  const t = data.totals || {};
+  const mismatches = t.mismatches || 0;
+  document.getElementById('batchResultRange').textContent = `${data.from} → ${data.to}`;
 
   document.getElementById('batchSummary').innerHTML = `
-    <div class="stat-box"><div class="stat-val">$${(mav.total || 0).toFixed(2)}</div><div class="stat-lbl">Maverick Settled (${mav.batch_count || 0} batch${(mav.batch_count === 1) ? '' : 'es'})</div></div>
-    <div class="stat-box"><div class="stat-val">$${(pos.net_total || 0).toFixed(2)}</div><div class="stat-lbl">POS Card Sales (net)</div></div>
-    <div class="stat-box" style="${matched ? 'background:#e8f5e9' : 'background:#fce4ec'}">
-      <div class="stat-val" style="color:${matched ? 'var(--success)' : 'var(--danger)'}">${matched ? '✓ $0.00' : (diff > 0 ? '+' : '') + '$' + diff.toFixed(2)}</div>
-      <div class="stat-lbl">${matched ? 'Matched' : 'Difference (Maverick − POS)'}</div>
+    <div class="stat-box"><div class="stat-val">$${(t.merchant || 0).toFixed(2)}</div><div class="stat-lbl">Merchant Settled (total)</div></div>
+    <div class="stat-box"><div class="stat-val">$${(t.pos || 0).toFixed(2)}</div><div class="stat-lbl">POS Card Sales (net)</div></div>
+    <div class="stat-box" style="${(t.difference || 0) === 0 ? 'background:#e8f5e9' : 'background:#fce4ec'}">
+      <div class="stat-val" style="color:${(t.difference || 0) === 0 ? 'var(--success)' : 'var(--danger)'}">${(t.difference || 0) > 0 ? '+' : ''}$${(t.difference || 0).toFixed(2)}</div>
+      <div class="stat-lbl">Difference (Merchant − POS)</div>
     </div>
-    <div class="stat-box"><div class="stat-val">${pos.sale_count || 0}/${pos.return_count || 0}</div><div class="stat-lbl">POS Card Sales / Returns</div></div>
+    <div class="stat-box" style="${mismatches ? 'background:#fce4ec' : 'background:#e8f5e9'}">
+      <div class="stat-val" style="color:${mismatches ? 'var(--danger)' : 'var(--success)'}">${mismatches || '✓ 0'}</div>
+      <div class="stat-lbl">Days Not Matching</div>
+    </div>
   `;
 
-  const rows = (mav.batches || []);
-  document.getElementById('batchBody').innerHTML = rows.map(b => `
-    <tr>
-      <td style="font-family:monospace">${b.id ?? '-'}</td>
-      <td>${(b.date || '').toString().slice(0, 10)}</td>
-      <td>${b.brand || '-'}</td>
-      <td>${b.count ?? '-'}</td>
-      <td style="font-weight:600">$${(b.amount || 0).toFixed(2)}</td>
+  const rows = data.days || [];
+  document.getElementById('batchBody').innerHTML = rows.map(d => `
+    <tr style="${d.matched ? '' : 'background:#fff6f8'}">
+      <td>${d.date}</td>
+      <td>$${d.merchant_total.toFixed(2)}<br><span style="font-size:.7rem;color:var(--mid)">${d.merchant_batches} batch${d.merchant_batches === 1 ? '' : 'es'}</span></td>
+      <td>$${d.pos_total.toFixed(2)}<br><span style="font-size:.7rem;color:var(--mid)">${d.pos_sale_count} sale${d.pos_sale_count === 1 ? '' : 's'}${d.pos_return_count ? ', ' + d.pos_return_count + ' return' + (d.pos_return_count === 1 ? '' : 's') : ''}</span></td>
+      <td style="font-weight:600;color:${d.matched ? 'var(--mid)' : 'var(--danger)'}">${d.difference > 0 ? '+' : ''}$${d.difference.toFixed(2)}</td>
+      <td>${d.matched ? '<span style="color:var(--success);font-weight:600">✓ Match</span>' : '<span style="color:var(--danger);font-weight:600">⚠ Mismatch</span>'}</td>
+      <td style="font-size:.8rem;color:var(--mid)">${d.explanation || ''}</td>
     </tr>
-  `).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--mid)">No batches settled on this date</td></tr>';
+  `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No batches or card sales in this range</td></tr>';
 }
 
 // ─── Tab Switching ──────────────────────────────────────────────────────────
