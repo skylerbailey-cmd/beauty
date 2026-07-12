@@ -443,6 +443,21 @@ router.get('/transactions/receipt/:number', async (req, res) => {
 
 // ─── Gmail helper ─────────────────────────────────────────────────────────
 
+// Load the current company's user record and ensure its own Gmail refresh
+// token is populated (from Postgres if SQLite lost it after a redeploy).
+// Never falls back to another company's token.
+async function getSendingUser(userId) {
+  const { getUser, updateUserTokens } = require('../db');
+  const user = getUser(userId);
+  if (user && !user.refresh_token) {
+    try {
+      const rt = await pgDb.getGmailToken(userId);
+      if (rt) { updateUserTokens(userId, null, rt); user.refresh_token = rt; }
+    } catch (_) {}
+  }
+  return user;
+}
+
 async function sendGmail(user, toEmail, subject, htmlBody) {
   const { google } = require('googleapis');
   const oauth2Client = new google.auth.OAuth2(
@@ -485,10 +500,9 @@ router.post('/transactions/:id/email', async (req, res) => {
   const email = req.body.email || tx.customer_email;
   if (!email) return res.status(400).json({ error: 'Email address required' });
 
-  const { getUser } = require('../db');
-  const user = getUser(req.session.userId);
+  const user = await getSendingUser(req.session.userId);
   if (!user?.refresh_token) {
-    return res.status(403).json({ error: 'Gmail not connected. Please connect Gmail via the Welcome Emails page first.' });
+    return res.status(403).json({ error: 'Gmail is not connected for this company. Connect this company\'s Gmail on the Welcome Emails page first.' });
   }
 
   const settings = await pgDb.getSettings(req.session.userId);
@@ -568,10 +582,9 @@ router.post('/transactions/:id/welcome', async (req, res) => {
   const customerName = (req.body.customer_name || tx.customer_name || '').trim();
   if (!customerName) return res.status(400).json({ error: 'Customer name is required to send a welcome email.' });
 
-  const { getUser } = require('../db');
-  const user = getUser(userId);
+  const user = await getSendingUser(userId);
   if (!user?.refresh_token) {
-    return res.status(403).json({ error: 'Gmail not connected. Please connect Gmail via the Welcome Emails page first.' });
+    return res.status(403).json({ error: 'Gmail is not connected for this company. Connect this company\'s Gmail on the Welcome Emails page first.' });
   }
 
   // Only catalog products can drive the personalized routine (custom products

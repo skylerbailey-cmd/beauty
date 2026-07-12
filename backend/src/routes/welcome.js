@@ -1101,13 +1101,20 @@ router.post('/send', async (req, res) => {
     return res.status(401).json({ error: 'Not logged in. Please sign in first.' });
   }
 
-  const { getUser } = require('../db');
+  const { getUser, updateUserTokens } = require('../db');
   const user = getUser(userId);
   if (!user) {
     return res.status(401).json({ error: 'User not found. Please sign in again.' });
   }
   if (!user.refresh_token) {
-    return res.status(403).json({ error: 'Gmail not connected. Please connect your Gmail first.', needsGmailConnect: true });
+    // Restore this company's own token from Postgres if SQLite lost it
+    try {
+      const rt = await pgDb.getGmailToken(userId);
+      if (rt) { updateUserTokens(userId, null, rt); user.refresh_token = rt; }
+    } catch (_) {}
+  }
+  if (!user.refresh_token) {
+    return res.status(403).json({ error: 'Gmail is not connected for this company. Please connect this company\'s Gmail first.', needsGmailConnect: true });
   }
 
   try {
@@ -1221,13 +1228,19 @@ router.post('/campaign', async (req, res) => {
     return res.status(401).json({ error: 'Not logged in. Please sign in first.' });
   }
 
-  const { getUser } = require('../db');
+  const { getUser, updateUserTokens } = require('../db');
   const user = getUser(userId);
   if (!user) {
     return res.status(401).json({ error: 'User not found. Please sign in again.' });
   }
   if (!user.refresh_token) {
-    return res.status(403).json({ error: 'Gmail not connected. Please connect your Gmail first.', needsGmailConnect: true });
+    try {
+      const rt = await pgDb.getGmailToken(userId);
+      if (rt) { updateUserTokens(userId, null, rt); user.refresh_token = rt; }
+    } catch (_) {}
+  }
+  if (!user.refresh_token) {
+    return res.status(403).json({ error: 'Gmail is not connected for this company. Please connect this company\'s Gmail first.', needsGmailConnect: true });
   }
 
   // Support targeted email list or fall back to all customers

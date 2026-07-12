@@ -120,15 +120,17 @@ router.get('/google/callback', async (req, res) => {
     // If coming from web login, update the existing user row with Gmail tokens
     // Otherwise, create/update based on Google profile ID (mobile flow)
     let userId;
+    let cookieEmail = profile.email;
     if (isWebLogin && sessionUserId) {
-      // Update existing user's tokens and email
-      const { updateUserTokens, getUserByEmail } = require('../db');
+      // Attach Gmail tokens to the CURRENT company's account. Do NOT change the
+      // account's login email — the account id is derived from it, and changing
+      // it would orphan the company's data and its Gmail connection on redeploy.
       const existingUser = getUser(sessionUserId);
       if (existingUser) {
-        // Update email to match Google account and save tokens
-        db.prepare('UPDATE users SET email = ?, access_token = ?, refresh_token = COALESCE(?, refresh_token) WHERE id = ?')
-          .run(profile.email, tokens.access_token, tokens.refresh_token || null, sessionUserId);
+        db.prepare('UPDATE users SET access_token = ?, refresh_token = COALESCE(?, refresh_token) WHERE id = ?')
+          .run(tokens.access_token, tokens.refresh_token || null, sessionUserId);
         userId = sessionUserId;
+        cookieEmail = existingUser.email; // keep the stable login email
       } else {
         userId = profile.id || uuidv4();
         saveUser({
@@ -152,6 +154,17 @@ router.get('/google/callback', async (req, res) => {
       });
     }
 
+    // Persist this company's refresh token in Postgres so the Gmail connection
+    // survives redeploys and stays isolated to this company only.
+    if (tokens.refresh_token) {
+      try {
+        const pgDb = require('../db/postgres');
+        await pgDb.saveGmailToken(userId, tokens.refresh_token, profile.email);
+      } catch (e) {
+        console.error('[auth] Failed to persist Gmail token to Postgres:', e.message);
+      }
+    }
+
     // Set up Gmail push notifications
     try {
       await setupGmailWatch(userId);
@@ -171,12 +184,10 @@ router.get('/google/callback', async (req, res) => {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
     };
-    res.cookie('glow_user_email', profile.email, cookieOpts);
-
-    // Also persist the refresh token in a cookie so Gmail stays connected across redeploys
-    if (tokens.refresh_token) {
-      res.cookie('glow_gmail_refresh', tokens.refresh_token, cookieOpts);
-    }
+    res.cookie('glow_user_email', cookieEmail, cookieOpts);
+    // NOTE: the Gmail refresh token is intentionally NOT stored in a cookie —
+    // a single browser-wide cookie bleeds one company's Gmail into another.
+    // Tokens are persisted per-company in Postgres instead.
 
     if (isWebLogin) {
       // Redirect back to the web UI

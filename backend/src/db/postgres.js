@@ -211,6 +211,15 @@ async function initSchema() {
       user_id TEXT PRIMARY KEY,
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    -- Each company's own Gmail refresh token, keyed by its account id, so the
+    -- connection survives redeploys AND never bleeds between companies.
+    CREATE TABLE IF NOT EXISTS pos_gmail_tokens (
+      user_id TEXT PRIMARY KEY,
+      refresh_token TEXT NOT NULL,
+      email TEXT DEFAULT '',
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    );
   `);
   // Migrations for existing DBs
   const migrate = async (sql) => { try { await query(sql); } catch (_) {} };
@@ -846,6 +855,24 @@ async function setProductVisibility(productId, userId, visible) {
   );
 }
 
+// ─── Gmail tokens (per-company, persistent) ─────────────────────────────────
+
+async function saveGmailToken(userId, refreshToken, email) {
+  if (!userId || !refreshToken) return;
+  await query(
+    `INSERT INTO pos_gmail_tokens (user_id, refresh_token, email, updated_at)
+     VALUES ($1, $2, $3, NOW())
+     ON CONFLICT (user_id) DO UPDATE SET refresh_token = EXCLUDED.refresh_token, email = EXCLUDED.email, updated_at = NOW()`,
+    [userId, refreshToken, email || '']
+  );
+}
+
+async function getGmailToken(userId) {
+  if (!userId) return null;
+  const r = await query('SELECT refresh_token FROM pos_gmail_tokens WHERE user_id = $1', [userId]);
+  return r.rows[0]?.refresh_token || null;
+}
+
 // ─── Legacy data bridge ───────────────────────────────────────────────────
 // Move every user-scoped row from one userId to another.
 async function migrateDataBetweenUsers(oldUserId, newUserId) {
@@ -941,6 +968,8 @@ module.exports = {
   initSchema,
   bridgeLegacyData,
   migrateDataBetweenUsers,
+  saveGmailToken,
+  getGmailToken,
   // Customers
   findOrCreateCustomer,
   addCustomerProducts,

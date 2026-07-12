@@ -51,13 +51,12 @@ app.use(session({
 // On each request, if the session is gone but the cookie exists,
 // we recreate the user and restore the session automatically.
 
-app.use((req, res, next) => {
+app.use(async (req, res, next) => {
   // Skip if already authenticated
   if (req.session?.userId) return next();
 
   const savedEmail = req.signedCookies?.glow_user_email;
   const savedCompany = req.signedCookies?.glow_company_name;
-  const savedRefresh = req.signedCookies?.glow_gmail_refresh;
   const savedTheme = req.signedCookies?.glow_theme;
   const savedBrands = req.signedCookies?.glow_brands;
   const savedWebsites = req.signedCookies?.glow_websites;
@@ -65,9 +64,14 @@ app.use((req, res, next) => {
     const { findOrCreateUserByEmail, updateUserTokens, updateUserTheme, updateUserBrands, updateUserWebsites } = require('./db');
     try {
       const { user } = findOrCreateUserByEmail(savedEmail, savedCompany || null);
-      // Restore Gmail refresh token if we have it in cookie but not in DB
-      if (savedRefresh && !user.refresh_token) {
-        updateUserTokens(user.id, null, savedRefresh);
+      // Restore THIS company's own Gmail token from Postgres (per-company,
+      // never from a shared cookie — that used to bleed tokens across companies)
+      if (!user.refresh_token) {
+        try {
+          const { getGmailToken } = require('./db/postgres');
+          const rt = await getGmailToken(user.id);
+          if (rt) updateUserTokens(user.id, null, rt);
+        } catch (_) {}
       }
       // Restore settings from cookies if DB has defaults but cookies have real values
       if (savedTheme && savedTheme !== 'rose' && (!user.theme || user.theme === 'rose')) {
