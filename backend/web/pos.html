@@ -2823,6 +2823,16 @@ async function switchAccount(email) {
     renderBrandCheckboxes();     // sync the Settings-tab brand checkboxes
     loadProducts();
     loadEmployees();
+    // Clear + reload the Transactions and Reports tabs so they never show the
+    // previous company's data (this was the "shared" transactions/customers).
+    histTransactions = [];
+    filteredTransactions = [];
+    custReportData = [];
+    custFiltered = [];
+    managerReportsUnlocked = false;
+    lockPersonalReport();
+    loadTransactions();
+    loadReports();
     // Reset the embedded Emails tab so it reloads for the newly selected company
     const ef = document.getElementById('emailsFrame');
     if (ef && ef.src) { ef.removeAttribute('src'); }
