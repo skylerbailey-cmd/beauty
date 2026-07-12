@@ -643,7 +643,9 @@ async function updateSettings(userId, fields) {
     }
   }
   if (sets.length === 0) return;
-  await query(`INSERT INTO pos_settings (user_id) VALUES ($${idx}) ON CONFLICT DO NOTHING`, [userId]);
+  // Ensure a row exists for this company (own query/params — $1 here).
+  await query('INSERT INTO pos_settings (user_id) VALUES ($1) ON CONFLICT DO NOTHING', [userId]);
+  // UPDATE uses $1..$idx-1 for the fields and $idx for the user_id.
   params.push(userId);
   await query(`UPDATE pos_settings SET ${sets.join(', ')} WHERE user_id = $${idx}`, params);
 }

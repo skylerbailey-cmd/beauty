@@ -2203,11 +2203,12 @@ async function saveStoreSettings() {
       body: JSON.stringify({ store_name, store_address, receipt_footer, timezone, tax_rate, theme }),
     });
     const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Save failed');
     storeSettings = data.settings || storeSettings;
     updateCartTotals();
     const btn = document.querySelector('#tab-settings .btn-confirm');
     if (btn) { btn.textContent = 'Saved!'; setTimeout(() => { btn.textContent = 'Save Settings'; }, 1500); }
-  } catch (err) { alert('Failed to save: ' + err.message); }
+  } catch (err) { alert('Failed to save settings: ' + err.message); }
 }
 
 // ─── Brands ─────────────────────────────────────────────────────────────────
@@ -2350,10 +2351,15 @@ async function switchAccount(email) {
     applyTheme(currentUser.theme || 'rose');
     document.getElementById('headerCompany').textContent = currentUser.companyName || '';
     document.getElementById('headerEmail').textContent = currentUser.email;
-    if (currentUser.companyName) document.getElementById('settingsCompanyName').value = currentUser.companyName;
-    // Reload POS data for new account
+    document.getElementById('settingsCompanyName').value = currentUser.companyName || '';
+    // Reload ALL company-specific data for the new account
     cart = [];
+    saleEmployees = [];
+    empManuallyEdited = false;
+    renderSaleEmployees();
     renderCart();
+    await loadStoreSettings();   // pulls this company's store settings + brands + theme from Postgres
+    renderBrandCheckboxes();     // sync the Settings-tab brand checkboxes
     loadProducts();
     loadEmployees();
   } catch (err) { alert('Failed to switch account: ' + err.message); }

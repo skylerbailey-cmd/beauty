@@ -44,9 +44,13 @@ router.post('/web-login', (req, res) => {
     sameSite: 'lax',
   };
   res.cookie('glow_user_email', user.email, cookieOpts);
-  if (user.company_name) {
-    res.cookie('glow_company_name', user.company_name, cookieOpts);
-  }
+  // Refresh ALL preference cookies to THIS company's values on every login/switch.
+  // Otherwise a stale cookie from the previously-active company can bleed its
+  // brands/theme into this company via the persistent-auth restore middleware.
+  res.cookie('glow_company_name', user.company_name || '', cookieOpts);
+  res.cookie('glow_theme', user.theme || 'rose', cookieOpts);
+  res.cookie('glow_brands', user.brands || '["avologi","avinichi","hydrasphere"]', cookieOpts);
+  res.cookie('glow_websites', user.websites || '[]', cookieOpts);
 
   res.json({
     success: true,
