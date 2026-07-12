@@ -795,6 +795,9 @@
           <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border)" onclick="importEmployees()">Copy</button>
           <span id="empImportStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--success)"></span>
         </div>
+        <label style="display:flex;align-items:center;gap:6px;font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:8px;cursor:pointer">
+          <input type="checkbox" id="showInactiveEmps" onchange="loadEmployees()" style="accent-color:var(--rose-dk)"> Show deactivated employees
+        </label>
         <div class="emp-list" id="empList"></div>
       </div>
 
@@ -1017,7 +1020,9 @@ async function init() {
 
     const today = new Date().toISOString().slice(0, 10);
     const thirtyAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-    document.getElementById('histStart').value = thirtyAgo;
+    // Transactions default to a wide window so imported/backdated rows are visible
+    const twoYearsAgo = new Date(Date.now() - 730 * 86400000).toISOString().slice(0, 10);
+    document.getElementById('histStart').value = twoYearsAgo;
     document.getElementById('histEnd').value = today;
     document.getElementById('rptStart').value = thirtyAgo;
     document.getElementById('rptEnd').value = today;
@@ -1684,11 +1689,14 @@ async function loadEmployees() {
   allEmployees = data.employees || [];
   renderEmpImportOptions();
   const list = document.getElementById('empList');
-  if (!data.employees || data.employees.length === 0) {
-    list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--mid);font-family:system-ui,sans-serif">No employees yet. Add one above.</div>';
+  const showInactive = document.getElementById('showInactiveEmps')?.checked;
+  const visible = allEmployees.filter(e => showInactive || e.active);
+  const inactiveCount = allEmployees.filter(e => !e.active).length;
+  if (visible.length === 0) {
+    list.innerHTML = `<div style="text-align:center;padding:20px;color:var(--mid);font-family:system-ui,sans-serif">${allEmployees.length === 0 ? 'No employees yet. Add one above.' : 'No active employees.' + (inactiveCount ? ' Check "Show deactivated" to see ' + inactiveCount + '.' : '')}</div>`;
     return;
   }
-  list.innerHTML = data.employees.map(e => `
+  list.innerHTML = visible.map(e => `
     <div class="emp-row">
       <div class="emp-name">${e.name}</div>
       <div class="emp-role">${e.role}</div>
