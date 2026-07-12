@@ -69,7 +69,7 @@ router.get('/products', async (req, res) => {
   }
   res.json({ products: allProducts });
   } catch (err) {
-    console.error('[pos] Products error:', err.message);
+    console.error('[pos] Products error:', err.message, err.stack);
     // Fallback: return catalog products without prices/visibility from Postgres
     const allProducts = [];
     for (const [brandKey, prods] of Object.entries(PRODUCTS)) {

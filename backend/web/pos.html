@@ -1629,23 +1629,19 @@ function renderBrandProductPanel(brandKey) {
   const displayName = BRAND_KEY_TO_DISPLAY[brandKey];
   const brandProds = products.filter(p => (BRAND_KEY_MAP[p.brand] || p.brand.toLowerCase()) === brandKey && !p.isCustom);
 
-  panel.innerHTML = brandProds.map(p => `
-    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
+  panel.innerHTML = `<div style="display:grid;grid-template-columns:auto 1fr 80px 80px;gap:4px 8px;align-items:center;font-family:system-ui,sans-serif;font-size:.8rem;padding:4px 0">
+    <div></div><div style="font-weight:700;font-size:.7rem;text-transform:uppercase;color:var(--mid)">Product</div>
+    <div style="font-weight:700;font-size:.7rem;text-transform:uppercase;color:var(--mid);text-align:right">Price</div>
+    <div style="font-weight:700;font-size:.7rem;text-transform:uppercase;color:var(--mid);text-align:right">Min Price</div>
+  </div>` + brandProds.map(p => `
+    <div style="display:grid;grid-template-columns:auto 1fr 80px 80px;gap:4px 8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
       <input type="checkbox" ${p.visible !== false ? 'checked' : ''} onchange="toggleProductVisibility('${p.id}',this.checked)" style="accent-color:var(--rose-dk)">
-      <div style="flex:1;min-width:0">
+      <div style="min-width:0">
         <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</div>
-        <div style="font-size:.72rem;color:var(--mid)">Retail: $${(p.retailPrice || 0).toLocaleString()}</div>
+        <div style="font-size:.7rem;color:var(--mid)">Retail: $${(p.retailPrice || 0).toLocaleString()}</div>
       </div>
-      <div style="display:flex;flex-direction:column;gap:2px;align-items:flex-end">
-        <div style="display:flex;gap:4px;align-items:center">
-          <span style="font-size:.72rem;color:var(--mid)">Price $</span>
-          <input type="number" value="${p.price || ''}" step="0.01" min="0" data-id="${p.id}" data-field="price" onchange="saveSinglePrice('${p.id}')" style="width:80px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:.8rem;text-align:right;outline:none">
-        </div>
-        <div style="display:flex;gap:4px;align-items:center">
-          <span style="font-size:.72rem;color:var(--mid)">Min $</span>
-          <input type="number" value="${p.minPrice || ''}" step="0.01" min="0" data-id="${p.id}" data-field="min_price" onchange="saveSinglePrice('${p.id}')" style="width:80px;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:.8rem;text-align:right;outline:none">
-        </div>
-      </div>
+      <input type="number" value="${p.price > 0 ? p.price : ''}" step="0.01" min="0" data-id="${p.id}" data-field="price" onchange="saveSinglePrice('${p.id}')" placeholder="${p.retailPrice || '0'}" style="width:100%;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:.8rem;text-align:right;outline:none">
+      <input type="number" value="${p.minPrice > 0 ? p.minPrice : ''}" step="0.01" min="0" data-id="${p.id}" data-field="min_price" onchange="saveSinglePrice('${p.id}')" placeholder="0" style="width:100%;padding:4px 6px;border:1px solid ${p.minPrice > 0 ? 'var(--rose)' : 'var(--border)'};border-radius:4px;font-size:.8rem;text-align:right;outline:none;${p.minPrice > 0 ? 'background:#fff5f5' : ''}">
     </div>
   `).join('') || '<div style="color:var(--mid);font-family:system-ui,sans-serif;font-size:.85rem;padding:12px;text-align:center">No products in this brand</div>';
 }
