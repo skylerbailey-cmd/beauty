@@ -2508,6 +2508,14 @@ async function saveMaverick() {
   }
 }
 
+function maverickPermissionHint(err) {
+  const e = String(err || '').toLowerCase();
+  if (e.includes('not allowed') || e.includes('permission') || e.includes('forbidden') || e.includes('403')) {
+    return ' — This token can\'t read reports. In the Maverick Dashboard, create/assign an Access Token with REPORTING (view batches) permission, then paste it below. A card-payments token won\'t work for reconciliation.';
+  }
+  return '';
+}
+
 async function lookupDbas() {
   const statusEl = document.getElementById('maverickSaveStatus');
   const listEl = document.getElementById('maverickDbaList');
@@ -2523,7 +2531,7 @@ async function lookupDbas() {
     listEl.innerHTML = data.dbas.map(d => `<button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);font-size:.8rem;padding:6px 10px" onclick="document.getElementById('maverickDbaId').value='${escapeHtml(String(d.id))}'">${escapeHtml(d.name || 'DBA')} — #${escapeHtml(String(d.id))}</button>`).join('');
   } catch (err) {
     statusEl.style.color = 'var(--danger)';
-    statusEl.textContent = 'Failed: ' + err.message;
+    statusEl.textContent = 'Failed: ' + err.message + maverickPermissionHint(err.message);
   }
 }
 
@@ -2547,7 +2555,7 @@ async function runAudit() {
     }
     if (data.error) {
       statusEl.style.color = 'var(--danger)';
-      statusEl.textContent = 'Maverick error: ' + data.error;
+      statusEl.textContent = 'Maverick error: ' + data.error + maverickPermissionHint(data.error);
       return;
     }
     statusEl.textContent = '';
