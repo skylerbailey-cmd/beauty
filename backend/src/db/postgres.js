@@ -201,7 +201,7 @@ async function initSchema() {
       store_address TEXT DEFAULT '',
       receipt_footer TEXT DEFAULT 'Thank you for your purchase!',
       timezone TEXT DEFAULT 'America/Los_Angeles',
-      tax_rate REAL DEFAULT 0.0875,
+      tax_rate REAL DEFAULT 0.081875,
       theme TEXT DEFAULT 'rose',
       brands TEXT DEFAULT '["avologi","avinichi","hydrasphere"]'
     );
@@ -232,6 +232,21 @@ async function initSchema() {
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS tax_rate REAL DEFAULT 0.0875');
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS theme TEXT DEFAULT 'rose'");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS brands TEXT DEFAULT '[\"avologi\",\"avinichi\",\"hydrasphere\"]'");
+  // New companies default to the current 8.1875% sales tax
+  await migrate('ALTER TABLE pos_settings ALTER COLUMN tax_rate SET DEFAULT 0.081875');
+
+  // One-time data migrations, tracked so they run exactly once.
+  await migrate('CREATE TABLE IF NOT EXISTS pos_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW())');
+  try {
+    const done = await query("SELECT 1 FROM pos_migrations WHERE name = 'tax_8_1875'");
+    if (done.rows.length === 0) {
+      await query('UPDATE pos_settings SET tax_rate = 0.081875');
+      await query("INSERT INTO pos_migrations (name) VALUES ('tax_8_1875') ON CONFLICT DO NOTHING");
+      console.log('[postgres] One-time: set sales tax to 8.1875% for all companies');
+    }
+  } catch (e) {
+    console.error('[postgres] tax migration failed:', e.message);
+  }
 
   console.log('[postgres] Schema initialized');
 }

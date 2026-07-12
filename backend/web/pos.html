@@ -468,7 +468,7 @@
           </div>
           <div class="cart-totals">
             <div class="cart-row"><span>Subtotal</span><span id="cartSubtotal">$0.00</span></div>
-            <div class="cart-row"><span>Tax (8.75%)</span><span id="cartTax">$0.00</span></div>
+            <div class="cart-row"><span>Tax</span><span id="cartTax">$0.00</span></div>
             <div class="cart-row total"><span>Total</span><span id="cartTotal">$0.00</span></div>
           </div>
           <div class="payment-methods">
@@ -516,6 +516,7 @@
         <input type="number" id="histMin" placeholder="Min $" min="0" step="0.01" oninput="applyTxFilters()" style="width:90px">
         <input type="number" id="histMax" placeholder="Max $" min="0" step="0.01" oninput="applyTxFilters()" style="width:90px">
         <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="clearTxFilters()">Clear</button>
+        <button class="btn btn-confirm" style="padding:8px 16px" onclick="exportTransactionsCSV()">Export CSV</button>
       </div>
       <div class="report-card">
         <h3>Transaction History</h3>
@@ -541,27 +542,15 @@
 
       <div class="stat-grid" id="salesSummary"></div>
 
-      <!-- Leaderboard -->
+      <!-- Employee Sales & Commissions (Manager/Employee view — locked) -->
       <div class="report-card">
-        <h3>Sales Leaderboard</h3>
-        <div id="leaderboard" style="display:flex;flex-direction:column;gap:8px"></div>
-      </div>
-
-      <div class="report-card">
-        <h3>Employee Commissions &amp; Sales</h3>
-        <table class="report-table">
-          <thead><tr><th>Employee</th><th>Sales</th><th>Returns</th><th>Sales Commission</th><th>Returns</th><th>Net Commission</th></tr></thead>
-          <tbody id="empReportBody"></tbody>
-        </table>
-      </div>
-
-      <!-- Employee Personal View (PIN-locked) -->
-      <div class="report-card">
-        <h3>My Sales (Employee View)</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Enter your name and PIN to view your personal sales report.</p>
-        <div id="empPersonalLocked" style="display:flex;gap:8px;align-items:center">
-          <input type="password" id="empPersonalPin" placeholder="Your PIN" maxlength="6" style="width:120px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;text-align:center">
+        <h3>Employee Sales &amp; Commissions</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Enter your name and PIN. Employees see their own sales; managers see everyone's commissions.</p>
+        <div id="empPersonalLocked" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="empPersonalName2" placeholder="Your name" style="width:150px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
+          <input type="password" id="empPersonalPin" placeholder="Your PIN" maxlength="6" style="width:120px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;text-align:center" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
           <button class="btn btn-confirm" onclick="unlockPersonalReport()">Unlock</button>
+          <button class="btn" style="background:var(--cream);color:var(--mid);border:1px solid var(--border);display:none" id="empLockBtn" onclick="lockPersonalReport()">Lock</button>
           <span id="empPersonalError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger)"></span>
         </div>
         <div id="empPersonalReport" style="display:none;margin-top:12px">
@@ -569,6 +558,22 @@
           <table class="report-table">
             <thead><tr><th>Employee</th><th>Sales</th><th>Returns</th><th>Sales Commission</th><th>Returns</th><th>Net Commission</th></tr></thead>
             <tbody id="empPersonalBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Manager-only: full leaderboard + commissions (revealed after a manager unlocks above) -->
+      <div id="managerCommissionsSection" style="display:none">
+        <div class="report-card">
+          <h3>Sales Leaderboard</h3>
+          <div id="leaderboard" style="display:flex;flex-direction:column;gap:8px"></div>
+        </div>
+
+        <div class="report-card">
+          <h3>Employee Commissions &amp; Sales</h3>
+          <table class="report-table">
+            <thead><tr><th>Employee</th><th>Sales</th><th>Returns</th><th>Sales Commission</th><th>Returns</th><th>Net Commission</th></tr></thead>
+            <tbody id="empReportBody"></tbody>
           </table>
         </div>
       </div>
@@ -582,8 +587,11 @@
       </div>
 
       <div class="report-card">
-        <h3>Customers</h3>
-        <table class="report-table">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <h3 style="margin:0">Customers</h3>
+          <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportCustomersCSV()">Export CSV</button>
+        </div>
+        <table class="report-table" style="margin-top:12px">
           <thead><tr><th>Customer</th><th>Email</th><th>Purchases</th><th>Returns</th><th>Total Spent</th></tr></thead>
           <tbody id="custReportBody"></tbody>
         </table>
@@ -652,7 +660,7 @@
           </div>
           <div class="field">
             <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Sales Tax Rate (%)</label>
-            <input type="number" id="settingsTaxRate" placeholder="8.75" step="0.01" min="0" max="20" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
+            <input type="number" id="settingsTaxRate" placeholder="8.1875" step="0.0001" min="0" max="20" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
           </div>
         </div>
         <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
@@ -881,6 +889,8 @@ let lastTransaction = null;
 let currentPin = '';
 let saleEmployees = []; // [{employee_id, name, commission_type, commission_value}]
 let allEmployees = [];
+let managerReportsUnlocked = false; // gates the employee commissions section
+let lastEmployeesReport = [];       // most recent employee report data
 let selectedBrands = ['avologi', 'avinichi', 'hydrasphere'];
 
 const API = '';
@@ -1114,7 +1124,7 @@ function updateCartTotals() {
   document.getElementById('cartTotal').textContent = `$${total.toFixed(2)}`;
   // Update tax label
   const taxLabel = document.querySelector('.cart-row:nth-child(2) span:first-child');
-  if (taxLabel) taxLabel.textContent = `Tax (${(taxRate * 100).toFixed(2)}%)`;
+  if (taxLabel) taxLabel.textContent = `Tax (${taxPctStr(taxRate)}%)`;
   document.getElementById('checkoutBtn').disabled = cart.length === 0;
 }
 
@@ -1372,7 +1382,7 @@ function showReceipt(tx) {
   const date = new Date(tx.created_at).toLocaleString('en-US', { timeZone: tz });
   const empNames = (tx.employees && tx.employees.length > 0)
     ? tx.employees.map(e => e.employee_name).join(', ') : '';
-  const taxPct = tx.tax_rate ? (tx.tax_rate * 100).toFixed(2) : ((storeSettings.tax_rate || 0.0875) * 100).toFixed(2);
+  const taxPct = taxPctStr(tx.tax_rate != null ? tx.tax_rate : (storeSettings.tax_rate || 0.081875));
 
   let html = `
     <div class="r-center"><strong>${storeName}</strong></div>
@@ -1704,6 +1714,7 @@ async function toggleEmployee(id, currentlyActive) {
 
 // ─── Transactions History ───────────────────────────────────────────────────
 let histTransactions = []; // full set for the selected date range (filtered client-side)
+let filteredTransactions = []; // current filtered view (for CSV export)
 
 async function loadTransactions() {
   const start = document.getElementById('histStart').value;
@@ -1760,6 +1771,7 @@ function applyTxFilters() {
     }
     return true;
   });
+  filteredTransactions = rows;
 
   const body = document.getElementById('txHistoryBody');
   body.innerHTML = rows.map(tx => `
@@ -1796,6 +1808,66 @@ async function viewReceipt(txId) {
   if (data.transaction) {
     lastTransaction = data.transaction;
     showReceipt(data.transaction);
+  }
+}
+
+// ─── CSV Export ─────────────────────────────────────────────────────────────
+function csvValue(v) {
+  const s = (v === null || v === undefined) ? '' : String(v);
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function downloadCSV(filename, rows) {
+  const csv = rows.map(r => r.map(csvValue).join(',')).join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function exportTransactionsCSV() {
+  const rows = [['Receipt', 'Date', 'Type', 'Employees', 'Customer', 'Email', 'Card Last 4', 'Payment', 'Items', 'Subtotal', 'Tax', 'Total']];
+  (filteredTransactions || []).forEach(tx => {
+    rows.push([
+      tx.receipt_number,
+      new Date(tx.created_at).toLocaleString(),
+      tx.type,
+      (tx.employees || []).map(e => e.employee_name).join('; '),
+      tx.customer_name || '',
+      tx.customer_email || '',
+      tx.card_last4 || '',
+      tx.payment_method || '',
+      (tx.items || []).length,
+      (tx.subtotal || 0).toFixed(2),
+      (tx.tax_amount || 0).toFixed(2),
+      (tx.total || 0).toFixed(2),
+    ]);
+  });
+  if (rows.length === 1) { alert('No transactions to export. Adjust the date range/filters first.'); return; }
+  const company = (currentUser?.companyName || 'company').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+  downloadCSV(`transactions-${company}-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+}
+
+async function exportCustomersCSV() {
+  try {
+    const resp = await fetch(`${API}/api/welcome/customers`, { credentials: 'include' });
+    const data = await resp.json();
+    const customers = data.customers || [];
+    const rows = [['Name', 'Email', 'Phone', 'Address', 'Notes', 'Products', 'Created', 'Last Updated']];
+    customers.forEach(c => {
+      rows.push([
+        c.name || '', c.email || '', c.phone || '', c.address || '', c.notes || '',
+        (c.products || []).map(p => p.product_name).join('; '),
+        c.created_at ? new Date(c.created_at).toLocaleDateString() : '',
+        c.updated_at ? new Date(c.updated_at).toLocaleDateString() : '',
+      ]);
+    });
+    if (rows.length === 1) { alert('No customers to export.'); return; }
+    const company = (currentUser?.companyName || 'company').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+    downloadCSV(`customers-${company}-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+  } catch (err) {
+    alert('Failed to export customers: ' + err.message);
   }
 }
 
@@ -2102,20 +2174,11 @@ async function loadReports() {
     <div class="stat-box"><div class="stat-val">$${(sales.net_tax || 0).toFixed(2)}</div><div class="stat-lbl">Tax Collected</div></div>
   `;
 
-  // Employee report
-  // Render leaderboard
-  renderLeaderboard(employees);
-
-  document.getElementById('empReportBody').innerHTML = employees.map(e => `
-    <tr>
-      <td style="font-weight:600">${e.employee_name}</td>
-      <td>${e.sale_count}</td>
-      <td>${e.return_count}</td>
-      <td>$${e.sales_total.toFixed(2)}</td>
-      <td>$${e.returns_total.toFixed(2)}</td>
-      <td style="font-weight:600">$${e.net_total.toFixed(2)}</td>
-    </tr>
-  `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No data</td></tr>';
+  // Employee commissions are manager-gated — only render/reveal when unlocked
+  lastEmployeesReport = employees;
+  if (managerReportsUnlocked) {
+    renderManagerCommissions();
+  }
 
   // Product report
   document.getElementById('prodReportBody').innerHTML = prods.map(p => `
@@ -2344,10 +2407,27 @@ function renderLeaderboard(employees) {
   }).join('');
 }
 
-// ─── Employee Personal Report ───────────────────────────────────────────────
+// Render the manager-only leaderboard + commissions table from the last report
+function renderManagerCommissions() {
+  renderLeaderboard(lastEmployeesReport);
+  document.getElementById('empReportBody').innerHTML = lastEmployeesReport.map(e => `
+    <tr>
+      <td style="font-weight:600">${e.employee_name}</td>
+      <td>${e.sale_count}</td>
+      <td>${e.return_count}</td>
+      <td>$${Number(e.sales_total).toFixed(2)}</td>
+      <td>$${Number(e.returns_total).toFixed(2)}</td>
+      <td style="font-weight:600">$${Number(e.net_total).toFixed(2)}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No data</td></tr>';
+}
+
+// ─── Employee Personal Report / Manager unlock ──────────────────────────────
 async function unlockPersonalReport() {
+  const name = document.getElementById('empPersonalName2').value.trim();
   const pin = document.getElementById('empPersonalPin').value.trim();
   const errorEl = document.getElementById('empPersonalError');
+  if (!name) { errorEl.textContent = 'Enter your name'; return; }
   if (!pin) { errorEl.textContent = 'Enter your PIN'; return; }
 
   const start = document.getElementById('rptStart').value;
@@ -2356,30 +2436,53 @@ async function unlockPersonalReport() {
   try {
     const resp = await fetch(`${API}/api/pos/reports/employee-personal`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ pin, start: `${start}T00:00:00`, end: `${end}T23:59:59` }),
+      body: JSON.stringify({ name, pin, start: `${start}T00:00:00`, end: `${end}T23:59:59` }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error);
 
     errorEl.textContent = '';
-    document.getElementById('empPersonalName').textContent = data.role === 'manager'
-      ? `${data.employee.name} (Manager - All Employees)`
-      : `${data.employee.name} - Personal Sales`;
-    document.getElementById('empPersonalBody').innerHTML = (data.report || []).map(e => `
-      <tr>
-        <td style="font-weight:600">${e.employee_name}</td>
-        <td>${e.sale_count}</td>
-        <td>${e.return_count}</td>
-        <td>$${Number(e.sales_total).toFixed(2)}</td>
-        <td>$${Number(e.returns_total).toFixed(2)}</td>
-        <td style="font-weight:600">$${Number(e.net_total).toFixed(2)}</td>
-      </tr>
-    `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No data</td></tr>';
-    document.getElementById('empPersonalReport').style.display = 'block';
+    document.getElementById('empLockBtn').style.display = '';
+
+    if (data.role === 'manager') {
+      // Managers unlock the full leaderboard + commissions section
+      managerReportsUnlocked = true;
+      document.getElementById('managerCommissionsSection').style.display = 'block';
+      renderManagerCommissions();
+      document.getElementById('empPersonalName').textContent = `${data.employee.name} (Manager) — full commissions unlocked below`;
+      document.getElementById('empPersonalBody').innerHTML = '';
+      document.getElementById('empPersonalReport').style.display = 'block';
+    } else {
+      // Sales employees see only their own personal sales
+      managerReportsUnlocked = false;
+      document.getElementById('managerCommissionsSection').style.display = 'none';
+      document.getElementById('empPersonalName').textContent = `${data.employee.name} — Personal Sales`;
+      document.getElementById('empPersonalBody').innerHTML = (data.report || []).map(e => `
+        <tr>
+          <td style="font-weight:600">${e.employee_name}</td>
+          <td>${e.sale_count}</td>
+          <td>${e.return_count}</td>
+          <td>$${Number(e.sales_total).toFixed(2)}</td>
+          <td>$${Number(e.returns_total).toFixed(2)}</td>
+          <td style="font-weight:600">$${Number(e.net_total).toFixed(2)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No data</td></tr>';
+      document.getElementById('empPersonalReport').style.display = 'block';
+    }
   } catch (err) {
     errorEl.textContent = err.message;
     document.getElementById('empPersonalReport').style.display = 'none';
   }
+}
+
+function lockPersonalReport() {
+  managerReportsUnlocked = false;
+  document.getElementById('managerCommissionsSection').style.display = 'none';
+  document.getElementById('empPersonalReport').style.display = 'none';
+  document.getElementById('empLockBtn').style.display = 'none';
+  document.getElementById('empPersonalName2').value = '';
+  document.getElementById('empPersonalPin').value = '';
+  document.getElementById('empPersonalError').textContent = '';
 }
 
 // ─── App Switcher ───────────────────────────────────────────────────────────
@@ -2395,7 +2498,10 @@ document.addEventListener('click', e => {
 });
 
 // ─── Store Settings ─────────────────────────────────────────────────────────
-let storeSettings = { store_name: '', store_address: '', receipt_footer: 'Thank you for your purchase!', timezone: 'America/Los_Angeles', tax_rate: 0.0875 };
+let storeSettings = { store_name: '', store_address: '', receipt_footer: 'Thank you for your purchase!', timezone: 'America/Los_Angeles', tax_rate: 0.081875 };
+
+// Format a decimal tax rate (e.g. 0.081875) as a trimmed percent string ("8.1875")
+function taxPctStr(rate) { return String(parseFloat(((rate || 0) * 100).toFixed(4))); }
 
 async function loadStoreSettings() {
   try {
@@ -2406,7 +2512,7 @@ async function loadStoreSettings() {
     document.getElementById('settingsStoreAddress').value = storeSettings.store_address || '';
     document.getElementById('settingsReceiptFooter').value = storeSettings.receipt_footer || '';
     document.getElementById('settingsTimezone').value = storeSettings.timezone || 'America/Los_Angeles';
-    document.getElementById('settingsTaxRate').value = storeSettings.tax_rate != null ? (storeSettings.tax_rate * 100).toFixed(2) : '8.75';
+    document.getElementById('settingsTaxRate').value = storeSettings.tax_rate != null ? taxPctStr(storeSettings.tax_rate) : '8.1875';
     // Restore theme and brands from Postgres (survives redeploys)
     if (storeSettings.theme) applyTheme(storeSettings.theme);
     if (storeSettings.brands) {

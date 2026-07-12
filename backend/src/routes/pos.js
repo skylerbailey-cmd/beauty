@@ -584,7 +584,7 @@ router.post('/transactions/:id/email', async (req, res) => {
         </div>
         <div style="margin-top:16px;text-align:right;font-size:.9rem">
           <p style="margin:4px 0">Subtotal: <strong>$${tx.subtotal.toFixed(2)}</strong></p>
-          <p style="margin:4px 0">Tax (${(tx.tax_rate * 100).toFixed(2)}%): <strong>$${tx.tax_amount.toFixed(2)}</strong></p>
+          <p style="margin:4px 0">Tax (${parseFloat((tx.tax_rate * 100).toFixed(4))}%): <strong>$${tx.tax_amount.toFixed(2)}</strong></p>
           <p style="margin:8px 0 0;font-size:1.1rem;color:#9e5567"><strong>Total: $${tx.total.toFixed(2)}</strong></p>
         </div>
         <p style="margin-top:16px;font-size:.82rem;color:#6b5057">Payment: ${tx.payment_method}${tx.card_last4 ? ` ****${tx.card_last4}` : ''}</p>
@@ -704,11 +704,14 @@ router.get('/reports/flagged-returns', async (req, res) => {
 // ─── Employee Personal Report (PIN-protected) ─────────────────────────────
 
 router.post('/reports/employee-personal', async (req, res) => {
-  const { pin, start, end } = req.body;
+  const { name, pin, start, end } = req.body;
   if (!pin) return res.status(400).json({ error: 'PIN required' });
 
   const employee = await pgDb.verifyEmployeePin(pin, req.session.userId);
-  if (!employee) return res.status(401).json({ error: 'Invalid PIN' });
+  if (!employee) return res.status(401).json({ error: 'Invalid name or PIN' });
+  if (name && employee.name.trim().toLowerCase() !== String(name).trim().toLowerCase()) {
+    return res.status(401).json({ error: 'Invalid name or PIN' });
+  }
 
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
