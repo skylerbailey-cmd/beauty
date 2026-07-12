@@ -496,31 +496,28 @@
         <input type="date" id="histStart">
         <label>To:</label>
         <input type="date" id="histEnd">
-        <span style="border-left:1px solid var(--border);height:22px;margin:0 2px"></span>
-        <select id="histType" onchange="applyTxFilters()">
-          <option value="">All types</option>
-          <option value="sale">Sales only</option>
-          <option value="return">Returns only</option>
-        </select>
-        <select id="histEmployee" onchange="applyTxFilters()">
-          <option value="">All employees</option>
-        </select>
-        <select id="histPayment" onchange="applyTxFilters()">
-          <option value="">All payments</option>
-          <option value="card">Card</option>
-          <option value="cash">Cash</option>
-          <option value="other">Other</option>
-        </select>
-        <input type="text" id="histSearch" placeholder="Search receipt or customer…" oninput="applyTxFilters()" style="min-width:180px">
-        <input type="text" id="histCard" placeholder="Card last 4" maxlength="4" inputmode="numeric" oninput="this.value=this.value.replace(/[^0-9]/g,'');applyTxFilters()" style="width:100px">
-        <input type="number" id="histMin" placeholder="Min $" min="0" step="0.01" oninput="applyTxFilters()" style="width:90px">
-        <input type="number" id="histMax" placeholder="Max $" min="0" step="0.01" oninput="applyTxFilters()" style="width:90px">
         <button class="btn btn-confirm" style="padding:8px 16px" onclick="loadTransactions()">Filter</button>
         <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="showAllTransactions()">Show All</button>
+        <input type="text" id="histSearch" placeholder="Search anything (receipt, customer, employee, card, amount, type…)" oninput="applyTxFilters()" style="min-width:300px;flex:1">
         <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="clearTxFilters()">Clear</button>
         <button class="btn" style="background:var(--gold);color:#fff;padding:8px 16px" onclick="runAudit()">Run Batch Audit</button>
         <span id="batchStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)"></span>
       </div>
+
+      <!-- Batch reconciliation audit (pops up above the history when you run it) -->
+      <div id="batchResult" style="display:none">
+        <div class="stat-grid" id="batchSummary"></div>
+        <div class="report-card">
+          <h3>Batch Reconciliation Audit <span id="batchResultRange" style="font-weight:400;color:var(--mid);font-size:.85rem"></span></h3>
+          <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Each day compares the merchant's settled card batches to the POS's recorded card sales (net of returns) over the selected date range. Days that don't match are flagged with an explanation.</p>
+          <table class="report-table">
+            <thead><tr><th>Date</th><th>Merchant Settled</th><th>POS Card (net)</th><th>Difference</th><th>Status</th><th>Explanation</th></tr></thead>
+            <tbody id="batchBody"></tbody>
+          </table>
+          <div id="batchDebug" style="display:none;margin-top:14px;padding:12px;background:#fff6e0;border:1px solid #f0d48a;border-radius:8px;font-family:system-ui,sans-serif;font-size:.8rem;color:#6b5518"></div>
+        </div>
+      </div>
+
       <div class="report-card">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
           <h3 style="margin:0">Transaction History</h3>
@@ -537,21 +534,6 @@
           <tbody id="txHistoryBody"></tbody>
         </table>
       </div>
-
-      <!-- Batch reconciliation audit (uses the date range above) -->
-      <div id="batchResult" style="display:none">
-        <div class="stat-grid" id="batchSummary"></div>
-        <div class="report-card">
-          <h3>Batch Reconciliation Audit <span id="batchResultRange" style="font-weight:400;color:var(--mid);font-size:.85rem"></span></h3>
-          <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Each day compares the merchant's settled card batches to the POS's recorded card sales (net of returns) over the selected date range. Days that don't match are flagged with an explanation.</p>
-          <table class="report-table">
-            <thead><tr><th>Date</th><th>Merchant Settled</th><th>POS Card (net)</th><th>Difference</th><th>Status</th><th>Explanation</th></tr></thead>
-            <tbody id="batchBody"></tbody>
-          </table>
-          <div id="batchDebug" style="display:none;margin-top:14px;padding:12px;background:#fff6e0;border:1px solid #f0d48a;border-radius:8px;font-family:system-ui,sans-serif;font-size:.8rem;color:#6b5518"></div>
-        </div>
-      </div>
-
     </div>
   </div>
 
@@ -588,7 +570,7 @@
         <div id="empPersonalReport" style="display:none;margin-top:12px">
           <div style="font-family:system-ui,sans-serif;font-size:.88rem;font-weight:600;color:var(--dark);margin-bottom:8px" id="empPersonalName"></div>
           <table class="report-table">
-            <thead><tr><th>Employee</th><th>Comm %</th><th>Sales</th><th>Returns</th><th>Sales Commission</th><th>Returns Commission</th><th>Net Commission</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Sales</th><th>Sales $</th><th>Returns $</th><th>Net Sales $</th><th>Commission</th></tr></thead>
             <tbody id="empPersonalBody"></tbody>
           </table>
         </div>
@@ -599,7 +581,7 @@
         <div class="report-card">
           <h3>Employee Commissions &amp; Sales</h3>
           <table class="report-table">
-            <thead><tr><th>Employee</th><th>Comm %</th><th>Sales</th><th>Returns</th><th>Sales Commission</th><th>Returns Commission</th><th>Net Commission</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Sales</th><th>Sales $</th><th>Returns $</th><th>Net Sales $</th><th>Commission</th></tr></thead>
             <tbody id="empReportBody"></tbody>
           </table>
         </div>
@@ -1806,7 +1788,6 @@ async function loadTransactions() {
   const resp = await fetch(`${API}/api/pos/transactions?start=${start}T00:00:00&end=${end}T23:59:59&limit=2000`, { credentials: 'include' });
   const data = await resp.json();
   histTransactions = data.transactions || [];
-  populateHistEmployeeFilter();
   applyTxFilters();
 }
 
@@ -1817,52 +1798,26 @@ function showAllTransactions() {
   loadTransactions();
 }
 
-// Fill the employee filter with ALL active employees (plus any names present in
-// the results, e.g. an employee who was later deactivated).
-function populateHistEmployeeFilter() {
-  const sel = document.getElementById('histEmployee');
-  if (!sel) return;
-  const current = sel.value;
-  const names = new Set();
-  allEmployees.filter(e => e.active).forEach(e => names.add(e.name));
-  histTransactions.forEach(tx => (tx.employees || []).forEach(e => names.add(e.employee_name)));
-  const sorted = [...names].sort();
-  sel.innerHTML = '<option value="">All employees</option>' + sorted.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
-  if (sorted.includes(current)) sel.value = current;
-}
-
 function clearTxFilters() {
-  document.getElementById('histType').value = '';
-  document.getElementById('histEmployee').value = '';
-  document.getElementById('histPayment').value = '';
   document.getElementById('histSearch').value = '';
-  document.getElementById('histCard').value = '';
-  document.getElementById('histMin').value = '';
-  document.getElementById('histMax').value = '';
   applyTxFilters();
 }
 
+// One free-text search across every value in the loaded transactions.
 function applyTxFilters() {
-  const type = document.getElementById('histType').value;
-  const emp = document.getElementById('histEmployee').value;
-  const pay = document.getElementById('histPayment').value;
   const q = document.getElementById('histSearch').value.trim().toLowerCase();
-  const card = document.getElementById('histCard').value.trim();
-  const min = parseFloat(document.getElementById('histMin').value);
-  const max = parseFloat(document.getElementById('histMax').value);
 
   const rows = histTransactions.filter(tx => {
-    if (type && tx.type !== type) return false;
-    if (emp && !(tx.employees || []).some(e => e.employee_name === emp)) return false;
-    if (pay && (tx.payment_method || '') !== pay) return false;
-    if (card && (tx.card_last4 || '') !== card) return false;
-    if (!isNaN(min) && tx.total < min) return false;
-    if (!isNaN(max) && tx.total > max) return false;
-    if (q) {
-      const hay = `${tx.receipt_number} ${tx.customer_name || ''} ${tx.customer_email || ''} ${tx.card_last4 || ''}`.toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    return true;
+    if (!q) return true;
+    const emps = (tx.employees || []).map(e => e.employee_name).join(' ');
+    const items = (tx.items || []).map(i => i.product_name).join(' ');
+    const hay = [
+      tx.receipt_number, tx.type, tx.customer_name, tx.customer_email,
+      tx.card_last4, tx.payment_method, emps, items,
+      new Date(tx.created_at).toLocaleString(),
+      (tx.subtotal || 0).toFixed(2), (tx.total || 0).toFixed(2),
+    ].join(' ').toLowerCase();
+    return hay.includes(q);
   });
   filteredTransactions = rows;
 
@@ -2566,6 +2521,7 @@ async function runAudit() {
     statusEl.textContent = '';
     renderAudit(data);
     resultEl.style.display = 'block';
+    resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (err) {
     statusEl.style.color = 'var(--danger)';
     statusEl.textContent = 'Failed: ' + err.message;
@@ -2809,14 +2765,16 @@ async function deleteCustomProduct(customId) {
 // ─── Leaderboard ────────────────────────────────────────────────────────────
 function renderLeaderboard(employees) {
   const container = document.getElementById('leaderboard');
-  const sorted = [...employees].filter(e => e.sale_count > 0 || e.net_total > 0).sort((a, b) => b.net_total - a.net_total);
+  // Rank by gross sales credited (positive), so it's a clean "top seller" board
+  const sorted = [...employees].filter(e => (Number(e.sales_total) || 0) > 0).sort((a, b) => Number(b.sales_total) - Number(a.sales_total));
   if (sorted.length === 0) {
     container.innerHTML = '<div style="text-align:center;color:var(--mid);font-family:system-ui,sans-serif;font-size:.85rem;padding:12px">No sales data yet</div>';
     return;
   }
-  const maxVal = sorted[0]?.net_total || 1;
+  const maxVal = Number(sorted[0]?.sales_total) || 1;
   container.innerHTML = sorted.map((e, i) => {
-    const pct = Math.max(5, (e.net_total / maxVal) * 100);
+    const val = Number(e.sales_total) || 0;
+    const pct = Math.max(5, (val / maxVal) * 100);
     const medal = i === 0 ? '1st' : i === 1 ? '2nd' : i === 2 ? '3rd' : `${i + 1}th`;
     return `<div style="display:flex;align-items:center;gap:10px;font-family:system-ui,sans-serif;font-size:.85rem">
       <span style="width:30px;text-align:center;font-weight:700;color:${i < 3 ? 'var(--rose-dk)' : 'var(--mid)'}">${medal}</span>
@@ -2826,7 +2784,7 @@ function renderLeaderboard(employees) {
           <div style="width:${pct}%;height:100%;background:var(--rose);border-radius:4px;transition:width .3s"></div>
         </div>
       </div>
-      <span style="font-weight:700;color:var(--dark);min-width:80px;text-align:right">$${money(e.net_total)}</span>
+      <span style="font-weight:700;color:var(--dark);min-width:80px;text-align:right">$${money(val)}</span>
       <span style="font-size:.75rem;color:var(--mid)">${e.sale_count} sales</span>
     </div>`;
   }).join('');
@@ -2844,11 +2802,10 @@ function commissionRow(e) {
   return `
     <tr>
       <td style="font-weight:600">${e.employee_name}</td>
-      <td>${Number(e.commission_rate) || 0}%</td>
       <td>${e.sale_count}</td>
-      <td>${e.return_count}</td>
-      <td>$${money(commissionAmt(e, e.sales_total))}</td>
-      <td>$${money(commissionAmt(e, e.returns_total))}</td>
+      <td>$${money(Number(e.sales_total))}</td>
+      <td>$${money(Number(e.returns_total))}</td>
+      <td>$${money(Number(e.net_total))}</td>
       <td style="font-weight:600">$${money(commissionAmt(e, e.net_total))}</td>
     </tr>`;
 }
@@ -2856,7 +2813,7 @@ function commissionRow(e) {
 function renderManagerCommissions() {
   document.getElementById('empReportBody').innerHTML =
     lastEmployeesReport.map(commissionRow).join('') ||
-    '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No data</td></tr>';
+    '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No data</td></tr>';
 }
 
 // ─── Employee Personal Report / Manager unlock ──────────────────────────────
@@ -2896,7 +2853,7 @@ async function unlockPersonalReport() {
       document.getElementById('empPersonalName').textContent = `${data.employee.name} — Personal Sales & Commission`;
       document.getElementById('empPersonalBody').innerHTML =
         (data.report || []).map(commissionRow).join('') ||
-        '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No data</td></tr>';
+        '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No data</td></tr>';
       document.getElementById('empPersonalReport').style.display = 'block';
     }
   } catch (err) {
