@@ -938,10 +938,19 @@ function batchAmount(b) {
 }
 
 // A batch record that was rejected/declined was never actually processed and
-// must be excluded from the settled total. Field name isn't fixed in the docs,
-// so check any reject/declined-style field with a meaningful value.
+// must be excluded from the settled total. Maverick marks these with a
+// `reject` object, e.g. { code: "0197", codeDescription: "..." }; successful
+// records have no reject field at all.
 function isRejected(b) {
   if (!b || typeof b !== 'object') return false;
+
+  // Primary signal: a `reject` object with a non-zero code (e.g. "0197").
+  // Successful records have no reject object; an all-zero code = no error.
+  if (b.reject && typeof b.reject === 'object') {
+    const code = b.reject.code != null ? String(b.reject.code).trim() : '';
+    if (code !== '' && !/^0+$/.test(code)) return true;
+  }
+
   const meaningful = (v) => {
     if (v == null) return false;
     const s = String(v).trim().toLowerCase();
