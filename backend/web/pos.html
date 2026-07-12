@@ -1020,9 +1020,8 @@ async function init() {
 
     const today = new Date().toISOString().slice(0, 10);
     const thirtyAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-    // Transactions default to a wide window so imported/backdated rows are visible
-    const twoYearsAgo = new Date(Date.now() - 730 * 86400000).toISOString().slice(0, 10);
-    document.getElementById('histStart').value = twoYearsAgo;
+    const twoWeeksAgo = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
+    document.getElementById('histStart').value = twoWeeksAgo;
     document.getElementById('histEnd').value = today;
     document.getElementById('rptStart').value = thirtyAgo;
     document.getElementById('rptEnd').value = today;
@@ -2027,7 +2026,14 @@ async function importRows(rows) {
     }
   }
   statusEl.style.color = 'var(--success)';
-  statusEl.textContent = `Imported ${totals.imported}${totals.dupe ? `, skipped ${totals.dupe} duplicate(s)` : ''}${totals.failed ? `, ${totals.failed} failed` : ''}. Showing all imported dates below.`;
+  statusEl.textContent = `Imported ${totals.imported}${totals.dupe ? `, skipped ${totals.dupe} duplicate(s)` : ''}${totals.failed ? `, ${totals.failed} failed` : ''}.`;
+  alert(
+    `Import finished for ${storeSettings.store_name}:\n\n` +
+    `• Newly imported: ${totals.imported}\n` +
+    `• Skipped (already imported): ${totals.dupe}\n` +
+    (totals.failed ? `• Failed: ${totals.failed}\n` : '') +
+    `\nThe date range below has been widened to show them.`
+  );
   // Widen the date filter to cover the imported (backdated) transactions so they show
   const dates = rows.map(r => (r.date || '').slice(0, 10)).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
   if (dates.length) {
