@@ -1016,6 +1016,36 @@ function batchDateOf(b, fallback) {
   return fallback;
 }
 
+async function fetchMaverickBatches(dbaId, from, to, token) {
+  const url = `${MAVERICK_BASE}/api/reporting/batches/${encodeURIComponent(dbaId)}?filter[date][gte]=${from}&filter[date][lte]=${to}&per-page=50`;
+  const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+  const text = await resp.text();
+  let data; try { data = JSON.parse(text); } catch (_) { data = null; }
+  return {
+    ok: resp.ok,
+    status: resp.status,
+    batches: resp.ok ? (Array.isArray(data) ? data : (data?.items || data?.batches || [])) : [],
+    error: resp.ok ? null : ((data && (data.message || data.name)) || `Maverick returned ${resp.status}`),
+  };
+}
+
+// The reporting API keys off the DBA id, but the dashboard shows a merchant
+// account id — resolve the real DBA id by matching the company's store name.
+async function resolveDbaByName(token, storeName) {
+  try {
+    const resp = await fetch(`${MAVERICK_BASE}/api/dba`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const items = Array.isArray(data) ? data : (data?.items || []);
+    if (!items.length) return null;
+    const nm = (storeName || '').trim().toLowerCase();
+    const match = items.find(d => (d.name || '').trim().toLowerCase() === nm) || (items.length === 1 ? items[0] : null);
+    return match ? String(match.id) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
 router.get('/reconciliation-audit', async (req, res) => {
   const userId = req.session.userId;
   const settings = await pgDb.getSettings(userId);
@@ -1039,14 +1069,25 @@ router.get('/reconciliation-audit', async (req, res) => {
   }
 
   // Merchant side
-  const url = `${MAVERICK_BASE}/api/reporting/batches/${encodeURIComponent(dbaId)}?filter[date][gte]=${from}&filter[date][lte]=${to}&per-page=50`;
   let batches = [];
+  let usedDbaId = dbaId;
   try {
-    const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
-    const text = await resp.text();
-    let data; try { data = JSON.parse(text); } catch (_) { data = null; }
-    if (!resp.ok) return res.json({ configured: true, from, to, error: (data && (data.message || data.name)) || `Maverick returned ${resp.status}` });
-    batches = Array.isArray(data) ? data : (data?.items || data?.batches || []);
+    let r = await fetchMaverickBatches(dbaId, from, to, token);
+    // If the configured id isn't accessible (e.g. it's a merchant id, not the
+    // DBA id), resolve the real DBA id by store name and retry once.
+    if (!r.ok && (r.status === 403 || /not allowed|forbidden|not found/i.test(r.error || ''))) {
+      const realId = await resolveDbaByName(token, settings.store_name);
+      if (realId && realId !== dbaId) {
+        const r2 = await fetchMaverickBatches(realId, from, to, token);
+        if (r2.ok) {
+          usedDbaId = realId;
+          await pgDb.updateSettings(userId, { maverick_dba_id: realId }); // persist the correction
+          r = r2;
+        }
+      }
+    }
+    if (!r.ok) return res.json({ configured: true, from, to, error: r.error });
+    batches = r.batches;
   } catch (e) {
     return res.json({ configured: true, from, to, error: e.message });
   }
@@ -1098,7 +1139,7 @@ router.get('/reconciliation-audit', async (req, res) => {
   totals.pos = Math.round(totals.pos * 100) / 100;
   totals.difference = Math.round((totals.merchant - totals.pos) * 100) / 100;
 
-  res.json({ configured: true, from, to, days, totals });
+  res.json({ configured: true, from, to, days, totals, dba_id: usedDbaId });
 });
 
 module.exports = router;

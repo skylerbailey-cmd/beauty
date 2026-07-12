@@ -2474,9 +2474,8 @@ function initBatchTab() {
     document.getElementById('batchTo').value = today;
     batchTabInitialized = true;
   }
-  // Reflect current Maverick connection state (prefill Glow SF's known DBA id)
-  const suggestedDba = (storeSettings.store_name || '').toLowerCase().includes('glow') ? '333359' : '';
-  document.getElementById('maverickDbaId').value = storeSettings.maverick_dba_id || suggestedDba;
+  // Reflect current Maverick connection state
+  document.getElementById('maverickDbaId').value = storeSettings.maverick_dba_id || '';
   const connected = !!storeSettings.maverick_connected;
   document.getElementById('maverickConnStatus').textContent = connected ? '✓ Connected' : '· Not connected';
   document.getElementById('maverickConnStatus').style.color = connected ? 'var(--success)' : 'var(--mid)';
@@ -2571,6 +2570,11 @@ function renderAudit(data) {
   const t = data.totals || {};
   const mismatches = t.mismatches || 0;
   document.getElementById('batchResultRange').textContent = `${data.from} → ${data.to}`;
+  // Reflect an auto-corrected DBA id
+  if (data.dba_id) {
+    storeSettings.maverick_dba_id = data.dba_id;
+    document.getElementById('maverickDbaId').value = data.dba_id;
+  }
 
   document.getElementById('batchSummary').innerHTML = `
     <div class="stat-box"><div class="stat-val">$${(t.merchant || 0).toFixed(2)}</div><div class="stat-lbl">Merchant Settled (total)</div></div>
