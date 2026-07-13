@@ -1194,11 +1194,14 @@ router.get('/reconciliation-audit', async (req, res) => {
   for (const b of batches) {
     const type = String(b.type || '').toLowerCase();
     const mag = Math.abs(batchAmount(b));
-    const signed = /credit|refund|return|void|reversal/.test(type) ? -mag : mag;
+    const isCredit = /credit|refund|return|void|reversal/.test(type);
+    const signed = isCredit ? -mag : mag;
     if (b.reject && typeof b.reject === 'object' && b.reject.code && !/^0+$/.test(String(b.reject.code))) rejectFlagged++;
     const d = batchDateOf(b, to);
-    if (!merchantByDate[d]) merchantByDate[d] = { total: 0, txns: 0, batchIds: new Set() };
+    if (!merchantByDate[d]) merchantByDate[d] = { total: 0, sales: 0, credits: 0, sale_count: 0, credit_count: 0, txns: 0, batchIds: new Set() };
     merchantByDate[d].total += signed;
+    if (isCredit) { merchantByDate[d].credits += mag; merchantByDate[d].credit_count += 1; }
+    else { merchantByDate[d].sales += mag; merchantByDate[d].sale_count += 1; }
     merchantByDate[d].txns += 1;
     if (b.batch && b.batch.id) merchantByDate[d].batchIds.add(b.batch.id);
   }
@@ -1223,9 +1226,15 @@ router.get('/reconciliation-audit', async (req, res) => {
     return {
       date: d,
       merchant_total: Math.round(m * 100) / 100,
+      merchant_sales: Math.round((merchantByDate[d]?.sales || 0) * 100) / 100,
+      merchant_credits: Math.round((merchantByDate[d]?.credits || 0) * 100) / 100,
+      merchant_sale_count: merchantByDate[d]?.sale_count || 0,
+      merchant_credit_count: merchantByDate[d]?.credit_count || 0,
       merchant_batches: merchantByDate[d]?.batchIds?.size || 0,
       merchant_txns: merchantByDate[d]?.txns || 0,
       pos_total: Math.round(p * 100) / 100,
+      pos_sales: Math.round((posByDate[d]?.sales_total || 0) * 100) / 100,
+      pos_returns: Math.round((posByDate[d]?.returns_total || 0) * 100) / 100,
       pos_sale_count: posByDate[d]?.sale_count || 0,
       pos_return_count: posByDate[d]?.return_count || 0,
       difference: diff,
@@ -1236,11 +1245,17 @@ router.get('/reconciliation-audit', async (req, res) => {
 
   const totals = days.reduce((a, d) => {
     a.merchant += d.merchant_total; a.pos += d.pos_total;
+    a.merchant_sales += d.merchant_sales; a.merchant_credits += d.merchant_credits;
+    a.pos_sales += d.pos_sales; a.pos_returns += d.pos_returns;
     if (!d.matched) a.mismatches += 1;
     return a;
-  }, { merchant: 0, pos: 0, mismatches: 0 });
+  }, { merchant: 0, pos: 0, merchant_sales: 0, merchant_credits: 0, pos_sales: 0, pos_returns: 0, mismatches: 0 });
   totals.merchant = Math.round(totals.merchant * 100) / 100;
   totals.pos = Math.round(totals.pos * 100) / 100;
+  totals.merchant_sales = Math.round(totals.merchant_sales * 100) / 100;
+  totals.merchant_credits = Math.round(totals.merchant_credits * 100) / 100;
+  totals.pos_sales = Math.round(totals.pos_sales * 100) / 100;
+  totals.pos_returns = Math.round(totals.pos_returns * 100) / 100;
   totals.difference = Math.round((totals.merchant - totals.pos) * 100) / 100;
   totals.reject_flagged = rejectFlagged; // informational only; all still counted
 
@@ -1391,6 +1406,14 @@ router.get('/reconciliation-day', async (req, res) => {
     unmatched_merchant: unmatchedMerchant,
     unmatched_pos_total: sum(unmatchedPos, p => p.dir === 'credit' ? -p.amount : p.amount),
     unmatched_merchant_total: sum(unmatchedMerchant, m => m.dir === 'credit' ? -m.amount : m.amount),
+    // Full per-transaction lists (with match status) so every individual
+    // transaction can be confirmed, not just the mismatches.
+    all_pos: pos,
+    all_merchant_day: merchDay,
+    pos_sales_total: sum(pos.filter(p => p.dir === 'debit'), p => p.amount),
+    pos_credits_total: sum(pos.filter(p => p.dir === 'credit'), p => p.amount),
+    merchant_sales_total: sum(merchDay.filter(m => m.dir === 'debit'), m => m.amount),
+    merchant_credits_total: sum(merchDay.filter(m => m.dir === 'credit'), m => m.amount),
     raw_merchant: batches.filter(b => batchDateOf(b, date) === date),
   });
 });

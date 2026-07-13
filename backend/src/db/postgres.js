@@ -783,6 +783,8 @@ async function getCardSalesByDateRange(userId, fromStr, toStr, tz) {
     SELECT (created_at AT TIME ZONE $4)::date AS d,
       COUNT(*) FILTER (WHERE type = 'sale')   AS sale_count,
       COUNT(*) FILTER (WHERE type = 'return') AS return_count,
+      COALESCE(SUM(total) FILTER (WHERE type = 'sale'), 0)   AS sales_total,
+      COALESCE(SUM(total) FILTER (WHERE type = 'return'), 0) AS returns_total,
       COALESCE(SUM(CASE WHEN type = 'sale' THEN total ELSE -total END), 0) AS net_total
     FROM pos_transactions
     WHERE user_id = $1 AND payment_method = 'card'
@@ -793,6 +795,8 @@ async function getCardSalesByDateRange(userId, fromStr, toStr, tz) {
     date: (r.d instanceof Date ? r.d.toISOString().slice(0, 10) : String(r.d).slice(0, 10)),
     sale_count: Number(r.sale_count || 0),
     return_count: Number(r.return_count || 0),
+    sales_total: Number(r.sales_total || 0),
+    returns_total: Number(r.returns_total || 0),
     net_total: Number(r.net_total || 0),
   }));
 }
