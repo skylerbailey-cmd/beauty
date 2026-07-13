@@ -2661,10 +2661,30 @@ async function openDayDrilldown(date) {
         <td>${statusCell(m)}</td>
       </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No settled merchant records this day</td></tr>';
 
+    const failed = data.failed_merchant || [];
+    const failedSection = failed.length ? `
+      <div style="margin-bottom:18px">
+        <h3 style="margin:0 0 6px;color:#b26a00">⚠ Failed / rejected at merchant — did NOT settle <span style="font-weight:400;color:var(--mid);font-size:.82rem">(${failed.length}, excluded from the totals)</span></h3>
+        <table class="report-table">
+          <thead><tr><th>Batch #</th><th>Type</th><th>Card</th><th>Reject code</th><th style="text-align:right">Amount</th></tr></thead>
+          <tbody>${failed.map(m => `
+            <tr style="background:#fff7e6">
+              <td style="font-family:monospace">${escapeHtml(m.batch_id || '-')}</td>
+              <td>${dirLabel(m)}</td>
+              <td>${m.last4 ? '••' + escapeHtml(m.last4) : '-'}</td>
+              <td style="font-family:monospace">${escapeHtml((m.reject && (m.reject.code != null ? String(m.reject.code) : '')) || '-')}</td>
+              <td style="text-align:right;font-weight:600">${m.dir === 'credit' ? '−' : ''}$${money2(m.amount)}</td>
+            </tr>`).join('')}</tbody>
+        </table>
+        <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:6px 0 0">These attempts appear in Maverick's records but were not funded, so they are excluded from the settled total. If the POS recorded one of these, the refund/sale needs to be re-processed.</p>
+      </div>` : '';
+
     body.innerHTML = `
       <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:0 0 14px">${data.matched_count} transaction(s) matched (including split payments and small tax-rounding differences).${data.settled_adjacent_day ? ` ${data.settled_adjacent_day} settled a day early/late (cutoff timing) and were still matched.` : ''} Rows shaded pink are unmatched — those are your real discrepancies.</p>
 
       ${validation}
+
+      ${failedSection}
 
       <div style="margin-bottom:18px">
         <h3 style="margin:0 0 6px">All POS card transactions <span style="font-weight:400;color:var(--mid);font-size:.82rem">(${allPos.length})</span></h3>

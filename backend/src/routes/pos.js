@@ -1190,15 +1190,25 @@ router.get('/reconciliation-audit', async (req, res) => {
   // `reject` object is informational metadata — Maverick still funds/counts the
   // record — so we do NOT exclude based on it.
   const merchantByDate = {};
-  let rejectFlagged = 0;
+  const failedRecords = [];
   for (const b of batches) {
     const type = String(b.type || '').toLowerCase();
     const mag = Math.abs(batchAmount(b));
     const isCredit = /credit|refund|return|void|reversal/.test(type);
     const signed = isCredit ? -mag : mag;
-    if (b.reject && typeof b.reject === 'object' && b.reject.code && !/^0+$/.test(String(b.reject.code))) rejectFlagged++;
     const d = batchDateOf(b, to);
-    if (!merchantByDate[d]) merchantByDate[d] = { total: 0, sales: 0, credits: 0, sale_count: 0, credit_count: 0, txns: 0, batchIds: new Set() };
+    if (!merchantByDate[d]) merchantByDate[d] = { total: 0, sales: 0, credits: 0, sale_count: 0, credit_count: 0, failed: 0, failed_amount: 0, txns: 0, batchIds: new Set() };
+
+    // A failed/rejected transaction (e.g. a refund that didn't fund) is NOT in
+    // the merchant's settled batch total, so exclude it from the reconciliation
+    // but track it so it can be surfaced as "caught, did not settle".
+    if (isRejected(b)) {
+      merchantByDate[d].failed += 1;
+      merchantByDate[d].failed_amount += signed;
+      failedRecords.push({ date: d, amount: signed, type, last4: last4Of(b.card?.number), batch_id: b.batch?.id || null, reject: b.reject || null });
+      continue;
+    }
+
     merchantByDate[d].total += signed;
     if (isCredit) { merchantByDate[d].credits += mag; merchantByDate[d].credit_count += 1; }
     else { merchantByDate[d].sales += mag; merchantByDate[d].sale_count += 1; }
@@ -1217,11 +1227,15 @@ router.get('/reconciliation-audit', async (req, res) => {
     const p = posByDate[d]?.net_total || 0;
     const diff = Math.round((m - p) * 100) / 100;
     const matched = Math.abs(diff) < 0.01;
+    const failed = merchantByDate[d]?.failed || 0;
     let explanation = '';
     if (!matched) {
       explanation = diff > 0
         ? `Merchant settled $${money(diff)} MORE than the POS recorded — a card sale was likely processed on the terminal but not entered in the POS.`
         : `POS recorded $${money(Math.abs(diff))} MORE than the merchant settled — a POS card sale may not have batched/settled yet, or a terminal charge was voided/declined.`;
+    }
+    if (failed) {
+      explanation = (explanation ? explanation + ' ' : '') + `${failed} failed/rejected transaction${failed === 1 ? '' : 's'} at the merchant (did not settle — excluded).`;
     }
     return {
       date: d,
@@ -1230,6 +1244,8 @@ router.get('/reconciliation-audit', async (req, res) => {
       merchant_credits: Math.round((merchantByDate[d]?.credits || 0) * 100) / 100,
       merchant_sale_count: merchantByDate[d]?.sale_count || 0,
       merchant_credit_count: merchantByDate[d]?.credit_count || 0,
+      merchant_failed: merchantByDate[d]?.failed || 0,
+      merchant_failed_amount: Math.round((merchantByDate[d]?.failed_amount || 0) * 100) / 100,
       merchant_batches: merchantByDate[d]?.batchIds?.size || 0,
       merchant_txns: merchantByDate[d]?.txns || 0,
       pos_total: Math.round(p * 100) / 100,
@@ -1257,7 +1273,8 @@ router.get('/reconciliation-audit', async (req, res) => {
   totals.pos_sales = Math.round(totals.pos_sales * 100) / 100;
   totals.pos_returns = Math.round(totals.pos_returns * 100) / 100;
   totals.difference = Math.round((totals.merchant - totals.pos) * 100) / 100;
-  totals.reject_flagged = rejectFlagged; // informational only; all still counted
+  totals.failed_count = failedRecords.length;
+  totals.failed_amount = Math.round(failedRecords.reduce((s, r) => s + r.amount, 0) * 100) / 100;
 
   // Diagnostic: raw batch count + a sample object + the top-level response keys,
   // so we can map Maverick's actual amount field if the totals look wrong.
@@ -1325,10 +1342,16 @@ router.get('/reconciliation-day', async (req, res) => {
       batch_id: b.batch?.id || null,
       brand: b.card?.bin?.brand || null,
       bdate: batchDateOf(b, date),
+      failed: isRejected(b),
+      reject: b.reject || null,
       matched: false,
     };
   };
-  const merchAll = batches.map(toMerch); // count all — reject flag is informational
+  const merchAllRaw = batches.map(toMerch);
+  // Failed/rejected records aren't in the settled batch total, so keep them out
+  // of the matching pool — but surface them so they can be caught.
+  const merchAll = merchAllRaw.filter(m => !m.failed);
+  const failedMerchant = merchAllRaw.filter(m => m.failed && m.bdate === date);
   const merchDay = merchAll.filter(m => m.bdate === date);
   const merchAdj = merchAll.filter(m => m.bdate !== date);
 
@@ -1410,6 +1433,7 @@ router.get('/reconciliation-day', async (req, res) => {
     // transaction can be confirmed, not just the mismatches.
     all_pos: pos,
     all_merchant_day: merchDay,
+    failed_merchant: failedMerchant,
     pos_sales_total: sum(pos.filter(p => p.dir === 'debit'), p => p.amount),
     pos_credits_total: sum(pos.filter(p => p.dir === 'credit'), p => p.amount),
     merchant_sales_total: sum(merchDay.filter(m => m.dir === 'debit'), m => m.amount),
