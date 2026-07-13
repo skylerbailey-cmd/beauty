@@ -550,16 +550,10 @@
 
       <div class="stat-grid" id="salesSummary"></div>
 
-      <!-- Sales Leaderboard (always visible) -->
-      <div class="report-card">
-        <h3>Sales Leaderboard</h3>
-        <div id="leaderboard" style="display:flex;flex-direction:column;gap:8px"></div>
-      </div>
-
       <!-- Employee Sales & Commissions (Manager/Employee view — locked) -->
       <div class="report-card">
         <h3>Employee Sales &amp; Commissions</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Enter your name and PIN. Employees see their own sales; managers see everyone's commissions.</p>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Enter your name and PIN. Employees see their own sales; managers unlock the sales leaderboard and everyone's commissions.</p>
         <div id="empPersonalLocked" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input type="text" id="empPersonalName2" placeholder="Your name" style="width:150px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
           <input type="password" id="empPersonalPin" placeholder="Your PIN" maxlength="6" style="width:120px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;text-align:center" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
@@ -576,8 +570,12 @@
         </div>
       </div>
 
-      <!-- Manager-only: full commissions table (revealed after a manager unlocks above) -->
+      <!-- Manager-only: sales leaderboard + full commissions table (revealed after a manager unlocks above) -->
       <div id="managerCommissionsSection" style="display:none">
+        <div class="report-card">
+          <h3>Sales Leaderboard</h3>
+          <div id="leaderboard" style="display:flex;flex-direction:column;gap:8px"></div>
+        </div>
         <div class="report-card">
           <h3>Employee Commissions &amp; Sales</h3>
           <table class="report-table">
@@ -2332,10 +2330,10 @@ async function loadReports() {
     <div class="stat-box"><div class="stat-val">$${money((sales.net_tax || 0))}</div><div class="stat-lbl">Tax Collected</div></div>
   `;
 
-  // Leaderboard is always visible; commissions table is manager-gated
+  // Leaderboard and commissions table are both manager-gated (rendered on manager unlock)
   lastEmployeesReport = employees;
-  renderLeaderboard(employees);
   if (managerReportsUnlocked) {
+    renderLeaderboard(employees);
     renderManagerCommissions();
   }
 
@@ -2982,6 +2980,7 @@ async function unlockPersonalReport() {
       // Managers unlock the full leaderboard + commissions section
       managerReportsUnlocked = true;
       document.getElementById('managerCommissionsSection').style.display = 'block';
+      renderLeaderboard(lastEmployeesReport);
       renderManagerCommissions();
       document.getElementById('empPersonalName').textContent = `${data.employee.name} (Manager) — full commissions unlocked below`;
       document.getElementById('empPersonalBody').innerHTML = '';
