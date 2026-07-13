@@ -1279,39 +1279,35 @@ router.get('/reconciliation-day', async (req, res) => {
   const date = (req.query.date || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Valid date (YYYY-MM-DD) required' });
 
-  // Merchant settled transactions for the day
+  // Fetch merchant settlements for the day AND ±1 day, so a late charge that
+  // settled in the next day's batch (cutoff timing) can still be matched.
+  const dayShift = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
   let batches = [];
   try {
-    let r = await fetchMaverickBatches(dbaId, date, date, token);
-    if (r.ok && r.batches.length === 0) {
-      const probe = await fetchMaverickBatches(dbaId, null, null, token);
-      if (probe.ok) batches = probe.batches.filter(b => batchDateOf(b, null) === date);
-      else if (!r.ok) return res.json({ configured: true, date, error: r.error });
-    } else if (r.ok) {
-      batches = r.batches;
-    } else {
-      return res.json({ configured: true, date, error: r.error });
-    }
+    const r = await fetchMaverickBatches(dbaId, dayShift(date, -1), dayShift(date, 1), token);
+    if (!r.ok) return res.json({ configured: true, date, error: r.error });
+    batches = r.batches;
   } catch (e) {
     return res.json({ configured: true, date, error: e.message });
   }
 
-  const merchant = batches
-    .filter(b => !isRejected(b))
-    .map(b => {
-      const type = String(b.type || '').toLowerCase();
-      const isCredit = /credit|refund|return|void|reversal/.test(type);
-      return {
-        amount: Math.abs(batchAmount(b)),
-        dir: isCredit ? 'credit' : 'debit',
-        last4: last4Of(b.card?.number),
-        batch_id: b.batch?.id || null,
-        reference: b.referenceNumber || null,
-        brand: b.card?.bin?.brand || null,
-      };
-    });
+  const toMerch = (b) => {
+    const type = String(b.type || '').toLowerCase();
+    const isCredit = /credit|refund|return|void|reversal/.test(type);
+    return {
+      amount: Math.abs(batchAmount(b)),
+      dir: isCredit ? 'credit' : 'debit',
+      last4: last4Of(b.card?.number),
+      batch_id: b.batch?.id || null,
+      brand: b.card?.bin?.brand || null,
+      bdate: batchDateOf(b, date),
+      matched: false,
+    };
+  };
+  const merchAll = batches.filter(b => !isRejected(b)).map(toMerch);
+  const merchDay = merchAll.filter(m => m.bdate === date);
+  const merchAdj = merchAll.filter(m => m.bdate !== date);
 
-  // POS card transactions for the day
   const posRows = await pgDb.getCardTransactionsForDate(userId, date, tz);
   const pos = posRows.map(t => ({
     amount: Math.abs(Number(t.total) || 0),
@@ -1320,40 +1316,73 @@ router.get('/reconciliation-day', async (req, res) => {
     receipt: t.receipt_number,
     customer: t.customer_name || '',
     type: t.type,
+    matched: false,
   }));
 
-  // Greedy match by (direction, amount); prefer a matching last-4 when present
-  const key = (x) => `${x.dir}:${Math.round(x.amount * 100)}`;
-  const byKey = {};
-  for (const m of merchant) (byKey[key(m)] = byKey[key(m)] || []).push(m);
+  const TOL = 1.00; // $ tolerance for tax/rounding differences
 
-  const matched = [];
-  const unmatchedPos = [];
-  for (const p of pos) {
-    const bucket = byKey[key(p)];
-    if (bucket && bucket.length) {
-      let idx = p.last4 ? bucket.findIndex(m => m.last4 && m.last4 === p.last4) : -1;
-      if (idx < 0) idx = 0;
-      const m = bucket.splice(idx, 1)[0];
-      matched.push({ pos: p, merchant: m });
-    } else {
-      unmatchedPos.push(p);
+  // One-to-one exact/near match, same direction, preferring a matching last-4.
+  const matchOne = (poolPos, poolMerch) => {
+    for (const p of poolPos) {
+      if (p.matched) continue;
+      const cands = poolMerch.filter(m => !m.matched && m.dir === p.dir && Math.abs(m.amount - p.amount) <= TOL);
+      if (!cands.length) continue;
+      const m = (p.last4 && cands.find(c => c.last4 === p.last4)) || cands[0];
+      m.matched = true; p.matched = true;
     }
-  }
-  const unmatchedMerchant = Object.values(byKey).flat();
+  };
+  // Split funding: one item equals the sum of 2-4 items on the other side.
+  const findSubset = (candidates, target) => {
+    const items = candidates.filter(x => !x.matched).sort((a, b) => b.amount - a.amount);
+    if (items.length > 60) return null; // perf guard
+    const dfs = (start, chosen, s) => {
+      if (chosen.length >= 2 && Math.abs(s - target) <= TOL) return chosen.slice();
+      if (chosen.length >= 4 || s - TOL > target) return null;
+      for (let i = start; i < items.length; i++) {
+        chosen.push(items[i]);
+        const r = dfs(i + 1, chosen, s + items[i].amount);
+        chosen.pop();
+        if (r) return r;
+      }
+      return null;
+    };
+    return dfs(0, [], 0);
+  };
+  const matchSplit = (poolPos, poolMerch) => {
+    for (const p of poolPos) {
+      if (p.matched) continue;
+      const combo = findSubset(poolMerch.filter(m => m.dir === p.dir), p.amount);
+      if (combo) { combo.forEach(m => m.matched = true); p.matched = true; }
+    }
+    for (const m of poolMerch) {
+      if (m.matched) continue;
+      const combo = findSubset(poolPos.filter(p => p.dir === m.dir), m.amount);
+      if (combo) { combo.forEach(p => p.matched = true); m.matched = true; }
+    }
+  };
+
+  // Pass A: match against the same day's merchant settlements.
+  matchOne(pos, merchDay);
+  matchSplit(pos, merchDay);
+  // Pass B: remaining POS against ±1 day (settlement cutoff timing).
+  matchOne(pos, merchAdj);
+  matchSplit(pos, merchAdj);
+
+  const unmatchedPos = pos.filter(p => !p.matched);
+  const unmatchedMerchant = merchDay.filter(m => !m.matched); // only same-day merchant counts as "settled but not in POS"
+  const settledAdjacent = merchAdj.filter(m => m.matched).length; // matched, but settled a day off
 
   const sum = (arr, f) => Math.round(arr.reduce((s, x) => s + f(x), 0) * 100) / 100;
   res.json({
     configured: true,
     date,
-    matched_count: matched.length,
+    matched_count: pos.filter(p => p.matched).length,
+    settled_adjacent_day: settledAdjacent,
     unmatched_pos: unmatchedPos,
     unmatched_merchant: unmatchedMerchant,
     unmatched_pos_total: sum(unmatchedPos, p => p.dir === 'credit' ? -p.amount : p.amount),
     unmatched_merchant_total: sum(unmatchedMerchant, m => m.dir === 'credit' ? -m.amount : m.amount),
-    // Raw merchant records for this day, so we can inspect status/reject fields
-    // on failed transactions that shouldn't count.
-    raw_merchant: batches,
+    raw_merchant: batches.filter(b => batchDateOf(b, date) === date),
   });
 });
 

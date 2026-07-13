@@ -2637,7 +2637,7 @@ async function openDayDrilldown(date) {
       </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--mid)">None — every settled charge is in the POS</td></tr>';
 
     body.innerHTML = `
-      <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:0 0 14px">${data.matched_count} transaction(s) matched. Below are the ones that appear on only one side — those are your mismatch.</p>
+      <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:0 0 14px">${data.matched_count} transaction(s) matched (including split payments and small tax-rounding differences).${data.settled_adjacent_day ? ` ${data.settled_adjacent_day} settled a day early/late (cutoff timing) and were still matched.` : ''} Below are the ones that appear on only one side — those are your real mismatch.</p>
 
       <div style="margin-bottom:18px">
         <h3 style="margin:0 0 6px;color:var(--danger)">In POS but NOT settled at merchant <span style="font-weight:400;color:var(--mid);font-size:.82rem">(recorded a card sale that didn't settle)</span></h3>
