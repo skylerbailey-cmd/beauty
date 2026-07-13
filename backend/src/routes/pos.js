@@ -1079,18 +1079,30 @@ function batchDateOf(b, fallback) {
 async function fetchMaverickBatches(dbaId, from, to, token) {
   // Maverick filters batches by the settlement field "batch.date" (per the docs
   // note). Omit it when from/to are null (then it returns the last 5 days).
-  const dateFilter = (from && to) ? `?filter[batch.date][gte]=${from}&filter[batch.date][lte]=${to}&per-page=50` : '?per-page=50';
-  const url = `${MAVERICK_BASE}/api/reporting/batches/${encodeURIComponent(dbaId)}${dateFilter}`;
-  const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
-  const text = await resp.text();
-  let data; try { data = JSON.parse(text); } catch (_) { data = null; }
-  return {
-    ok: resp.ok,
-    status: resp.status,
-    batches: resp.ok ? (Array.isArray(data) ? data : (data?.items || data?.batches || [])) : [],
-    raw: data,
-    error: resp.ok ? null : ((data && (data.message || data.name)) || `Maverick returned ${resp.status}`),
-  };
+  // Results are paginated at 50/page — follow every page so nothing is dropped.
+  const dateFilter = (from && to) ? `filter[batch.date][gte]=${from}&filter[batch.date][lte]=${to}&` : '';
+  const base = `${MAVERICK_BASE}/api/reporting/batches/${encodeURIComponent(dbaId)}?${dateFilter}per-page=50`;
+
+  const all = [];
+  let lastData = null;
+  const MAX_PAGES = 60; // safety cap (3000 records)
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const resp = await fetch(`${base}&page=${page}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+    const text = await resp.text();
+    let data; try { data = JSON.parse(text); } catch (_) { data = null; }
+    if (!resp.ok) {
+      return {
+        ok: false, status: resp.status, batches: [], raw: data,
+        error: (data && (data.message || data.name)) || `Maverick returned ${resp.status}`,
+      };
+    }
+    lastData = data;
+    const items = Array.isArray(data) ? data : (data?.items || data?.batches || []);
+    all.push(...items);
+    const pageCount = Number(data?._meta?.pageCount) || 1;
+    if (items.length === 0 || page >= pageCount) break;
+  }
+  return { ok: true, status: 200, batches: all, raw: lastData, error: null };
 }
 
 // The reporting API keys off the DBA id, but the dashboard shows a merchant
