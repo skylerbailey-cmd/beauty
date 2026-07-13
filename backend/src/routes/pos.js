@@ -942,21 +942,19 @@ function batchAmount(b) {
 }
 
 // A batch record that didn't actually go through must be excluded from the
-// settled total. Maverick flags these with a `reject` object (e.g.
-// { code: "0197" }). Observed behavior: a reject flag on a REFUND/credit means
-// the refund didn't fund (exclude it), but a reject flag on a SALE/debit is
-// informational — those still settled (keep them). We therefore only exclude
-// reject-flagged credits/refunds/reversals.
+// settled total. Maverick flags these with a `reject` object carrying a
+// non-zero code (e.g. { code: "0197" }). A rejected/declined transaction did
+// not fund — this is true whether it's a SALE (debit) or a REFUND (credit), so
+// we exclude any record with a real reject code (or a declined/rejected status)
+// regardless of type. Excluded records are surfaced separately as "did not
+// settle" so they aren't silently dropped.
 function isRejected(b) {
   if (!b || typeof b !== 'object') return false;
-
-  const type = String(b.type || '').toLowerCase();
-  const isCreditLike = /credit|refund|return|void|reversal/.test(type);
 
   if (b.reject && typeof b.reject === 'object') {
     const code = b.reject.code != null ? String(b.reject.code).trim() : '';
     const hasReject = code !== '' && !/^0+$/.test(code); // non-zero reject code
-    if (hasReject && isCreditLike) return true;
+    if (hasReject) return true;
   }
 
   // An explicit declined/rejected status also excludes (any type).
@@ -1188,11 +1186,10 @@ router.get('/reconciliation-audit', async (req, res) => {
 
   // Each record is a settled transaction: { amount, type: 'debit'|'credit', date,
   // batch: { id, date } }. A 'credit' is a refund back to the cardholder, so it
-  // subtracts from the merchant's net settled amount. Rejected/declined records
-  // (never actually processed) are excluded.
-  // Count every settled record (matching Maverick's own batch report). A
-  // `reject` object is informational metadata — Maverick still funds/counts the
-  // record — so we do NOT exclude based on it.
+  // subtracts from the merchant's net settled amount. Any record carrying a
+  // non-zero reject code (a declined sale or a refund that didn't fund) never
+  // settled, so it is excluded from the total and tracked in failedRecords so it
+  // can be surfaced as "caught, did not settle" (see isRejected).
   const merchantByDate = {};
   const failedRecords = [];
   for (const b of batches) {
