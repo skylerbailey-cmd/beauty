@@ -1279,12 +1279,13 @@ router.get('/reconciliation-day', async (req, res) => {
   const date = (req.query.date || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'Valid date (YYYY-MM-DD) required' });
 
-  // Fetch merchant settlements for the day AND ±1 day, so a late charge that
-  // settled in the next day's batch (cutoff timing) can still be matched.
+  // Fetch merchant settlements for a window around the day, so a charge that
+  // settled a bit late (sales next-day, refunds often 2-3 days) still matches.
   const dayShift = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  const WINDOW = 3;
   let batches = [];
   try {
-    const r = await fetchMaverickBatches(dbaId, dayShift(date, -1), dayShift(date, 1), token);
+    const r = await fetchMaverickBatches(dbaId, dayShift(date, -WINDOW), dayShift(date, WINDOW), token);
     if (!r.ok) return res.json({ configured: true, date, error: r.error });
     batches = r.batches;
   } catch (e) {
