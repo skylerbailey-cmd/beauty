@@ -82,7 +82,7 @@ router.get('/products', async (req, res) => {
         image: prod.image,
         retailPrice: prod.retailPrice || 0,
         price: priceEntry?.price ?? prod.retailPrice ?? 0,
-        minPrice: priceEntry?.min_price ?? 0,
+        minPrice: priceEntry?.min_price ?? prod.minPrice ?? 0,
         cost: priceEntry?.cost ?? 0,
         visible: vis === undefined ? true : !!vis,
         isCustom: false,
@@ -117,7 +117,7 @@ router.get('/products', async (req, res) => {
           id: prod.id, name: prod.name, brand: prod.brand || brandKey,
           description: prod.description, image: prod.image,
           retailPrice: prod.retailPrice || 0, price: prod.retailPrice || 0,
-          minPrice: 0, cost: 0, visible: true, isCustom: false,
+          minPrice: prod.minPrice || 0, cost: 0, visible: true, isCustom: false,
         });
       }
     }
@@ -255,6 +255,10 @@ router.post('/transactions', async (req, res) => {
       pgDb.getCustomProducts(userId),
     ]);
     const minPriceMap = {};
+    // Catalog-defined default minimums (overridden by any per-store price entry below)
+    for (const [, prods] of Object.entries(PRODUCTS)) {
+      for (const prod of prods) { if (prod.minPrice > 0) minPriceMap[prod.id] = prod.minPrice; }
+    }
     for (const p of prices) { if (p.min_price > 0) minPriceMap[p.product_id] = p.min_price; }
     for (const cp of customProducts) { if (cp.min_price > 0) minPriceMap[`custom-${cp.id}`] = cp.min_price; }
 

@@ -342,7 +342,7 @@ router.post('/:id/generate-draft', async (req, res) => {
 
     // Build product context from the catalog, filtered by user's selected brands
     const { PRODUCTS } = require('./welcome');
-    const userBrands = JSON.parse(req.user?.brands || '["avologi","avinichi","hydrasphere"]');
+    const userBrands = JSON.parse(req.user?.brands || '["avologi","avinichi","hydrasphere","spacetouch"]');
     const allProducts = Object.entries(PRODUCTS)
       .filter(([key]) => userBrands.includes(key))
       .flatMap(([, products]) => products);

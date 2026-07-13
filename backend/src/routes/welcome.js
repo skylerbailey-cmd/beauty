@@ -447,6 +447,22 @@ const PRODUCTS = {
       url: 'https://www.avinichi.com/product/mulberry-hydrating-regimen/',
     },
   ],
+  spacetouch: [
+    {
+      id: 'spacetouch-cosmo',
+      name: 'Cosmo',
+      brand: 'SpaceTouch',
+      retailPrice: 100000,
+      minPrice: 10000,
+      description: 'The Cosmo is a portable, full-body LED skin care device with a foldable design featuring 360 LED and infrared points across a 23-inch treatment width. Powered by NASA-derived infrared technology and developed with German plastic surgeons and dermatologists, it delivers six therapeutic light wavelengths — Red, Blue, Green, Yellow, Orange, and Purple — plus an AI-enhanced Flash Mode with infrared coverage (700nm to 0.1mm). An FDA-approved, clinical-grade home device with a manual timer up to 60 minutes and a lifetime manufacturer warranty. Available in Black or White.',
+      benefits: 'Full-body LED treatment across a 23-inch, 360-point panel; six therapeutic wavelengths (red, blue, green, yellow, orange, purple); AI-enhanced Flash Mode with deep infrared coverage; targets body pain, wrinkles and fine lines, sun spots and pigmentation, cellulite and scarring, body tightening, and acne; foldable and portable; manual timer up to 60 minutes; FDA approved; clinical-grade for home use; lifetime manufacturer warranty; available in Black or White.',
+      ingredients: '',
+      howToUse: 'Unfold the panel and position it facing the treatment area at a comfortable distance. Select the light wavelength that matches your concern and set the manual timer (up to 60 minutes per session). Remain still during treatment, repositioning the panel to cover additional areas of the body as needed. Use Flash Mode for AI-enhanced infrared coverage. Fold the device flat for storage after each use.',
+      step: 'device treatment',
+      image: 'https://spacetouch.com/cdn/shop/files/SpacetouchCosmostomachtightenting.png?v=1710228368',
+      url: 'https://spacetouch.com/products/cosmo',
+    },
+  ],
 };
 
 // GET /api/welcome/products — returns the product catalog

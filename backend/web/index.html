@@ -1847,6 +1847,13 @@
         <div style="font-size:.76rem;color:var(--mid);margin-top:2px;">Hydrogen-infused skincare and SPF products</div>
       </div>
     </label>
+    <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream);transition:all .2s;">
+      <input type="checkbox" value="spacetouch" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--rose-dk);" />
+      <div>
+        <div style="font-weight:600;font-size:.88rem;color:var(--dark);">SpaceTouch</div>
+        <div style="font-size:.76rem;color:var(--mid);margin-top:2px;">Full-body LED therapy devices</div>
+      </div>
+    </label>
   </div>
 
   <div class="settings-section-label">Theme</div>
@@ -2106,6 +2113,20 @@
               <button class="select-all-btn" onclick="clearAll('avologi')">Clear all</button>
             </div>
             <div class="product-grid" id="grid-avologi"></div>
+          </div>
+
+          <!-- SpaceTouch -->
+          <div class="brand-section" id="brand-section-spacetouch">
+            <div class="brand-header">
+              <span class="brand-badge" style="background:#e8eef5;color:#2a4d6e;">SpaceTouch</span>
+              <span class="brand-name">Full-Body LED Therapy Devices</span>
+              <a class="brand-url" href="https://spacetouch.com/" target="_blank">spacetouch.com &#8599;</a>
+            </div>
+            <div class="select-all-row">
+              <button class="select-all-btn" onclick="selectAll('spacetouch')">Select all</button>
+              <button class="select-all-btn" onclick="clearAll('spacetouch')">Clear all</button>
+            </div>
+            <div class="product-grid" id="grid-spacetouch"></div>
           </div>
 
           <div id="formError" class="error-box" hidden></div>
@@ -2478,7 +2499,7 @@
       document.getElementById('settingsCompanyName').value = currentUser.companyName;
     }
     renderWebsites(currentUser?.websites || []);
-    renderBrandCheckboxes(currentUser?.brands || ['avologi', 'avinichi', 'hydrasphere']);
+    renderBrandCheckboxes(currentUser?.brands || ['avologi', 'avinichi', 'hydrasphere', 'spacetouch']);
     // Inside the POS Emails tab, default to the Sent Emails view
     if (typeof IS_EMBEDDED !== 'undefined' && IS_EMBEDDED) {
       switchTab('sent');
@@ -2760,7 +2781,7 @@
 
   // ── Brands management ──────────────────────────────────────────────────
   function renderBrandCheckboxes(brands) {
-    const allBrands = ['avologi', 'avinichi', 'hydrasphere'];
+    const allBrands = ['avologi', 'avinichi', 'hydrasphere', 'spacetouch'];
     const selected = brands || allBrands;
     document.querySelectorAll('#brandCheckboxes input[type=checkbox]').forEach(cb => {
       cb.checked = selected.includes(cb.value);
@@ -2769,7 +2790,7 @@
   }
 
   function applyBrandVisibility(brands) {
-    const allBrands = ['avologi', 'avinichi', 'hydrasphere'];
+    const allBrands = ['avologi', 'avinichi', 'hydrasphere', 'spacetouch'];
     allBrands.forEach(brand => {
       const section = document.getElementById('brand-section-' + brand);
       if (section) {
@@ -2787,7 +2808,7 @@
     if (brands.length === 0) {
       alert('At least one brand must be selected.');
       // Re-check the last unchecked one
-      renderBrandCheckboxes(currentUser?.brands || ['avologi', 'avinichi', 'hydrasphere']);
+      renderBrandCheckboxes(currentUser?.brands || ['avologi', 'avinichi', 'hydrasphere', 'spacetouch']);
       return;
     }
     applyBrandVisibility(brands);
@@ -2982,6 +3003,9 @@
       { id: 'hydrasphere-advanced-night-repair', name: 'Advanced Night Repair', description: 'Intensive overnight cream with Collagen, Hyaluronic Acid, Peptides, and nourishing oils — repairs and deeply hydrates while you sleep for a smoother, firmer complexion by morning.', image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/5-9-600x600.png' },
       { id: 'hydrasphere-advanced-eye-lifting-serum', name: 'Advanced Eye Lifting Serum', description: 'Lightweight serum for the delicate eye area with Collagen, Caviar Extract, and Peptides — reduces fine lines, puffiness, dark circles, and improves elasticity around the eyes.', image: 'https://hydrasphereplus.com/wp-content/uploads/2023/10/17-600x600.png' },
     ],
+    spacetouch: [
+      { id: 'spacetouch-cosmo', name: 'Cosmo', description: 'Portable, foldable full-body LED skin care device — 360 LED and infrared points across a 23-inch panel with six therapeutic wavelengths and AI-enhanced Flash Mode. Targets body pain, wrinkles, pigmentation, cellulite, scarring, tightening, and acne. FDA approved with a lifetime warranty.', image: 'https://spacetouch.com/cdn/shop/files/SpacetouchCosmostomachtightenting.png?v=1710228368' },
+    ],
   };
 
   // ── Render product grids ────────────────────────────────────────────────────
@@ -3010,6 +3034,7 @@
   renderGrid('hydrasphere');
   renderGrid('avologi');
   renderGrid('avinichi');
+  renderGrid('spacetouch');
 
   const THERMAL_SET_ID = 'hydrasphere-mineralift-thermal-set';
   const THERMAL_INDIVIDUAL_IDS = ['hydrasphere-mineralift-thermal-serum', 'hydrasphere-mineralift-thermal-cream', 'hydrasphere-mineralift-thermal-mask'];
@@ -3213,7 +3238,7 @@
 
     try {
       const selectedIds = getSelectedIds();
-      const allProds = [...PRODUCTS.avologi, ...(PRODUCTS.avinichi || []), ...PRODUCTS.hydrasphere];
+      const allProds = [...PRODUCTS.avologi, ...(PRODUCTS.avinichi || []), ...PRODUCTS.hydrasphere, ...(PRODUCTS.spacetouch || [])];
       const productNames = selectedIds
         .map(id => allProds.find(p => p.id === id))
         .filter(Boolean)
