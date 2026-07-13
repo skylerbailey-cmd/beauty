@@ -509,14 +509,9 @@
         <div class="stat-grid" id="batchSummary"></div>
         <div class="report-card">
           <h3>Batch Reconciliation Audit <span id="batchResultRange" style="font-weight:400;color:var(--mid);font-size:.85rem"></span></h3>
-          <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Each day breaks out the merchant's settled <b>sales</b> (debits) and <b>credits</b> (refunds) and compares the net to the POS's recorded card sales and returns. Click any day to see every individual transaction and confirm it matches.</p>
+          <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Each day compares the merchant's settled card batches to the POS's recorded card sales (net of returns) over the selected date range. Click any day to see the sales/credits breakdown and every individual transaction.</p>
           <table class="report-table">
-            <thead><tr>
-              <th>Date</th>
-              <th>Merchant Sales</th><th>Merchant Credits</th><th>Merchant Net</th>
-              <th>POS Sales</th><th>POS Returns</th><th>POS Net</th>
-              <th>Difference</th><th>Status</th><th>Explanation</th>
-            </tr></thead>
+            <thead><tr><th>Date</th><th>Merchant Settled</th><th>POS Card (net)</th><th>Difference</th><th>Status</th><th>Explanation</th></tr></thead>
             <tbody id="batchBody"></tbody>
           </table>
           <div id="batchDebug" style="display:none;margin-top:14px;padding:12px;background:#fff6e0;border:1px solid #f0d48a;border-radius:8px;font-family:system-ui,sans-serif;font-size:.8rem;color:#6b5518"></div>
@@ -2555,10 +2550,8 @@ function renderAudit(data) {
   }
 
   document.getElementById('batchSummary').innerHTML = `
-    <div class="stat-box"><div class="stat-val">$${money((t.merchant_sales || 0))}</div><div class="stat-lbl">Merchant Sales (debits)</div></div>
-    <div class="stat-box"><div class="stat-val">−$${money((t.merchant_credits || 0))}</div><div class="stat-lbl">Merchant Credits (refunds)</div></div>
-    <div class="stat-box"><div class="stat-val">$${money((t.merchant || 0))}</div><div class="stat-lbl">Merchant Net Settled</div></div>
-    <div class="stat-box"><div class="stat-val">$${money((t.pos || 0))}</div><div class="stat-lbl">POS Card (net)</div></div>
+    <div class="stat-box"><div class="stat-val">$${money((t.merchant || 0))}</div><div class="stat-lbl">Merchant Settled (total)</div></div>
+    <div class="stat-box"><div class="stat-val">$${money((t.pos || 0))}</div><div class="stat-lbl">POS Card Sales (net)</div></div>
     <div class="stat-box" style="${(t.difference || 0) === 0 ? 'background:#e8f5e9' : 'background:#fce4ec'}">
       <div class="stat-val" style="color:${(t.difference || 0) === 0 ? 'var(--success)' : 'var(--danger)'}">${(t.difference || 0) > 0 ? '+' : ''}$${money((t.difference || 0))}</div>
       <div class="stat-lbl">Difference (Merchant − POS)</div>
@@ -2573,17 +2566,13 @@ function renderAudit(data) {
   document.getElementById('batchBody').innerHTML = rows.map(d => `
     <tr style="cursor:pointer;${d.matched ? '' : 'background:#fff6f8'}" onclick="openDayDrilldown('${d.date}')" title="Click to see every individual transaction for this day">
       <td>${d.date}</td>
-      <td>$${money(d.merchant_sales)}<br><span style="font-size:.7rem;color:var(--mid)">${d.merchant_sale_count || 0} txn${d.merchant_sale_count === 1 ? '' : 's'}</span></td>
-      <td>${d.merchant_credits ? '−$' + money(d.merchant_credits) : '$0'}<br><span style="font-size:.7rem;color:var(--mid)">${d.merchant_credit_count || 0} credit${d.merchant_credit_count === 1 ? '' : 's'}</span></td>
-      <td style="font-weight:600">$${money(d.merchant_total)}<br><span style="font-size:.7rem;color:var(--mid)">${d.merchant_batches} batch${d.merchant_batches === 1 ? '' : 'es'}</span></td>
-      <td>$${money(d.pos_sales)}<br><span style="font-size:.7rem;color:var(--mid)">${d.pos_sale_count} sale${d.pos_sale_count === 1 ? '' : 's'}</span></td>
-      <td>${d.pos_returns ? '−$' + money(d.pos_returns) : '$0'}<br><span style="font-size:.7rem;color:var(--mid)">${d.pos_return_count || 0} return${d.pos_return_count === 1 ? '' : 's'}</span></td>
-      <td style="font-weight:600">$${money(d.pos_total)}</td>
+      <td>$${money(d.merchant_total)}<br><span style="font-size:.7rem;color:var(--mid)">${d.merchant_batches} batch${d.merchant_batches === 1 ? '' : 'es'}</span></td>
+      <td>$${money(d.pos_total)}<br><span style="font-size:.7rem;color:var(--mid)">${d.pos_sale_count} sale${d.pos_sale_count === 1 ? '' : 's'}${d.pos_return_count ? ', ' + d.pos_return_count + ' return' + (d.pos_return_count === 1 ? '' : 's') : ''}</span></td>
       <td style="font-weight:600;color:${d.matched ? 'var(--mid)' : 'var(--danger)'}">${d.difference > 0 ? '+' : ''}$${money(d.difference)}</td>
       <td>${d.matched ? '<span style="color:var(--success);font-weight:600">✓ Match</span>' : '<span style="color:var(--danger);font-weight:600">⚠ Mismatch — investigate</span>'}</td>
       <td style="font-size:.8rem;color:var(--mid)">${d.explanation || ''}</td>
     </tr>
-  `).join('') || '<tr><td colspan="10" style="text-align:center;color:var(--mid)">No batches or card sales in this range</td></tr>';
+  `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No batches or card sales in this range</td></tr>';
 
   // Diagnostic: if the merchant total is $0, show what Maverick actually returned
   const dbg = data._debug || {};
