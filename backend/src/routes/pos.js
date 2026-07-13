@@ -1186,18 +1186,16 @@ router.get('/reconciliation-audit', async (req, res) => {
   // batch: { id, date } }. A 'credit' is a refund back to the cardholder, so it
   // subtracts from the merchant's net settled amount. Rejected/declined records
   // (never actually processed) are excluded.
+  // Count every settled record (matching Maverick's own batch report). A
+  // `reject` object is informational metadata — Maverick still funds/counts the
+  // record — so we do NOT exclude based on it.
   const merchantByDate = {};
-  let rejectedExcluded = 0;
-  const excludedRecords = [];
+  let rejectFlagged = 0;
   for (const b of batches) {
     const type = String(b.type || '').toLowerCase();
     const mag = Math.abs(batchAmount(b));
     const signed = /credit|refund|return|void|reversal/.test(type) ? -mag : mag;
-    if (isRejected(b)) {
-      rejectedExcluded++;
-      if (excludedRecords.length < 100) excludedRecords.push({ date: batchDateOf(b, to), amount: signed, type, reject_code: b.reject?.code ?? null, reject_desc: b.reject?.codeDescription ?? null });
-      continue;
-    }
+    if (b.reject && typeof b.reject === 'object' && b.reject.code && !/^0+$/.test(String(b.reject.code))) rejectFlagged++;
     const d = batchDateOf(b, to);
     if (!merchantByDate[d]) merchantByDate[d] = { total: 0, txns: 0, batchIds: new Set() };
     merchantByDate[d].total += signed;
@@ -1244,7 +1242,7 @@ router.get('/reconciliation-audit', async (req, res) => {
   totals.merchant = Math.round(totals.merchant * 100) / 100;
   totals.pos = Math.round(totals.pos * 100) / 100;
   totals.difference = Math.round((totals.merchant - totals.pos) * 100) / 100;
-  totals.rejected_excluded = rejectedExcluded;
+  totals.reject_flagged = rejectFlagged; // informational only; all still counted
 
   // Diagnostic: raw batch count + a sample object + the top-level response keys,
   // so we can map Maverick's actual amount field if the totals look wrong.
@@ -1252,8 +1250,6 @@ router.get('/reconciliation-audit', async (req, res) => {
     batch_count: batches.length,
     response_keys: rawResponse && typeof rawResponse === 'object' ? Object.keys(rawResponse) : [],
     sample: batches[0] || null,
-    excluded_records: excludedRecords,
-    excluded_total: Math.round(excludedRecords.reduce((s, r) => s + (r.amount || 0), 0) * 100) / 100,
   };
 
   // If the selected range has no batches, probe recent batches (last 5 days)
@@ -1317,7 +1313,7 @@ router.get('/reconciliation-day', async (req, res) => {
       matched: false,
     };
   };
-  const merchAll = batches.filter(b => !isRejected(b)).map(toMerch);
+  const merchAll = batches.map(toMerch); // count all — reject flag is informational
   const merchDay = merchAll.filter(m => m.bdate === date);
   const merchAdj = merchAll.filter(m => m.bdate !== date);
 
