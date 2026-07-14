@@ -278,13 +278,25 @@
     .tx-type-return { color: var(--danger); font-weight: 600; }
 
     /* ── Print styles ─── */
+    /* Thermal paper: no page margins, size to the 80mm roll (height auto). */
+    @page { size: 80mm auto; margin: 0; }
     @media print {
       body * { visibility: hidden; }
       .receipt-print, .receipt-print * { visibility: visible; }
       .receipt-print {
-        position: absolute; left: 0; top: 0; width: 80mm;
-        font-family: 'Courier New', monospace; font-size: 12px;
+        position: absolute; left: 0; top: 0; width: 72mm; padding: 0 2mm;
+        font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.5;
+        color: #000;
       }
+      /* The on-screen layout comes from `.receipt .r-*` selectors, but the print
+         node is `.receipt-print` (no `.receipt` ancestor) — without repeating
+         these the rows lose their flex layout and everything bunches to the
+         left. Mirror the on-screen structure here so print matches the screen. */
+      .receipt-print .r-center { text-align: center; }
+      .receipt-print .r-line { border-bottom: 1px dashed #000; margin: 6px 0; }
+      .receipt-print .r-row { display: flex; justify-content: space-between; gap: 8px; }
+      .receipt-print .r-row > span:last-child { text-align: right; white-space: nowrap; }
+      .receipt-print .r-total { font-weight: bold; font-size: 14px; }
     }
 
     /* ── Company switcher ─── */
