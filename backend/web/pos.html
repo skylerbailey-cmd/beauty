@@ -492,18 +492,15 @@
             <div class="cart-row"><span>Tax</span><span id="cartTax">$0.00</span></div>
             <div class="cart-row total"><span>Total</span><span id="cartTotal">$0.00</span></div>
           </div>
-          <!-- Sale: one or more payment tenders (supports splitting across cards/cash) -->
+          <!-- One or more tenders — payment (sale) or refund destination (return),
+               each with its own amount and card last-4; supports splitting. -->
           <div id="saleTenders" style="margin-bottom:12px">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-              <span style="font-size:.8rem;color:var(--mid);font-family:system-ui,sans-serif;font-weight:600">Payment</span>
-              <button type="button" onclick="addTender()" style="padding:4px 10px;font-size:.75rem;border:1.5px solid var(--border);background:#fff;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;color:var(--rose)">+ Split payment</button>
+              <span id="tenderHeading" style="font-size:.8rem;color:var(--mid);font-family:system-ui,sans-serif;font-weight:600">Payment</span>
+              <button type="button" onclick="addTender()" style="padding:4px 10px;font-size:.75rem;border:1.5px solid var(--border);background:#fff;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;color:var(--rose)">+ Split</button>
             </div>
             <div id="tenderRows"></div>
             <div id="tenderBalance" style="font-size:.8rem;font-family:system-ui,sans-serif;margin-top:2px"></div>
-          </div>
-          <!-- Return: single card used for the refund -->
-          <div id="returnPayWrap" style="margin-bottom:12px;display:none">
-            <input type="text" id="cardLast4" placeholder="Last 4 of card used" maxlength="4" pattern="[0-9]{4}" style="width:100%;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;text-align:center;letter-spacing:4px" oninput="this.value=this.value.replace(/[^0-9]/g,'')">
           </div>
           <button class="checkout-btn sale" id="checkoutBtn" onclick="processTransaction()" disabled>
             Complete Sale
@@ -1232,10 +1229,10 @@ function updateCartTotals() {
   // Update tax label
   const taxLabel = document.querySelector('.cart-row:nth-child(2) span:first-child');
   if (taxLabel) taxLabel.textContent = `Tax (${taxPctStr(taxRate)}%)`;
-  // Refresh the split-payment tenders (recomputes a single tender to the new
-  // total and the remaining balance) and the checkout button's enabled state.
-  if (currentMode === 'sale') renderTenders();
-  else updateCheckoutEnabled();
+  // Refresh the tenders (recomputes a single tender to the new total and the
+  // remaining balance) and the checkout button's enabled state. Applies to both
+  // sales (payment) and returns (refund destination).
+  renderTenders();
 }
 
 // ─── Mode Toggle ────────────────────────────────────────────────────────────
@@ -1254,10 +1251,10 @@ function setMode(mode) {
   document.getElementById('saleView').style.display = mode === 'sale' ? 'block' : 'none';
   document.getElementById('returnView').style.display = mode === 'return' ? 'block' : 'none';
 
-  const cardInput = document.getElementById('cardLast4');
-  // Split-tender UI is for sales; returns use the single card input.
-  document.getElementById('saleTenders').style.display = mode === 'sale' ? 'block' : 'none';
-  document.getElementById('returnPayWrap').style.display = mode === 'return' ? 'block' : 'none';
+  // Both modes use the split-tender UI. For a sale the tenders are how the
+  // customer pays; for a return they are where the refund goes back to.
+  document.getElementById('tenderHeading').textContent = mode === 'return' ? 'Refund to' : 'Payment';
+  resetTenders();
   if (mode === 'return') {
     // Clear cart and reset return lookup
     cart = [];
@@ -1269,11 +1266,9 @@ function setMode(mode) {
     document.getElementById('returnReceiptInput').value = '';
     document.getElementById('returnLookupResult').style.display = 'none';
     document.getElementById('returnLookupError').style.display = 'none';
-    if (cardInput) { cardInput.value = ''; cardInput.placeholder = 'Last 4 of card used'; }
     document.getElementById('returnReceiptInput').focus();
   } else {
     returnOriginalTx = null;
-    resetTenders();
   }
   updateCheckoutEnabled();
 }
@@ -1426,8 +1421,9 @@ function updateTenderBalance() {
   const total = saleTotal();
   const remaining = round2(total - tenderSum());
   if (el) {
+    const fullMsg = currentMode === 'return' ? '✓ Refund fully assigned' : '✓ Paid in full';
     if (tenders.length === 1) el.textContent = '';
-    else if (Math.abs(remaining) < 0.01) el.innerHTML = `<span style="color:var(--success);font-weight:600">✓ Paid in full — $${money(total)}</span>`;
+    else if (Math.abs(remaining) < 0.01) el.innerHTML = `<span style="color:var(--success);font-weight:600">${fullMsg} — $${money(total)}</span>`;
     else if (remaining > 0) el.innerHTML = `<span style="color:var(--danger);font-weight:600">$${money(remaining)} left of $${money(total)}</span>`;
     else el.innerHTML = `<span style="color:var(--danger);font-weight:600">$${money(-remaining)} over the $${money(total)} total</span>`;
   }
@@ -1437,7 +1433,7 @@ function updateTenderBalance() {
 function updateCheckoutEnabled() {
   const btn = document.getElementById('checkoutBtn');
   if (!btn) return;
-  if (currentMode === 'return') { btn.disabled = cart.length === 0; return; }
+  // Both a sale's payment and a return's refund must add up to the total.
   const balanced = Math.abs(saleTotal() - tenderSum()) < 0.01;
   btn.disabled = cart.length === 0 || !balanced;
 }
@@ -1492,32 +1488,23 @@ async function processTransaction() {
     original_receipt: returnOriginalTx?.receipt_number || null,
   };
 
-  if (currentMode === 'return') {
-    // Returns are a single tender against the card used for the refund.
-    const cardLast4 = document.getElementById('cardLast4').value.trim();
-    if (cardLast4.length !== 4) {
-      alert('Enter the last 4 digits of the card used for this return.');
-      document.getElementById('cardLast4').focus();
-      return;
-    }
-    body.payment_method = 'card';
-    body.card_last4 = cardLast4;
-  } else {
-    // Sale: one or more tenders that must add up to the total.
-    if (Math.abs(saleTotal() - tenderSum()) > 0.01) {
-      alert(`Payments must add up to the $${money(saleTotal())} total. Currently $${money(tenderSum())}.`);
-      return;
-    }
-    for (const t of tenders) {
-      if (t.method === 'card' && (t.last4 || '').length !== 4) {
-        alert('Enter the last 4 digits for each card payment.');
-        return;
-      }
-    }
-    body.payments = tenders.map(t => ({ method: t.method, amount: round2(t.amount), card_last4: t.method === 'card' ? t.last4 : '' }));
-    body.payment_method = tenders.length > 1 ? 'split' : tenders[0].method;
-    body.card_last4 = (tenders.length === 1 && tenders[0].method === 'card') ? tenders[0].last4 : '';
+  // Payment (sale) / refund (return): one or more tenders that must add up to
+  // the total. Same flow for both; the server matches refund cards against the
+  // original sale and prompts for a manager if one doesn't match.
+  const noun = currentMode === 'return' ? 'Refunds' : 'Payments';
+  if (Math.abs(saleTotal() - tenderSum()) > 0.01) {
+    alert(`${noun} must add up to the $${money(saleTotal())} total. Currently $${money(tenderSum())}.`);
+    return;
   }
+  for (const t of tenders) {
+    if (t.method === 'card' && (t.last4 || '').length !== 4) {
+      alert(`Enter the last 4 digits for each card ${currentMode === 'return' ? 'refund' : 'payment'}.`);
+      return;
+    }
+  }
+  body.payments = tenders.map(t => ({ method: t.method, amount: round2(t.amount), card_last4: t.method === 'card' ? t.last4 : '' }));
+  body.payment_method = tenders.length > 1 ? 'split' : tenders[0].method;
+  body.card_last4 = (tenders.length === 1 && tenders[0].method === 'card') ? tenders[0].last4 : '';
 
   submitTransaction(body);
 }
@@ -1551,7 +1538,6 @@ async function submitTransaction(body) {
     resetTenders();
     document.getElementById('custName').value = '';
     document.getElementById('custEmail').value = '';
-    document.getElementById('cardLast4').value = '';
     if (body.type === 'return') {
       returnOriginalTx = null;
       document.getElementById('returnReceiptInput').value = '';

@@ -629,6 +629,7 @@ async function getTransactionByReceipt(receiptNumber, userId) {
     `SELECT te.*, e.name as employee_name FROM pos_transaction_employees te
      JOIN pos_employees e ON te.employee_id = e.id WHERE te.transaction_id = $1`, [tx.id]
   )).rows;
+  tx.payments = await getTransactionPayments(tx);
   return tx;
 }
 

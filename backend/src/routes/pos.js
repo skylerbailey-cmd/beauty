@@ -244,9 +244,49 @@ router.post('/transactions', async (req, res) => {
     return res.status(400).json({ error: 'At least one employee must be added to complete this transaction.' });
   }
 
-  if (payment_method === 'card' && type !== 'return' && (!card_last4 || card_last4.length !== 4)) {
-    return res.status(400).json({ error: 'Last 4 digits of credit card required for card payments' });
+  // Compute totals and the payment tenders up front so the return card-matching
+  // below can validate the refund against the original sale's card(s).
+  let rate = tax_rate;
+  if (rate === undefined || rate === null) {
+    const settings = await pgDb.getSettings(userId);
+    rate = settings?.tax_rate ?? 0.0875;
   }
+  const subtotal = items.reduce((sum, i) => sum + (i.unit_price * (i.quantity || 1) - (i.discount || 0)), 0);
+  const disc = parseFloat(discount_amount || 0);
+  const taxable = subtotal - disc;
+  const tax_amount = Math.round(taxable * rate * 100) / 100;
+  const total = Math.round((taxable + tax_amount) * 100) / 100;
+
+  // Split payment: the register may send one or more tenders — for sales AND
+  // refunds. Fall back to the legacy single payment_method/card_last4 when no
+  // `payments` array is given.
+  const tenders = (Array.isArray(payments) && payments.length)
+    ? payments.map(p => ({
+        method: ['card', 'cash', 'other'].includes(p.method) ? p.method : 'card',
+        amount: Math.round((Number(p.amount) || 0) * 100) / 100,
+        card_last4: String(p.card_last4 || '').trim(),
+      }))
+    : [{ method: payment_method || 'card', amount: total, card_last4: String(card_last4 || '').trim() }];
+
+  for (const t of tenders) {
+    if (t.amount <= 0) {
+      return res.status(400).json({ error: 'Each payment amount must be greater than $0.' });
+    }
+    if (t.method === 'card' && !/^\d{4}$/.test(t.card_last4)) {
+      return res.status(400).json({ error: `Last 4 digits of the card are required for each card ${type === 'return' ? 'refund' : 'payment'}.` });
+    }
+  }
+  const tenderSum = Math.round(tenders.reduce((s, t) => s + t.amount, 0) * 100) / 100;
+  if (Math.abs(tenderSum - total) > 0.01) {
+    const word = type === 'return' ? 'Refunds' : 'Payments';
+    return res.status(400).json({ error: `${word} add up to $${money(tenderSum)} but the total is $${money(total)}. They must match.` });
+  }
+
+  // Legacy summary columns: a single tender keeps its method/card; a true split
+  // is stored as 'split' with the per-tender detail living in the payments table.
+  const isSplit = tenders.length > 1;
+  const summaryMethod = isSplit ? 'split' : tenders[0].method;
+  const summaryLast4 = isSplit ? '' : tenders[0].card_last4;
 
   // Enforce minimum pricing (skip for returns)
   if (type !== 'return') {
@@ -294,15 +334,28 @@ router.post('/transactions', async (req, res) => {
       return res.status(400).json({ error: `Return window expired. Sale was ${Math.floor(daysSince)} days ago (14-day limit).` });
     }
 
-    // Require the last 4 of the card, and match it to the original sale.
-    if (!card_last4 || card_last4.length !== 4) {
-      return res.status(400).json({ error: 'Enter the last 4 digits of the card used for this return.' });
-    }
-    if (orig.card_last4 && card_last4 !== orig.card_last4) {
+    // Match the refunded card(s) to the card(s) used on the original sale. With
+    // split payments both the sale and the refund can span multiple cards, so
+    // check each refunded card against the set used originally; any card that
+    // wasn't on the sale needs a manager to approve (same control as before,
+    // now split-aware). Card last-4s were already validated on the tenders.
+    const refundCards = tenders.filter(t => t.method === 'card').map(t => t.card_last4);
+    const origCards = new Set(
+      (Array.isArray(orig.payments) ? orig.payments : [])
+        .filter(p => p && p.method === 'card')
+        .map(p => String(p.card_last4 || '').trim())
+        .concat(orig.card_last4 ? [String(orig.card_last4).trim()] : [])
+        .filter(c => /^\d{4}$/.test(c))
+    );
+    // Only enforce matching when we actually know the original card(s).
+    const mismatched = origCards.size ? refundCards.filter(c => !origCards.has(c)) : [];
+    if (mismatched.length) {
       const manager = await verifyManager(userId, manager_name, manager_pin);
       if (!manager) {
+        const list = [...new Set(mismatched)].map(c => `****${c}`).join(', ');
+        const origList = [...origCards].map(c => `****${c}`).join(', ');
         return res.status(403).json({
-          error: `Card ****${card_last4} does not match the card on the original sale (****${orig.card_last4}). A manager must approve this return.`,
+          error: `Card ${list} does not match the card${origCards.size > 1 ? 's' : ''} on the original sale (${origList}). A manager must approve this return.`,
           needsManagerOverride: true,
         });
       }
@@ -322,47 +375,6 @@ router.post('/transactions', async (req, res) => {
     );
     employeesChanged = origIds.size !== retIds.size || [...retIds].some(id => !origIds.has(id));
   }
-
-  // Use tax rate from settings if not explicitly provided
-  let rate = tax_rate;
-  if (rate === undefined || rate === null) {
-    const settings = await pgDb.getSettings(userId);
-    rate = settings?.tax_rate ?? 0.0875;
-  }
-  const subtotal = items.reduce((sum, i) => sum + (i.unit_price * (i.quantity || 1) - (i.discount || 0)), 0);
-  const disc = parseFloat(discount_amount || 0);
-  const taxable = subtotal - disc;
-  const tax_amount = Math.round(taxable * rate * 100) / 100;
-  const total = Math.round((taxable + tax_amount) * 100) / 100;
-
-  // Split payment: the register may send one or more tenders. Fall back to the
-  // legacy single payment_method/card_last4 when no `payments` array is given.
-  const tenders = (Array.isArray(payments) && payments.length)
-    ? payments.map(p => ({
-        method: ['card', 'cash', 'other'].includes(p.method) ? p.method : 'card',
-        amount: Math.round((Number(p.amount) || 0) * 100) / 100,
-        card_last4: String(p.card_last4 || '').trim(),
-      }))
-    : [{ method: payment_method || 'card', amount: total, card_last4: String(card_last4 || '').trim() }];
-
-  for (const t of tenders) {
-    if (t.amount <= 0) {
-      return res.status(400).json({ error: 'Each payment amount must be greater than $0.' });
-    }
-    if (t.method === 'card' && type !== 'return' && !/^\d{4}$/.test(t.card_last4)) {
-      return res.status(400).json({ error: 'Last 4 digits of the card are required for each card payment.' });
-    }
-  }
-  const tenderSum = Math.round(tenders.reduce((s, t) => s + t.amount, 0) * 100) / 100;
-  if (Math.abs(tenderSum - total) > 0.01) {
-    return res.status(400).json({ error: `Payments add up to $${money(tenderSum)} but the total is $${money(total)}. They must match.` });
-  }
-
-  // Legacy summary columns: a single tender keeps its method/card; a true split
-  // is stored as 'split' with the per-tender detail living in the payments table.
-  const isSplit = tenders.length > 1;
-  const summaryMethod = isSplit ? 'split' : tenders[0].method;
-  const summaryLast4 = isSplit ? '' : tenders[0].card_last4;
 
   const { id, receipt_number } = await pgDb.createTransaction({
     type: type || 'sale',
