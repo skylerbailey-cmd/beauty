@@ -941,6 +941,22 @@ function batchAmount(b) {
   return v == null ? 0 : v;
 }
 
+// Some non-zero codes don't mean the money failed to move — they're advisory
+// flags on a transaction that still funded. Code "0238" means the transaction
+// was OVER THE MERCHANT'S LIMIT: it settled, but we don't want it read as a
+// failure or folded into the reconciliation difference. It's pulled into its
+// own "over limit" bucket and surfaced as a warning instead. Keep this list
+// narrow — only add codes confirmed to still settle.
+const OVER_LIMIT_CODES = new Set(['0238']);
+function isOverLimit(b) {
+  if (!b || typeof b !== 'object') return false;
+  if (b.reject && typeof b.reject === 'object') {
+    const code = b.reject.code != null ? String(b.reject.code).trim() : '';
+    if (OVER_LIMIT_CODES.has(code)) return true;
+  }
+  return false;
+}
+
 // A batch record that didn't actually go through must be excluded from the
 // settled total. Maverick flags these with a `reject` object carrying a
 // non-zero code (e.g. { code: "0197" }). A rejected/declined transaction did
@@ -950,6 +966,7 @@ function batchAmount(b) {
 // settle" so they aren't silently dropped.
 function isRejected(b) {
   if (!b || typeof b !== 'object') return false;
+  if (isOverLimit(b)) return false; // over-limit still funded — not a failure
 
   if (b.reject && typeof b.reject === 'object') {
     const code = b.reject.code != null ? String(b.reject.code).trim() : '';
@@ -1192,13 +1209,24 @@ router.get('/reconciliation-audit', async (req, res) => {
   // can be surfaced as "caught, did not settle" (see isRejected).
   const merchantByDate = {};
   const failedRecords = [];
+  const overLimitRecords = [];
   for (const b of batches) {
     const type = String(b.type || '').toLowerCase();
     const mag = Math.abs(batchAmount(b));
     const isCredit = /credit|refund|return|void|reversal/.test(type);
     const signed = isCredit ? -mag : mag;
     const d = batchDateOf(b, to);
-    if (!merchantByDate[d]) merchantByDate[d] = { total: 0, sales: 0, credits: 0, sale_count: 0, credit_count: 0, failed: 0, failed_amount: 0, txns: 0, batchIds: new Set() };
+    if (!merchantByDate[d]) merchantByDate[d] = { total: 0, sales: 0, credits: 0, sale_count: 0, credit_count: 0, failed: 0, failed_amount: 0, over_limit: 0, over_limit_amount: 0, txns: 0, batchIds: new Set() };
+
+    // An over-limit transaction (code 0238) DID fund, but we don't fold it into
+    // the reconciliation difference — track it separately so it surfaces as a
+    // warning ("over limit") rather than reading as a mismatch.
+    if (isOverLimit(b)) {
+      merchantByDate[d].over_limit += 1;
+      merchantByDate[d].over_limit_amount += signed;
+      overLimitRecords.push({ date: d, amount: signed, type, last4: last4Of(b.card?.number), batch_id: b.batch?.id || null, reject: b.reject || null });
+      continue;
+    }
 
     // A failed/rejected transaction (e.g. a refund that didn't fund) is NOT in
     // the merchant's settled batch total, so exclude it from the reconciliation
@@ -1229,11 +1257,15 @@ router.get('/reconciliation-audit', async (req, res) => {
     const diff = Math.round((m - p) * 100) / 100;
     const matched = Math.abs(diff) < 0.01;
     const failed = merchantByDate[d]?.failed || 0;
+    const overLimit = merchantByDate[d]?.over_limit || 0;
     let explanation = '';
     if (!matched) {
       explanation = diff > 0
         ? `Merchant settled $${money(diff)} MORE than the POS recorded — a card sale was likely processed on the terminal but not entered in the POS.`
         : `POS recorded $${money(Math.abs(diff))} MORE than the merchant settled — a POS card sale may not have batched/settled yet, or a terminal charge was voided/declined.`;
+    }
+    if (overLimit) {
+      explanation = (explanation ? explanation + ' ' : '') + `${overLimit} over-limit transaction${overLimit === 1 ? '' : 's'} at the merchant (code 0238 — funded, but excluded from the difference).`;
     }
     if (failed) {
       explanation = (explanation ? explanation + ' ' : '') + `${failed} failed/rejected transaction${failed === 1 ? '' : 's'} at the merchant (did not settle — excluded).`;
@@ -1247,6 +1279,8 @@ router.get('/reconciliation-audit', async (req, res) => {
       merchant_credit_count: merchantByDate[d]?.credit_count || 0,
       merchant_failed: merchantByDate[d]?.failed || 0,
       merchant_failed_amount: Math.round((merchantByDate[d]?.failed_amount || 0) * 100) / 100,
+      merchant_over_limit: merchantByDate[d]?.over_limit || 0,
+      merchant_over_limit_amount: Math.round((merchantByDate[d]?.over_limit_amount || 0) * 100) / 100,
       merchant_batches: merchantByDate[d]?.batchIds?.size || 0,
       merchant_txns: merchantByDate[d]?.txns || 0,
       pos_total: Math.round(p * 100) / 100,
@@ -1276,6 +1310,8 @@ router.get('/reconciliation-audit', async (req, res) => {
   totals.difference = Math.round((totals.merchant - totals.pos) * 100) / 100;
   totals.failed_count = failedRecords.length;
   totals.failed_amount = Math.round(failedRecords.reduce((s, r) => s + r.amount, 0) * 100) / 100;
+  totals.over_limit_count = overLimitRecords.length;
+  totals.over_limit_amount = Math.round(overLimitRecords.reduce((s, r) => s + r.amount, 0) * 100) / 100;
 
   // Diagnostic: raw batch count + a sample object + the top-level response keys,
   // so we can map Maverick's actual amount field if the totals look wrong.
@@ -1344,15 +1380,18 @@ router.get('/reconciliation-day', async (req, res) => {
       brand: b.card?.bin?.brand || null,
       bdate: batchDateOf(b, date),
       failed: isRejected(b),
+      over_limit: isOverLimit(b),
       reject: b.reject || null,
       matched: false,
     };
   };
   const merchAllRaw = batches.map(toMerch);
-  // Failed/rejected records aren't in the settled batch total, so keep them out
-  // of the matching pool — but surface them so they can be caught.
-  const merchAll = merchAllRaw.filter(m => !m.failed);
+  // Failed/rejected records aren't in the settled batch total, and over-limit
+  // (0238) records are excluded from the difference — keep both out of the
+  // matching pool, but surface them so they can be caught.
+  const merchAll = merchAllRaw.filter(m => !m.failed && !m.over_limit);
   const failedMerchant = merchAllRaw.filter(m => m.failed && m.bdate === date);
+  const overLimitMerchant = merchAllRaw.filter(m => m.over_limit && m.bdate === date);
   const merchDay = merchAll.filter(m => m.bdate === date);
   const merchAdj = merchAll.filter(m => m.bdate !== date);
 
@@ -1435,6 +1474,7 @@ router.get('/reconciliation-day', async (req, res) => {
     all_pos: pos,
     all_merchant_day: merchDay,
     failed_merchant: failedMerchant,
+    over_limit_merchant: overLimitMerchant,
     pos_sales_total: sum(pos.filter(p => p.dir === 'debit'), p => p.amount),
     pos_credits_total: sum(pos.filter(p => p.dir === 'credit'), p => p.amount),
     merchant_sales_total: sum(merchDay.filter(m => m.dir === 'debit'), m => m.amount),
