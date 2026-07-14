@@ -232,7 +232,7 @@ router.post('/employees/import-from', async (req, res) => {
 
 router.post('/transactions', async (req, res) => {
   const userId = req.session.userId;
-  const { type, employee_id, employees: employeeAssignments, customer_name, customer_email, items, payment_method, card_last4, notes, tax_rate, discount_amount, original_receipt, manager_name, manager_pin } = req.body;
+  const { type, employee_id, employees: employeeAssignments, customer_name, customer_email, items, payment_method, card_last4, payments, notes, tax_rate, discount_amount, original_receipt, manager_name, manager_pin } = req.body;
 
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'At least one item required' });
@@ -335,6 +335,35 @@ router.post('/transactions', async (req, res) => {
   const tax_amount = Math.round(taxable * rate * 100) / 100;
   const total = Math.round((taxable + tax_amount) * 100) / 100;
 
+  // Split payment: the register may send one or more tenders. Fall back to the
+  // legacy single payment_method/card_last4 when no `payments` array is given.
+  const tenders = (Array.isArray(payments) && payments.length)
+    ? payments.map(p => ({
+        method: ['card', 'cash', 'other'].includes(p.method) ? p.method : 'card',
+        amount: Math.round((Number(p.amount) || 0) * 100) / 100,
+        card_last4: String(p.card_last4 || '').trim(),
+      }))
+    : [{ method: payment_method || 'card', amount: total, card_last4: String(card_last4 || '').trim() }];
+
+  for (const t of tenders) {
+    if (t.amount <= 0) {
+      return res.status(400).json({ error: 'Each payment amount must be greater than $0.' });
+    }
+    if (t.method === 'card' && type !== 'return' && !/^\d{4}$/.test(t.card_last4)) {
+      return res.status(400).json({ error: 'Last 4 digits of the card are required for each card payment.' });
+    }
+  }
+  const tenderSum = Math.round(tenders.reduce((s, t) => s + t.amount, 0) * 100) / 100;
+  if (Math.abs(tenderSum - total) > 0.01) {
+    return res.status(400).json({ error: `Payments add up to $${money(tenderSum)} but the total is $${money(total)}. They must match.` });
+  }
+
+  // Legacy summary columns: a single tender keeps its method/card; a true split
+  // is stored as 'split' with the per-tender detail living in the payments table.
+  const isSplit = tenders.length > 1;
+  const summaryMethod = isSplit ? 'split' : tenders[0].method;
+  const summaryLast4 = isSplit ? '' : tenders[0].card_last4;
+
   const { id, receipt_number } = await pgDb.createTransaction({
     type: type || 'sale',
     employee_id,
@@ -345,8 +374,9 @@ router.post('/transactions', async (req, res) => {
     tax_amount,
     discount_amount: disc,
     total,
-    payment_method: payment_method || 'card',
-    card_last4: card_last4 || '',
+    payment_method: summaryMethod,
+    card_last4: summaryLast4,
+    payments: tenders,
     notes: notes || '',
     original_transaction_id,
     original_sale_date,
@@ -566,6 +596,14 @@ router.post('/transactions/:id/email', async (req, res) => {
     `<td style="padding:8px;border-bottom:1px solid #eee;text-align:right">$${money(i.line_total)}</td></tr>`
   ).join('');
 
+  // Payment line(s): single tender shows one line; a split lists each tender.
+  const pays = (tx.payments && tx.payments.length) ? tx.payments : [{ method: tx.payment_method, amount: tx.total, card_last4: tx.card_last4 }];
+  const payLabel = (p) => `${p.method || ''}${p.card_last4 ? ` ****${p.card_last4}` : ''}`;
+  const paymentHtml = pays.length > 1
+    ? `<p style="margin-top:16px;font-size:.82rem;color:#6b5057">Payment (split):</p>` +
+      pays.map(p => `<p style="margin:2px 0;font-size:.82rem;color:#6b5057;padding-left:12px">${payLabel(p)} — $${money(p.amount)}</p>`).join('')
+    : `<p style="margin-top:16px;font-size:.82rem;color:#6b5057">Payment: ${payLabel(pays[0])}</p>`;
+
   const html = `
     <div style="max-width:500px;margin:0 auto;font-family:Georgia,serif;color:#2c2022">
       <div style="text-align:center;padding:24px 0;border-bottom:2px solid #c97d8a">
@@ -594,7 +632,7 @@ router.post('/transactions/:id/email', async (req, res) => {
           <p style="margin:4px 0">Tax (${parseFloat((tx.tax_rate * 100).toFixed(4))}%): <strong>$${money(tx.tax_amount)}</strong></p>
           <p style="margin:8px 0 0;font-size:1.1rem;color:#9e5567"><strong>Total: $${money(tx.total)}</strong></p>
         </div>
-        <p style="margin-top:16px;font-size:.82rem;color:#6b5057">Payment: ${tx.payment_method}${tx.card_last4 ? ` ****${tx.card_last4}` : ''}</p>
+        ${paymentHtml}
       </div>
       <div style="text-align:center;padding:16px 0;border-top:1px solid #e8d5d9;font-size:.8rem;color:#6b5057">
         ${footer}

@@ -159,6 +159,20 @@ async function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_pg_txemp_tx ON pos_transaction_employees(transaction_id);
     CREATE INDEX IF NOT EXISTS idx_pg_txemp_emp ON pos_transaction_employees(employee_id);
 
+    -- Split payments: one row per tender on a sale (card/cash/other). A sale
+    -- with a single tender still gets one row here. Transactions created before
+    -- this table existed have no rows and fall back to the pos_transactions
+    -- payment_method/card_last4/total columns (see the card-sales reads).
+    CREATE TABLE IF NOT EXISTS pos_transaction_payments (
+      id SERIAL PRIMARY KEY,
+      transaction_id INTEGER NOT NULL REFERENCES pos_transactions(id),
+      method TEXT NOT NULL DEFAULT 'card',
+      amount REAL NOT NULL DEFAULT 0,
+      card_last4 TEXT DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS idx_pg_txpay_tx ON pos_transaction_payments(transaction_id);
+
     -- Welcome emails history
     CREATE TABLE IF NOT EXISTS welcome_emails (
       id SERIAL PRIMARY KEY,
@@ -434,7 +448,23 @@ async function createTransaction(txData) {
       txData.original_sale_date || null, txData.employees_changed ? 1 : 0, txData.user_id,
     ]
   );
-  return { id: result.rows[0].id, receipt_number: result.rows[0].receipt_number };
+  const id = result.rows[0].id;
+  // Record individual tenders (split payment). The route always passes at least
+  // one; guard anyway so a caller that omits them doesn't crash.
+  if (Array.isArray(txData.payments) && txData.payments.length) {
+    await addTransactionPayments(id, txData.payments);
+  }
+  return { id, receipt_number: result.rows[0].receipt_number };
+}
+
+async function addTransactionPayments(transactionId, payments) {
+  for (const p of payments) {
+    await query(
+      `INSERT INTO pos_transaction_payments (transaction_id, method, amount, card_last4)
+       VALUES ($1,$2,$3,$4)`,
+      [transactionId, p.method || 'card', Math.abs(Number(p.amount) || 0), p.card_last4 || '']
+    );
+  }
 }
 
 async function receiptExists(receiptNumber, userId) {
@@ -495,7 +525,19 @@ async function getTransaction(id, userId) {
     `SELECT te.*, e.name as employee_name FROM pos_transaction_employees te
      JOIN pos_employees e ON te.employee_id = e.id WHERE te.transaction_id = $1`, [id]
   )).rows;
+  tx.payments = await getTransactionPayments(tx);
   return tx;
+}
+
+// The tenders on a transaction. New sales have explicit rows; older rows (from
+// before split payment existed) synthesize a single tender from the legacy
+// columns so callers can always rely on tx.payments.
+async function getTransactionPayments(tx) {
+  const rows = (await query(
+    'SELECT method, amount, card_last4 FROM pos_transaction_payments WHERE transaction_id = $1 ORDER BY id ASC', [tx.id]
+  )).rows;
+  if (rows.length) return rows.map(r => ({ method: r.method, amount: Number(r.amount) || 0, card_last4: r.card_last4 || '' }));
+  return [{ method: tx.payment_method || 'card', amount: Number(tx.total) || 0, card_last4: tx.card_last4 || '' }];
 }
 
 // Manager-gated edit. Scoped by userId (company). Recomputes totals from the
@@ -574,6 +616,7 @@ async function deleteTransaction(id, userId) {
   await query('UPDATE pos_transactions SET original_transaction_id = NULL WHERE original_transaction_id = $1', [id]);
   await query('DELETE FROM pos_transaction_employees WHERE transaction_id = $1', [id]);
   await query('DELETE FROM pos_transaction_items WHERE transaction_id = $1', [id]);
+  await query('DELETE FROM pos_transaction_payments WHERE transaction_id = $1', [id]);
   await query('DELETE FROM pos_transactions WHERE id = $1 AND user_id = $2', [id, userId]);
   return true;
 }
@@ -611,6 +654,7 @@ async function getTransactions(userId, opts = {}) {
       `SELECT te.*, e.name as employee_name FROM pos_transaction_employees te
        JOIN pos_employees e ON te.employee_id = e.id WHERE te.transaction_id = $1`, [tx.id]
     )).rows;
+    tx.payments = await getTransactionPayments(tx);
   }
   return transactions;
 }
@@ -753,18 +797,37 @@ async function getFlaggedReturns(userId, startDate, endDate) {
 
 // Card sales recorded in the POS for a single local calendar day (for batch
 // reconciliation). Amounts include tax, matching what the card was charged.
+// One row per CARD tender, expanding split payments. New sales have explicit
+// tender rows in pos_transaction_payments; legacy card sales (no tender rows)
+// synthesize a single card tender from the transaction's own columns. The
+// amounts here are the card portion only, so a split sale contributes just the
+// part actually charged to a card — which is what settles at the merchant.
+const CARD_TENDERS_CTE = `
+  WITH card_pay AS (
+    SELECT p.transaction_id, p.amount, p.card_last4
+    FROM pos_transaction_payments p
+    WHERE p.method = 'card'
+    UNION ALL
+    SELECT t.id, t.total, t.card_last4
+    FROM pos_transactions t
+    WHERE t.payment_method = 'card'
+      AND NOT EXISTS (SELECT 1 FROM pos_transaction_payments p2 WHERE p2.transaction_id = t.id)
+  )`;
+
 async function getCardSalesForDate(userId, dateStr, tz) {
   const timezone = tz || 'America/Los_Angeles';
   const rows = (await query(`
+    ${CARD_TENDERS_CTE}
     SELECT
-      COUNT(*) FILTER (WHERE type = 'sale')   AS sale_count,
-      COUNT(*) FILTER (WHERE type = 'return') AS return_count,
-      COALESCE(SUM(CASE WHEN type = 'sale' THEN total ELSE 0 END), 0)    AS sales_total,
-      COALESCE(SUM(CASE WHEN type = 'return' THEN total ELSE 0 END), 0)  AS returns_total,
-      COALESCE(SUM(CASE WHEN type = 'sale' THEN total ELSE -total END), 0) AS net_total
-    FROM pos_transactions
-    WHERE user_id = $1 AND payment_method = 'card'
-      AND (created_at AT TIME ZONE $3)::date = $2::date
+      COUNT(DISTINCT t.id) FILTER (WHERE t.type = 'sale')   AS sale_count,
+      COUNT(DISTINCT t.id) FILTER (WHERE t.type = 'return') AS return_count,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN cp.amount ELSE 0 END), 0)    AS sales_total,
+      COALESCE(SUM(CASE WHEN t.type = 'return' THEN cp.amount ELSE 0 END), 0)  AS returns_total,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN cp.amount ELSE -cp.amount END), 0) AS net_total
+    FROM pos_transactions t
+    JOIN card_pay cp ON cp.transaction_id = t.id
+    WHERE t.user_id = $1
+      AND (t.created_at AT TIME ZONE $3)::date = $2::date
   `, [userId, dateStr, timezone])).rows;
   const r = rows[0] || {};
   return {
@@ -780,15 +843,17 @@ async function getCardSalesForDate(userId, dateStr, tz) {
 async function getCardSalesByDateRange(userId, fromStr, toStr, tz) {
   const timezone = tz || 'America/Los_Angeles';
   const rows = (await query(`
-    SELECT (created_at AT TIME ZONE $4)::date AS d,
-      COUNT(*) FILTER (WHERE type = 'sale')   AS sale_count,
-      COUNT(*) FILTER (WHERE type = 'return') AS return_count,
-      COALESCE(SUM(total) FILTER (WHERE type = 'sale'), 0)   AS sales_total,
-      COALESCE(SUM(total) FILTER (WHERE type = 'return'), 0) AS returns_total,
-      COALESCE(SUM(CASE WHEN type = 'sale' THEN total ELSE -total END), 0) AS net_total
-    FROM pos_transactions
-    WHERE user_id = $1 AND payment_method = 'card'
-      AND (created_at AT TIME ZONE $4)::date BETWEEN $2::date AND $3::date
+    ${CARD_TENDERS_CTE}
+    SELECT (t.created_at AT TIME ZONE $4)::date AS d,
+      COUNT(DISTINCT t.id) FILTER (WHERE t.type = 'sale')   AS sale_count,
+      COUNT(DISTINCT t.id) FILTER (WHERE t.type = 'return') AS return_count,
+      COALESCE(SUM(cp.amount) FILTER (WHERE t.type = 'sale'), 0)   AS sales_total,
+      COALESCE(SUM(cp.amount) FILTER (WHERE t.type = 'return'), 0) AS returns_total,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN cp.amount ELSE -cp.amount END), 0) AS net_total
+    FROM pos_transactions t
+    JOIN card_pay cp ON cp.transaction_id = t.id
+    WHERE t.user_id = $1
+      AND (t.created_at AT TIME ZONE $4)::date BETWEEN $2::date AND $3::date
     GROUP BY d ORDER BY d
   `, [userId, fromStr, toStr, timezone])).rows;
   return rows.map(r => ({
@@ -801,14 +866,19 @@ async function getCardSalesByDateRange(userId, fromStr, toStr, tz) {
   }));
 }
 
+// One row per CARD tender for the day (split sales yield multiple rows), so the
+// drill-down matcher can match each card charge to its Maverick settlement.
+// `total` here is the tender's amount, not the whole sale.
 async function getCardTransactionsForDate(userId, dateStr, tz) {
   const timezone = tz || 'America/Los_Angeles';
   return (await query(`
-    SELECT id, type, total, card_last4, receipt_number, customer_name, created_at
-    FROM pos_transactions
-    WHERE user_id = $1 AND payment_method = 'card'
-      AND (created_at AT TIME ZONE $3)::date = $2::date
-    ORDER BY created_at ASC
+    ${CARD_TENDERS_CTE}
+    SELECT t.id, t.type, cp.amount AS total, cp.card_last4, t.receipt_number, t.customer_name, t.created_at
+    FROM pos_transactions t
+    JOIN card_pay cp ON cp.transaction_id = t.id
+    WHERE t.user_id = $1
+      AND (t.created_at AT TIME ZONE $3)::date = $2::date
+    ORDER BY t.created_at ASC
   `, [userId, dateStr, timezone])).rows;
 }
 
@@ -1214,6 +1284,7 @@ module.exports = {
   createTransaction,
   addTransactionItems,
   addTransactionEmployees,
+  addTransactionPayments,
   getTransaction,
   getTransactionByReceipt,
   getTransactions,
