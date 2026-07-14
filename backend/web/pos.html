@@ -2576,7 +2576,7 @@ function renderAudit(data) {
       <td>$${money(d.pos_total)}<br><span style="font-size:.7rem;color:var(--mid)">${d.pos_sale_count} sale${d.pos_sale_count === 1 ? '' : 's'}${d.pos_return_count ? ', ' + d.pos_return_count + ' return' + (d.pos_return_count === 1 ? '' : 's') : ''}</span></td>
       <td style="font-weight:600;color:${d.matched ? 'var(--mid)' : 'var(--danger)'}">${d.difference > 0 ? '+' : ''}$${money(d.difference)}</td>
       <td>${d.matched
-        ? (d.merchant_over_limit ? `<span style="color:#b26a00;font-weight:600" title="Over the merchant limit (code 0238) — funded, excluded from the difference">⚠ Over limit (${d.merchant_over_limit})</span>` : '<span style="color:var(--success);font-weight:600">✓ Match</span>')
+        ? (d.merchant_over_limit ? `<span style="color:#b26a00;font-weight:600" title="Over the merchant limit (code 0238) — funded and counted normally, just flagged">⚠ Over limit (${d.merchant_over_limit})</span>` : '<span style="color:var(--success);font-weight:600">✓ Match</span>')
         : '<span style="color:var(--danger);font-weight:600">⚠ Mismatch — investigate</span>'}</td>
       <td style="font-size:.8rem;color:var(--mid)">${d.explanation || ''}</td>
     </tr>
@@ -2690,7 +2690,7 @@ async function openDayDrilldown(date) {
     const overLimit = data.over_limit_merchant || [];
     const overLimitSection = overLimit.length ? `
       <div style="margin-bottom:18px">
-        <h3 style="margin:0 0 6px;color:#b26a00">⚠ Over the merchant limit — funded, excluded from the difference <span style="font-weight:400;color:var(--mid);font-size:.82rem">(${overLimit.length})</span></h3>
+        <h3 style="margin:0 0 6px;color:#b26a00">⚠ Over the merchant limit — funded, counted normally <span style="font-weight:400;color:var(--mid);font-size:.82rem">(${overLimit.length})</span></h3>
         <table class="report-table">
           <thead><tr><th>Batch #</th><th>Type</th><th>Card</th><th>Reject code</th><th style="text-align:right">Amount</th></tr></thead>
           <tbody>${overLimit.map(m => `
@@ -2702,7 +2702,7 @@ async function openDayDrilldown(date) {
               <td style="text-align:right;font-weight:600">${m.dir === 'credit' ? '−' : ''}$${money2(m.amount)}</td>
             </tr>`).join('')}</tbody>
         </table>
-        <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:6px 0 0">Code 0238 — the transaction was over the merchant's limit but still funded. It is left out of the reconciliation difference on purpose, so it is not counted as a mismatch.</p>
+        <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:6px 0 0">Code 0238 — the transaction was over the merchant's limit but still funded. It is counted in the settled total and matched against its POS sale like any normal transaction, so it does not read as a mismatch — this list is just to flag that it was over the limit.</p>
       </div>` : '';
 
     body.innerHTML = `
