@@ -8,6 +8,15 @@ const { PRODUCTS, generateWelcomeEmailBody } = require('./welcome');
 // Format a money amount with thousands separators (e.g. 15146.25 -> "15,146.25")
 function money(n) { return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
+// Combine the street address with city/state/zip so receipts always show the
+// full mailing address, e.g. "123 Main St" + "San Francisco"/"CA"/"94103".
+function formatStoreAddress(settings) {
+  const street = (settings?.store_address || '').trim();
+  const cityStateZip = [settings?.store_city, settings?.store_state].filter(Boolean).join(', ') +
+    (settings?.store_zip ? ' ' + settings.store_zip : '');
+  return [street, cityStateZip.trim()].filter(Boolean).join(', ');
+}
+
 // Auth middleware
 function requireAuth(req, res, next) {
   if (!req.session?.userId) {
@@ -191,6 +200,50 @@ router.put('/employees/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── Commission Plans ──────────────────────────────────────────────────────
+// A "flat" employee earns their per-sale commission_value% straight, as
+// recorded at checkout. A "daily_threshold" employee instead gets one of two
+// rates for their WHOLE day depending on their day's net sales: base_rate below
+// tier_threshold, tier_rate at/above it. This is computed at report time from
+// transaction history (see calculateEmployeeCommission), so it naturally
+// resets every calendar day with no stored "today's total" to reset.
+
+router.get('/employees/:id/commission-plan', async (req, res) => {
+  const plan = await pgDb.getCommissionPlan(parseInt(req.params.id));
+  res.json({ plan });
+});
+
+router.put('/employees/:id/commission-plan', async (req, res) => {
+  const { plan_type, base_rate, tier_rate, tier_threshold } = req.body;
+  if (!['flat', 'daily_threshold'].includes(plan_type)) {
+    return res.status(400).json({ error: 'plan_type must be "flat" or "daily_threshold"' });
+  }
+  const baseRate = parseFloat(base_rate);
+  if (isNaN(baseRate) || baseRate < 0 || baseRate > 100) {
+    return res.status(400).json({ error: 'base_rate must be a percentage between 0 and 100' });
+  }
+  const plan = { plan_type, base_rate: baseRate };
+  if (plan_type === 'daily_threshold') {
+    const tierRate = parseFloat(tier_rate);
+    const tierThreshold = parseFloat(tier_threshold);
+    if (isNaN(tierRate) || tierRate < 0 || tierRate > 100) {
+      return res.status(400).json({ error: 'tier_rate must be a percentage between 0 and 100' });
+    }
+    if (isNaN(tierThreshold) || tierThreshold < 0) {
+      return res.status(400).json({ error: 'tier_threshold must be a dollar amount of 0 or more' });
+    }
+    plan.tier_rate = tierRate;
+    plan.tier_threshold = tierThreshold;
+  }
+  await pgDb.setCommissionPlan(parseInt(req.params.id), plan, req.session.userId);
+  res.json({ ok: true });
+});
+
+router.delete('/employees/:id/commission-plan', async (req, res) => {
+  await pgDb.deleteCommissionPlan(parseInt(req.params.id));
+  res.json({ ok: true });
+});
+
 router.post('/employees/verify', async (req, res) => {
   const { pin } = req.body;
   const employee = await pgDb.verifyEmployeePin(pin, req.session.userId);
@@ -242,6 +295,17 @@ router.post('/transactions', async (req, res) => {
   const hasEmployee = (Array.isArray(employeeAssignments) && employeeAssignments.some(e => e && e.employee_id)) || !!employee_id;
   if (!hasEmployee) {
     return res.status(400).json({ error: 'At least one employee must be added to complete this transaction.' });
+  }
+
+  // Sales (not returns) require a customer name and a valid email before they
+  // can be completed.
+  if (type !== 'return') {
+    if (!customer_name || !String(customer_name).trim()) {
+      return res.status(400).json({ error: 'Customer name is required to complete a sale.' });
+    }
+    if (!customer_email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(customer_email).trim())) {
+      return res.status(400).json({ error: 'A valid customer email is required to complete a sale.' });
+    }
   }
 
   // Compute totals and the payment tenders up front so the return card-matching
@@ -304,7 +368,11 @@ router.post('/transactions', async (req, res) => {
 
     for (const item of items) {
       const minPrice = minPriceMap[item.product_id];
-      if (minPrice && item.unit_price > 0 && item.unit_price < minPrice) {
+      // Check the price actually charged (unit_price minus any per-unit
+      // discount), not the pre-discount unit_price — otherwise a discount
+      // could be used to sell below the enforced minimum.
+      const effectivePrice = item.unit_price - (item.discount || 0) / (item.quantity || 1);
+      if (minPrice && effectivePrice > 0 && effectivePrice < minPrice) {
         return res.status(400).json({
           error: `Cannot honor this pricing. The minimum allowed price for "${item.product_name}" is $${money(minPrice)}.`
         });
@@ -594,19 +662,23 @@ router.post('/transactions/:id/email', async (req, res) => {
 
   const settings = await pgDb.getSettings(req.session.userId);
   const storeName = settings.store_name || user.company_name || 'Glow SF';
-  const storeAddress = settings.store_address || '';
+  const storeAddress = formatStoreAddress(settings);
   const footer = settings.receipt_footer || 'Thank you for your purchase!';
   const tz = settings.timezone || 'America/Los_Angeles';
 
   const dateStr = new Date(tx.created_at).toLocaleString('en-US', { timeZone: tz, year: 'numeric', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const employeeNames = (tx.employees || []).map(e => e.employee_name).join(', ');
 
-  const itemRows = tx.items.map(i =>
-    `<tr><td style="padding:8px;border-bottom:1px solid #eee">${i.product_name}</td>` +
-    `<td style="padding:8px;border-bottom:1px solid #eee;text-align:center">${i.quantity}</td>` +
-    `<td style="padding:8px;border-bottom:1px solid #eee;text-align:right">$${money(i.unit_price)}</td>` +
-    `<td style="padding:8px;border-bottom:1px solid #eee;text-align:right">$${money(i.line_total)}</td></tr>`
-  ).join('');
+  const itemRows = tx.items.map(i => {
+    const discounted = (i.discount || 0) > 0.001;
+    const totalCell = discounted
+      ? `<span style="text-decoration:line-through;color:#999;font-size:.8em">$${money(i.unit_price * i.quantity)}</span><br>$${money(i.line_total)}`
+      : `$${money(i.line_total)}`;
+    return `<tr><td style="padding:8px;border-bottom:1px solid #eee">${i.product_name}</td>` +
+      `<td style="padding:8px;border-bottom:1px solid #eee;text-align:center">${i.quantity}</td>` +
+      `<td style="padding:8px;border-bottom:1px solid #eee;text-align:right">$${money(i.unit_price)}</td>` +
+      `<td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${totalCell}</td></tr>`;
+  }).join('');
 
   // Payment line(s): single tender shows one line; a split lists each tender.
   const pays = (tx.payments && tx.payments.length) ? tx.payments : [{ method: tx.payment_method, amount: tx.total, card_last4: tx.card_last4 }];

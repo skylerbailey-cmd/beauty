@@ -226,6 +226,9 @@ async function initSchema() {
       user_id TEXT PRIMARY KEY,
       store_name TEXT DEFAULT '',
       store_address TEXT DEFAULT '',
+      store_city TEXT DEFAULT '',
+      store_state TEXT DEFAULT '',
+      store_zip TEXT DEFAULT '',
       receipt_footer TEXT DEFAULT 'Thank you for your purchase!',
       timezone TEXT DEFAULT 'America/Los_Angeles',
       tax_rate REAL DEFAULT 0.081875,
@@ -256,6 +259,9 @@ async function initSchema() {
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS card_last4 TEXT DEFAULT \'\'');
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS employees_changed INTEGER DEFAULT 0');
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_address TEXT DEFAULT ''");
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_city TEXT DEFAULT ''");
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_state TEXT DEFAULT ''");
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_zip TEXT DEFAULT ''");
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS tax_rate REAL DEFAULT 0.0875');
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS theme TEXT DEFAULT 'rose'");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS brands TEXT DEFAULT '[\"avologi\",\"avinichi\",\"hydrasphere\"]'");
@@ -895,7 +901,7 @@ async function getSettings(userId) {
 }
 
 async function updateSettings(userId, fields) {
-  const allowed = ['store_name', 'store_address', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token'];
+  const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token'];
   const sets = [];
   const params = [];
   let idx = 1;
@@ -921,12 +927,6 @@ async function getCommissionPlan(employeeId) {
 }
 
 async function setCommissionPlan(employeeId, plan, userId) {
-  await query(
-    `INSERT INTO pos_commission_plans (employee_id, plan_type, base_rate, tier_rate, tier_threshold, user_id)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (id) DO NOTHING`,
-    [employeeId, plan.plan_type, plan.base_rate, plan.tier_rate || 0, plan.tier_threshold || 0, userId]
-  );
   // Delete old and insert fresh (simpler than upsert on employee_id)
   await query('DELETE FROM pos_commission_plans WHERE employee_id = $1', [employeeId]);
   await query(
@@ -934,6 +934,10 @@ async function setCommissionPlan(employeeId, plan, userId) {
      VALUES ($1, $2, $3, $4, $5, $6)`,
     [employeeId, plan.plan_type, plan.base_rate, plan.tier_rate || 0, plan.tier_threshold || 0, userId]
   );
+}
+
+async function deleteCommissionPlan(employeeId) {
+  await query('DELETE FROM pos_commission_plans WHERE employee_id = $1', [employeeId]);
 }
 
 async function getAllCommissionPlans(userId) {
@@ -1308,6 +1312,7 @@ module.exports = {
   // Commission Plans
   getCommissionPlan,
   setCommissionPlan,
+  deleteCommissionPlan,
   getAllCommissionPlans,
   calculateEmployeeCommission,
   // Custom Products

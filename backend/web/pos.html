@@ -226,8 +226,25 @@
     .receipt .r-line { border-bottom: 1px dashed #999; margin: 10px 0; }
     .receipt .r-row { display: flex; justify-content: space-between; font-weight: 500; }
     .receipt .r-total { font-weight: 900; font-size: 1.05rem; color: #000; }
+    .receipt .r-strike { text-decoration: line-through; color: var(--mid); font-weight: 400; }
+    .receipt .r-sig { margin-top: 28px; }
+    .receipt .r-sig-line { border-bottom: 1px solid #999; margin-top: 26px; display: flex; align-items: flex-end; }
+    .receipt .r-sig-x { font-weight: 700; margin-right: 6px; }
+    .receipt .r-sig-label { text-align: center; font-size: .72rem; color: var(--mid); margin-top: 4px; letter-spacing: .5px; }
     .receipt-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .receipt-actions .btn { flex: 1; min-width: 120px; padding: 10px 16px; border-radius: 8px; font-family: system-ui, sans-serif; font-size: .85rem; font-weight: 600; cursor: pointer; border: none; text-align: center; }
+
+    /* ── Transaction success toast ─── */
+    .success-toast {
+      position: fixed; top: 20px; right: 20px; z-index: 3000;
+      background: var(--success); color: #fff; padding: 14px 20px; border-radius: 10px;
+      font-family: system-ui, sans-serif; font-size: .92rem; font-weight: 600;
+      box-shadow: 0 8px 24px rgba(0,0,0,.18);
+      display: flex; align-items: center; gap: 8px;
+      opacity: 0; transform: translateY(-12px); pointer-events: none;
+      transition: opacity .25s ease, transform .25s ease;
+    }
+    .success-toast.show { opacity: 1; transform: translateY(0); }
 
     /* ── Reports panel ─── */
     .reports-panel { display: none; }
@@ -305,6 +322,11 @@
       .receipt-print .r-row { display: flex; justify-content: space-between; gap: 8px; }
       .receipt-print .r-row > span:last-child { text-align: right; white-space: nowrap; }
       .receipt-print .r-total { font-weight: 900; font-size: 18px; }
+      .receipt-print .r-strike { text-decoration: line-through; font-weight: 700; }
+      .receipt-print .r-sig { margin-top: 26px; }
+      .receipt-print .r-sig-line { border-bottom: 1px solid #000; margin-top: 30px; display: flex; align-items: flex-end; }
+      .receipt-print .r-sig-x { font-weight: 900; margin-right: 6px; }
+      .receipt-print .r-sig-label { text-align: center; font-size: 11px; margin-top: 4px; }
     }
 
     /* ── Company switcher ─── */
@@ -400,11 +422,12 @@
 
   <!-- Sub-navigation tabs -->
   <div class="pos-subtabs" id="posSubtabs">
-    <button class="active" onclick="switchTab('register')">Register</button>
-    <button onclick="switchTab('history')">Transactions</button>
-    <button onclick="switchTab('reports')">Reports</button>
-    <button onclick="switchTab('emails')">Emails</button>
-    <button onclick="switchTab('settings')">Settings</button>
+    <button class="active" data-tab="register" onclick="switchTab('register')">Register</button>
+    <button data-tab="history" onclick="switchTab('history')">Transactions</button>
+    <button data-tab="reports" onclick="switchTab('reports')">Reports</button>
+    <button data-tab="customers" onclick="switchTab('customers')">Customers</button>
+    <button data-tab="emails" onclick="switchTab('emails')">Emails</button>
+    <button data-tab="settings" onclick="switchTab('settings')">Settings</button>
   </div>
 
   <!-- ─── REGISTER TAB ─── -->
@@ -476,8 +499,8 @@
         </div>
         <div class="cart-footer">
           <div class="customer-section">
-            <input type="text" id="custName" placeholder="Customer name">
-            <input type="email" id="custEmail" placeholder="Customer email">
+            <input type="text" id="custName" placeholder="Customer name" oninput="updateCheckoutEnabled()">
+            <input type="email" id="custEmail" placeholder="Customer email" oninput="updateCheckoutEnabled()">
           </div>
           <!-- Employee assignment -->
           <div class="employee-assign" style="margin-bottom:12px">
@@ -502,6 +525,7 @@
             <div id="tenderRows"></div>
             <div id="tenderBalance" style="font-size:.8rem;font-family:system-ui,sans-serif;margin-top:2px"></div>
           </div>
+          <div id="checkoutChecklist" style="display:none;font-family:system-ui,sans-serif;font-size:.78rem;background:var(--cream);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:10px"></div>
           <button class="checkout-btn sale" id="checkoutBtn" onclick="processTransaction()" disabled>
             Complete Sale
           </button>
@@ -570,12 +594,10 @@
         <button class="btn btn-confirm" onclick="loadReports()">Update</button>
       </div>
 
-      <div class="stat-grid" id="salesSummary"></div>
-
       <!-- Employee Sales & Commissions (Manager/Employee view — locked) -->
       <div class="report-card">
         <h3>Employee Sales &amp; Commissions</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Enter your name and PIN. Employees see their own sales; managers unlock the sales leaderboard and everyone's commissions.</p>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Enter your name and PIN. Employees see their own sales; managers unlock the KPIs, sales leaderboard, everyone's commissions, and top products below.</p>
         <div id="empPersonalLocked" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input type="text" id="empPersonalName2" placeholder="Your name" style="width:150px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
           <input type="password" id="empPersonalPin" placeholder="Your PIN" maxlength="6" style="width:120px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;text-align:center" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
@@ -592,8 +614,14 @@
         </div>
       </div>
 
-      <!-- Manager-only: sales leaderboard + full commissions table (revealed after a manager unlocks above) -->
+      <!-- Shown until a manager unlocks the section above -->
+      <div id="managerReportsLocked" class="report-card" style="text-align:center;color:var(--mid);font-family:system-ui,sans-serif">
+        &#128274; KPIs, the sales leaderboard, everyone's commissions, and top products are hidden until a manager unlocks them above.
+      </div>
+
+      <!-- Manager-only: KPIs, sales leaderboard, full commissions table, and top products (revealed after a manager unlocks above) -->
       <div id="managerCommissionsSection" style="display:none">
+        <div class="stat-grid" id="salesSummary"></div>
         <div class="report-card">
           <h3>Sales Leaderboard</h3>
           <div id="leaderboard" style="display:flex;flex-direction:column;gap:8px"></div>
@@ -605,14 +633,35 @@
             <tbody id="empReportBody"></tbody>
           </table>
         </div>
+        <div class="report-card">
+          <h3>Top Products</h3>
+          <table class="report-table">
+            <thead><tr><th>Product</th><th>Brand</th><th>Units Sold</th><th>Revenue</th></tr></thead>
+            <tbody id="prodReportBody"></tbody>
+          </table>
+        </div>
       </div>
 
-      <div class="report-card">
-        <h3>Top Products</h3>
+      <div class="report-card" id="flaggedReturnsCard" style="display:none">
+        <h3>⚠️ Returns With Changed Employees</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">These returns were credited to different employees than the original sale.</p>
         <table class="report-table">
-          <thead><tr><th>Product</th><th>Brand</th><th>Units Sold</th><th>Revenue</th></tr></thead>
-          <tbody id="prodReportBody"></tbody>
+          <thead><tr><th>Return #</th><th>Date</th><th>Original Sale</th><th>Sale Employees</th><th>Return Employees</th><th>Total</th></tr></thead>
+          <tbody id="flaggedReturnsBody"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── CUSTOMERS TAB ─── -->
+  <div class="tab-content" id="tab-customers">
+    <div style="max-width:1000px;margin:0 auto;padding:20px">
+      <div class="date-range">
+        <label>From:</label>
+        <input type="date" id="custStart">
+        <label>To:</label>
+        <input type="date" id="custEnd">
+        <button class="btn btn-confirm" onclick="loadCustomers()">Update</button>
       </div>
 
       <div class="report-card">
@@ -631,15 +680,6 @@
         <table class="report-table" style="margin-top:8px">
           <thead><tr><th>Customer</th><th>Email</th><th>Purchases</th><th>Returns</th><th>Total Spent</th><th>Items</th></tr></thead>
           <tbody id="custReportBody"></tbody>
-        </table>
-      </div>
-
-      <div class="report-card" id="flaggedReturnsCard" style="display:none">
-        <h3>⚠️ Returns With Changed Employees</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">These returns were credited to different employees than the original sale.</p>
-        <table class="report-table">
-          <thead><tr><th>Return #</th><th>Date</th><th>Original Sale</th><th>Sale Employees</th><th>Return Employees</th><th>Total</th></tr></thead>
-          <tbody id="flaggedReturnsBody"></tbody>
         </table>
       </div>
     </div>
@@ -668,7 +708,19 @@
           </div>
           <div class="field" style="grid-column:1/-1">
             <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Store Address</label>
-            <input type="text" id="settingsStoreAddress" placeholder="123 Main St, City, State ZIP" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
+            <input type="text" id="settingsStoreAddress" placeholder="123 Main St" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
+          </div>
+          <div class="field">
+            <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">City</label>
+            <input type="text" id="settingsStoreCity" placeholder="San Francisco" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
+          </div>
+          <div class="field">
+            <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">State</label>
+            <input type="text" id="settingsStoreState" placeholder="CA" maxlength="2" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark);text-transform:uppercase">
+          </div>
+          <div class="field">
+            <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">ZIP Code</label>
+            <input type="text" id="settingsStoreZip" placeholder="94103" maxlength="10" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
           </div>
           <div class="field">
             <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Receipt Footer Text</label>
@@ -885,12 +937,43 @@
       <label>Commission Rate (%)</label>
       <input type="number" id="empEditCommission" step="0.5" min="0" max="100">
     </div>
+
+    <div class="field">
+      <label>Commission Plan</label>
+      <select id="empEditPlanType" onchange="updateEmpPlanTypeUI()" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.95rem;font-family:system-ui,sans-serif;outline:none">
+        <option value="flat">Flat — use the Commission Rate above on every sale</option>
+        <option value="daily_threshold">Daily tiered — rate depends on today's sales, resets each day</option>
+      </select>
+    </div>
+    <div id="empEditTierFields" style="display:none">
+      <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:-4px 0 10px">
+        Example: under the threshold earns the base rate; at or above it, the WHOLE day earns the tier rate instead.
+      </p>
+      <div style="display:flex;gap:10px">
+        <div class="field" style="flex:1">
+          <label>Base Rate (%)</label>
+          <input type="number" id="empEditTierBase" step="0.5" min="0" max="100" placeholder="35">
+        </div>
+        <div class="field" style="flex:1">
+          <label>Tier Rate (%)</label>
+          <input type="number" id="empEditTierRate" step="0.5" min="0" max="100" placeholder="40">
+        </div>
+      </div>
+      <div class="field">
+        <label>Daily Sales Threshold ($)</label>
+        <input type="number" id="empEditTierThreshold" step="1" min="0" placeholder="3000">
+      </div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeEmpEdit()">Cancel</button>
       <button class="btn btn-confirm" onclick="saveEmpEdit()">Save</button>
     </div>
   </div>
 </div>
+
+<!-- ─── Transaction Success Toast ─── -->
+<div id="successToast" class="success-toast"></div>
 
 <!-- ─── Manager Authorization Modal ─── -->
 <div class="modal-overlay" id="managerAuthModal">
@@ -993,8 +1076,10 @@ let lastTransaction = null;
 let currentPin = '';
 let saleEmployees = []; // [{employee_id, name, commission_type, commission_value}]
 let allEmployees = [];
-let managerReportsUnlocked = false; // gates the employee commissions section
+let managerReportsUnlocked = false; // gates KPIs, leaderboard, commissions, and top products
 let lastEmployeesReport = [];       // most recent employee report data
+let lastSalesSummaryHtml = '';      // most recent KPI tiles HTML, revealed on manager unlock
+let lastProductsHtml = '';          // most recent top-products rows HTML, revealed on manager unlock
 let selectedBrands = ['avologi', 'avinichi', 'hydrasphere', 'spacetouch'];
 
 const API = '';
@@ -1038,6 +1123,8 @@ async function init() {
     document.getElementById('histEnd').value = today;
     document.getElementById('rptStart').value = today;
     document.getElementById('rptEnd').value = today;
+    document.getElementById('custStart').value = today;
+    document.getElementById('custEnd').value = today;
   } catch (err) {
     console.error('[pos] Auth check failed:', err);
     const savedTheme = localStorage.getItem('glowTheme');
@@ -1141,7 +1228,7 @@ function confirmPriceEdit() {
     return;
   }
 
-  const existing = cart.find(c => c.product_id === pendingProduct.id && c.unit_price === price);
+  const existing = cart.find(c => c.product_id === pendingProduct.id && c.unit_price === price && !c.discount_per_unit);
   if (existing) {
     existing.quantity++;
   } else {
@@ -1151,7 +1238,7 @@ function confirmPriceEdit() {
       brand: pendingProduct.brand,
       unit_price: price,
       quantity: 1,
-      discount: 0,
+      discount_per_unit: 0,
     });
   }
   closePriceEdit();
@@ -1178,7 +1265,8 @@ function changeQty(idx, delta) {
 
 function editCartPrice(idx) {
   const item = cart[idx];
-  const newPrice = prompt(`Edit price for ${item.product_name}:`, item.unit_price.toFixed(2));
+  const effectivePrice = item.unit_price - (item.discount_per_unit || 0);
+  const newPrice = prompt(`Edit price for ${item.product_name}:`, effectivePrice.toFixed(2));
   if (newPrice === null) return;
   const parsed = parseFloat(newPrice);
   if (isNaN(parsed) || parsed < 0) return;
@@ -1189,8 +1277,21 @@ function editCartPrice(idx) {
     alert(`Cannot honor this pricing. The minimum allowed price for "${item.product_name}" is $${money(minPrice)}.`);
     return;
   }
-  cart[idx].unit_price = parsed;
+  // A lower price is recorded as a discount off the original price (so the
+  // receipt can show the original price crossed out above the sale price);
+  // a higher price resets the baseline since it's no longer a discount.
+  if (parsed < item.unit_price) {
+    item.discount_per_unit = Math.round((item.unit_price - parsed) * 100) / 100;
+  } else {
+    item.unit_price = parsed;
+    item.discount_per_unit = 0;
+  }
   renderCart();
+}
+
+// The actual charged amount for a cart line, after any per-unit discount.
+function lineCharged(item) {
+  return (item.unit_price - (item.discount_per_unit || 0)) * item.quantity;
 }
 
 function renderCart() {
@@ -1198,7 +1299,12 @@ function renderCart() {
   if (cart.length === 0) {
     container.innerHTML = '<div class="cart-empty">No items added yet</div>';
   } else {
-    container.innerHTML = cart.map((item, i) => `
+    container.innerHTML = cart.map((item, i) => {
+      const discounted = (item.discount_per_unit || 0) > 0;
+      const priceHtml = discounted
+        ? `<span style="text-decoration:line-through;color:var(--mid);font-size:.8rem;margin-right:4px">$${money(item.unit_price * item.quantity)}</span>$${money(lineCharged(item))}`
+        : `$${money(lineCharged(item))}`;
+      return `
       <div class="cart-item">
         <div class="ci-info">
           <div class="ci-name">${item.product_name}</div>
@@ -1209,16 +1315,17 @@ function renderCart() {
           <span>${item.quantity}</span>
           <button onclick="changeQty(${i}, 1)">+</button>
         </div>
-        <div class="ci-price" onclick="editCartPrice(${i})" style="cursor:pointer" title="Click to edit price">$${money((item.unit_price * item.quantity))}</div>
+        <div class="ci-price" onclick="editCartPrice(${i})" style="cursor:pointer" title="Click to edit price">${priceHtml}</div>
         <button class="ci-remove" onclick="removeFromCart(${i})">&times;</button>
       </div>
-    `).join('');
+    `;
+    }).join('');
   }
   updateCartTotals();
 }
 
 function updateCartTotals() {
-  const subtotal = cart.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+  const subtotal = cart.reduce((s, i) => s + lineCharged(i), 0);
   const taxRate = storeSettings.tax_rate ?? 0.0875;
   const tax = Math.round(subtotal * taxRate * 100) / 100;
   const total = Math.round((subtotal + tax) * 100) / 100;
@@ -1354,7 +1461,7 @@ function addReturnItemsToCart() {
         brand: item.brand,
         unit_price: item.unit_price,
         quantity: item.quantity,
-        discount: 0,
+        discount_per_unit: item.quantity ? (item.discount || 0) / item.quantity : 0,
       });
     }
   });
@@ -1364,7 +1471,7 @@ function addReturnItemsToCart() {
 // ─── Payment (split tenders) ─────────────────────────────────────────────────
 // The sale total, computed the same way as updateCartTotals().
 function saleTotal() {
-  const subtotal = cart.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+  const subtotal = cart.reduce((s, i) => s + lineCharged(i), 0);
   const taxRate = storeSettings.tax_rate ?? 0.0875;
   const tax = Math.round(subtotal * taxRate * 100) / 100;
   return Math.round((subtotal + tax) * 100) / 100;
@@ -1389,7 +1496,7 @@ function removeTender(i) {
 }
 function setTenderMethod(i, m) { tenders[i].method = m; if (m !== 'card') tenders[i].last4 = ''; renderTenders(); }
 function setTenderAmount(i, v) { tenders[i].amount = round2(v); updateTenderBalance(); }
-function setTenderLast4(i, v) { tenders[i].last4 = String(v || '').replace(/[^0-9]/g, '').slice(0, 4); }
+function setTenderLast4(i, v) { tenders[i].last4 = String(v || '').replace(/[^0-9]/g, '').slice(0, 4); updateCheckoutEnabled(); }
 
 function renderTenders() {
   const wrap = document.getElementById('tenderRows');
@@ -1430,15 +1537,55 @@ function updateTenderBalance() {
   updateCheckoutEnabled();
 }
 
+// Everything that still needs to happen before the sale/return can be completed.
+// Drives both the checkout button's disabled state and a visible checklist,
+// so staff can see exactly what's missing instead of just an inert button.
 function updateCheckoutEnabled() {
   const btn = document.getElementById('checkoutBtn');
+  const checklistEl = document.getElementById('checkoutChecklist');
   if (!btn) return;
-  // Both a sale's payment and a return's refund must add up to the total.
+
+  const isReturn = currentMode === 'return';
+  const needed = [];
+
+  needed.push({ ok: cart.length > 0, label: isReturn ? 'Add at least one item to the return' : 'Add at least one item to the cart' });
+
+  if (!isReturn) {
+    const custName = document.getElementById('custName')?.value.trim() || '';
+    const custEmail = document.getElementById('custEmail')?.value.trim() || '';
+    needed.push({ ok: !!custName, label: 'Enter the customer\'s name' });
+    needed.push({ ok: isValidEmail(custEmail), label: 'Enter a valid customer email' });
+  }
+
+  needed.push({ ok: saleEmployees.length > 0, label: 'Assign at least one employee' });
+  if (saleEmployees.length > 0) {
+    const totalPct = saleEmployees.reduce((s, e) => s + (e.commission_value || 0), 0);
+    needed.push({ ok: Math.abs(totalPct - 100) < 0.01, label: `Employee commission % must total 100% (currently ${totalPct.toFixed(1)}%)` });
+  }
+
   const balanced = Math.abs(saleTotal() - tenderSum()) < 0.01;
-  btn.disabled = cart.length === 0 || !balanced;
+  needed.push({ ok: balanced, label: isReturn ? 'Refund amount must match the total' : 'Payment amount must match the total' });
+  const badCard = tenders.some(t => t.method === 'card' && (t.last4 || '').length !== 4);
+  if (badCard) needed.push({ ok: false, label: `Enter the last 4 digits for each card ${isReturn ? 'refund' : 'payment'}` });
+
+  const outstanding = needed.filter(n => !n.ok);
+  btn.disabled = outstanding.length > 0;
+
+  if (checklistEl) {
+    if (outstanding.length === 0) {
+      checklistEl.style.display = 'none';
+      checklistEl.innerHTML = '';
+    } else {
+      checklistEl.style.display = 'block';
+      checklistEl.innerHTML = `<div style="font-weight:700;color:var(--mid);text-transform:uppercase;letter-spacing:.5px;font-size:.7rem;margin-bottom:4px">Still needed to complete this ${isReturn ? 'return' : 'sale'}:</div>` +
+        outstanding.map(n => `<div style="color:var(--danger);padding:1px 0">&#9675; ${n.label}</div>`).join('');
+    }
+  }
 }
 
 // ─── Transaction ────────────────────────────────────────────────────────────
+function isValidEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v || ''); }
+
 async function processTransaction() {
   if (cart.length === 0) return;
 
@@ -1446,6 +1593,20 @@ async function processTransaction() {
   if (saleEmployees.length === 0) {
     alert('Please add at least one employee to this transaction before completing it.');
     return;
+  }
+
+  // A customer name and a valid email are required before a sale can be completed.
+  if (currentMode === 'sale') {
+    const custName = document.getElementById('custName').value.trim();
+    const custEmail = document.getElementById('custEmail').value.trim();
+    if (!custName) {
+      alert('Please enter the customer\'s name before completing the sale.');
+      return;
+    }
+    if (!isValidEmail(custEmail)) {
+      alert('Please enter a valid customer email before completing the sale.');
+      return;
+    }
   }
 
   // Return checklist reminder
@@ -1484,6 +1645,7 @@ async function processTransaction() {
       brand: i.brand,
       quantity: i.quantity,
       unit_price: i.unit_price,
+      discount: round2((i.discount_per_unit || 0) * i.quantity),
     })),
     original_receipt: returnOriginalTx?.receipt_number || null,
   };
@@ -1510,6 +1672,16 @@ async function processTransaction() {
 }
 
 let pendingTxBody = null; // held while a manager approves a card-mismatch return
+let successToastTimer = null;
+
+function showSuccessToast(message) {
+  const el = document.getElementById('successToast');
+  if (!el) return;
+  el.innerHTML = `&#10003; ${message}`;
+  el.classList.add('show');
+  clearTimeout(successToastTimer);
+  successToastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+}
 
 async function submitTransaction(body) {
   try {
@@ -1527,6 +1699,7 @@ async function submitTransaction(body) {
     }
     if (!resp.ok) throw new Error(data.error);
     lastTransaction = data.transaction;
+    showSuccessToast(`${data.transaction.type === 'return' ? 'Return' : 'Transaction'} #${data.transaction.receipt_number} completed successfully!`);
     showReceipt(data.transaction);
     // Reset cart, employees, and return state
     cart = [];
@@ -1555,7 +1728,7 @@ function showReceipt(tx) {
   document.getElementById('receiptModalTitle').textContent = title;
 
   const storeName = storeSettings.store_name || document.getElementById('headerCompany').textContent || 'Glow SF';
-  const storeAddr = storeSettings.store_address || '';
+  const storeAddr = formatStoreAddress(storeSettings);
   const tz = storeSettings.timezone || 'America/Los_Angeles';
   const date = new Date(tx.created_at).toLocaleString('en-US', { timeZone: tz });
   const empNames = (tx.employees && tx.employees.length > 0)
@@ -1576,7 +1749,13 @@ function showReceipt(tx) {
   `;
 
   for (const item of tx.items) {
-    html += `<div class="r-row"><span>${item.product_name} x${item.quantity}</span><span>$${money(item.line_total)}</span></div>`;
+    if ((item.discount || 0) > 0.001) {
+      const original = item.unit_price * item.quantity;
+      html += `<div class="r-row"><span>${item.product_name} x${item.quantity}</span><span class="r-strike">$${money(original)}</span></div>`;
+      html += `<div class="r-row"><span style="padding-left:10px;font-size:.78rem;color:var(--mid)">Sale price</span><span>$${money(item.line_total)}</span></div>`;
+    } else {
+      html += `<div class="r-row"><span>${item.product_name} x${item.quantity}</span><span>$${money(item.line_total)}</span></div>`;
+    }
   }
 
   // Payment: a single tender shows one line; a split shows each tender + amount.
@@ -1596,6 +1775,10 @@ function showReceipt(tx) {
     ${payHtml}
     <div class="r-line"></div>
     <div class="r-center" style="font-size:.75rem;margin-top:8px">${storeSettings.receipt_footer || 'Thank you for your purchase!'}</div>
+    <div class="r-sig">
+      <div class="r-sig-line"><span class="r-sig-x">X</span></div>
+      <div class="r-sig-label">CUSTOMER SIGNATURE</div>
+    </div>
   `;
 
   document.getElementById('receiptContent').innerHTML = html;
@@ -1712,7 +1895,7 @@ function removeEmployeeFromSale(idx) {
 
 // Commission is based on the pre-tax SUBTOTAL (tax is never part of commission).
 function getCommissionBase() {
-  return cart.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+  return cart.reduce((s, i) => s + lineCharged(i), 0);
 }
 
 function empPercentChanged(idx, val) {
@@ -1739,11 +1922,13 @@ function empDollarChanged(idx, val) {
 
 function updateSaleEmpTotalIndicator() {
   const el = document.getElementById('saleEmpTotal');
-  if (!el) return;
-  const totalPct = saleEmployees.reduce((s, e) => s + (e.commission_value || 0), 0);
-  const pctOk = Math.abs(totalPct - 100) < 0.01;
-  el.style.color = pctOk ? 'var(--success)' : 'var(--danger)';
-  el.textContent = `Total: ${totalPct.toFixed(1)}% ${pctOk ? '' : '(must equal 100%)'}`;
+  if (el) {
+    const totalPct = saleEmployees.reduce((s, e) => s + (e.commission_value || 0), 0);
+    const pctOk = Math.abs(totalPct - 100) < 0.01;
+    el.style.color = pctOk ? 'var(--success)' : 'var(--danger)';
+    el.textContent = `Total: ${totalPct.toFixed(1)}% ${pctOk ? '' : '(must equal 100%)'}`;
+  }
+  updateCheckoutEnabled();
 }
 
 function renderSaleEmployees() {
@@ -1751,6 +1936,7 @@ function renderSaleEmployees() {
   const activeEmps = allEmployees.filter(e => e.active);
   if (saleEmployees.length === 0) {
     container.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);padding:4px 0">No employees assigned</div>';
+    updateCheckoutEnabled();
     return;
   }
   const base = getCommissionBase();
@@ -1774,6 +1960,7 @@ function renderSaleEmployees() {
     <div id="saleEmpTotal" style="font-family:system-ui,sans-serif;font-size:.75rem;margin-top:4px;color:${pctOk ? 'var(--success)' : 'var(--danger)'}">
       Total: ${totalPct.toFixed(1)}% ${pctOk ? '' : '(must equal 100%)'}
     </div>`;
+  updateCheckoutEnabled();
 }
 
 // ─── Employees Management ───────────────────────────────────────────────────
@@ -1857,7 +2044,12 @@ async function addEmployee() {
   loadEmployees();
 }
 
-function editEmployee(id) {
+function updateEmpPlanTypeUI() {
+  const tiered = document.getElementById('empEditPlanType').value === 'daily_threshold';
+  document.getElementById('empEditTierFields').style.display = tiered ? 'block' : 'none';
+}
+
+async function editEmployee(id) {
   const emp = allEmployees.find(e => e.id === id);
   if (!emp) return;
   document.getElementById('empEditId').value = id;
@@ -1865,6 +2057,24 @@ function editEmployee(id) {
   document.getElementById('empEditPin').value = emp.pin;
   document.getElementById('empEditRole').value = emp.role || 'sales';
   document.getElementById('empEditCommission').value = emp.commission_rate || 0;
+
+  // Load this employee's commission plan, if any (daily-tiered rates are opt-in per employee)
+  document.getElementById('empEditPlanType').value = 'flat';
+  document.getElementById('empEditTierBase').value = '';
+  document.getElementById('empEditTierRate').value = '';
+  document.getElementById('empEditTierThreshold').value = '';
+  try {
+    const resp = await fetch(`${API}/api/pos/employees/${id}/commission-plan`, { credentials: 'include' });
+    const data = await resp.json();
+    if (data.plan && data.plan.plan_type === 'daily_threshold') {
+      document.getElementById('empEditPlanType').value = 'daily_threshold';
+      document.getElementById('empEditTierBase').value = data.plan.base_rate;
+      document.getElementById('empEditTierRate').value = data.plan.tier_rate;
+      document.getElementById('empEditTierThreshold').value = data.plan.tier_threshold;
+    }
+  } catch (_) { /* default to flat if the lookup fails */ }
+  updateEmpPlanTypeUI();
+
   document.getElementById('empEditModal').classList.add('show');
 }
 
@@ -1881,12 +2091,39 @@ async function saveEmpEdit() {
   if (!name) return alert('Name is required');
   if (!pin || pin.length < 4) return alert('PIN must be at least 4 digits');
 
+  const planType = document.getElementById('empEditPlanType').value;
+  if (planType === 'daily_threshold') {
+    const base_rate = parseFloat(document.getElementById('empEditTierBase').value);
+    const tier_rate = parseFloat(document.getElementById('empEditTierRate').value);
+    const tier_threshold = parseFloat(document.getElementById('empEditTierThreshold').value);
+    if (isNaN(base_rate) || isNaN(tier_rate) || isNaN(tier_threshold)) {
+      return alert('Enter the base rate, tier rate, and daily sales threshold for a tiered commission plan.');
+    }
+  }
+
   await fetch(`${API}/api/pos/employees/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({ name, pin, role, commission_rate }),
   });
+
+  if (planType === 'daily_threshold') {
+    await fetch(`${API}/api/pos/employees/${id}/commission-plan`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        plan_type: 'daily_threshold',
+        base_rate: parseFloat(document.getElementById('empEditTierBase').value),
+        tier_rate: parseFloat(document.getElementById('empEditTierRate').value),
+        tier_threshold: parseFloat(document.getElementById('empEditTierThreshold').value),
+      }),
+    });
+  } else {
+    await fetch(`${API}/api/pos/employees/${id}/commission-plan`, { method: 'DELETE', credentials: 'include' });
+  }
+
   closeEmpEdit();
   loadEmployees();
 }
@@ -2148,7 +2385,7 @@ function startDeleteTransaction(txId) {
 
 function openManagerAuth(type, txId, msg) {
   managerAction = { type, txId };
-  const titles = { delete: 'Delete Transaction', edit: 'Edit Transaction', 'return-override': 'Manager Override — Card Mismatch' };
+  const titles = { delete: 'Delete Transaction', edit: 'Edit Transaction', 'return-override': 'Manager Override — Card Mismatch', 'tab-access': 'Manager Access Required' };
   document.getElementById('managerAuthTitle').textContent = titles[type] || 'Manager Authorization';
   document.getElementById('managerAuthMsg').textContent = msg;
   document.getElementById('managerAuthName').value = '';
@@ -2160,6 +2397,7 @@ function openManagerAuth(type, txId, msg) {
 function closeManagerAuth() {
   document.getElementById('managerAuthModal').classList.remove('show');
   managerAction = null;
+  pendingTabSwitch = null;
 }
 
 async function submitManagerAuth() {
@@ -2177,7 +2415,12 @@ async function submitManagerAuth() {
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Verification failed');
     managerCreds = { name, pin };
+    // A successful verification here always means the credentials belong to a
+    // manager (the server enforces role === 'manager'), so Settings/Transactions
+    // don't need to be re-unlocked again for the rest of this session.
+    managerTabsUnlocked = true;
     const action = managerAction;
+    const targetTab = pendingTabSwitch;
     closeManagerAuth();
     if (action.type === 'delete') {
       await performDeleteTransaction(action.txId);
@@ -2188,6 +2431,8 @@ async function submitManagerAuth() {
         pendingTxBody.manager_pin = pin;
         await submitTransaction(pendingTxBody);
       }
+    } else if (action.type === 'tab-access') {
+      if (targetTab) switchTab(targetTab);
     } else {
       await openTxEdit(action.txId);
     }
@@ -2395,18 +2640,16 @@ async function loadReports() {
   const end = document.getElementById('rptEnd').value;
   const qs = `start=${start}T00:00:00&end=${end}T23:59:59`;
 
-  const [salesResp, empResp, prodResp, custResp, flaggedResp] = await Promise.all([
+  const [salesResp, empResp, prodResp, flaggedResp] = await Promise.all([
     fetch(`${API}/api/pos/reports/sales?${qs}`, { credentials: 'include' }),
     fetch(`${API}/api/pos/reports/employees?${qs}`, { credentials: 'include' }),
     fetch(`${API}/api/pos/reports/products?${qs}`, { credentials: 'include' }),
-    fetch(`${API}/api/pos/reports/customers?${qs}`, { credentials: 'include' }),
     fetch(`${API}/api/pos/reports/flagged-returns?${qs}`, { credentials: 'include' }),
   ]);
 
   const sales = (await salesResp.json()).report || {};
   const employees = (await empResp.json()).report || [];
   const prods = (await prodResp.json()).report || [];
-  const customers = (await custResp.json()).report || [];
   const flagged = (await flaggedResp.json()).report || [];
 
   // Flagged returns (employees changed vs original sale)
@@ -2427,8 +2670,10 @@ async function loadReports() {
     flaggedCard.style.display = 'none';
   }
 
-  // Sales summary
-  document.getElementById('salesSummary').innerHTML = `
+  // KPIs, the leaderboard, the full commissions table, and top products are all
+  // manager-gated — build the HTML but only render it into the DOM if a manager
+  // has already unlocked the section; otherwise it stays cached until they do.
+  lastSalesSummaryHtml = `
     <div class="stat-box"><div class="stat-val">${sales.total_sales || 0}</div><div class="stat-lbl">Total Sales</div></div>
     <div class="stat-box"><div class="stat-val">${sales.total_returns || 0}</div><div class="stat-lbl">Returns</div></div>
     <div class="stat-box"><div class="stat-val">$${money((sales.sales_revenue || 0))}</div><div class="stat-lbl">Gross Revenue</div></div>
@@ -2436,16 +2681,8 @@ async function loadReports() {
     <div class="stat-box"><div class="stat-val">$${money((sales.net_revenue || 0))}</div><div class="stat-lbl">Net Revenue</div></div>
     <div class="stat-box"><div class="stat-val">$${money((sales.net_tax || 0))}</div><div class="stat-lbl">Tax Collected</div></div>
   `;
-
-  // Leaderboard and commissions table are both manager-gated (rendered on manager unlock)
   lastEmployeesReport = employees;
-  if (managerReportsUnlocked) {
-    renderLeaderboard(employees);
-    renderManagerCommissions();
-  }
-
-  // Product report
-  document.getElementById('prodReportBody').innerHTML = prods.map(p => `
+  lastProductsHtml = prods.map(p => `
     <tr>
       <td style="font-weight:600">${p.product_name}</td>
       <td>${p.brand}</td>
@@ -2454,7 +2691,23 @@ async function loadReports() {
     </tr>
   `).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--mid)">No data</td></tr>';
 
-  // Customer report — store, populate product filter, and render (with filter)
+  if (managerReportsUnlocked) {
+    document.getElementById('salesSummary').innerHTML = lastSalesSummaryHtml;
+    document.getElementById('prodReportBody').innerHTML = lastProductsHtml;
+    renderLeaderboard(employees);
+    renderManagerCommissions();
+  }
+}
+
+// ─── Customers tab ───────────────────────────────────────────────────────────
+async function loadCustomers() {
+  const start = document.getElementById('custStart').value;
+  const end = document.getElementById('custEnd').value;
+  const qs = `start=${start}T00:00:00&end=${end}T23:59:59`;
+
+  const resp = await fetch(`${API}/api/pos/reports/customers?${qs}`, { credentials: 'include' });
+  const customers = (await resp.json()).report || [];
+
   custReportData = customers;
   populateCustProductFilter();
   applyCustomerProductFilter();
@@ -2847,14 +3100,29 @@ async function openDayDrilldown(date) {
 }
 
 // ─── Tab Switching ──────────────────────────────────────────────────────────
+// Settings and Transactions hold sensitive/administrative data, so they
+// require a manager PIN — unlocked once per session (see managerTabsUnlocked).
+const MANAGER_GATED_TABS = ['settings', 'history'];
+let managerTabsUnlocked = false;
+let pendingTabSwitch = null; // tab name held while a manager approves tab access
+
 function switchTab(tabName) {
+  if (MANAGER_GATED_TABS.includes(tabName) && !managerTabsUnlocked) {
+    pendingTabSwitch = tabName;
+    const label = tabName === 'settings' ? 'Settings' : 'Transactions';
+    openManagerAuth('tab-access', null, `Manager PIN required to open ${label}.`);
+    return;
+  }
+
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('show'));
   document.querySelectorAll('.pos-subtabs button').forEach(el => el.classList.remove('active'));
   document.getElementById(`tab-${tabName}`).classList.add('show');
-  event.target.classList.add('active');
+  const navBtn = document.querySelector(`.pos-subtabs button[data-tab="${tabName}"]`);
+  if (navBtn) navBtn.classList.add('active');
 
   if (tabName === 'history') loadTransactions();
   if (tabName === 'reports') loadReports();
+  if (tabName === 'customers') loadCustomers();
   if (tabName === 'emails') {
     const f = document.getElementById('emailsFrame');
     if (f && !f.src) f.src = f.dataset.src; // load once, on first open
@@ -3106,9 +3374,12 @@ async function unlockPersonalReport() {
     document.getElementById('empLockBtn').style.display = '';
 
     if (data.role === 'manager') {
-      // Managers unlock the full leaderboard + commissions section
+      // Managers unlock the KPIs, full leaderboard, commissions, and top products
       managerReportsUnlocked = true;
       document.getElementById('managerCommissionsSection').style.display = 'block';
+      document.getElementById('managerReportsLocked').style.display = 'none';
+      document.getElementById('salesSummary').innerHTML = lastSalesSummaryHtml;
+      document.getElementById('prodReportBody').innerHTML = lastProductsHtml;
       renderLeaderboard(lastEmployeesReport);
       renderManagerCommissions();
       document.getElementById('empPersonalName').textContent = `${data.employee.name} (Manager) — full commissions unlocked below`;
@@ -3118,6 +3389,7 @@ async function unlockPersonalReport() {
       // Sales employees see only their own personal sales
       managerReportsUnlocked = false;
       document.getElementById('managerCommissionsSection').style.display = 'none';
+      document.getElementById('managerReportsLocked').style.display = 'block';
       document.getElementById('empPersonalName').textContent = `${data.employee.name} — Personal Sales & Commission`;
       document.getElementById('empPersonalBody').innerHTML =
         (data.report || []).map(commissionRow).join('') ||
@@ -3133,6 +3405,9 @@ async function unlockPersonalReport() {
 function lockPersonalReport() {
   managerReportsUnlocked = false;
   document.getElementById('managerCommissionsSection').style.display = 'none';
+  document.getElementById('managerReportsLocked').style.display = 'block';
+  document.getElementById('salesSummary').innerHTML = '';
+  document.getElementById('prodReportBody').innerHTML = '';
   document.getElementById('empPersonalReport').style.display = 'none';
   document.getElementById('empLockBtn').style.display = 'none';
   document.getElementById('empPersonalName2').value = '';
@@ -3153,7 +3428,16 @@ document.addEventListener('click', e => {
 });
 
 // ─── Store Settings ─────────────────────────────────────────────────────────
-let storeSettings = { store_name: '', store_address: '', receipt_footer: 'Thank you for your purchase!', timezone: 'America/Los_Angeles', tax_rate: 0.081875 };
+let storeSettings = { store_name: '', store_address: '', store_city: '', store_state: '', store_zip: '', receipt_footer: 'Thank you for your purchase!', timezone: 'America/Los_Angeles', tax_rate: 0.081875 };
+
+// Combine the street address with city/state/zip so receipts always show the
+// full mailing address, e.g. "123 Main St" + "San Francisco"/"CA"/"94103".
+function formatStoreAddress(settings) {
+  const street = (settings.store_address || '').trim();
+  const cityStateZip = [settings.store_city, settings.store_state].filter(Boolean).join(', ') +
+    (settings.store_zip ? ' ' + settings.store_zip : '');
+  return [street, cityStateZip.trim()].filter(Boolean).join(', ');
+}
 
 // Format a decimal tax rate (e.g. 0.081875) as a trimmed percent string ("8.1875")
 function taxPctStr(rate) { return String(parseFloat(((rate || 0) * 100).toFixed(4))); }
@@ -3168,6 +3452,9 @@ async function loadStoreSettings() {
     storeSettings = data.settings || storeSettings;
     document.getElementById('settingsStoreName').value = storeSettings.store_name || '';
     document.getElementById('settingsStoreAddress').value = storeSettings.store_address || '';
+    document.getElementById('settingsStoreCity').value = storeSettings.store_city || '';
+    document.getElementById('settingsStoreState').value = storeSettings.store_state || '';
+    document.getElementById('settingsStoreZip').value = storeSettings.store_zip || '';
     document.getElementById('settingsReceiptFooter').value = storeSettings.receipt_footer || '';
     document.getElementById('settingsTimezone').value = storeSettings.timezone || 'America/Los_Angeles';
     document.getElementById('settingsTaxRate').value = storeSettings.tax_rate != null ? taxPctStr(storeSettings.tax_rate) : '8.1875';
@@ -3187,6 +3474,9 @@ async function loadStoreSettings() {
 async function saveStoreSettings() {
   const store_name = document.getElementById('settingsStoreName').value.trim();
   const store_address = document.getElementById('settingsStoreAddress').value.trim();
+  const store_city = document.getElementById('settingsStoreCity').value.trim();
+  const store_state = document.getElementById('settingsStoreState').value.trim();
+  const store_zip = document.getElementById('settingsStoreZip').value.trim();
   const receipt_footer = document.getElementById('settingsReceiptFooter').value.trim();
   const timezone = document.getElementById('settingsTimezone').value;
   const taxPct = parseFloat(document.getElementById('settingsTaxRate').value);
@@ -3195,7 +3485,7 @@ async function saveStoreSettings() {
   try {
     const resp = await fetch(`${API}/api/pos/settings`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ store_name, store_address, receipt_footer, timezone, tax_rate, theme }),
+      body: JSON.stringify({ store_name, store_address, store_city, store_state, store_zip, receipt_footer, timezone, tax_rate, theme }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Save failed');
@@ -3366,6 +3656,7 @@ async function switchAccount(email) {
     custReportData = [];
     custFiltered = [];
     managerReportsUnlocked = false;
+    managerTabsUnlocked = false; // require a fresh manager PIN for this company's Settings/Transactions
     lockPersonalReport();
     loadTransactions();
     loadReports();
