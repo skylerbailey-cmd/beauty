@@ -546,7 +546,7 @@
         <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="showAllTransactions()">Show All</button>
         <input type="text" id="histSearch" placeholder="Search anything (receipt, customer, employee, card, amount, type…)" oninput="applyTxFilters()" style="min-width:300px;flex:1">
         <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="clearTxFilters()">Clear</button>
-        <button class="btn" style="background:var(--gold);color:#fff;padding:8px 16px" onclick="runAudit()">Run Batch Audit</button>
+        <button class="btn" id="runAuditBtn" style="background:var(--gold);color:#fff;padding:8px 16px" onclick="runAudit()">Run Batch Audit</button>
         <span id="batchStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)"></span>
       </div>
 
@@ -570,7 +570,7 @@
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span id="importStatus" style="font-family:system-ui,sans-serif;font-size:.8rem"></span>
             <input type="file" id="importFile" accept=".csv" style="display:none" onchange="handleImportFile(this)">
-            <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:7px 14px;font-size:.82rem" onclick="document.getElementById('importFile').click()">Import CSV</button>
+            <button class="btn" id="importCsvBtn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:7px 14px;font-size:.82rem" onclick="document.getElementById('importFile').click()">Import CSV</button>
             <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportTransactionsCSV()">Export CSV</button>
           </div>
         </div>
@@ -992,6 +992,27 @@
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeManagerAuth()">Cancel</button>
       <button class="btn btn-confirm" onclick="submitManagerAuth()">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Employee Transactions Access Modal ─── -->
+<div class="modal-overlay" id="txAuthModal">
+  <div class="modal" style="max-width:400px">
+    <h2>Transactions Access</h2>
+    <p class="sub" style="font-family:system-ui,sans-serif;font-size:.84rem;color:var(--mid);margin-bottom:8px">Enter your name and PIN. You'll only see transactions you rang up or were assigned to — managers see everyone's.</p>
+    <div class="field">
+      <label>Your Name</label>
+      <input type="text" id="txAuthName" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Your Code (PIN)</label>
+      <input type="password" id="txAuthPin" maxlength="6" autocomplete="off" onkeydown="if(event.key==='Enter')submitTxAuth()">
+    </div>
+    <div id="txAuthError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger);min-height:1em"></div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeTxAuth()">Cancel</button>
+      <button class="btn btn-confirm" onclick="submitTxAuth()">Continue</button>
     </div>
   </div>
 </div>
@@ -2142,13 +2163,65 @@ async function toggleEmployee(id, currentlyActive) {
 let histTransactions = []; // full set for the selected date range (filtered client-side)
 let filteredTransactions = []; // current filtered view (for CSV export)
 
+// Access is PIN-verified per employee (see openTxAuth/submitTxAuth below).
+// txAccess.role === 'manager' sees everyone and can edit/delete; anyone else
+// only sees transactions they rang up or were assigned to, and read-only.
+let txAccess = null; // { id, name, role }
+let txCreds = null; // { name, pin } — re-sent on every load so the server re-verifies and re-scopes
+
 async function loadTransactions() {
+  if (!txCreds) return; // Transactions tab requires PIN verification first (see switchTab)
   const start = document.getElementById('histStart').value;
   const end = document.getElementById('histEnd').value;
-  const resp = await fetch(`${API}/api/pos/transactions?start=${start}T00:00:00&end=${end}T23:59:59&limit=2000`, { credentials: 'include' });
+  const resp = await fetch(`${API}/api/pos/transactions/mine`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ name: txCreds.name, pin: txCreds.pin, start: `${start}T00:00:00`, end: `${end}T23:59:59` }),
+  });
   const data = await resp.json();
+  if (!resp.ok) { alert(data.error || 'Failed to load transactions'); return; }
+  txAccess = { id: data.employee.id, name: data.employee.name, role: data.role };
+  const canManage = txAccess.role === 'manager';
+  document.getElementById('importCsvBtn').style.display = canManage ? '' : 'none';
+  document.getElementById('runAuditBtn').style.display = canManage ? '' : 'none';
   histTransactions = data.transactions || [];
   applyTxFilters();
+}
+
+// Prompt for the current employee's name+PIN to unlock the Transactions tab.
+function openTxAuth() {
+  document.getElementById('txAuthName').value = '';
+  document.getElementById('txAuthPin').value = '';
+  document.getElementById('txAuthError').textContent = '';
+  document.getElementById('txAuthModal').classList.add('show');
+  setTimeout(() => document.getElementById('txAuthName').focus(), 50);
+}
+function closeTxAuth() {
+  document.getElementById('txAuthModal').classList.remove('show');
+  pendingTabSwitch = null;
+}
+async function submitTxAuth() {
+  const name = document.getElementById('txAuthName').value.trim();
+  const pin = document.getElementById('txAuthPin').value.trim();
+  const errEl = document.getElementById('txAuthError');
+  errEl.textContent = '';
+  if (!name || !pin) { errEl.textContent = 'Enter your name and PIN.'; return; }
+
+  try {
+    const resp = await fetch(`${API}/api/pos/transactions/mine`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ name, pin, start: '2020-01-01T00:00:00', end: new Date().toISOString() }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Verification failed');
+
+    txAccess = { id: data.employee.id, name: data.employee.name, role: data.role };
+    txCreds = { name, pin };
+    const targetTab = pendingTabSwitch;
+    closeTxAuth();
+    if (targetTab) switchTab(targetTab);
+  } catch (err) {
+    errEl.textContent = err.message;
+  }
 }
 
 // Widen the range to everything (e.g. to see imported / historical transactions)
@@ -2182,6 +2255,7 @@ function applyTxFilters() {
   });
   filteredTransactions = rows;
 
+  const canManage = !!(txAccess && txAccess.role === 'manager');
   const body = document.getElementById('txHistoryBody');
   body.innerHTML = rows.map(tx => `
     <tr>
@@ -2195,8 +2269,9 @@ function applyTxFilters() {
       <td style="font-weight:600">$${money(tx.total)}</td>
       <td style="white-space:nowrap">
         <button onclick="viewReceipt(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--rose);text-decoration:underline;font-size:.82rem">View</button>
+        ${canManage ? `
         <button onclick="startEditTransaction(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--gold-dk,#b8860b);text-decoration:underline;font-size:.82rem">Edit</button>
-        <button onclick="startDeleteTransaction(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--danger);text-decoration:underline;font-size:.82rem">Delete</button>
+        <button onclick="startDeleteTransaction(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--danger);text-decoration:underline;font-size:.82rem">Delete</button>` : ''}
       </td>
     </tr>
   `).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--mid)">No transactions in this date range. Click <b>Show All</b> above to see historical/imported transactions.</td></tr>';
@@ -2211,12 +2286,14 @@ function applyTxFilters() {
   }
 }
 
-async function viewReceipt(txId) {
-  const resp = await fetch(`${API}/api/pos/transactions/${txId}`, { credentials: 'include' });
-  const data = await resp.json();
-  if (data.transaction) {
-    lastTransaction = data.transaction;
-    showReceipt(data.transaction);
+function viewReceipt(txId) {
+  // Look up from the already PIN-scoped list rather than re-fetching by id —
+  // the by-id endpoint is company-scoped only, not employee-scoped, so
+  // fetching it directly here would let a non-manager view someone else's receipt.
+  const tx = histTransactions.find(t => t.id === txId);
+  if (tx) {
+    lastTransaction = tx;
+    showReceipt(tx);
   }
 }
 
@@ -3100,19 +3177,27 @@ async function openDayDrilldown(date) {
 }
 
 // ─── Tab Switching ──────────────────────────────────────────────────────────
-// Settings and Transactions hold sensitive/administrative data, so they
-// require a manager PIN — unlocked once per session (see managerTabsUnlocked).
-const MANAGER_GATED_TABS = ['settings', 'history'];
+// Settings holds administrative data, so it requires a manager PIN — unlocked
+// once per session (see managerTabsUnlocked).
+const MANAGER_GATED_TABS = ['settings'];
 let managerTabsUnlocked = false;
-let pendingTabSwitch = null; // tab name held while a manager approves tab access
+let pendingTabSwitch = null; // tab name held while a manager approves tab access, or an employee verifies for Transactions
 
 function switchTab(tabName) {
   if (MANAGER_GATED_TABS.includes(tabName) && !managerTabsUnlocked) {
     pendingTabSwitch = tabName;
-    const label = tabName === 'settings' ? 'Settings' : 'Transactions';
-    openManagerAuth('tab-access', null, `Manager PIN required to open ${label}.`);
+    openManagerAuth('tab-access', null, `Manager PIN required to open Settings.`);
     return;
   }
+  // Transactions requires each person to verify their own name+PIN — re-locked
+  // every time you leave the tab so the next person at this browser can't see
+  // whoever unlocked it last.
+  if (tabName === 'history' && !txAccess) {
+    pendingTabSwitch = tabName;
+    openTxAuth();
+    return;
+  }
+  if (tabName !== 'history') { txAccess = null; txCreds = null; }
 
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('show'));
   document.querySelectorAll('.pos-subtabs button').forEach(el => el.classList.remove('active'));

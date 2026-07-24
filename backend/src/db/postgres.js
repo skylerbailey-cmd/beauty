@@ -666,6 +666,37 @@ async function getTransactions(userId, opts = {}) {
   return transactions;
 }
 
+// Transactions an employee is personally tied to: either rung up as the
+// primary cashier, or assigned as a participant (e.g. stylist/commission
+// split) in pos_transaction_employees. Used for the employee-facing,
+// read-only Transactions view (see POST /transactions/mine).
+async function getEmployeeTransactions(userId, employeeId, opts = {}) {
+  const { type, startDate, endDate, limit = 2000 } = opts;
+  let where = `WHERE t.user_id = $1 AND (t.employee_id = $2
+    OR EXISTS (SELECT 1 FROM pos_transaction_employees te WHERE te.transaction_id = t.id AND te.employee_id = $2))`;
+  const params = [userId, employeeId];
+  let idx = 3;
+
+  if (type) { where += ` AND t.type = $${idx}`; params.push(type); idx++; }
+  if (startDate) { where += ` AND t.created_at >= $${idx}`; params.push(startDate); idx++; }
+  if (endDate) { where += ` AND t.created_at <= $${idx}`; params.push(endDate); idx++; }
+  params.push(limit);
+
+  const transactions = (await query(`
+    SELECT t.* FROM pos_transactions t ${where} ORDER BY t.created_at DESC LIMIT $${idx}
+  `, params)).rows;
+
+  for (const tx of transactions) {
+    tx.items = (await query('SELECT * FROM pos_transaction_items WHERE transaction_id = $1', [tx.id])).rows;
+    tx.employees = (await query(
+      `SELECT te.*, e.name as employee_name FROM pos_transaction_employees te
+       JOIN pos_employees e ON te.employee_id = e.id WHERE te.transaction_id = $1`, [tx.id]
+    )).rows;
+    tx.payments = await getTransactionPayments(tx);
+  }
+  return transactions;
+}
+
 // ─── Reports ────────────────────────────────────────────────────────────────
 
 async function getSalesReport(userId, startDate, endDate) {
@@ -1293,6 +1324,7 @@ module.exports = {
   getTransaction,
   getTransactionByReceipt,
   getTransactions,
+  getEmployeeTransactions,
   updateTransaction,
   deleteTransaction,
   receiptExists,

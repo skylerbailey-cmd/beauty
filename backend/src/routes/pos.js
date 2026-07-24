@@ -533,6 +533,32 @@ router.get('/transactions/:id', async (req, res) => {
   res.json({ transaction: tx });
 });
 
+// ─── Employee-scoped Transactions (PIN-protected, read-only) ──────────────
+// Any employee can view transactions, but only their own — either rung up as
+// the primary cashier or assigned as a participant (e.g. commission split).
+// Managers see the full company list. This never exposes edit/delete.
+router.post('/transactions/mine', async (req, res) => {
+  const { name, pin, start, end } = req.body;
+  if (!pin) return res.status(400).json({ error: 'PIN required' });
+
+  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId);
+  if (!employee) return res.status(401).json({ error: 'Invalid name or PIN' });
+  if (name && employee.name.trim().toLowerCase() !== String(name).trim().toLowerCase()) {
+    return res.status(401).json({ error: 'Invalid name or PIN' });
+  }
+
+  const opts = { limit: 2000 };
+  if (start) opts.startDate = start;
+  if (end) opts.endDate = end;
+
+  const role = employee.role === 'manager' ? 'manager' : 'sales';
+  const transactions = role === 'manager'
+    ? await pgDb.getTransactions(req.session.userId, opts)
+    : await pgDb.getEmployeeTransactions(req.session.userId, employee.id, opts);
+
+  res.json({ employee: { id: employee.id, name: employee.name }, role, transactions });
+});
+
 // ─── Manager-gated Edit / Delete ────────────────────────────────────────────
 
 // Verify a manager's name + PIN for the current company. Returns the manager
