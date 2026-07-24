@@ -1293,6 +1293,42 @@ async function fetchMaverickBatches(dbaId, from, to, token) {
   return { ok: true, status: 200, batches, raw: lastData, error: null };
 }
 
+// Maverick's coarse `filter[batch.date]` range query has been observed to
+// return records with the WRONG date and even the wrong debit/credit type
+// once the requested window spans more than the batch(es) actually being
+// asked about (confirmed via its own raw response — a single-day query
+// returned another day's refund and sale, one with its type flipped). A
+// day-centered window matching exactly what's requested does not show this
+// corruption, so every per-day total — whether for one day or across a
+// whole report range — must be built from its OWN day-centered fetch,
+// never sliced out of one wide multi-day fetch.
+const DAY_WINDOW = 3;
+const dayShift = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+
+// Settled (and failed) records that genuinely belong to one calendar day.
+async function fetchMerchantDay(dbaId, day, token) {
+  const r = await fetchMaverickBatches(dbaId, dayShift(day, -DAY_WINDOW), dayShift(day, DAY_WINDOW), token);
+  if (!r.ok) return { ok: false, error: r.error, records: [], failed: [] };
+  const sameDay = r.batches.filter(b => batchDateOf(b, day) === day);
+  return { ok: true, records: sameDay.filter(b => !isRejected(b)), failed: sameDay.filter(b => isRejected(b)) };
+}
+
+// Run `fn` over `items` with at most `limit` in flight at once — a report
+// spanning up to 30 days means up to 30 Maverick round trips, so this keeps
+// us from either serializing them one at a time or firing all 30 at once.
+async function mapWithConcurrency(items, limit, fn) {
+  const results = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 // The reporting API keys off the DBA id, but the dashboard shows a merchant
 // account id — resolve the real DBA id by matching the company's store name.
 async function resolveDbaByName(token, storeName) {
@@ -1332,10 +1368,11 @@ router.get('/reconciliation-audit', async (req, res) => {
     from = d.toISOString().slice(0, 10);
   }
 
-  // Merchant side
-  let batches = [];
+  // Resolve/validate the DBA id with the same range fetch as before, and
+  // surface auth/connection errors up front. Its data is NOT used for the
+  // day totals below — see fetchMerchantDay's comment for why a single wide
+  // fetch can't be trusted for that.
   let usedDbaId = dbaId;
-  let rawResponse = null;
   try {
     let r = await fetchMaverickBatches(dbaId, from, to, token);
     // If the configured id isn't accessible (e.g. it's a merchant id, not the
@@ -1352,23 +1389,18 @@ router.get('/reconciliation-audit', async (req, res) => {
       }
     }
     if (!r.ok) return res.json({ configured: true, from, to, error: r.error });
-    batches = r.batches;
-    rawResponse = r.raw;
-
-    // Maverick's date filter can return an empty list even when batches exist
-    // (their batch date field/format differs from the documented filter[date]).
-    // Fall back to the no-filter request (last ~5 days) and filter client-side
-    // by each batch's actual settlement date.
-    if (batches.length === 0) {
-      const probe = await fetchMaverickBatches(usedDbaId, null, null, token);
-      if (probe.ok && probe.batches.length) {
-        batches = probe.batches.filter(b => { const d = batchDateOf(b, null); return d && d >= from && d <= to; });
-        rawResponse = rawResponse || probe.raw;
-      }
-    }
   } catch (e) {
     return res.json({ configured: true, from, to, error: e.message });
   }
+
+  // Each day in the range gets its own day-centered fetch (fetchMerchantDay),
+  // run with limited concurrency since a 30-day report means up to 30
+  // Maverick round trips.
+  const allDays = [];
+  for (let d = new Date(from + 'T00:00:00Z'); d <= new Date(to + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1)) {
+    allDays.push(d.toISOString().slice(0, 10));
+  }
+  const dayResults = await mapWithConcurrency(allDays, 5, day => fetchMerchantDay(usedDbaId, day, token));
 
   // Each record is a settled transaction: { amount, type: 'debit'|'credit', date,
   // batch: { id, date } }. A 'credit' is a refund back to the cardholder, so it
@@ -1379,39 +1411,48 @@ router.get('/reconciliation-audit', async (req, res) => {
   const merchantByDate = {};
   const failedRecords = [];
   const overLimitRecords = [];
-  for (const b of batches) {
-    const type = String(b.type || '').toLowerCase();
-    const mag = Math.abs(batchAmount(b));
-    const isCredit = /credit|refund|return|void|reversal/.test(type);
-    const signed = isCredit ? -mag : mag;
-    const d = batchDateOf(b, to);
-    if (!merchantByDate[d]) merchantByDate[d] = { total: 0, sales: 0, credits: 0, sale_count: 0, credit_count: 0, failed: 0, failed_amount: 0, over_limit: 0, over_limit_amount: 0, txns: 0, batchIds: new Set() };
+  let sampleRecord = null;
+  let totalRawCount = 0;
+  for (let i = 0; i < allDays.length; i++) {
+    const day = allDays[i];
+    const dayResult = dayResults[i];
+    if (!dayResult.ok) continue; // best-effort — one bad day shouldn't kill the whole report
+    totalRawCount += dayResult.records.length + dayResult.failed.length;
+    if (!sampleRecord) sampleRecord = dayResult.records[0] || dayResult.failed[0] || null;
+    if (!merchantByDate[day]) merchantByDate[day] = { total: 0, sales: 0, credits: 0, sale_count: 0, credit_count: 0, failed: 0, failed_amount: 0, over_limit: 0, over_limit_amount: 0, txns: 0, batchIds: new Set() };
 
-    // A failed/rejected transaction (e.g. a refund that didn't fund) is NOT in
-    // the merchant's settled batch total, so exclude it from the reconciliation
-    // but track it so it can be surfaced as "caught, did not settle".
-    if (isRejected(b)) {
-      merchantByDate[d].failed += 1;
-      merchantByDate[d].failed_amount += signed;
-      failedRecords.push({ date: d, amount: signed, type, last4: last4Of(b.card?.number), batch_id: b.batch?.id || null, reject: b.reject || null });
-      continue;
+    for (const b of dayResult.failed) {
+      const type = String(b.type || '').toLowerCase();
+      const mag = Math.abs(batchAmount(b));
+      const isCredit = /credit|refund|return|void|reversal/.test(type);
+      const signed = isCredit ? -mag : mag;
+      merchantByDate[day].failed += 1;
+      merchantByDate[day].failed_amount += signed;
+      failedRecords.push({ date: day, amount: signed, type, last4: last4Of(b.card?.number), batch_id: b.batch?.id || null, reject: b.reject || null });
     }
 
-    // An over-limit transaction (code 0238) DID fund, so it belongs in the
-    // settled total and matches its POS sale like any other — it contributes
-    // nothing to the difference. We only TAG it (no `continue`) so the UI can
-    // flag it as an "over limit" warning instead of it reading as a problem.
-    if (isOverLimit(b)) {
-      merchantByDate[d].over_limit += 1;
-      merchantByDate[d].over_limit_amount += signed;
-      overLimitRecords.push({ date: d, amount: signed, type, last4: last4Of(b.card?.number), batch_id: b.batch?.id || null, reject: b.reject || null });
-    }
+    for (const b of dayResult.records) {
+      const type = String(b.type || '').toLowerCase();
+      const mag = Math.abs(batchAmount(b));
+      const isCredit = /credit|refund|return|void|reversal/.test(type);
+      const signed = isCredit ? -mag : mag;
 
-    merchantByDate[d].total += signed;
-    if (isCredit) { merchantByDate[d].credits += mag; merchantByDate[d].credit_count += 1; }
-    else { merchantByDate[d].sales += mag; merchantByDate[d].sale_count += 1; }
-    merchantByDate[d].txns += 1;
-    if (b.batch && b.batch.id) merchantByDate[d].batchIds.add(b.batch.id);
+      // An over-limit transaction (code 0238) DID fund, so it belongs in the
+      // settled total and matches its POS sale like any other — it contributes
+      // nothing to the difference. We only TAG it so the UI can flag it as an
+      // "over limit" warning instead of it reading as a problem.
+      if (isOverLimit(b)) {
+        merchantByDate[day].over_limit += 1;
+        merchantByDate[day].over_limit_amount += signed;
+        overLimitRecords.push({ date: day, amount: signed, type, last4: last4Of(b.card?.number), batch_id: b.batch?.id || null, reject: b.reject || null });
+      }
+
+      merchantByDate[day].total += signed;
+      if (isCredit) { merchantByDate[day].credits += mag; merchantByDate[day].credit_count += 1; }
+      else { merchantByDate[day].sales += mag; merchantByDate[day].sale_count += 1; }
+      merchantByDate[day].txns += 1;
+      if (b.batch && b.batch.id) merchantByDate[day].batchIds.add(b.batch.id);
+    }
   }
 
   // POS side
@@ -1482,17 +1523,16 @@ router.get('/reconciliation-audit', async (req, res) => {
   totals.over_limit_count = overLimitRecords.length;
   totals.over_limit_amount = Math.round(overLimitRecords.reduce((s, r) => s + r.amount, 0) * 100) / 100;
 
-  // Diagnostic: raw batch count + a sample object + the top-level response keys,
-  // so we can map Maverick's actual amount field if the totals look wrong.
+  // Diagnostic: raw record count + a sample object, so we can map Maverick's
+  // actual amount field if the totals look wrong.
   const debug = {
-    batch_count: batches.length,
-    response_keys: rawResponse && typeof rawResponse === 'object' ? Object.keys(rawResponse) : [],
-    sample: batches[0] || null,
+    batch_count: totalRawCount,
+    sample: sampleRecord,
   };
 
-  // If the selected range has no batches, probe recent batches (last 5 days)
-  // to distinguish "wrong dates" from "no connection / no batches at all".
-  if (batches.length === 0) {
+  // If the selected range has no records at all, probe recent batches (last
+  // 5 days) to distinguish "wrong dates" from "no connection / no batches".
+  if (totalRawCount === 0) {
     try {
       const probe = await fetchMaverickBatches(usedDbaId, null, null, token);
       if (probe.ok) {
@@ -1527,11 +1567,9 @@ router.get('/reconciliation-day', async (req, res) => {
 
   // Fetch merchant settlements for a window around the day, so a charge that
   // settled a bit late (sales next-day, refunds often 2-3 days) still matches.
-  const dayShift = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
-  const WINDOW = 3;
   let batches = [];
   try {
-    const r = await fetchMaverickBatches(dbaId, dayShift(date, -WINDOW), dayShift(date, WINDOW), token);
+    const r = await fetchMaverickBatches(dbaId, dayShift(date, -DAY_WINDOW), dayShift(date, DAY_WINDOW), token);
     if (!r.ok) return res.json({ configured: true, date, error: r.error });
     batches = r.batches;
   } catch (e) {
