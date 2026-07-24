@@ -1271,7 +1271,26 @@ async function fetchMaverickBatches(dbaId, from, to, token) {
     const pageCount = Number(data?._meta?.pageCount) || 1;
     if (items.length === 0 || page >= pageCount) break;
   }
-  return { ok: true, status: 200, batches: all, raw: lastData, error: null };
+
+  // Maverick's paginated/date-filtered results can include the exact same
+  // settled transaction more than once (e.g. a request whose date window
+  // lands on a page/batch boundary), which silently double-counts real
+  // money in the day totals. Each record carries Maverick's own unique
+  // transaction id — dedupe on that (never on amount/card/date, which can
+  // legitimately repeat for two separate real transactions, e.g. two
+  // identical service prices charged to different cards the same day).
+  const seen = new Set();
+  const batches = [];
+  for (const b of all) {
+    const key = b && (b.id ?? b.referenceNumber);
+    if (key != null) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    batches.push(b);
+  }
+
+  return { ok: true, status: 200, batches, raw: lastData, error: null };
 }
 
 // The reporting API keys off the DBA id, but the dashboard shows a merchant
