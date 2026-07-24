@@ -3056,9 +3056,11 @@ async function openDayDrilldown(date) {
     const dirLabel = (x) => x.dir === 'credit' ? 'Refund' : 'Sale';
     const allPos = data.all_pos || [];
     const allMerch = data.all_merchant_day || [];
-    const statusCell = (x) => x.matched
-      ? '<span style="color:var(--success);font-weight:600">✓ matched</span>'
-      : '<span style="color:var(--danger);font-weight:600">⚠ unmatched</span>';
+    const statusCell = (x) => x.offset
+      ? '<span style="color:var(--mid);font-weight:600">⚖ offsetting</span>'
+      : x.matched
+        ? '<span style="color:var(--success);font-weight:600">✓ matched</span>'
+        : '<span style="color:var(--danger);font-weight:600">⚠ unmatched</span>';
 
     // Validation summary: sales, credits and net must add up on both sides.
     const posNet = (data.pos_sales_total || 0) - (data.pos_credits_total || 0);
@@ -3142,12 +3144,32 @@ async function openDayDrilldown(date) {
         <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:6px 0 0">Code 0238 — the transaction was over the merchant's limit but still funded. It is counted in the settled total and matched against its POS sale like any normal transaction, so it does not read as a mismatch — this list is just to flag that it was over the limit.</p>
       </div>` : '';
 
+    const offset = data.offset_merchant || [];
+    const offsetSection = offset.length ? `
+      <div style="margin-bottom:18px">
+        <h3 style="margin:0 0 6px;color:var(--mid)">⚖ Sale + return not entered in POS — nets to $0, not a mismatch <span style="font-weight:400;color:var(--mid);font-size:.82rem">(${offset.length})</span></h3>
+        <table class="report-table">
+          <thead><tr><th>Batch #</th><th>Type</th><th>Card</th><th>Brand</th><th style="text-align:right">Amount</th></tr></thead>
+          <tbody>${offset.map(m => `
+            <tr>
+              <td style="font-family:monospace">${escapeHtml(m.batch_id || '-')}</td>
+              <td>${dirLabel(m)}</td>
+              <td>${m.last4 ? '••' + escapeHtml(m.last4) : '-'}</td>
+              <td>${escapeHtml(m.brand || '-')}</td>
+              <td style="text-align:right;font-weight:600">${m.dir === 'credit' ? '−' : ''}$${money2(m.amount)}</td>
+            </tr>`).join('')}</tbody>
+        </table>
+        <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:6px 0 0">A sale and an equal-amount return for the same card both settled the same day but neither was rung up in the POS — likely a same-day return that staff didn't bother entering either side of. Since they cancel out, this has $0 effect on the day's totals and is not counted as a mismatch.</p>
+      </div>` : '';
+
     body.innerHTML = `
       <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:0 0 14px">${data.matched_count} transaction(s) matched (including split payments and small tax-rounding differences).${data.settled_adjacent_day ? ` ${data.settled_adjacent_day} settled a day early/late (cutoff timing) and were still matched.` : ''} Rows shaded pink are unmatched — those are your real discrepancies.</p>
 
       ${validation}
 
       ${overLimitSection}
+
+      ${offsetSection}
 
       ${failedSection}
 

@@ -1606,6 +1606,25 @@ router.get('/reconciliation-day', async (req, res) => {
   matchOne(pos, merchAdj);
   matchSplit(pos, merchAdj);
 
+  // Pass C: a sale and a refund that both settled at the merchant for the same
+  // amount but were never rung up in the POS at all (e.g. a customer bought
+  // something and returned it right away, so staff didn't bother entering
+  // either leg). They cancel each other out — $0 net effect on the day's
+  // total — so pair them off instead of leaving both as alarming "unmatched"
+  // rows. Only within the same day; a multi-day gap is left as a real
+  // mismatch since that's not the "right away" pattern this covers.
+  const offsetMerchant = [];
+  for (const m of merchDay) {
+    if (m.matched) continue;
+    const wantDir = m.dir === 'credit' ? 'debit' : 'credit';
+    const cands = merchDay.filter(x => !x.matched && x !== m && x.dir === wantDir && Math.abs(x.amount - m.amount) <= TOL);
+    if (!cands.length) continue;
+    const pair = cands.find(c => c.last4 === m.last4) || cands[0];
+    m.matched = true; m.offset = true;
+    pair.matched = true; pair.offset = true;
+    offsetMerchant.push(m, pair);
+  }
+
   const unmatchedPos = pos.filter(p => !p.matched);
   const unmatchedMerchant = merchDay.filter(m => !m.matched); // only same-day merchant counts as "settled but not in POS"
   const settledAdjacent = merchAdj.filter(m => m.matched).length; // matched, but settled a day off
@@ -1626,6 +1645,7 @@ router.get('/reconciliation-day', async (req, res) => {
     all_merchant_day: merchDay,
     failed_merchant: failedMerchant,
     over_limit_merchant: overLimitMerchant,
+    offset_merchant: offsetMerchant,
     pos_sales_total: sum(pos.filter(p => p.dir === 'debit'), p => p.amount),
     pos_credits_total: sum(pos.filter(p => p.dir === 'credit'), p => p.amount),
     merchant_sales_total: sum(merchDay.filter(m => m.dir === 'debit'), m => m.amount),
