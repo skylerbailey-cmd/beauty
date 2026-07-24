@@ -525,7 +525,6 @@
             <div id="tenderRows"></div>
             <div id="tenderBalance" style="font-size:.8rem;font-family:system-ui,sans-serif;margin-top:2px"></div>
           </div>
-          <div id="checkoutChecklist" style="display:none;font-family:system-ui,sans-serif;font-size:.78rem;background:var(--cream);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:10px"></div>
           <button class="checkout-btn sale" id="checkoutBtn" onclick="processTransaction()" disabled>
             Complete Sale
           </button>
@@ -1566,57 +1565,34 @@ function updateTenderBalance() {
   updateCheckoutEnabled();
 }
 
-// Everything that still needs to happen before the sale/return can be completed.
-// Drives both the checkout button's disabled state and a visible checklist,
-// so staff can see exactly what's missing instead of just an inert button.
+// Everything that still needs to happen before the sale/return can be
+// completed — drives the checkout button's disabled state. No visible
+// checklist; the relevant fields (cart, customer info, employee picker,
+// tender amounts) already make it obvious what's missing.
 function updateCheckoutEnabled() {
   const btn = document.getElementById('checkoutBtn');
-  const checklistEl = document.getElementById('checkoutChecklist');
   if (!btn) return;
 
   const isReturn = currentMode === 'return';
-  const needed = [];
-
-  needed.push({ ok: cart.length > 0, label: isReturn ? 'Add at least one item to the return' : 'Add at least one item to the cart' });
+  const checks = [cart.length > 0];
 
   if (!isReturn) {
     const custName = document.getElementById('custName')?.value.trim() || '';
     const custEmail = document.getElementById('custEmail')?.value.trim() || '';
-    needed.push({ ok: !!custName, label: 'Enter the customer\'s name' });
-    needed.push({ ok: isValidEmail(custEmail), label: 'Enter a valid customer email' });
+    checks.push(!!custName, isValidEmail(custEmail));
   }
 
-  // Every sale/return starts with a blank employee row (see defaultSaleEmployees)
-  // so the picker itself makes it obvious a name is needed — no separate
-  // checklist line for it, but it still blocks checkout until picked.
-  needed.push({ ok: saleEmployees.length > 0 && saleEmployees.every(e => e.employee_id), hidden: true });
+  // Every sale/return starts with a blank employee row (see defaultSaleEmployees).
+  checks.push(saleEmployees.length > 0 && saleEmployees.every(e => e.employee_id));
   if (saleEmployees.length > 0) {
     const totalPct = saleEmployees.reduce((s, e) => s + (e.commission_value || 0), 0);
-    needed.push({ ok: Math.abs(totalPct - 100) < 0.01, label: `Employee commission % must total 100% (currently ${totalPct.toFixed(1)}%)` });
+    checks.push(Math.abs(totalPct - 100) < 0.01);
   }
 
-  const balanced = Math.abs(saleTotal() - tenderSum()) < 0.01;
-  needed.push({ ok: balanced, label: isReturn ? 'Refund amount must match the total' : 'Payment amount must match the total' });
-  const badCard = tenders.some(t => t.method === 'card' && (t.last4 || '').length !== 4);
-  if (badCard) needed.push({ ok: false, label: `Enter the last 4 digits for each card ${isReturn ? 'refund' : 'payment'}` });
+  checks.push(Math.abs(saleTotal() - tenderSum()) < 0.01);
+  checks.push(!tenders.some(t => t.method === 'card' && (t.last4 || '').length !== 4));
 
-  const outstanding = needed.filter(n => !n.ok);
-  btn.disabled = outstanding.length > 0;
-
-  // Hidden items (e.g. the blank employee picker) still block checkout above,
-  // but aren't listed here — the UI they refer to already makes it obvious.
-  const visibleOutstanding = outstanding.filter(n => !n.hidden);
-
-  if (checklistEl) {
-    if (visibleOutstanding.length === 0) {
-      checklistEl.style.display = 'none';
-      checklistEl.innerHTML = '';
-    } else {
-      checklistEl.style.display = 'block';
-      checklistEl.innerHTML = `<div style="font-weight:700;color:var(--mid);text-transform:uppercase;letter-spacing:.5px;font-size:.7rem;margin-bottom:4px">Still needed to complete this ${isReturn ? 'return' : 'sale'}:</div>` +
-        visibleOutstanding.map(n => `<div style="color:var(--danger);padding:1px 0">&#9675; ${n.label}</div>`).join('');
-    }
-  }
+  btn.disabled = checks.some(ok => !ok);
 }
 
 // ─── Transaction ────────────────────────────────────────────────────────────
