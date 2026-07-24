@@ -1107,19 +1107,28 @@ function isOverLimit(b) {
   return false;
 }
 
+// Some reject codes are advisory only and don't mean the money failed to
+// move — code "0197" is one of these: despite living in the same `reject`
+// field as a real decline, it still settles normally. Same rule as
+// OVER_LIMIT_CODES: keep this list narrow, only add codes confirmed to
+// still fund. Compared with leading zeros stripped.
+const BENIGN_REJECT_CODES = new Set(['197']);
+
 // A batch record that didn't actually go through must be excluded from the
 // settled total. Maverick flags these with a `reject` object carrying a
-// non-zero code (e.g. { code: "0197" }). A rejected/declined transaction did
-// not fund — this is true whether it's a SALE (debit) or a REFUND (credit), so
-// we exclude any record with a real reject code (or a declined/rejected status)
-// regardless of type. Excluded records are surfaced separately as "did not
-// settle" so they aren't silently dropped.
+// non-zero code. A rejected/declined transaction did not fund — this is true
+// whether it's a SALE (debit) or a REFUND (credit), so we exclude any record
+// with a real reject code (or a declined/rejected status) regardless of
+// type — except the benign/over-limit codes above, which still funded.
+// Excluded records are surfaced separately as "did not settle" so they
+// aren't silently dropped.
 function isRejected(b) {
   if (!b || typeof b !== 'object') return false;
   if (isOverLimit(b)) return false; // over-limit still funded — not a failure
 
   if (b.reject && typeof b.reject === 'object') {
     const code = b.reject.code != null ? String(b.reject.code).trim() : '';
+    if (code && BENIGN_REJECT_CODES.has(code.replace(/^0+/, ''))) return false;
     const hasReject = code !== '' && !/^0+$/.test(code); // non-zero reject code
     if (hasReject) return true;
   }
