@@ -1097,6 +1097,13 @@ let lastTransaction = null;
 let currentPin = '';
 let saleEmployees = []; // [{employee_id, name, commission_type, commission_value}]
 let allEmployees = [];
+
+// A new sale/return starts with one blank employee row (employee_id: null)
+// instead of an empty list, so it's immediately obvious a name needs to be
+// picked here rather than staff not noticing anything is missing at all.
+function defaultSaleEmployees() {
+  return [{ employee_id: null, name: '', commission_type: 'percent', commission_value: 100 }];
+}
 let managerReportsUnlocked = false; // gates KPIs, leaderboard, commissions, and top products
 let lastEmployeesReport = [];       // most recent employee report data
 let lastSalesSummaryHtml = '';      // most recent KPI tiles HTML, revealed on manager unlock
@@ -1136,7 +1143,8 @@ async function init() {
     // Load settings first (triggers userId migration on backend), then products/employees
     await loadStoreSettings();
     loadProducts();
-    loadEmployees();
+    saleEmployees = defaultSaleEmployees();
+    loadEmployees(); // renders the sale-employee picker once the roster loads
     renderTenders(); // draw the initial single-tender Payment row
 
     const today = new Date().toISOString().slice(0, 10);
@@ -1388,7 +1396,7 @@ function setMode(mode) {
     cart = [];
     renderCart();
     returnOriginalTx = null;
-    saleEmployees = [];
+    saleEmployees = defaultSaleEmployees();
     empManuallyEdited = false;
     renderSaleEmployees();
     document.getElementById('returnReceiptInput').value = '';
@@ -1578,7 +1586,10 @@ function updateCheckoutEnabled() {
     needed.push({ ok: isValidEmail(custEmail), label: 'Enter a valid customer email' });
   }
 
-  needed.push({ ok: saleEmployees.length > 0, label: 'Assign at least one employee' });
+  // Every sale/return starts with a blank employee row (see defaultSaleEmployees)
+  // so the picker itself makes it obvious a name is needed — no separate
+  // checklist line for it, but it still blocks checkout until picked.
+  needed.push({ ok: saleEmployees.length > 0 && saleEmployees.every(e => e.employee_id), hidden: true });
   if (saleEmployees.length > 0) {
     const totalPct = saleEmployees.reduce((s, e) => s + (e.commission_value || 0), 0);
     needed.push({ ok: Math.abs(totalPct - 100) < 0.01, label: `Employee commission % must total 100% (currently ${totalPct.toFixed(1)}%)` });
@@ -1592,14 +1603,18 @@ function updateCheckoutEnabled() {
   const outstanding = needed.filter(n => !n.ok);
   btn.disabled = outstanding.length > 0;
 
+  // Hidden items (e.g. the blank employee picker) still block checkout above,
+  // but aren't listed here — the UI they refer to already makes it obvious.
+  const visibleOutstanding = outstanding.filter(n => !n.hidden);
+
   if (checklistEl) {
-    if (outstanding.length === 0) {
+    if (visibleOutstanding.length === 0) {
       checklistEl.style.display = 'none';
       checklistEl.innerHTML = '';
     } else {
       checklistEl.style.display = 'block';
       checklistEl.innerHTML = `<div style="font-weight:700;color:var(--mid);text-transform:uppercase;letter-spacing:.5px;font-size:.7rem;margin-bottom:4px">Still needed to complete this ${isReturn ? 'return' : 'sale'}:</div>` +
-        outstanding.map(n => `<div style="color:var(--danger);padding:1px 0">&#9675; ${n.label}</div>`).join('');
+        visibleOutstanding.map(n => `<div style="color:var(--danger);padding:1px 0">&#9675; ${n.label}</div>`).join('');
     }
   }
 }
@@ -1610,9 +1625,10 @@ function isValidEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v || ''); }
 async function processTransaction() {
   if (cart.length === 0) return;
 
-  // An employee must be assigned before the transaction can be completed.
-  if (saleEmployees.length === 0) {
-    alert('Please add at least one employee to this transaction before completing it.');
+  // Every employee row must be picked (the sale starts with one blank row)
+  // before the transaction can be completed.
+  if (saleEmployees.length === 0 || !saleEmployees.every(e => e.employee_id)) {
+    alert('Please select the employee ringing up this transaction before completing it.');
     return;
   }
 
@@ -1724,7 +1740,7 @@ async function submitTransaction(body) {
     showReceipt(data.transaction);
     // Reset cart, employees, and return state
     cart = [];
-    saleEmployees = [];
+    saleEmployees = defaultSaleEmployees();
     empManuallyEdited = false;
     pendingTxBody = null;
     renderSaleEmployees();
@@ -1968,7 +1984,8 @@ function renderSaleEmployees() {
     const dollarAmt = base > 0 ? (base * (se.commission_value || 0) / 100) : 0;
     return `
     <div class="emp-assign-row" data-emp-id="${se.employee_id}" style="display:flex;gap:4px;align-items:center;margin-bottom:6px;font-family:system-ui,sans-serif;font-size:.82rem">
-      <select onchange="saleEmployees[${i}].employee_id=parseInt(this.value);saleEmployees[${i}].name=this.options[this.selectedIndex].text" style="flex:1;padding:5px 6px;border:1px solid var(--border);border-radius:6px;font-size:.8rem;font-family:system-ui,sans-serif;outline:none">
+      <select onchange="saleEmployees[${i}].employee_id=this.value?parseInt(this.value):null;saleEmployees[${i}].name=this.value?this.options[this.selectedIndex].text:''" style="flex:1;padding:5px 6px;border:1px solid ${se.employee_id ? 'var(--border)' : 'var(--danger)'};border-radius:6px;font-size:.8rem;font-family:system-ui,sans-serif;outline:none">
+        ${!se.employee_id ? '<option value="" selected>Select employee…</option>' : ''}
         ${activeEmps.map(e => `<option value="${e.id}" ${e.id === se.employee_id ? 'selected' : ''}>${e.name}</option>`).join('')}
       </select>
       <input type="text" inputmode="decimal" id="emp-pct-${i}" class="emp-comm-val" value="${se.commission_value}" oninput="empPercentChanged(${i},this.value)" style="width:56px;padding:5px 4px;border:1px solid var(--border);border-radius:6px;font-size:.8rem;text-align:right;outline:none" title="Percent">
@@ -1996,6 +2013,7 @@ async function loadEmployees() {
   const inactiveCount = allEmployees.filter(e => !e.active).length;
   if (visible.length === 0) {
     list.innerHTML = `<div style="text-align:center;padding:20px;color:var(--mid);font-family:system-ui,sans-serif">${allEmployees.length === 0 ? 'No employees yet. Add one above.' : 'No active employees.' + (inactiveCount ? ' Check "Show deactivated" to see ' + inactiveCount + '.' : '')}</div>`;
+    renderSaleEmployees();
     return;
   }
   list.innerHTML = visible.map(e => `
@@ -2008,6 +2026,7 @@ async function loadEmployees() {
       <button onclick="toggleEmployee(${e.id}, ${e.active})" style="border:none;background:none;cursor:pointer;font-size:.78rem;color:${e.active ? 'var(--danger)' : 'var(--success)'};text-decoration:underline">${e.active ? 'Deactivate' : 'Activate'}</button>
     </div>
   `).join('');
+  renderSaleEmployees(); // keep the Register's employee picker in sync with the roster
 }
 
 // Populate the "copy employees from another company" dropdown from the other
@@ -3746,7 +3765,7 @@ async function switchAccount(email) {
     document.getElementById('settingsCompanyName').value = currentUser.companyName || '';
     // Reload ALL company-specific data for the new account
     cart = [];
-    saleEmployees = [];
+    saleEmployees = defaultSaleEmployees();
     empManuallyEdited = false;
     renderSaleEmployees();
     renderCart();
