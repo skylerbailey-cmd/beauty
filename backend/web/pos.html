@@ -695,6 +695,10 @@
   <div class="tab-content" id="tab-settings">
     <div style="max-width:900px;margin:0 auto;padding:20px">
 
+      <!-- Store Settings, Brands & Products, and the Maverick connection are
+           administrative/company-wide data — hidden from a non-manager
+           employee who only verified their own name+PIN (see settingsAccess). -->
+      <div id="settingsManagerOnly">
       <!-- Store Settings -->
       <div class="report-card">
         <h3>Store Settings</h3>
@@ -813,32 +817,6 @@
         </div>
       </div>
 
-      <!-- Employees -->
-      <div class="report-card" style="margin-top:16px">
-        <h3>Employees</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Add employees with PINs and commission rates.</p>
-        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-          <input type="text" id="newEmpName" placeholder="Name" style="flex:1;min-width:120px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
-          <input type="text" id="newEmpPin" placeholder="PIN" maxlength="6" style="width:80px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;text-align:center">
-          <input type="number" id="newEmpCommission" placeholder="Comm %" step="0.5" min="0" max="100" style="width:80px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;text-align:right">
-          <select id="newEmpRole" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
-            <option value="sales">Sales</option>
-            <option value="manager">Manager</option>
-          </select>
-          <button class="btn btn-confirm" onclick="addEmployee()">Add</button>
-        </div>
-        <div id="empImportRow" style="display:none;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
-          <span style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)">Copy employees from another company:</span>
-          <select id="empImportSource" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none"></select>
-          <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border)" onclick="importEmployees()">Copy</button>
-          <span id="empImportStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--success)"></span>
-        </div>
-        <label style="display:flex;align-items:center;gap:6px;font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:8px;cursor:pointer">
-          <input type="checkbox" id="showInactiveEmps" onchange="loadEmployees()" style="accent-color:var(--rose-dk)"> Show deactivated employees
-        </label>
-        <div class="emp-list" id="empList"></div>
-      </div>
-
       <!-- Maverick Payments connection (for batch reconciliation) -->
       <div class="report-card" id="maverickConfigCard" style="margin-top:16px">
         <h3>Maverick Payments Connection</h3>
@@ -854,6 +832,56 @@
         </div>
         <div id="maverickDbaList" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
         <div id="maverickSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
+      </div>
+      </div>
+      <!-- /settingsManagerOnly -->
+
+      <!-- Employees -->
+      <div class="report-card" style="margin-top:16px">
+        <h3>Employees</h3>
+
+        <!-- Manager view: full roster CRUD (hidden from a sales employee) -->
+        <div id="empManagerView">
+          <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Add employees with PINs and commission rates.</p>
+          <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+            <input type="text" id="newEmpName" placeholder="Name" style="flex:1;min-width:120px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+            <input type="text" id="newEmpPin" placeholder="PIN" maxlength="6" style="width:80px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;text-align:center">
+            <input type="number" id="newEmpCommission" placeholder="Comm %" step="0.5" min="0" max="100" style="width:80px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;text-align:right">
+            <select id="newEmpRole" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+              <option value="sales">Sales</option>
+              <option value="manager">Manager</option>
+            </select>
+            <button class="btn btn-confirm" onclick="addEmployee()">Add</button>
+          </div>
+          <div id="empImportRow" style="display:none;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+            <span style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)">Copy employees from another company:</span>
+            <select id="empImportSource" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none"></select>
+            <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border)" onclick="importEmployees()">Copy</button>
+            <span id="empImportStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--success)"></span>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:8px;cursor:pointer">
+            <input type="checkbox" id="showInactiveEmps" onchange="loadEmployees()" style="accent-color:var(--rose-dk)"> Show deactivated employees
+          </label>
+          <div class="emp-list" id="empList"></div>
+        </div>
+
+        <!-- Self view: a sales employee sees only their own name and can only
+             change their own PIN — no roster, no other employees' data. -->
+        <div id="empSelfView" style="display:none">
+          <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">You're signed in as <strong id="empSelfName"></strong>. You can only see your own name here and change your own PIN.</p>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+            <div class="field" style="margin:0">
+              <label style="display:block;font-family:system-ui,sans-serif;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:4px">New PIN</label>
+              <input type="password" id="empSelfNewPin" maxlength="6" style="width:100px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;text-align:center">
+            </div>
+            <div class="field" style="margin:0">
+              <label style="display:block;font-family:system-ui,sans-serif;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:4px">Confirm PIN</label>
+              <input type="password" id="empSelfConfirmPin" maxlength="6" style="width:100px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;text-align:center">
+            </div>
+            <button class="btn btn-confirm" onclick="saveOwnPin()">Change PIN</button>
+          </div>
+          <div id="empSelfPinStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:8px"></div>
+        </div>
       </div>
 
       <!-- Sign Out -->
@@ -1014,6 +1042,27 @@
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeTxAuth()">Cancel</button>
       <button class="btn btn-confirm" onclick="submitTxAuth()">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Employee Settings Access Modal ─── -->
+<div class="modal-overlay" id="settingsAuthModal">
+  <div class="modal" style="max-width:400px">
+    <h2>Settings Access</h2>
+    <p class="sub" style="font-family:system-ui,sans-serif;font-size:.84rem;color:var(--mid);margin-bottom:8px">Enter your name and PIN. Employees can only see their own name and change their own PIN — managers unlock full Settings.</p>
+    <div class="field">
+      <label>Your Name</label>
+      <input type="text" id="settingsAuthName" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Your Code (PIN)</label>
+      <input type="password" id="settingsAuthPin" maxlength="6" autocomplete="off" onkeydown="if(event.key==='Enter')submitSettingsAuth()">
+    </div>
+    <div id="settingsAuthError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger);min-height:1em"></div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeSettingsAuth()">Cancel</button>
+      <button class="btn btn-confirm" onclick="submitSettingsAuth()">Continue</button>
     </div>
   </div>
 </div>
@@ -2290,6 +2339,94 @@ async function submitTxAuth() {
   }
 }
 
+// Prompt for the current employee's name+PIN to unlock Settings. Any
+// employee can get in this way; applySettingsAccessUI() decides afterward
+// how much of the tab they actually get to see.
+function openSettingsAuth() {
+  document.getElementById('settingsAuthName').value = '';
+  document.getElementById('settingsAuthPin').value = '';
+  document.getElementById('settingsAuthError').textContent = '';
+  document.getElementById('settingsAuthModal').classList.add('show');
+  setTimeout(() => document.getElementById('settingsAuthName').focus(), 50);
+}
+function closeSettingsAuth() {
+  document.getElementById('settingsAuthModal').classList.remove('show');
+  pendingTabSwitch = null;
+}
+async function submitSettingsAuth() {
+  const name = document.getElementById('settingsAuthName').value.trim();
+  const pin = document.getElementById('settingsAuthPin').value.trim();
+  const errEl = document.getElementById('settingsAuthError');
+  errEl.textContent = '';
+  if (!name || !pin) { errEl.textContent = 'Enter your name and PIN.'; return; }
+
+  try {
+    const resp = await fetch(`${API}/api/pos/employees/verify`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ name, pin }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Verification failed');
+
+    settingsAccess = { id: data.employee.id, name: data.employee.name, role: data.role };
+    settingsCreds = { name, pin };
+    const targetTab = pendingTabSwitch;
+    closeSettingsAuth();
+    if (targetTab) switchTab(targetTab);
+  } catch (err) {
+    errEl.textContent = err.message;
+  }
+}
+
+// Show the full admin view for a manager, or just the employee's own name +
+// PIN change for a sales employee — and only fetch the company-wide data
+// (full roster, store settings, brands) when a manager is actually looking.
+function applySettingsAccessUI() {
+  if (!settingsAccess) return;
+  const isManager = settingsAccess.role === 'manager';
+  document.getElementById('settingsManagerOnly').style.display = isManager ? '' : 'none';
+  document.getElementById('empManagerView').style.display = isManager ? '' : 'none';
+  document.getElementById('empSelfView').style.display = isManager ? 'none' : '';
+
+  if (isManager) {
+    loadEmployees();
+    loadStoreSettings();
+    renderBrandCheckboxes();
+  } else {
+    document.getElementById('empSelfName').textContent = settingsAccess.name;
+    document.getElementById('empSelfNewPin').value = '';
+    document.getElementById('empSelfConfirmPin').value = '';
+    document.getElementById('empSelfPinStatus').textContent = '';
+  }
+}
+
+async function saveOwnPin() {
+  const statusEl = document.getElementById('empSelfPinStatus');
+  const newPin = document.getElementById('empSelfNewPin').value.trim();
+  const confirmPin = document.getElementById('empSelfConfirmPin').value.trim();
+  statusEl.style.color = 'var(--danger)';
+  if (!newPin || newPin.length < 4) { statusEl.textContent = 'New PIN must be at least 4 digits.'; return; }
+  if (newPin !== confirmPin) { statusEl.textContent = 'PINs do not match.'; return; }
+  if (!settingsCreds) { statusEl.textContent = 'Session expired — please reopen Settings.'; return; }
+
+  try {
+    const resp = await fetch(`${API}/api/pos/employees/change-pin`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ name: settingsCreds.name, pin: settingsCreds.pin, new_pin: newPin }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Failed to change PIN');
+
+    settingsCreds = { name: settingsCreds.name, pin: newPin }; // stay authorized for further changes this session
+    document.getElementById('empSelfNewPin').value = '';
+    document.getElementById('empSelfConfirmPin').value = '';
+    statusEl.style.color = 'var(--success)';
+    statusEl.textContent = 'PIN updated.';
+  } catch (err) {
+    statusEl.textContent = err.message;
+  }
+}
+
 // Widen the range to everything (e.g. to see imported / historical transactions)
 function showAllTransactions() {
   document.getElementById('histStart').value = '2020-01-01';
@@ -2528,7 +2665,7 @@ function startDeleteTransaction(txId) {
 
 function openManagerAuth(type, txId, msg) {
   managerAction = { type, txId };
-  const titles = { delete: 'Delete Transaction', edit: 'Edit Transaction', 'return-override': 'Manager Override — Card Mismatch', 'tab-access': 'Manager Access Required' };
+  const titles = { delete: 'Delete Transaction', edit: 'Edit Transaction', 'return-override': 'Manager Override — Card Mismatch' };
   document.getElementById('managerAuthTitle').textContent = titles[type] || 'Manager Authorization';
   document.getElementById('managerAuthMsg').textContent = msg;
   document.getElementById('managerAuthName').value = '';
@@ -2558,12 +2695,7 @@ async function submitManagerAuth() {
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Verification failed');
     managerCreds = { name, pin };
-    // A successful verification here always means the credentials belong to a
-    // manager (the server enforces role === 'manager'), so Settings/Transactions
-    // don't need to be re-unlocked again for the rest of this session.
-    managerTabsUnlocked = true;
     const action = managerAction;
-    const targetTab = pendingTabSwitch;
     closeManagerAuth();
     if (action.type === 'delete') {
       await performDeleteTransaction(action.txId);
@@ -2574,8 +2706,6 @@ async function submitManagerAuth() {
         pendingTxBody.manager_pin = pin;
         await submitTransaction(pendingTxBody);
       }
-    } else if (action.type === 'tab-access') {
-      if (targetTab) switchTab(targetTab);
     } else {
       await openTxEdit(action.txId);
     }
@@ -3268,16 +3398,17 @@ async function openDayDrilldown(date) {
 }
 
 // ─── Tab Switching ──────────────────────────────────────────────────────────
-// Settings holds administrative data, so it requires a manager PIN — unlocked
-// once per session (see managerTabsUnlocked).
-const MANAGER_GATED_TABS = ['settings'];
-let managerTabsUnlocked = false;
-let pendingTabSwitch = null; // tab name held while a manager approves tab access, or an employee verifies for Transactions
+// Settings requires each person to verify their own name+PIN, like
+// Transactions — a manager unlocks the full tab, a sales employee only sees
+// their own name and can change their own PIN (see settingsAccess).
+let settingsAccess = null; // {id, name, role} once verified
+let settingsCreds = null;  // {name, pin} captured after verification, reused for the self-service PIN change
+let pendingTabSwitch = null; // tab name held while an employee verifies for Settings or Transactions
 
 function switchTab(tabName) {
-  if (MANAGER_GATED_TABS.includes(tabName) && !managerTabsUnlocked) {
+  if (tabName === 'settings' && !settingsAccess) {
     pendingTabSwitch = tabName;
-    openManagerAuth('tab-access', null, `Manager PIN required to open Settings.`);
+    openSettingsAuth();
     return;
   }
   // Transactions requires each person to verify their own name+PIN — re-locked
@@ -3289,6 +3420,8 @@ function switchTab(tabName) {
     return;
   }
   if (tabName !== 'history') { txAccess = null; txCreds = null; }
+  // Settings is re-locked the same way, for the same reason.
+  if (tabName !== 'settings') { settingsAccess = null; settingsCreds = null; }
 
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('show'));
   document.querySelectorAll('.pos-subtabs button').forEach(el => el.classList.remove('active'));
@@ -3303,11 +3436,7 @@ function switchTab(tabName) {
     const f = document.getElementById('emailsFrame');
     if (f && !f.src) f.src = f.dataset.src; // load once, on first open
   }
-  if (tabName === 'settings') {
-    loadEmployees();
-    loadStoreSettings();
-    renderBrandCheckboxes();
-  }
+  if (tabName === 'settings') applySettingsAccessUI();
 }
 
 // ─── Brand Product Panels ───────────────────────────────────────────────────
@@ -3832,7 +3961,7 @@ async function switchAccount(email) {
     custReportData = [];
     custFiltered = [];
     managerReportsUnlocked = false;
-    managerTabsUnlocked = false; // require a fresh manager PIN for this company's Settings/Transactions
+    settingsAccess = null; settingsCreds = null; // require a fresh name+PIN for this company's Settings
     lockPersonalReport();
     loadTransactions();
     loadReports();

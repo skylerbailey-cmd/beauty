@@ -244,11 +244,37 @@ router.delete('/employees/:id/commission-plan', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Verify any employee's own name + PIN (not manager-restricted) — used to gate
+// the Settings tab so an employee can get in far enough to see their own name
+// and change their own PIN, without exposing the rest of Settings to them.
+// Only {id, name} is returned, never the full row (which includes the PIN).
 router.post('/employees/verify', async (req, res) => {
-  const { pin } = req.body;
+  const { name, pin } = req.body;
+  if (!pin) return res.status(400).json({ error: 'PIN required' });
   const employee = await pgDb.verifyEmployeePin(pin, req.session.userId);
-  if (!employee) return res.status(401).json({ error: 'Invalid PIN' });
-  res.json({ employee });
+  if (!employee) return res.status(401).json({ error: 'Invalid name or PIN' });
+  if (name && employee.name.trim().toLowerCase() !== String(name).trim().toLowerCase()) {
+    return res.status(401).json({ error: 'Invalid name or PIN' });
+  }
+  const role = employee.role === 'manager' ? 'manager' : 'sales';
+  res.json({ employee: { id: employee.id, name: employee.name }, role });
+});
+
+// Self-service PIN change: authenticated by the employee's OWN current PIN
+// (not a manager override), and can only ever touch that one employee's PIN —
+// no other field is reachable through this route.
+router.post('/employees/change-pin', async (req, res) => {
+  const { name, pin, new_pin } = req.body;
+  if (!pin) return res.status(400).json({ error: 'Current PIN required' });
+  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId);
+  if (!employee) return res.status(401).json({ error: 'Invalid name or PIN' });
+  if (name && employee.name.trim().toLowerCase() !== String(name).trim().toLowerCase()) {
+    return res.status(401).json({ error: 'Invalid name or PIN' });
+  }
+  const newPin = String(new_pin || '').trim();
+  if (newPin.length < 4) return res.status(400).json({ error: 'New PIN must be at least 4 digits' });
+  await pgDb.updateEmployee(employee.id, { pin: newPin });
+  res.json({ ok: true });
 });
 
 // Copy employees from another company (identified by its login email) into the
