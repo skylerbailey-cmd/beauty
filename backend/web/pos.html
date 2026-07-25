@@ -216,21 +216,30 @@
     .btn-confirm:hover { background: var(--rose-dk); }
 
     /* ── Receipt modal ─── */
-    .receipt-modal .modal { max-width: 420px; }
+    /* Flex column so the action buttons (Print/Email/Done/etc.) always stay
+       visible at the bottom — only the receipt itself scrolls internally when
+       it's too tall for the viewport, instead of the whole modal (and its
+       buttons) scrolling out of view. */
+    .receipt-modal .modal {
+      max-width: 420px; max-height: 90vh; overflow: visible;
+      display: flex; flex-direction: column;
+    }
+    .receipt-modal .receipt { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+    .receipt-modal .receipt-actions { flex: 0 0 auto; }
     .receipt {
-      font-family: 'Courier New', monospace; font-size: .88rem; line-height: 1.7;
+      font-family: 'Courier New', monospace; font-size: .98rem; line-height: 1.7;
       border: 1px solid var(--border); padding: 24px; margin-bottom: 20px; background: #fff;
       color: #1a1a1a;
     }
     .receipt .r-center { text-align: center; }
     .receipt .r-line { border-bottom: 1px dashed #999; margin: 10px 0; }
     .receipt .r-row { display: flex; justify-content: space-between; font-weight: 500; }
-    .receipt .r-total { font-weight: 900; font-size: 1.05rem; color: #000; }
+    .receipt .r-total { font-weight: 900; font-size: 1.15rem; color: #000; }
     .receipt .r-strike { text-decoration: line-through; color: var(--mid); font-weight: 400; }
     .receipt .r-sig { margin-top: 28px; }
     .receipt .r-sig-line { border-bottom: 1px solid #999; margin-top: 26px; display: flex; align-items: flex-end; }
     .receipt .r-sig-x { font-weight: 700; margin-right: 6px; }
-    .receipt .r-sig-label { text-align: center; font-size: .72rem; color: var(--mid); margin-top: 4px; letter-spacing: .5px; }
+    .receipt .r-sig-label { text-align: center; font-size: .78rem; color: var(--mid); margin-top: 4px; letter-spacing: .5px; }
     .receipt-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .receipt-actions .btn { flex: 1; min-width: 120px; padding: 10px 16px; border-radius: 8px; font-family: system-ui, sans-serif; font-size: .85rem; font-weight: 600; cursor: pointer; border: none; text-align: center; }
 
@@ -310,9 +319,14 @@
         font-family: 'Courier New', monospace;
         /* Thermal heads print faint at thin/small sizes — go bigger + bold +
            pure black so it reads dark and legible, using the full paper width. */
-        font-size: 15px; line-height: 1.45; font-weight: 700; color: #000;
+        font-size: 16px; line-height: 1.45; font-weight: 700; color: #000;
         -webkit-print-color-adjust: exact; print-color-adjust: exact;
       }
+      /* The receipt/day-summary HTML sets its own inline colors for
+         de-emphasized lines (e.g. a muted gray "sub" label) — those read fine
+         on screen but print too light on a thermal printer. Force every line
+         to pure black regardless of that inline color. */
+      .receipt-print * { color: #000 !important; }
       /* The on-screen layout comes from `.receipt .r-*` selectors, but the print
          node is `.receipt-print` (no `.receipt` ancestor) — without repeating
          these the rows lose their flex layout and everything bunches to the
@@ -321,12 +335,12 @@
       .receipt-print .r-line { border-bottom: 1px solid #000; margin: 6px 0; }
       .receipt-print .r-row { display: flex; justify-content: space-between; gap: 8px; }
       .receipt-print .r-row > span:last-child { text-align: right; white-space: nowrap; }
-      .receipt-print .r-total { font-weight: 900; font-size: 18px; }
+      .receipt-print .r-total, .receipt-print .r-total * { font-size: 20px !important; }
       .receipt-print .r-strike { text-decoration: line-through; font-weight: 700; }
       .receipt-print .r-sig { margin-top: 26px; }
       .receipt-print .r-sig-line { border-bottom: 1px solid #000; margin-top: 30px; display: flex; align-items: flex-end; }
       .receipt-print .r-sig-x { font-weight: 900; margin-right: 6px; }
-      .receipt-print .r-sig-label { text-align: center; font-size: 11px; margin-top: 4px; }
+      .receipt-print .r-sig-label { text-align: center; font-size: 13px !important; margin-top: 4px; }
     }
 
     /* ── Company switcher ─── */
@@ -1846,14 +1860,14 @@ function showReceipt(tx) {
 
   let html = `
     <div class="r-center"><strong>${storeName}</strong></div>
-    ${storeAddr ? `<div class="r-center" style="font-size:.72rem">${storeAddr}</div>` : ''}
-    <div class="r-center" style="font-size:.75rem">${tx.type === 'return' ? 'RETURN RECEIPT' : 'SALES RECEIPT'}</div>
+    ${storeAddr ? `<div class="r-center" style="font-size:.8rem">${storeAddr}</div>` : ''}
+    <div class="r-center" style="font-size:.82rem"><strong>${tx.type === 'return' ? 'RETURN RECEIPT' : 'SALES RECEIPT'}</strong></div>
     <div class="r-line"></div>
-    <div class="r-row"><span>Receipt #:</span><span>${tx.receipt_number}</span></div>
-    <div class="r-row"><span>Date:</span><span>${date}</span></div>
+    <div class="r-row"><strong><span>Receipt #:</span><span>${tx.receipt_number}</span></strong></div>
+    <div class="r-row"><strong><span>Date:</span><span>${date}</span></strong></div>
     ${tx.original_sale_date ? `<div class="r-row"><span>Orig. Sale:</span><span>${new Date(tx.original_sale_date).toLocaleDateString()}</span></div>` : ''}
     ${empNames ? `<div class="r-row"><span>Employee${tx.employees.length > 1 ? 's' : ''}:</span><span>${empNames}</span></div>` : ''}
-    ${tx.customer_name ? `<div class="r-row"><span>Customer:</span><span>${tx.customer_name}</span></div>` : ''}
+    ${tx.customer_name ? `<div class="r-row"><strong><span>Customer:</span><span>${tx.customer_name}</span></strong></div>` : ''}
     <div class="r-line"></div>
   `;
 
@@ -1861,7 +1875,7 @@ function showReceipt(tx) {
     if ((item.discount || 0) > 0.001) {
       const original = item.unit_price * item.quantity;
       html += `<div class="r-row"><span>${item.product_name} x${item.quantity}</span><span class="r-strike">$${money(original)}</span></div>`;
-      html += `<div class="r-row"><span style="padding-left:10px;font-size:.78rem;color:var(--mid)">Sale price</span><span>$${money(item.line_total)}</span></div>`;
+      html += `<div class="r-row"><span style="padding-left:10px;font-size:.85rem;color:var(--mid)">Sale price</span><span>$${money(item.line_total)}</span></div>`;
     } else {
       html += `<div class="r-row"><span>${item.product_name} x${item.quantity}</span><span>$${money(item.line_total)}</span></div>`;
     }
@@ -1883,7 +1897,7 @@ function showReceipt(tx) {
     <div class="r-row r-total"><span>TOTAL:</span><span>$${money(tx.total)}</span></div>
     ${payHtml}
     <div class="r-line"></div>
-    <div class="r-center" style="font-size:.75rem;margin-top:8px">${storeSettings.receipt_footer || 'Thank you for your purchase!'}</div>
+    <div class="r-center" style="font-size:.82rem;margin-top:8px">${storeSettings.receipt_footer || 'Thank you for your purchase!'}</div>
     <div class="r-sig">
       <div class="r-sig-line"><span class="r-sig-x">X</span></div>
       <div class="r-sig-label">CUSTOMER SIGNATURE</div>
@@ -1928,8 +1942,8 @@ async function printDaySummary() {
 
   let html = `
     <div class="r-center"><strong>${storeName}</strong></div>
-    ${storeAddr ? `<div class="r-center" style="font-size:.72rem">${storeAddr}</div>` : ''}
-    <div class="r-center" style="font-size:.75rem">${dateLabel}</div>
+    ${storeAddr ? `<div class="r-center" style="font-size:.8rem">${storeAddr}</div>` : ''}
+    <div class="r-center" style="font-size:.85rem"><strong>${dateLabel}</strong></div>
     <div class="r-center" style="font-weight:900;margin-top:6px">DAY SUMMARY</div>
     <div class="r-line"></div>
     <div class="r-center" style="font-weight:900">SALES SUMMARY</div>
@@ -1937,17 +1951,17 @@ async function printDaySummary() {
     <div class="r-row"><span>Total Card:</span><span>$${money(report.tenders.card)}</span></div>
     <div class="r-row"><span>Total Other:</span><span>$${money(report.tenders.other)}</span></div>
     <div class="r-row"><span>Total Refunded:</span><span>$${money(s.refunded_total)}</span></div>
-    <div class="r-row"><span>Total Sales (incl. refunds):</span><span>$${money(s.net_total)}</span></div>
+    <div class="r-row"><span>Total Sales:</span><span>$${money(s.net_total)}</span></div>
     <div class="r-row"><span>Total Tax:</span><span>$${money(s.net_tax)}</span></div>
     <div class="r-row r-total"><span>Total Net:</span><span>$${money(s.net_revenue)}</span></div>
-    <div class="r-row" style="font-size:.72rem;margin-top:4px"><span>Sales / Returns:</span><span>${s.total_sales} / ${s.total_returns}</span></div>
+    <div class="r-row" style="font-size:.8rem;margin-top:4px"><span>Sales / Returns:</span><span>${s.total_sales} / ${s.total_returns}</span></div>
     <div class="r-line"></div>
     <div class="r-center" style="font-weight:900">PRODUCTS SOLD</div>
   `;
 
   html += report.products.length
     ? report.products.map(p => `<div class="r-row"><span>${escapeHtml(p.product_name)}</span><span>${p.qty}</span></div>`).join('')
-    : `<div class="r-center" style="font-size:.75rem">No products sold</div>`;
+    : `<div class="r-center" style="font-size:.82rem">No products sold</div>`;
 
   html += `
     <div class="r-line"></div>
@@ -1957,11 +1971,11 @@ async function printDaySummary() {
   html += report.associates.length
     ? report.associates.map(a => `
         <div class="r-row" style="margin-top:6px"><span><strong>${escapeHtml(a.employee_name)}</strong></span><span></span></div>
-        <div class="r-row" style="font-size:.78rem"><span>&nbsp;&nbsp;Products sold:</span><span>${a.total_products}</span></div>
-        <div class="r-row" style="font-size:.78rem"><span>&nbsp;&nbsp;Net sales:</span><span>$${money(a.net_sales)}</span></div>
-        <div class="r-row" style="font-size:.78rem"><span>&nbsp;&nbsp;Gross sales:</span><span>$${money(a.gross_sales)}</span></div>
+        <div class="r-row" style="font-size:.85rem"><span>&nbsp;&nbsp;Products sold:</span><span>${a.total_products}</span></div>
+        <div class="r-row" style="font-size:.85rem"><span>&nbsp;&nbsp;Net sales:</span><span>$${money(a.net_sales)}</span></div>
+        <div class="r-row" style="font-size:.85rem"><span>&nbsp;&nbsp;Gross sales:</span><span>$${money(a.gross_sales)}</span></div>
       `).join('')
-    : `<div class="r-center" style="font-size:.75rem">No sales associates today</div>`;
+    : `<div class="r-center" style="font-size:.82rem">No sales associates today</div>`;
 
   html += `<div class="r-line"></div>`;
 
