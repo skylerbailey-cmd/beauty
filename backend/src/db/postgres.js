@@ -112,6 +112,7 @@ async function initSchema() {
       customer_id INTEGER,
       customer_name TEXT DEFAULT '',
       customer_email TEXT DEFAULT '',
+      customer_phone TEXT DEFAULT '',
       subtotal REAL NOT NULL DEFAULT 0,
       tax_rate REAL NOT NULL DEFAULT 0.0875,
       tax_amount REAL NOT NULL DEFAULT 0,
@@ -258,6 +259,7 @@ async function initSchema() {
   await migrate('ALTER TABLE pos_product_prices ADD COLUMN IF NOT EXISTS min_price REAL DEFAULT 0');
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS card_last4 TEXT DEFAULT \'\'');
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS employees_changed INTEGER DEFAULT 0');
+  await migrate("ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS customer_phone TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_address TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_city TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_state TEXT DEFAULT ''");
@@ -289,20 +291,25 @@ async function initSchema() {
 
 // ─── Customers ──────────────────────────────────────────────────────────────
 
-async function findOrCreateCustomer(name, email, userId) {
+async function findOrCreateCustomer(name, email, userId, phone) {
   const existing = userId
     ? (await query('SELECT * FROM customers WHERE email = $1 AND user_id = $2', [email, userId])).rows[0]
     : (await query('SELECT * FROM customers WHERE email = $1', [email])).rows[0];
   if (existing) {
-    if (name && name !== existing.name) {
-      await query('UPDATE customers SET name = $1, updated_at = NOW() WHERE id = $2', [name, existing.id]);
-      existing.name = name;
+    const sets = [];
+    const params = [];
+    if (name && name !== existing.name) { sets.push(`name = $${sets.length + 1}`); params.push(name); existing.name = name; }
+    if (phone && phone !== existing.phone) { sets.push(`phone = $${sets.length + 1}`); params.push(phone); existing.phone = phone; }
+    if (sets.length) {
+      sets.push('updated_at = NOW()');
+      params.push(existing.id);
+      await query(`UPDATE customers SET ${sets.join(', ')} WHERE id = $${params.length}`, params);
     }
     return existing;
   }
   const result = await query(
-    'INSERT INTO customers (name, email, user_id) VALUES ($1, $2, $3) ON CONFLICT (user_id, email) DO UPDATE SET name = EXCLUDED.name RETURNING *',
-    [name || '', email, userId || '']
+    'INSERT INTO customers (name, email, phone, user_id) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, email) DO UPDATE SET name = EXCLUDED.name, phone = EXCLUDED.phone RETURNING *',
+    [name || '', email, phone || '', userId || '']
   );
   return result.rows[0];
 }
@@ -440,13 +447,13 @@ async function createTransaction(txData) {
     : await generateReceiptNumber();
   const result = await query(
     `INSERT INTO pos_transactions
-      (type, employee_id, customer_id, customer_name, customer_email,
+      (type, employee_id, customer_id, customer_name, customer_email, customer_phone,
        subtotal, tax_rate, tax_amount, discount_amount, total,
        payment_method, card_last4, notes, receipt_number, original_transaction_id, original_sale_date, employees_changed, user_id)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING id, receipt_number`,
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING id, receipt_number`,
     [
       txData.type || 'sale', txData.employee_id || null, txData.customer_id || null,
-      txData.customer_name || '', txData.customer_email || '',
+      txData.customer_name || '', txData.customer_email || '', txData.customer_phone || '',
       txData.subtotal, txData.tax_rate ?? 0.0875, txData.tax_amount,
       txData.discount_amount || 0, txData.total,
       txData.payment_method || 'card', txData.card_last4 || '', txData.notes || '',
@@ -568,13 +575,14 @@ async function updateTransaction(id, userId, data) {
 
   await query(
     `UPDATE pos_transactions SET
-       customer_name = $1, customer_email = $2, subtotal = $3, tax_amount = $4,
-       discount_amount = $5, total = $6, payment_method = $7, card_last4 = $8,
-       notes = $9, employee_id = $10
-     WHERE id = $11 AND user_id = $12`,
+       customer_name = $1, customer_email = $2, customer_phone = $3, subtotal = $4, tax_amount = $5,
+       discount_amount = $6, total = $7, payment_method = $8, card_last4 = $9,
+       notes = $10, employee_id = $11
+     WHERE id = $12 AND user_id = $13`,
     [
       data.customer_name ?? existing.customer_name,
       data.customer_email ?? existing.customer_email,
+      data.customer_phone ?? existing.customer_phone,
       subtotal, tax_amount, disc, total,
       data.payment_method ?? existing.payment_method,
       data.card_last4 ?? existing.card_last4,

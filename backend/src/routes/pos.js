@@ -285,7 +285,7 @@ router.post('/employees/import-from', async (req, res) => {
 
 router.post('/transactions', async (req, res) => {
   const userId = req.session.userId;
-  const { type, employee_id, employees: employeeAssignments, customer_name, customer_email, items, payment_method, card_last4, payments, notes, tax_rate, discount_amount, original_receipt, manager_name, manager_pin } = req.body;
+  const { type, employee_id, employees: employeeAssignments, customer_name, customer_email, customer_phone, items, payment_method, card_last4, payments, notes, tax_rate, discount_amount, original_receipt, manager_name, manager_pin } = req.body;
 
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'At least one item required' });
@@ -449,6 +449,7 @@ router.post('/transactions', async (req, res) => {
     employee_id,
     customer_name: customer_name || '',
     customer_email: customer_email || '',
+    customer_phone: customer_phone || '',
     subtotal,
     tax_rate: rate,
     tax_amount,
@@ -506,7 +507,7 @@ router.post('/transactions', async (req, res) => {
   // Also record in CRM (Postgres)
   if (type !== 'return' && customer_email) {
     try {
-      const customer = await pgDb.findOrCreateCustomer(customer_name, customer_email, userId);
+      const customer = await pgDb.findOrCreateCustomer(customer_name, customer_email, userId, customer_phone);
       const productsForCrm = txItems.map(i => ({ id: i.product_id, name: i.product_name }));
       await pgDb.addCustomerProducts(customer.id, productsForCrm);
     } catch (_) { /* non-critical */ }

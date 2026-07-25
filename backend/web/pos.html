@@ -501,6 +501,7 @@
           <div class="customer-section">
             <input type="text" id="custName" placeholder="Customer name" oninput="updateCheckoutEnabled()">
             <input type="email" id="custEmail" placeholder="Customer email" oninput="updateCheckoutEnabled()">
+            <input type="tel" id="custPhone" placeholder="Customer phone (optional)">
           </div>
           <!-- Employee assignment -->
           <div class="employee-assign" style="margin-bottom:12px">
@@ -1023,6 +1024,7 @@
     <div style="display:flex;gap:12px">
       <div class="field" style="flex:1"><label>Customer Name</label><input type="text" id="txEditCustName"></div>
       <div class="field" style="flex:1"><label>Customer Email</label><input type="email" id="txEditCustEmail"></div>
+      <div class="field" style="flex:1"><label>Customer Phone</label><input type="tel" id="txEditCustPhone"></div>
     </div>
     <label style="font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid)">Items</label>
     <div id="txEditItems" style="margin:6px 0"></div>
@@ -1458,6 +1460,7 @@ async function lookupReceipt() {
     // Pre-fill customer info
     document.getElementById('custName').value = tx.customer_name || '';
     document.getElementById('custEmail').value = tx.customer_email || '';
+    document.getElementById('custPhone').value = tx.customer_phone || '';
 
     // Auto-fill the employees that were on the original sale
     saleEmployees = (tx.employees || []).map(e => ({
@@ -1652,6 +1655,7 @@ async function processTransaction() {
     employees: employeeAssignments.length > 0 ? employeeAssignments : undefined,
     customer_name: document.getElementById('custName').value.trim(),
     customer_email: document.getElementById('custEmail').value.trim(),
+    customer_phone: document.getElementById('custPhone').value.trim(),
     items: cart.map(i => ({
       product_id: i.product_id,
       product_name: i.product_name,
@@ -1724,6 +1728,7 @@ async function submitTransaction(body) {
     resetTenders();
     document.getElementById('custName').value = '';
     document.getElementById('custEmail').value = '';
+    document.getElementById('custPhone').value = '';
     if (body.type === 'return') {
       returnOriginalTx = null;
       document.getElementById('returnReceiptInput').value = '';
@@ -2541,12 +2546,14 @@ async function openTxEdit(txId) {
       tax_rate: tx.tax_rate ?? (storeSettings.tax_rate ?? 0.0875),
       customer_name: tx.customer_name || '',
       customer_email: tx.customer_email || '',
+      customer_phone: tx.customer_phone || '',
       items: tx.items.map(i => ({ product_id: i.product_id, product_name: i.product_name, brand: i.brand || '', quantity: i.quantity, unit_price: i.unit_price })),
       employees: (tx.employees || []).map(e => ({ employee_id: e.employee_id, name: e.employee_name, commission_type: 'percent', commission_value: e.commission_value || 0 })),
     };
     document.getElementById('txEditReceipt').textContent = '#' + tx.receipt_number;
     document.getElementById('txEditCustName').value = editTx.customer_name;
     document.getElementById('txEditCustEmail').value = editTx.customer_email;
+    document.getElementById('txEditCustPhone').value = editTx.customer_phone;
     document.getElementById('txEditError').textContent = '';
     const picker = document.getElementById('txEditNewItem');
     picker.innerHTML = products.filter(p => p.visible !== false).map(p => `<option value="${p.id}">${p.name} — $${money((p.price || 0))}</option>`).join('');
@@ -2689,6 +2696,7 @@ async function saveTxEdit() {
     manager_pin: managerCreds.pin,
     customer_name: document.getElementById('txEditCustName').value.trim(),
     customer_email: document.getElementById('txEditCustEmail').value.trim(),
+    customer_phone: document.getElementById('txEditCustPhone').value.trim(),
     items: editTx.items.map(i => ({ product_id: i.product_id, product_name: i.product_name, brand: i.brand, quantity: i.quantity, unit_price: i.unit_price })),
     employees: editTx.employees.map(e => ({ employee_id: e.employee_id, commission_type: 'percent', commission_value: e.commission_value })),
   };
