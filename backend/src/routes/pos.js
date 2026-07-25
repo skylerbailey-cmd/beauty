@@ -1002,6 +1002,19 @@ router.get('/customers/search', async (req, res) => {
   res.json({ customers: customer ? [customer] : [] });
 });
 
+// Create-or-update the CRM record for a customer, keyed by email (the same
+// key transactions use). Lets the Customers detail view save phone/address/
+// notes even for a customer who doesn't have a `customers` row yet.
+router.post('/customers/upsert', async (req, res) => {
+  const { name, email, phone, address, notes } = req.body;
+  if (!email || !String(email).trim()) {
+    return res.status(400).json({ error: 'This customer has no email on file, so there\'s no way to save CRM info for them yet.' });
+  }
+  const customer = await pgDb.findOrCreateCustomer(name, email, req.session.userId, phone);
+  await pgDb.updateCustomer(customer.id, { address: address || '', notes: notes || '' });
+  res.json({ customer: await pgDb.getCustomer(customer.id) });
+});
+
 // ─── Import transactions from a prior-POS CSV export ────────────────────────
 
 function parseNum(v) {

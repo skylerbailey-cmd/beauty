@@ -530,6 +530,7 @@
           <button class="checkout-btn sale" id="checkoutBtn" onclick="processTransaction()" disabled>
             Complete Sale
           </button>
+          <div id="checkoutHint" style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:6px;min-height:1em;text-align:center"></div>
         </div>
       </div>
     </div>
@@ -670,8 +671,12 @@
           <h3 style="margin:0">Customers</h3>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <label style="font-size:.8rem;color:var(--mid);font-family:system-ui,sans-serif">Purchased:</label>
-            <select id="custProductFilter" onchange="applyCustomerProductFilter()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none;max-width:220px">
+            <select id="custProductFilter" onchange="applyCustomerFilters()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none;max-width:220px">
               <option value="">All items</option>
+            </select>
+            <label style="font-size:.8rem;color:var(--mid);font-family:system-ui,sans-serif">Employee:</label>
+            <select id="custEmployeeFilter" onchange="applyCustomerFilters()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none;max-width:220px">
+              <option value="">All employees</option>
             </select>
             <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportCustomersCSV()">Export CSV</button>
             <button class="btn" style="padding:7px 14px;font-size:.82rem;background:var(--gold);color:#fff" onclick="openMassEmail()">Mass Email</button>
@@ -679,9 +684,10 @@
         </div>
         <div id="custFilterSummary" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin-top:8px"></div>
         <table class="report-table" style="margin-top:8px">
-          <thead><tr><th>Customer</th><th>Email</th><th>Purchases</th><th>Returns</th><th>Total Spent</th><th>Items</th></tr></thead>
+          <thead><tr><th>Customer</th><th>Email</th><th>Purchases</th><th>Returns</th><th>Total Spent</th><th>Employee(s)</th><th>Items</th></tr></thead>
           <tbody id="custReportBody"></tbody>
         </table>
+        <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:8px">Click a customer for their full details (phone, address, notes).</p>
       </div>
     </div>
   </div>
@@ -1063,6 +1069,37 @@
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeSettingsAuth()">Cancel</button>
       <button class="btn btn-confirm" onclick="submitSettingsAuth()">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Customer Detail Modal ─── -->
+<div class="modal-overlay" id="customerDetailModal">
+  <div class="modal" style="max-width:480px">
+    <h2 id="custDetailName">Customer</h2>
+    <p class="sub" id="custDetailStats" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px"></p>
+    <div class="field">
+      <label>Email</label>
+      <div id="custDetailEmail" style="font-family:system-ui,sans-serif;font-size:.88rem;padding:6px 0;color:var(--dark)"></div>
+    </div>
+    <div class="field">
+      <label>Phone</label>
+      <input type="tel" id="custDetailPhone" placeholder="(555) 555-5555">
+    </div>
+    <div class="field">
+      <label>Address</label>
+      <input type="text" id="custDetailAddress" placeholder="123 Main St, City, State ZIP">
+    </div>
+    <div class="field">
+      <label>Notes</label>
+      <textarea id="custDetailNotes" rows="3" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;resize:vertical"></textarea>
+    </div>
+    <div id="custDetailProducts" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:6px"></div>
+    <div id="custDetailEmployees" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:8px"></div>
+    <div id="custDetailError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger);min-height:1em"></div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeCustomerDetail()">Close</button>
+      <button class="btn btn-confirm" id="custDetailSaveBtn" onclick="saveCustomerDetail()">Save</button>
     </div>
   </div>
 </div>
@@ -1619,33 +1656,37 @@ function updateTenderBalance() {
 }
 
 // Everything that still needs to happen before the sale/return can be
-// completed — drives the checkout button's disabled state. No visible
-// checklist; the relevant fields (cart, customer info, employee picker,
-// tender amounts) already make it obvious what's missing.
+// completed — drives the checkout button's disabled state and a single-line
+// hint (not a persistent checklist) naming whatever is blocking it right now,
+// so it's never a mystery why the button won't click.
 function updateCheckoutEnabled() {
   const btn = document.getElementById('checkoutBtn');
+  const hintEl = document.getElementById('checkoutHint');
   if (!btn) return;
 
   const isReturn = currentMode === 'return';
-  const checks = [cart.length > 0];
+  const reasons = [{ ok: cart.length > 0, label: isReturn ? 'Add at least one item to the return' : 'Add at least one item to the cart' }];
 
   if (!isReturn) {
     const custName = document.getElementById('custName')?.value.trim() || '';
     const custEmail = document.getElementById('custEmail')?.value.trim() || '';
-    checks.push(!!custName, isValidEmail(custEmail));
+    reasons.push({ ok: !!custName, label: "Enter the customer's name" });
+    reasons.push({ ok: isValidEmail(custEmail), label: 'Enter a valid customer email' });
   }
 
   // Every sale/return starts with a blank employee row (see defaultSaleEmployees).
-  checks.push(saleEmployees.length > 0 && saleEmployees.every(e => e.employee_id));
+  reasons.push({ ok: saleEmployees.length > 0 && saleEmployees.every(e => e.employee_id), label: 'Assign an employee to this sale' });
   if (saleEmployees.length > 0) {
     const totalPct = saleEmployees.reduce((s, e) => s + (e.commission_value || 0), 0);
-    checks.push(Math.abs(totalPct - 100) < 0.01);
+    reasons.push({ ok: Math.abs(totalPct - 100) < 0.01, label: `Employee commission % must total 100% (currently ${totalPct.toFixed(1)}%)` });
   }
 
-  checks.push(Math.abs(saleTotal() - tenderSum()) < 0.01);
-  checks.push(!tenders.some(t => t.method === 'card' && (t.last4 || '').length !== 4));
+  reasons.push({ ok: Math.abs(saleTotal() - tenderSum()) < 0.01, label: isReturn ? 'Refund amount must match the total' : 'Payment amount must match the total' });
+  // Only a card tender needs its last 4 digits — cash/other never do.
+  reasons.push({ ok: !tenders.some(t => t.method === 'card' && (t.last4 || '').length !== 4), label: `Enter the last 4 digits for each card ${isReturn ? 'refund' : 'payment'}` });
 
-  btn.disabled = checks.some(ok => !ok);
+  btn.disabled = reasons.some(r => !r.ok);
+  if (hintEl) hintEl.textContent = btn.disabled ? (reasons.find(r => !r.ok)?.label || '') : '';
 }
 
 // ─── Transaction ────────────────────────────────────────────────────────────
@@ -2638,11 +2679,12 @@ async function importRows(rows) {
 
 function exportCustomersCSV() {
   const list = custFiltered || [];
-  const rows = [['Name', 'Email', 'Purchases', 'Returns', 'Total Spent', 'Items Purchased']];
+  const rows = [['Name', 'Email', 'Phone', 'Address', 'Purchases', 'Returns', 'Total Spent', 'Employee(s)', 'Items Purchased']];
   list.forEach(c => {
     rows.push([
-      c.customer_name || '', c.customer_email || '', c.purchases, c.returns,
+      c.customer_name || '', c.customer_email || '', c.phone || '', c.address || '', c.purchases, c.returns,
       Number(c.total_spent).toFixed(2),
+      (c.employees || []).map(e => e.name).join('; '),
       (c.products || []).map(p => p.product_name).join('; '),
     ]);
   });
@@ -2986,12 +3028,13 @@ async function loadCustomers() {
 
   custReportData = customers;
   populateCustProductFilter();
-  applyCustomerProductFilter();
+  populateCustEmployeeFilter();
+  applyCustomerFilters();
 }
 
-// ─── Customers: product filter + mass email ─────────────────────────────────
+// ─── Customers: product/employee filters + mass email ──────────────────────
 let custReportData = [];  // full customer report for the date range
-let custFiltered = [];    // customers after the product filter
+let custFiltered = [];    // customers after the product + employee filters
 
 function populateCustProductFilter() {
   const sel = document.getElementById('custProductFilter');
@@ -3004,32 +3047,113 @@ function populateCustProductFilter() {
   if ([...map.keys()].includes(current)) sel.value = current;
 }
 
-function applyCustomerProductFilter() {
+function populateCustEmployeeFilter() {
+  const sel = document.getElementById('custEmployeeFilter');
+  if (!sel) return;
+  const current = sel.value;
+  const map = new Map();
+  custReportData.forEach(c => (c.employees || []).forEach(e => { if (!map.has(e.id)) map.set(e.id, e.name); }));
+  const opts = [...map.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  sel.innerHTML = '<option value="">All employees</option>' + opts.map(([id, name]) => `<option value="${id}">${escapeHtml(name)}</option>`).join('');
+  if ([...map.keys()].map(String).includes(current)) sel.value = current;
+}
+
+function applyCustomerFilters() {
   const pid = document.getElementById('custProductFilter').value;
-  custFiltered = pid
-    ? custReportData.filter(c => (c.products || []).some(p => p.product_id === pid))
-    : custReportData.slice();
+  const eid = document.getElementById('custEmployeeFilter').value;
+  custFiltered = custReportData.filter(c =>
+    (!pid || (c.products || []).some(p => p.product_id === pid)) &&
+    (!eid || (c.employees || []).some(e => String(e.id) === eid))
+  );
   renderCustomers(custFiltered);
 
-  const sel = document.getElementById('custProductFilter');
-  const label = pid ? (sel.options[sel.selectedIndex]?.text || 'item') : null;
+  const prodSel = document.getElementById('custProductFilter');
+  const empSel = document.getElementById('custEmployeeFilter');
+  const prodLabel = pid ? (prodSel.options[prodSel.selectedIndex]?.text || 'item') : null;
+  const empLabel = eid ? (empSel.options[empSel.selectedIndex]?.text || 'employee') : null;
   const withEmail = custFiltered.filter(c => c.customer_email).length;
+  let extra = '';
+  if (prodLabel) extra += ` who purchased “${prodLabel}”`;
+  if (empLabel) extra += `${prodLabel ? ' and' : ' who were'} served by ${empLabel}`;
   document.getElementById('custFilterSummary').textContent =
-    `${custFiltered.length} customer${custFiltered.length !== 1 ? 's' : ''}` +
-    (label ? ` who purchased “${label}”` : '') + ` · ${withEmail} with an email`;
+    `${custFiltered.length} customer${custFiltered.length !== 1 ? 's' : ''}` + extra + ` · ${withEmail} with an email`;
 }
 
 function renderCustomers(list) {
-  document.getElementById('custReportBody').innerHTML = list.map(c => `
-    <tr>
+  document.getElementById('custReportBody').innerHTML = list.map((c, i) => `
+    <tr onclick="openCustomerDetail(${i})" style="cursor:pointer" title="Click for this customer's details">
       <td style="font-weight:600">${escapeHtml(c.customer_name)}</td>
       <td>${escapeHtml(c.customer_email)}</td>
       <td>${c.purchases}</td>
       <td>${c.returns}</td>
       <td style="font-weight:600">$${money(Number(c.total_spent))}</td>
+      <td style="font-size:.78rem;color:var(--mid)">${(c.employees || []).map(e => escapeHtml(e.name)).join(', ') || '-'}</td>
       <td style="font-size:.78rem;color:var(--mid)">${(c.products || []).map(p => escapeHtml(p.product_name)).join(', ')}</td>
     </tr>
-  `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No customers match this filter</td></tr>';
+  `).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No customers match this filter</td></tr>';
+}
+
+// ─── Customer Detail ─────────────────────────────────────────────────────────
+let custDetailTarget = null; // the custFiltered row currently open in the modal
+
+function openCustomerDetail(i) {
+  const c = custFiltered[i];
+  if (!c) return;
+  custDetailTarget = c;
+
+  document.getElementById('custDetailName').textContent = c.customer_name || '(no name)';
+  document.getElementById('custDetailEmail').textContent = c.customer_email || '(no email on file)';
+  document.getElementById('custDetailPhone').value = c.phone || '';
+  document.getElementById('custDetailAddress').value = c.address || '';
+  document.getElementById('custDetailNotes').value = c.notes || '';
+  document.getElementById('custDetailStats').textContent =
+    `${c.purchases} purchase${c.purchases !== 1 ? 's' : ''} · ${c.returns} return${c.returns !== 1 ? 's' : ''} · $${money(Number(c.total_spent))} total spent`;
+  document.getElementById('custDetailProducts').innerHTML =
+    `<strong>Products purchased:</strong> ${(c.products || []).map(p => escapeHtml(p.product_name)).join(', ') || '—'}`;
+  document.getElementById('custDetailEmployees').innerHTML =
+    `<strong>Served by:</strong> ${(c.employees || []).map(e => escapeHtml(e.name)).join(', ') || '—'}`;
+
+  // Without an email there's no key to save a CRM record against yet.
+  const canEdit = !!(c.customer_email && c.customer_email.trim());
+  document.getElementById('custDetailPhone').disabled = !canEdit;
+  document.getElementById('custDetailAddress').disabled = !canEdit;
+  document.getElementById('custDetailNotes').disabled = !canEdit;
+  document.getElementById('custDetailSaveBtn').style.display = canEdit ? '' : 'none';
+  document.getElementById('custDetailError').textContent = canEdit ? '' :
+    'This customer has no email on file, so contact info can\'t be saved for them yet.';
+
+  document.getElementById('customerDetailModal').classList.add('show');
+}
+function closeCustomerDetail() {
+  document.getElementById('customerDetailModal').classList.remove('show');
+  custDetailTarget = null;
+}
+async function saveCustomerDetail() {
+  if (!custDetailTarget) return;
+  const errEl = document.getElementById('custDetailError');
+  errEl.textContent = '';
+  const phone = document.getElementById('custDetailPhone').value.trim();
+  const address = document.getElementById('custDetailAddress').value.trim();
+  const notes = document.getElementById('custDetailNotes').value.trim();
+
+  try {
+    const resp = await fetch(`${API}/api/pos/customers/upsert`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ name: custDetailTarget.customer_name, email: custDetailTarget.customer_email, phone, address, notes }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Failed to save');
+
+    // Reflect the save in the already-loaded report row (same object
+    // reference in custReportData) so the table doesn't need a full reload.
+    custDetailTarget.phone = data.customer.phone;
+    custDetailTarget.address = data.customer.address;
+    custDetailTarget.notes = data.customer.notes;
+    custDetailTarget.customer_id = data.customer.id;
+    closeCustomerDetail();
+  } catch (err) {
+    errEl.textContent = err.message;
+  }
 }
 
 // ─── Mass Email ─────────────────────────────────────────────────────────────

@@ -783,16 +783,19 @@ async function getTopProductsReport(userId, startDate, endDate) {
 
 async function getCustomerReport(userId, startDate, endDate) {
   const customers = (await query(`
-    SELECT customer_name, customer_email,
-      COUNT(CASE WHEN type = 'sale' THEN 1 END) as purchases,
-      COUNT(CASE WHEN type = 'return' THEN 1 END) as returns,
-      COALESCE(SUM(CASE WHEN type = 'sale' THEN total ELSE -total END), 0) as total_spent
-    FROM pos_transactions
-    WHERE user_id = $1
-      AND COALESCE(original_sale_date, created_at) >= $2
-      AND COALESCE(original_sale_date, created_at) <= $3
-      AND customer_name != ''
-    GROUP BY customer_name, customer_email ORDER BY total_spent DESC
+    SELECT t.customer_name, t.customer_email,
+      COUNT(CASE WHEN t.type = 'sale' THEN 1 END) as purchases,
+      COUNT(CASE WHEN t.type = 'return' THEN 1 END) as returns,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.total ELSE -t.total END), 0) as total_spent,
+      cust.id as customer_id, cust.phone, cust.address, cust.notes
+    FROM pos_transactions t
+    LEFT JOIN customers cust ON cust.email = t.customer_email AND cust.user_id = t.user_id AND t.customer_email != ''
+    WHERE t.user_id = $1
+      AND COALESCE(t.original_sale_date, t.created_at) >= $2
+      AND COALESCE(t.original_sale_date, t.created_at) <= $3
+      AND t.customer_name != ''
+    GROUP BY t.customer_name, t.customer_email, cust.id, cust.phone, cust.address, cust.notes
+    ORDER BY total_spent DESC
   `, [userId, startDate, endDate])).rows;
 
   // Attach the distinct products each customer purchased (sales only) in range
@@ -809,8 +812,27 @@ async function getCustomerReport(userId, startDate, endDate) {
     const key = `${r.customer_name}|${r.customer_email}`;
     (byCustomer[key] = byCustomer[key] || []).push({ product_id: r.product_id, product_name: r.product_name });
   }
+
+  // Attach the distinct employees who rang up each customer's sales in range
+  const empRows = (await query(`
+    SELECT DISTINCT t.customer_name, t.customer_email, e.id as employee_id, e.name as employee_name
+    FROM pos_transaction_employees te
+    JOIN pos_transactions t ON te.transaction_id = t.id
+    JOIN pos_employees e ON te.employee_id = e.id
+    WHERE t.user_id = $1 AND t.type = 'sale'
+      AND COALESCE(t.original_sale_date, t.created_at) >= $2
+      AND COALESCE(t.original_sale_date, t.created_at) <= $3
+  `, [userId, startDate, endDate])).rows;
+  const empByCustomer = {};
+  for (const r of empRows) {
+    const key = `${r.customer_name}|${r.customer_email}`;
+    (empByCustomer[key] = empByCustomer[key] || []).push({ id: r.employee_id, name: r.employee_name });
+  }
+
   for (const c of customers) {
-    c.products = byCustomer[`${c.customer_name}|${c.customer_email}`] || [];
+    const key = `${c.customer_name}|${c.customer_email}`;
+    c.products = byCustomer[key] || [];
+    c.employees = empByCustomer[key] || [];
   }
   return customers;
 }
