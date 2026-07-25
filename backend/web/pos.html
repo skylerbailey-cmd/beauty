@@ -602,12 +602,22 @@
   <!-- ─── REPORTS TAB ─── -->
   <div class="tab-content" id="tab-reports">
     <div style="max-width:1000px;margin:0 auto;padding:20px">
-      <div class="date-range">
+      <!-- Date filter only applies to the locked report below (personal sales,
+           or the manager KPIs/leaderboard/commissions/top products) — it stays
+           hidden until someone unlocks with their name + PIN, and never
+           affects the always-visible Today's Sales Leaderboard. -->
+      <div class="date-range" id="reportsDateFilter" style="display:none">
         <label>From:</label>
         <input type="date" id="rptStart">
         <label>To:</label>
         <input type="date" id="rptEnd">
         <button class="btn btn-confirm" onclick="loadReports()">Update</button>
+      </div>
+
+      <!-- Always visible, no PIN needed: today's sales per employee. -->
+      <div class="report-card">
+        <h3>Today's Sales Leaderboard</h3>
+        <div id="todayLeaderboard" style="display:flex;flex-direction:column;gap:8px"></div>
       </div>
 
       <!-- Employee Sales & Commissions (Manager/Employee view — locked) -->
@@ -628,11 +638,6 @@
             <tbody id="empPersonalBody"></tbody>
           </table>
         </div>
-      </div>
-
-      <!-- Shown until a manager unlocks the section above -->
-      <div id="managerReportsLocked" class="report-card" style="text-align:center;color:var(--mid);font-family:system-ui,sans-serif">
-        &#128274; KPIs, the sales leaderboard, everyone's commissions, and top products are hidden until a manager unlocks them above.
       </div>
 
       <!-- Manager-only: KPIs, sales leaderboard, full commissions table, and top products (revealed after a manager unlocks above) -->
@@ -3040,6 +3045,15 @@ async function loadReports() {
   }
 }
 
+// Always-visible leaderboard for TODAY specifically — independent of the
+// rptStart/rptEnd date filter (which only applies to the locked report
+// above) and requires no PIN, unlike everything else on this tab.
+async function loadTodayLeaderboard() {
+  const resp = await fetch(`${API}/api/pos/reports/employees`, { credentials: 'include' });
+  const employees = (await resp.json()).report || [];
+  renderLeaderboard(employees, 'todayLeaderboard');
+}
+
 // ─── Customers tab ───────────────────────────────────────────────────────────
 async function loadCustomers() {
   const start = document.getElementById('custStart').value;
@@ -3586,7 +3600,7 @@ function switchTab(tabName) {
   if (navBtn) navBtn.classList.add('active');
 
   if (tabName === 'history') loadTransactions();
-  if (tabName === 'reports') loadReports();
+  if (tabName === 'reports') { loadReports(); loadTodayLeaderboard(); }
   if (tabName === 'customers') loadCustomers();
   if (tabName === 'emails') {
     const f = document.getElementById('emailsFrame');
@@ -3759,8 +3773,8 @@ async function deleteCustomProduct(customId) {
 
 
 // ─── Leaderboard ────────────────────────────────────────────────────────────
-function renderLeaderboard(employees) {
-  const container = document.getElementById('leaderboard');
+function renderLeaderboard(employees, containerId) {
+  const container = document.getElementById(containerId || 'leaderboard');
   // Rank by NET sales (sales - returns) — same figure as "Net Sales" when unlocked
   const sorted = [...employees].filter(e => e.sale_count > 0 || Number(e.net_total) !== 0).sort((a, b) => Number(b.net_total) - Number(a.net_total));
   if (sorted.length === 0) {
@@ -3833,15 +3847,17 @@ async function unlockPersonalReport() {
 
     errorEl.textContent = '';
     document.getElementById('empLockBtn').style.display = '';
+    // The date filter only ever applies to what's behind this unlock — reveal
+    // it now, whichever role just unlocked.
+    document.getElementById('reportsDateFilter').style.display = '';
 
     if (data.role === 'manager') {
       // Managers unlock the KPIs, full leaderboard, commissions, and top products
       managerReportsUnlocked = true;
       document.getElementById('managerCommissionsSection').style.display = 'block';
-      document.getElementById('managerReportsLocked').style.display = 'none';
       document.getElementById('salesSummary').innerHTML = lastSalesSummaryHtml;
       document.getElementById('prodReportBody').innerHTML = lastProductsHtml;
-      renderLeaderboard(lastEmployeesReport);
+      renderLeaderboard(lastEmployeesReport, 'leaderboard');
       renderManagerCommissions();
       document.getElementById('empPersonalName').textContent = `${data.employee.name} (Manager) — full commissions unlocked below`;
       document.getElementById('empPersonalBody').innerHTML = '';
@@ -3850,7 +3866,6 @@ async function unlockPersonalReport() {
       // Sales employees see only their own personal sales
       managerReportsUnlocked = false;
       document.getElementById('managerCommissionsSection').style.display = 'none';
-      document.getElementById('managerReportsLocked').style.display = 'block';
       document.getElementById('empPersonalName').textContent = `${data.employee.name} — Personal Sales & Commission`;
       document.getElementById('empPersonalBody').innerHTML =
         (data.report || []).map(commissionRow).join('') ||
@@ -3866,7 +3881,7 @@ async function unlockPersonalReport() {
 function lockPersonalReport() {
   managerReportsUnlocked = false;
   document.getElementById('managerCommissionsSection').style.display = 'none';
-  document.getElementById('managerReportsLocked').style.display = 'block';
+  document.getElementById('reportsDateFilter').style.display = 'none';
   document.getElementById('salesSummary').innerHTML = '';
   document.getElementById('prodReportBody').innerHTML = '';
   document.getElementById('empPersonalReport').style.display = 'none';
@@ -3874,6 +3889,11 @@ function lockPersonalReport() {
   document.getElementById('empPersonalName2').value = '';
   document.getElementById('empPersonalPin').value = '';
   document.getElementById('empPersonalError').textContent = '';
+  // Reset to today so the next person to unlock isn't left on whatever
+  // arbitrary date range the last person picked.
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('rptStart').value = today;
+  document.getElementById('rptEnd').value = today;
 }
 
 // ─── App Switcher ───────────────────────────────────────────────────────────
