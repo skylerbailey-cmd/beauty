@@ -21,7 +21,7 @@ function isCacheValid(entry) {
 async function fetchPage(url) {
   const response = await fetch(url, {
     headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; GlowSF/1.0; +https://glowsf.com)',
+      'User-Agent': 'Mozilla/5.0 (compatible; SkySale/1.0; +https://skysale.app)',
       'Accept': 'text/html,application/xhtml+xml',
       'Accept-Language': 'en-US,en;q=0.9',
     },

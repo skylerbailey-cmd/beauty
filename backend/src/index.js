@@ -30,7 +30,7 @@ app.use(cors({
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-const SESSION_SECRET = process.env.SESSION_SECRET || 'glow-sf-dev-secret-change-in-prod';
+const SESSION_SECRET = process.env.SESSION_SECRET || 'skysale-dev-secret-change-in-prod';
 
 app.use(cookieParser(SESSION_SECRET)); // signed cookies use the same secret
 
@@ -127,7 +127,7 @@ app.get('/health', async (req, res) => {
       pgStatus = 'connected';
     }
   } catch (err) { pgStatus = 'error: ' + err.message; }
-  res.json({ status: 'ok', app: 'Glow SF Backend', postgres: pgStatus, timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', app: 'SkySale Backend', postgres: pgStatus, timestamp: new Date().toISOString() });
 });
 
 // 404 handler
@@ -163,7 +163,7 @@ async function restoreGmailWatches() {
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, async () => {
-  console.log(`[server] Glow SF backend running on port ${PORT}`);
+  console.log(`[server] SkySale backend running on port ${PORT}`);
 
   // Initialize Postgres schema for POS/CRM
   try {

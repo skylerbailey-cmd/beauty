@@ -36,7 +36,7 @@ export async function setupNotifications(router: Router): Promise<string | null>
   // Android channel
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {
-      name: 'Glow SF',
+      name: 'SkySale',
       importance: Notifications.AndroidImportance.MAX,
       vibrationPattern: [0, 250, 250, 250],
       lightColor: '#D4A0A0',

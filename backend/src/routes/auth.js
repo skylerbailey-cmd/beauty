@@ -101,11 +101,11 @@ router.get('/google/callback', async (req, res) => {
 
   if (error) {
     console.error('[auth] OAuth error:', error);
-    return res.redirect(`${process.env.FRONTEND_DEEP_LINK || 'glowsf://'}auth-error?reason=${encodeURIComponent(error)}`);
+    return res.redirect(`${process.env.FRONTEND_DEEP_LINK || 'skysale://'}auth-error?reason=${encodeURIComponent(error)}`);
   }
 
   if (!code) {
-    return res.redirect(`${process.env.FRONTEND_DEEP_LINK || 'glowsf://'}auth-error?reason=no_code`);
+    return res.redirect(`${process.env.FRONTEND_DEEP_LINK || 'skysale://'}auth-error?reason=no_code`);
   }
 
   try {
@@ -211,7 +211,7 @@ router.get('/google/callback', async (req, res) => {
     `);
   } catch (err) {
     console.error('[auth] Callback error:', err);
-    res.redirect(`${process.env.FRONTEND_DEEP_LINK || 'glowsf://'}auth-error?reason=${encodeURIComponent(err.message)}`);
+    res.redirect(`${process.env.FRONTEND_DEEP_LINK || 'skysale://'}auth-error?reason=${encodeURIComponent(err.message)}`);
   }
 });
 

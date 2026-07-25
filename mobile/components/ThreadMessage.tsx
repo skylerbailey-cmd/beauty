@@ -52,7 +52,7 @@ export default function ThreadMessage({ message, isLast }: ThreadMessageProps) {
 
         <View style={styles.headerInfo}>
           <Text style={[styles.fromName, isOutbound && styles.fromNameOutbound]}>
-            {isOutbound ? 'Glow SF (You)' : message.from}
+            {isOutbound ? 'SkySale (You)' : message.from}
           </Text>
           <Text style={styles.dateText}>{formatDateTime(message.sentAt)}</Text>
         </View>

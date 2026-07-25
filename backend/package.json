@@ -1,7 +1,7 @@
 {
-  "name": "glow-sf-backend",
+  "name": "skysale-backend",
   "version": "1.0.0",
-  "description": "Glow SF Beauty Store - Email Management Backend",
+  "description": "SkySale Beauty Store - Email Management Backend",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",

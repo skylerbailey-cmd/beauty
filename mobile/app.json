@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "Glow SF",
-    "slug": "glow-sf",
+    "name": "SkySale",
+    "slug": "skysale",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "glowsf",
+    "scheme": "skysale",
     "backgroundColor": "#FDF6F0",
     "userInterfaceStyle": "light",
     "splash": {
@@ -12,7 +12,7 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.glowsf.app",
+      "bundleIdentifier": "com.skysale.app",
       "infoPlist": {
         "UIBackgroundModes": [
           "remote-notification",
@@ -25,7 +25,7 @@
       "adaptiveIcon": {
         "backgroundColor": "#FDF6F0"
       },
-      "package": "com.glowsf.app"
+      "package": "com.skysale.app"
     },
     "plugins": [
       "expo-router",
@@ -37,7 +37,7 @@
           "color": "#D4A0A0",
           "sounds": [],
           "androidMode": "default",
-          "androidCollapsedTitle": "Glow SF"
+          "androidCollapsedTitle": "SkySale"
         }
       ]
     ],

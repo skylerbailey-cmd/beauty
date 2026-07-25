@@ -80,7 +80,7 @@ export default function TabsLayout() {
         name="inbox"
         options={{
           title: 'Inbox',
-          headerTitle: 'Glow SF Inbox',
+          headerTitle: 'SkySale Inbox',
           tabBarIcon: ({ color, size }) => (
             <BadgeIcon name="mail" color={color} size={size} badge={draftCount} />
           ),

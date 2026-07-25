@@ -30,7 +30,7 @@ async function sendDraftReadyNotification(pushToken, emailId, subject, fromName)
   const message = {
     to: pushToken,
     sound: 'default',
-    title: '✨ Draft Ready — Glow SF',
+    title: '✨ Draft Ready — SkySale',
     body: `New email from ${displayFrom}: "${displaySubject}"`,
     data: {
       type: 'draft_ready',
@@ -93,7 +93,7 @@ async function sendFollowUpNotification(pushToken, emailId, subject, fromName) {
   const message = {
     to: pushToken,
     sound: 'default',
-    title: '🔔 Follow-Up Needed — Glow SF',
+    title: '🔔 Follow-Up Needed — SkySale',
     body: `No reply from ${displayFrom} in 48h. Topic: "${displaySubject}"`,
     data: {
       type: 'follow_up',
