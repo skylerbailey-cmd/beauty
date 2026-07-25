@@ -440,6 +440,7 @@
             <button class="active" id="modesale" onclick="setMode('sale')">Sale</button>
             <button id="modereturn" onclick="setMode('return')">Return</button>
           </div>
+          <button class="btn" style="background:var(--gold);color:#fff;padding:7px 16px;font-family:system-ui,sans-serif;font-size:.82rem;border-radius:8px" onclick="printDaySummary()">Print End of Day Report</button>
         </div>
         <!-- Sale mode: product search & grid -->
         <div id="saleView">
@@ -1811,6 +1812,71 @@ function printReceipt() {
   const content = document.getElementById('receiptContent').innerHTML;
   const printEl = document.getElementById('printReceipt');
   printEl.innerHTML = content;
+  printEl.style.display = 'block';
+  window.print();
+  setTimeout(() => { printEl.style.display = 'none'; }, 500);
+}
+
+// ─── End of Day Report ──────────────────────────────────────────────────────
+async function printDaySummary() {
+  let report;
+  try {
+    const resp = await fetch(`${API}/api/pos/reports/day-summary`, { credentials: 'include' });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Failed to load report');
+    report = data.report;
+  } catch (err) {
+    alert('Failed to load end of day report: ' + err.message);
+    return;
+  }
+
+  const storeName = storeSettings.store_name || document.getElementById('headerCompany').textContent || 'Glow SF';
+  const storeAddr = formatStoreAddress(storeSettings);
+  const tz = storeSettings.timezone || 'America/Los_Angeles';
+  const dateLabel = new Date(report.date + 'T12:00:00').toLocaleDateString('en-US', { timeZone: tz });
+  const s = report.summary;
+
+  let html = `
+    <div class="r-center"><strong>${storeName}</strong></div>
+    ${storeAddr ? `<div class="r-center" style="font-size:.72rem">${storeAddr}</div>` : ''}
+    <div class="r-center" style="font-size:.75rem">${dateLabel}</div>
+    <div class="r-center" style="font-weight:900;margin-top:6px">DAY SUMMARY</div>
+    <div class="r-line"></div>
+    <div class="r-center" style="font-weight:900">SALES SUMMARY</div>
+    <div class="r-row"><span>Total Cash:</span><span>$${money(report.tenders.cash)}</span></div>
+    <div class="r-row"><span>Total Card:</span><span>$${money(report.tenders.card)}</span></div>
+    <div class="r-row"><span>Total Other:</span><span>$${money(report.tenders.other)}</span></div>
+    <div class="r-row"><span>Total Refunded:</span><span>$${money(s.refunded_total)}</span></div>
+    <div class="r-row"><span>Total Sales (incl. refunds):</span><span>$${money(s.net_total)}</span></div>
+    <div class="r-row"><span>Total Tax:</span><span>$${money(s.net_tax)}</span></div>
+    <div class="r-row r-total"><span>Total Net:</span><span>$${money(s.net_revenue)}</span></div>
+    <div class="r-row" style="font-size:.72rem;margin-top:4px"><span>Sales / Returns:</span><span>${s.total_sales} / ${s.total_returns}</span></div>
+    <div class="r-line"></div>
+    <div class="r-center" style="font-weight:900">PRODUCTS SOLD</div>
+  `;
+
+  html += report.products.length
+    ? report.products.map(p => `<div class="r-row"><span>${escapeHtml(p.product_name)}</span><span>${p.qty}</span></div>`).join('')
+    : `<div class="r-center" style="font-size:.75rem">No products sold</div>`;
+
+  html += `
+    <div class="r-line"></div>
+    <div class="r-center" style="font-weight:900">SALES ASSOCIATES</div>
+  `;
+
+  html += report.associates.length
+    ? report.associates.map(a => `
+        <div class="r-row" style="margin-top:6px"><span><strong>${escapeHtml(a.employee_name)}</strong></span><span></span></div>
+        <div class="r-row" style="font-size:.78rem"><span>&nbsp;&nbsp;Products sold:</span><span>${a.total_products}</span></div>
+        <div class="r-row" style="font-size:.78rem"><span>&nbsp;&nbsp;Net sales:</span><span>$${money(a.net_sales)}</span></div>
+        <div class="r-row" style="font-size:.78rem"><span>&nbsp;&nbsp;Gross sales:</span><span>$${money(a.gross_sales)}</span></div>
+      `).join('')
+    : `<div class="r-center" style="font-size:.75rem">No sales associates today</div>`;
+
+  html += `<div class="r-line"></div>`;
+
+  const printEl = document.getElementById('printReceipt');
+  printEl.innerHTML = html;
   printEl.style.display = 'block';
   window.print();
   setTimeout(() => { printEl.style.display = 'none'; }, 500);

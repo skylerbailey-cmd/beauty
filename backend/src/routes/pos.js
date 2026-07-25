@@ -904,6 +904,19 @@ router.get('/reports/flagged-returns', async (req, res) => {
   res.json({ report: await pgDb.getFlaggedReturns(req.session.userId, startDate, endDate) });
 });
 
+router.get('/reports/day-summary', async (req, res) => {
+  const userId = req.session.userId;
+  const settings = await pgDb.getSettings(userId);
+  const tz = settings.timezone || 'America/Los_Angeles';
+
+  let date = (req.query.date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    date = new Date().toLocaleDateString('en-CA', { timeZone: tz }); // en-CA => YYYY-MM-DD
+  }
+
+  res.json({ report: await pgDb.getDaySummary(userId, date, tz) });
+});
+
 // ─── Employee Personal Report (PIN-protected) ─────────────────────────────
 
 router.post('/reports/employee-personal', async (req, res) => {

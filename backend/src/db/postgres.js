@@ -928,6 +928,108 @@ async function getCardTransactionsForDate(userId, dateStr, tz) {
   `, [userId, dateStr, timezone])).rows;
 }
 
+// All tenders (any method), with the same legacy fallback as CARD_TENDERS_CTE,
+// for the end-of-day report's cash/card/other breakdown.
+const ALL_TENDERS_CTE = `
+  WITH all_pay AS (
+    SELECT p.transaction_id, p.method, p.amount
+    FROM pos_transaction_payments p
+    UNION ALL
+    SELECT t.id, t.payment_method, t.total
+    FROM pos_transactions t
+    WHERE NOT EXISTS (SELECT 1 FROM pos_transaction_payments p2 WHERE p2.transaction_id = t.id)
+  )`;
+
+// End-of-day report for a single local calendar day: tender totals (net of
+// same-day refunds), the day's sales summary, products sold, and each sales
+// associate's contribution. Mirrors the printed "Day Summary" receipts stores
+// are used to from their prior POS.
+async function getDaySummary(userId, dateStr, tz) {
+  const timezone = tz || 'America/Los_Angeles';
+  const dayFilter = '(t.created_at AT TIME ZONE $3)::date = $2::date';
+
+  const tenderRows = (await query(`
+    ${ALL_TENDERS_CTE}
+    SELECT ap.method,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN ap.amount ELSE 0 END), 0) AS sales_total,
+      COALESCE(SUM(CASE WHEN t.type = 'return' THEN ap.amount ELSE 0 END), 0) AS returns_total
+    FROM pos_transactions t
+    JOIN all_pay ap ON ap.transaction_id = t.id
+    WHERE t.user_id = $1 AND ${dayFilter}
+    GROUP BY ap.method
+  `, [userId, dateStr, timezone])).rows;
+
+  const tenders = { cash: 0, card: 0, other: 0 };
+  for (const r of tenderRows) {
+    const method = ['cash', 'card', 'other'].includes(r.method) ? r.method : 'other';
+    tenders[method] += Number(r.sales_total || 0) - Number(r.returns_total || 0);
+  }
+
+  const summaryRow = (await query(`
+    SELECT
+      COUNT(CASE WHEN t.type = 'sale' THEN 1 END) as total_sales,
+      COUNT(CASE WHEN t.type = 'return' THEN 1 END) as total_returns,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.total - t.tax_amount ELSE 0 END), 0) as sales_revenue,
+      COALESCE(SUM(CASE WHEN t.type = 'return' THEN t.total - t.tax_amount ELSE 0 END), 0) as returns_revenue,
+      COALESCE(SUM(CASE WHEN t.type = 'return' THEN t.total ELSE 0 END), 0) as refunded_total,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.tax_amount ELSE -t.tax_amount END), 0) as net_tax,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.total ELSE -t.total END), 0) as net_total
+    FROM pos_transactions t
+    WHERE t.user_id = $1 AND ${dayFilter}
+  `, [userId, dateStr, timezone])).rows[0] || {};
+
+  const products = (await query(`
+    SELECT ti.product_name,
+      SUM(CASE WHEN t.type = 'sale' THEN ti.quantity ELSE -ti.quantity END) as qty
+    FROM pos_transaction_items ti
+    JOIN pos_transactions t ON ti.transaction_id = t.id
+    WHERE t.user_id = $1 AND ${dayFilter}
+    GROUP BY ti.product_name
+    HAVING SUM(CASE WHEN t.type = 'sale' THEN ti.quantity ELSE -ti.quantity END) != 0
+    ORDER BY qty DESC
+  `, [userId, dateStr, timezone])).rows;
+
+  // Gross sales per associate = their proportional (commission-based) share of
+  // each transaction's tax-inclusive total, not just the pre-tax commission.
+  const associates = (await query(`
+    SELECT e.name as employee_name,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN tiq.qty ELSE -tiq.qty END), 0) as total_products,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN te.commission_amount ELSE -te.commission_amount END), 0) as net_sales,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN te.commission_amount / NULLIF(t.subtotal, 0) * t.total
+                        ELSE -(te.commission_amount / NULLIF(t.subtotal, 0) * t.total) END), 0) as gross_sales
+    FROM pos_transaction_employees te
+    JOIN pos_employees e ON te.employee_id = e.id
+    JOIN pos_transactions t ON te.transaction_id = t.id
+    JOIN (SELECT transaction_id, SUM(quantity) as qty FROM pos_transaction_items GROUP BY transaction_id) tiq
+      ON tiq.transaction_id = t.id
+    WHERE t.user_id = $1 AND ${dayFilter}
+    GROUP BY e.id, e.name
+    HAVING COALESCE(SUM(CASE WHEN t.type = 'sale' THEN te.commission_amount ELSE -te.commission_amount END), 0) != 0
+        OR COALESCE(SUM(CASE WHEN t.type = 'sale' THEN tiq.qty ELSE -tiq.qty END), 0) != 0
+    ORDER BY net_sales DESC
+  `, [userId, dateStr, timezone])).rows;
+
+  return {
+    date: dateStr,
+    tenders,
+    summary: {
+      total_sales: Number(summaryRow.total_sales || 0),
+      total_returns: Number(summaryRow.total_returns || 0),
+      refunded_total: Number(summaryRow.refunded_total || 0),
+      net_tax: Number(summaryRow.net_tax || 0),
+      net_total: Number(summaryRow.net_total || 0),
+      net_revenue: Number(summaryRow.sales_revenue || 0) - Number(summaryRow.returns_revenue || 0),
+    },
+    products: products.map(p => ({ product_name: p.product_name, qty: Number(p.qty) })),
+    associates: associates.map(a => ({
+      employee_name: a.employee_name,
+      total_products: Number(a.total_products),
+      net_sales: Number(a.net_sales),
+      gross_sales: Number(a.gross_sales),
+    })),
+  };
+}
+
 // ─── Settings ───────────────────────────────────────────────────────────────
 
 async function getSettings(userId) {
@@ -1343,6 +1445,7 @@ module.exports = {
   getTopProductsReport,
   getCustomerReport,
   getFlaggedReturns,
+  getDaySummary,
   // Settings
   getSettings,
   updateSettings,
