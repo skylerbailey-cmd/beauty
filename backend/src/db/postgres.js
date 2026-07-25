@@ -1,6 +1,14 @@
 'use strict';
 
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
+
+// By default node-postgres parses DATE columns into a JS Date at local
+// midnight, then callers serialize that to ISO with the server's local
+// timezone offset — which can shift the calendar date by a day depending on
+// where the server runs. Return DATE columns as the raw 'YYYY-MM-DD' string
+// instead (OID 1082) so a birthday always round-trips as the date it was
+// saved, regardless of server timezone.
+types.setTypeParser(1082, val => val);
 
 // Railway may inject DATABASE_URL, DATABASE_PUBLIC_URL, or POSTGRES_URL
 const connectionString = process.env.DATABASE_URL || process.env.DATABASE_PUBLIC_URL || process.env.POSTGRES_URL;
@@ -36,6 +44,7 @@ async function initSchema() {
       name TEXT NOT NULL,
       email TEXT NOT NULL,
       phone TEXT DEFAULT '',
+      birthday DATE,
       address TEXT DEFAULT '',
       notes TEXT DEFAULT '',
       user_id TEXT DEFAULT '',
@@ -260,6 +269,7 @@ async function initSchema() {
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS card_last4 TEXT DEFAULT \'\'');
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS employees_changed INTEGER DEFAULT 0');
   await migrate("ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS customer_phone TEXT DEFAULT ''");
+  await migrate('ALTER TABLE customers ADD COLUMN IF NOT EXISTS birthday DATE');
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_address TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_city TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_state TEXT DEFAULT ''");
@@ -350,7 +360,7 @@ async function getCustomerByEmail(email, userId) {
 }
 
 async function updateCustomer(id, fields) {
-  const allowed = ['name', 'email', 'phone', 'address', 'notes'];
+  const allowed = ['name', 'email', 'phone', 'birthday', 'address', 'notes'];
   const sets = [];
   const params = [];
   let idx = 1;
@@ -783,18 +793,19 @@ async function getTopProductsReport(userId, startDate, endDate) {
 
 async function getCustomerReport(userId, startDate, endDate) {
   const customers = (await query(`
-    SELECT t.customer_name, t.customer_email,
+    SELECT t.customer_name as raw_customer_name, t.customer_email,
+      COALESCE(cust.name, t.customer_name) as customer_name,
       COUNT(CASE WHEN t.type = 'sale' THEN 1 END) as purchases,
       COUNT(CASE WHEN t.type = 'return' THEN 1 END) as returns,
       COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.total ELSE -t.total END), 0) as total_spent,
-      cust.id as customer_id, cust.phone, cust.address, cust.notes
+      cust.id as customer_id, cust.phone, cust.birthday, cust.address, cust.notes
     FROM pos_transactions t
     LEFT JOIN customers cust ON cust.email = t.customer_email AND cust.user_id = t.user_id AND t.customer_email != ''
     WHERE t.user_id = $1
       AND COALESCE(t.original_sale_date, t.created_at) >= $2
       AND COALESCE(t.original_sale_date, t.created_at) <= $3
       AND t.customer_name != ''
-    GROUP BY t.customer_name, t.customer_email, cust.id, cust.phone, cust.address, cust.notes
+    GROUP BY t.customer_name, t.customer_email, cust.id, cust.name, cust.phone, cust.birthday, cust.address, cust.notes
     ORDER BY total_spent DESC
   `, [userId, startDate, endDate])).rows;
 
@@ -830,9 +841,12 @@ async function getCustomerReport(userId, startDate, endDate) {
   }
 
   for (const c of customers) {
-    const key = `${c.customer_name}|${c.customer_email}`;
+    // Products/employees are keyed by the RAW transaction name (what prodRows/
+    // empRows select), not the CRM's possibly-since-edited display name.
+    const key = `${c.raw_customer_name}|${c.customer_email}`;
     c.products = byCustomer[key] || [];
     c.employees = empByCustomer[key] || [];
+    delete c.raw_customer_name;
   }
   return customers;
 }

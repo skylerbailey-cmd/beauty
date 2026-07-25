@@ -1090,15 +1090,24 @@
 <!-- ─── Customer Detail Modal ─── -->
 <div class="modal-overlay" id="customerDetailModal">
   <div class="modal" style="max-width:480px">
-    <h2 id="custDetailName">Customer</h2>
+    <h2>Customer Details</h2>
     <p class="sub" id="custDetailStats" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px"></p>
+    <div class="field">
+      <label>Name</label>
+      <input type="text" id="custDetailName">
+    </div>
     <div class="field">
       <label>Email</label>
       <div id="custDetailEmail" style="font-family:system-ui,sans-serif;font-size:.88rem;padding:6px 0;color:var(--dark)"></div>
+      <div style="font-family:system-ui,sans-serif;font-size:.72rem;color:var(--mid);margin-top:2px">Not editable here — it's the key tying this record to their sale history.</div>
     </div>
     <div class="field">
       <label>Phone</label>
       <input type="tel" id="custDetailPhone" placeholder="(555) 555-5555">
+    </div>
+    <div class="field">
+      <label>Birthday</label>
+      <input type="date" id="custDetailBirthday">
     </div>
     <div class="field">
       <label>Address</label>
@@ -2693,10 +2702,10 @@ async function importRows(rows) {
 
 function exportCustomersCSV() {
   const list = custFiltered || [];
-  const rows = [['Name', 'Email', 'Phone', 'Address', 'Purchases', 'Returns', 'Total Spent', 'Employee(s)', 'Items Purchased']];
+  const rows = [['Name', 'Email', 'Phone', 'Birthday', 'Address', 'Purchases', 'Returns', 'Total Spent', 'Employee(s)', 'Items Purchased']];
   list.forEach(c => {
     rows.push([
-      c.customer_name || '', c.customer_email || '', c.phone || '', c.address || '', c.purchases, c.returns,
+      c.customer_name || '', c.customer_email || '', c.phone || '', c.birthday ? String(c.birthday).slice(0, 10) : '', c.address || '', c.purchases, c.returns,
       Number(c.total_spent).toFixed(2),
       (c.employees || []).map(e => e.name).join('; '),
       (c.products || []).map(p => p.product_name).join('; '),
@@ -3115,9 +3124,10 @@ function openCustomerDetail(i) {
   if (!c) return;
   custDetailTarget = c;
 
-  document.getElementById('custDetailName').textContent = c.customer_name || '(no name)';
+  document.getElementById('custDetailName').value = c.customer_name || '';
   document.getElementById('custDetailEmail').textContent = c.customer_email || '(no email on file)';
   document.getElementById('custDetailPhone').value = c.phone || '';
+  document.getElementById('custDetailBirthday').value = c.birthday ? String(c.birthday).slice(0, 10) : '';
   document.getElementById('custDetailAddress').value = c.address || '';
   document.getElementById('custDetailNotes').value = c.notes || '';
   document.getElementById('custDetailStats').textContent =
@@ -3129,12 +3139,14 @@ function openCustomerDetail(i) {
 
   // Without an email there's no key to save a CRM record against yet.
   const canEdit = !!(c.customer_email && c.customer_email.trim());
+  document.getElementById('custDetailName').disabled = !canEdit;
   document.getElementById('custDetailPhone').disabled = !canEdit;
+  document.getElementById('custDetailBirthday').disabled = !canEdit;
   document.getElementById('custDetailAddress').disabled = !canEdit;
   document.getElementById('custDetailNotes').disabled = !canEdit;
   document.getElementById('custDetailSaveBtn').style.display = canEdit ? '' : 'none';
   document.getElementById('custDetailError').textContent = canEdit ? '' :
-    'This customer has no email on file, so contact info can\'t be saved for them yet.';
+    'This customer has no email on file, so their info can\'t be saved yet.';
 
   document.getElementById('customerDetailModal').classList.add('show');
 }
@@ -3146,24 +3158,30 @@ async function saveCustomerDetail() {
   if (!custDetailTarget) return;
   const errEl = document.getElementById('custDetailError');
   errEl.textContent = '';
+  const name = document.getElementById('custDetailName').value.trim();
   const phone = document.getElementById('custDetailPhone').value.trim();
+  const birthday = document.getElementById('custDetailBirthday').value;
   const address = document.getElementById('custDetailAddress').value.trim();
   const notes = document.getElementById('custDetailNotes').value.trim();
+  if (!name) { errEl.textContent = 'Name is required.'; return; }
 
   try {
     const resp = await fetch(`${API}/api/pos/customers/upsert`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ name: custDetailTarget.customer_name, email: custDetailTarget.customer_email, phone, address, notes }),
+      body: JSON.stringify({ name, email: custDetailTarget.customer_email, phone, birthday, address, notes }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Failed to save');
 
     // Reflect the save in the already-loaded report row (same object
     // reference in custReportData) so the table doesn't need a full reload.
+    custDetailTarget.customer_name = data.customer.name;
     custDetailTarget.phone = data.customer.phone;
+    custDetailTarget.birthday = data.customer.birthday;
     custDetailTarget.address = data.customer.address;
     custDetailTarget.notes = data.customer.notes;
     custDetailTarget.customer_id = data.customer.id;
+    renderCustomers(custFiltered);
     closeCustomerDetail();
   } catch (err) {
     errEl.textContent = err.message;
