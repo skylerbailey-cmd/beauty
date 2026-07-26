@@ -39,7 +39,7 @@ console.log(`[db] Existing data: ${userCount} users, ${customerCount} customers`
 try { db.exec('ALTER TABLE users ADD COLUMN company_name TEXT'); } catch (_) { /* already exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN theme TEXT DEFAULT 'rose'"); } catch (_) { /* already exists */ }
 try { db.exec("ALTER TABLE users ADD COLUMN websites TEXT DEFAULT '[]'"); } catch (_) { /* already exists */ }
-try { db.exec("ALTER TABLE users ADD COLUMN brands TEXT DEFAULT '[\"avologi\",\"avinichi\",\"hydrasphere\"]'"); } catch (_) { /* already exists */ }
+try { db.exec("ALTER TABLE users ADD COLUMN brands TEXT DEFAULT '[\"avologi\",\"avinichi\",\"hydrasphere\",\"spacetouch\",\"lumieres\"]'"); } catch (_) { /* already exists */ }
 try { db.exec("ALTER TABLE emails ADD COLUMN read_at DATETIME"); } catch (_) { /* already exists */ }
 try { db.exec("ALTER TABLE customers ADD COLUMN phone TEXT DEFAULT ''"); } catch (_) { /* already exists */ }
 try { db.exec("ALTER TABLE customers ADD COLUMN address TEXT DEFAULT ''"); } catch (_) { /* already exists */ }

@@ -829,6 +829,14 @@
             </div>
             <div class="brand-products-panel" id="brandPanel-spacetouch" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:400px;overflow-y:auto"></div>
           </div>
+          <div class="brand-config-row" data-brand-key="lumieres">
+            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
+              <input type="checkbox" value="lumieres" onchange="saveBrands()" style="accent-color:var(--rose-dk)" />
+              <div style="flex:1"><div style="font-weight:600;font-size:.88rem;color:var(--dark)">Lumières</div><div style="font-size:.72rem;color:var(--mid)">Red/NIR/blue light therapy devices</div></div>
+              <button onclick="toggleBrandProducts('lumieres')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--rose-dk)">Products</button>
+            </div>
+            <div class="brand-products-panel" id="brandPanel-lumieres" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:400px;overflow-y:auto"></div>
+          </div>
           <!-- Custom Products inline -->
           <div class="brand-config-row">
             <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
@@ -1224,7 +1232,7 @@ let managerReportsUnlocked = false; // gates KPIs, leaderboard, commissions, and
 let lastEmployeesReport = [];       // most recent employee report data
 let lastSalesSummaryHtml = '';      // most recent KPI tiles HTML, revealed on manager unlock
 let lastProductsHtml = '';          // most recent top-products rows HTML, revealed on manager unlock
-let selectedBrands = ['avologi', 'avinichi', 'hydrasphere', 'spacetouch'];
+let selectedBrands = ['avologi', 'avinichi', 'hydrasphere', 'spacetouch', 'lumieres'];
 
 const API = '';
 
@@ -1238,7 +1246,7 @@ async function init() {
     if (!resp.ok) throw new Error('Not auth');
     const data = await resp.json();
     currentUser = { email: data.email, companyName: data.company_name || data.companyName, theme: data.theme, brands: data.brands };
-    selectedBrands = data.brands || ['avologi', 'avinichi', 'hydrasphere', 'spacetouch'];
+    selectedBrands = data.brands || ['avologi', 'avinichi', 'hydrasphere', 'spacetouch', 'lumieres'];
     addLinkedAccount(currentUser.email, currentUser.companyName);
 
     const el = document.getElementById('headerUser');
@@ -1292,7 +1300,7 @@ async function loadProducts() {
   renderProducts();
 }
 
-const BRAND_KEY_MAP = { 'Avologi': 'avologi', 'Avinichi': 'avinichi', 'HydraSphere Plus': 'hydrasphere', 'SpaceTouch': 'spacetouch' };
+const BRAND_KEY_MAP = { 'Avologi': 'avologi', 'Avinichi': 'avinichi', 'HydraSphere Plus': 'hydrasphere', 'SpaceTouch': 'spacetouch', 'Lumières': 'lumieres' };
 
 function renderBrandFilters() {
   const brands = [...new Set(products.map(p => p.brand))].filter(b => selectedBrands.includes(BRAND_KEY_MAP[b] || b.toLowerCase())).sort();
@@ -3610,7 +3618,7 @@ function switchTab(tabName) {
 }
 
 // ─── Brand Product Panels ───────────────────────────────────────────────────
-const BRAND_KEY_TO_DISPLAY = { avologi: 'Avologi', avinichi: 'Avinichi', hydrasphere: 'HydraSphere Plus', spacetouch: 'SpaceTouch' };
+const BRAND_KEY_TO_DISPLAY = { avologi: 'Avologi', avinichi: 'Avinichi', hydrasphere: 'HydraSphere Plus', spacetouch: 'SpaceTouch', lumieres: 'Lumières' };
 
 function toggleBrandProducts(brandKey) {
   const panel = document.getElementById(`brandPanel-${brandKey}`);
@@ -4112,7 +4120,7 @@ async function switchAccount(email) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Switch failed');
     currentUser = { email: data.user.email, companyName: data.user.companyName, theme: data.user.theme, brands: data.user.brands };
-    selectedBrands = data.user.brands || ['avologi', 'avinichi', 'hydrasphere', 'spacetouch'];
+    selectedBrands = data.user.brands || ['avologi', 'avinichi', 'hydrasphere', 'spacetouch', 'lumieres'];
     addLinkedAccount(currentUser.email, currentUser.companyName);
     applyTheme(currentUser.theme || 'rose');
     document.getElementById('headerCompany').textContent = currentUser.companyName || '';

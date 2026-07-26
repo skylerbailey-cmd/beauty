@@ -463,6 +463,64 @@ const PRODUCTS = {
       url: 'https://spacetouch.com/products/cosmo',
     },
   ],
+  lumieres: [
+    {
+      id: 'lumieres-medlight',
+      name: 'MedLight',
+      brand: 'Lumières',
+      retailPrice: 500000,
+      minPrice: 10000,
+      description: 'The Lumières MedLight is a multi-spectrum light therapy device built for pain relief and skin care, offering a safe, non-invasive solution with seven pre-set treatment modes plus a fully customizable mode. A touchscreen controller with gentle light transitions makes it approachable for both clinical and at-home use.',
+      benefits: 'Reduces inflammation and eases muscle and joint pain; enhances circulation to reduce stiffness; supports post-workout recovery; boosts collagen production and reduces fine lines and wrinkles; improves skin tone and texture; soothes sensitive and irritated skin; seven pre-set modes (Skin Care, Fat Burning, Recovery, Sleep Enhancement, Inflammation Relief, General Health & Wellness) plus a fully Customized Mode; user-friendly touchscreen interface.',
+      ingredients: '',
+      howToUse: 'Select one of the seven pre-set modes on the touchscreen controller based on your goal for the session (e.g. Skin Care for 20 minutes, Recovery for 30 minutes), or choose Customized Mode to set your own spectra, pulse, and duration. Position the device over the treatment area and remain still for the session length shown on screen. Clean the panel surface after each use per the included manual.',
+      step: 'device treatment',
+      image: 'https://lumiereslights.com/wp-content/uploads/2024/08/Lumieres-White-Devices-2-1-600x600.png',
+      url: 'https://lumiereslights.com/product/lumieres-medlight/',
+    },
+    {
+      id: 'lumieres-max',
+      name: 'Smart Medical Device Max',
+      brand: 'Lumières',
+      retailPrice: 150000,
+      minPrice: 5000,
+      description: 'The Lumières Smart Medical Device Max (model H1520) is a full-body, FDA-certified red/near-infrared/blue light therapy panel with 304 LEDs across six bands, voice-guided "Voice Mentor" assistance, and floor, wall, or door mounting. Built for deep-tissue pain relief and recovery at full-room scale.',
+      benefits: 'Near-infrared (850nm) penetrates deep tissue to support circulation and reduce inflammation; red light (660nm) supports muscle recovery and natural healing; blue light (415nm) offers anti-inflammatory pain relief; Voice Mentor guided sessions; touch key and voice control; 7 preset modes plus custom settings; adjustable beam angles (30°/60°/90°); floor stand, wall mount, and door mount included; FDA-certified; lifetime warranty.',
+      ingredients: '',
+      howToUse: 'Mount or position the panel (floor stand, wall, or door mount) facing the treatment area. Use the touch key or a Voice Mentor command to start a preset mode, or dial in a custom spectrum, beam angle, and pulse frequency. Remain in range of the panel for the full session — Voice Mentor will guide timing and mode changes. Store upright on its stand between uses.',
+      step: 'device treatment',
+      image: 'https://lumiereslights.com/wp-content/uploads/2024/08/9-1-scaled.jpg',
+      url: 'https://lumiereslights.com/product/lumieres-smart-medical-device-max/',
+    },
+    {
+      id: 'lumieres-medium',
+      name: 'Smart Device Medium',
+      brand: 'Lumières',
+      retailPrice: 100000,
+      minPrice: 5000,
+      description: 'The Lumières Smart Device Medium (model H760) is a half-body red/near-infrared/blue light therapy panel with 152 LEDs across six bands and Voice Mentor guided sessions, sized for targeted pain relief and tissue healing across larger muscle groups.',
+      benefits: 'Near-infrared (850nm) penetrates up to 5mm to reach muscles, joints, and bone; red light (660nm) and blue light offer anti-inflammatory, antibacterial relief of muscle soreness; Voice Mentor guided sessions; touch key and voice control; 7 preset modes plus custom settings; floor stand, wall mount, and door mount included; FDA-certified; 3-year warranty.',
+      ingredients: '',
+      howToUse: 'Mount or position the panel facing the treatment area using the included floor stand, wall mount, or door mount. Start a preset mode via the touch key or a Voice Mentor command, or set a custom spectrum and beam angle (30°/60°/90°). Remain in range for the guided session length, then fold away or leave mounted for next use.',
+      step: 'device treatment',
+      image: 'https://lumiereslights.com/wp-content/uploads/2024/08/Lumieres-Smart-Device-Medium-1-600x600.jpg',
+      url: 'https://lumiereslights.com/product/lumieres-smart-device-medium/',
+    },
+    {
+      id: 'lumieres-small',
+      name: 'Smart Device Small',
+      brand: 'Lumières',
+      retailPrice: 50000,
+      minPrice: 5000,
+      description: 'The Lumières Smart Device Small (model H320) is the most compact panel in the line, with 64 LEDs across six bands in a sleek aluminum housing — sized for targeted, localized pain relief and skin care sessions.',
+      benefits: 'Red light (660nm) supports collagen production and cellular regeneration; near-infrared (810nm/850nm) penetrates up to 5mm to reach muscles, joints, and bone; blue light (415nm) addresses acne-causing bacteria and skin inflammation; touch key and voice-activated control; 7 preset modes plus 1 custom mode; floor stand, wall mount, and door mount included; FDA-certified; 3-year warranty.',
+      ingredients: '',
+      howToUse: 'Position the panel facing the treatment area using the included floor stand, wall mount, or door mount. Choose one of the 7 preset modes via the touch key or voice control, or set a custom mode. Remain in range for the session length, then store the device between uses.',
+      step: 'device treatment',
+      image: 'https://lumiereslights.com/wp-content/uploads/2024/08/Lumieres-6-600x600.png',
+      url: 'https://lumiereslights.com/product/lumieres-smart-device-small/',
+    },
+  ],
 };
 
 // GET /api/welcome/products — returns the product catalog
@@ -780,7 +838,7 @@ function generateWelcomeEmailBody({ customerEmail, customerName, selectedProduct
   const tc = EMAIL_THEMES[userTheme] || EMAIL_THEMES.rose;
 
   // Filter products by user's selected brands
-  const userBrands = userId ? JSON.parse(require('../db').getUser(userId)?.brands || '["avologi","avinichi","hydrasphere"]') : ['avologi', 'avinichi', 'hydrasphere'];
+  const userBrands = userId ? JSON.parse(require('../db').getUser(userId)?.brands || '["avologi","avinichi","hydrasphere","spacetouch","lumieres"]') : ['avologi', 'avinichi', 'hydrasphere', 'spacetouch', 'lumieres'];
   const allProducts = Object.entries(PRODUCTS)
     .filter(([key]) => userBrands.includes(key))
     .flatMap(([, products]) => products);
@@ -1193,7 +1251,7 @@ router.post('/send', async (req, res) => {
     // Save to CRM (Postgres)
     const customer = await pgDb.findOrCreateCustomer(customerName || '', customerEmail, userId);
     if (products && products.length > 0) {
-      const allProds = [...PRODUCTS.avologi, ...(PRODUCTS.avinichi || []), ...PRODUCTS.hydrasphere];
+      const allProds = [...PRODUCTS.avologi, ...(PRODUCTS.avinichi || []), ...PRODUCTS.hydrasphere, ...(PRODUCTS.spacetouch || []), ...(PRODUCTS.lumieres || [])];
       const productRecords = products
         .map(name => allProds.find(p => p.name === name))
         .filter(Boolean)
@@ -1432,7 +1490,7 @@ router.post('/customers/from-email', async (req, res) => {
 
 // GET /api/welcome/products/list — list all product IDs/names for filtering
 router.get('/products/list', (req, res) => {
-  const allProducts = [...PRODUCTS.avologi, ...(PRODUCTS.avinichi || []), ...PRODUCTS.hydrasphere];
+  const allProducts = [...PRODUCTS.avologi, ...(PRODUCTS.avinichi || []), ...PRODUCTS.hydrasphere, ...(PRODUCTS.spacetouch || []), ...(PRODUCTS.lumieres || [])];
   res.json({
     products: allProducts.map(p => ({ id: p.id, name: p.name, brand: p.brand })),
   });
