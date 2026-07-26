@@ -635,6 +635,26 @@ router.delete('/transactions/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// One manager approval covers the whole batch — each id is still scoped to
+// this company and independently checked, so a bad id in the list just gets
+// skipped rather than failing the others.
+router.post('/transactions/bulk-delete', async (req, res) => {
+  const userId = req.session.userId;
+  const { ids, manager_name, manager_pin } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'No transactions selected' });
+  }
+  const manager = await verifyManager(userId, manager_name, manager_pin);
+  if (!manager) return res.status(403).json({ error: 'Only a manager can delete transactions. Manager name and code did not match.' });
+
+  let deleted = 0;
+  for (const id of ids) {
+    const ok = await pgDb.deleteTransaction(parseInt(id), userId);
+    if (ok) deleted++;
+  }
+  res.json({ ok: true, deleted, requested: ids.length });
+});
+
 router.get('/transactions/receipt/:number', async (req, res) => {
   const tx = await pgDb.getTransactionByReceipt(req.params.number, req.session.userId);
   if (!tx) return res.status(404).json({ error: 'Transaction not found' });
@@ -709,12 +729,9 @@ router.post('/transactions/:id/email', async (req, res) => {
   if (!email) return res.status(400).json({ error: 'Email address required' });
 
   const user = await getSendingUser(req.session.userId);
-  if (!user?.refresh_token) {
-    return res.status(403).json({ error: 'Gmail is not connected for this company. Connect this company\'s Gmail on the Welcome Emails page first.' });
-  }
 
   const settings = await pgDb.getSettings(req.session.userId);
-  const storeName = settings.store_name || user.company_name || 'Glow SF';
+  const storeName = settings.store_name || user?.company_name || 'Glow SF';
   const storeAddress = formatStoreAddress(settings);
   const footer = settings.receipt_footer || 'Thank you for your purchase!';
   const tz = settings.timezone || 'America/Los_Angeles';
@@ -777,10 +794,22 @@ router.post('/transactions/:id/email', async (req, res) => {
     </div>
   `;
 
+  const subject = req.body.subject || `${tx.type === 'return' ? 'Return' : 'Sales'} Receipt #${tx.receipt_number} | ${storeName}`;
+  // A previewed-then-edited body comes back as `html`; otherwise use what we just built.
+  const finalHtml = req.body.html || html;
+
+  // Preview: return the generated (or client-edited) email without sending it.
+  if (req.body.preview) {
+    return res.json({ subject, html: finalHtml });
+  }
+
+  if (!user?.refresh_token) {
+    return res.status(403).json({ error: 'Gmail is not connected for this company. Connect this company\'s Gmail on the Welcome Emails page first.' });
+  }
+
   try {
-    const subject = `${tx.type === 'return' ? 'Return' : 'Sales'} Receipt #${tx.receipt_number} | ${storeName}`;
-    await sendGmail(user, email, subject, html);
-    await pgDb.logSentEmail({ user_id: req.session.userId, to_email: email, to_name: tx.customer_name || '', subject, body: html, kind: 'receipt' });
+    await sendGmail(user, email, subject, finalHtml);
+    await pgDb.logSentEmail({ user_id: req.session.userId, to_email: email, to_name: tx.customer_name || '', subject, body: finalHtml, kind: 'receipt' });
     res.json({ ok: true, sent_to: email });
   } catch (err) {
     console.error('[pos] Email receipt error:', err.message);
@@ -804,9 +833,6 @@ router.post('/transactions/:id/welcome', async (req, res) => {
   if (!customerName) return res.status(400).json({ error: 'Customer name is required to send a welcome email.' });
 
   const user = await getSendingUser(userId);
-  if (!user?.refresh_token) {
-    return res.status(403).json({ error: 'Gmail is not connected for this company. Connect this company\'s Gmail on the Welcome Emails page first.' });
-  }
 
   // Only catalog products can drive the personalized routine (custom products
   // have no usage data). Use the transaction's line items.
@@ -824,12 +850,22 @@ router.post('/transactions/:id/welcome', async (req, res) => {
     return res.status(400).json({ error: err.message });
   }
 
-  const storeName = (await pgDb.getSettings(userId)).store_name || user.company_name || 'our store';
-  const subject = user.company_name ? `Welcome to ${user.company_name}!` : 'Welcome!';
+  const subject = req.body.subject || (user?.company_name ? `Welcome to ${user.company_name}!` : 'Welcome!');
+  // A previewed-then-edited body comes back as `html`; otherwise use the generated one.
+  const finalHtml = req.body.html || emailBody;
+
+  // Preview: return the generated (or client-edited) email without sending it.
+  if (req.body.preview) {
+    return res.json({ subject, html: finalHtml });
+  }
+
+  if (!user?.refresh_token) {
+    return res.status(403).json({ error: 'Gmail is not connected for this company. Connect this company\'s Gmail on the Welcome Emails page first.' });
+  }
 
   try {
-    await sendGmail(user, email, subject, emailBody);
-    await pgDb.logSentEmail({ user_id: userId, to_email: email, to_name: customerName, subject, body: emailBody, kind: 'welcome' });
+    await sendGmail(user, email, subject, finalHtml);
+    await pgDb.logSentEmail({ user_id: userId, to_email: email, to_name: customerName, subject, body: finalHtml, kind: 'welcome' });
     // Record in history + CRM, matching the Welcome Emails tool behavior
     try {
       await pgDb.saveWelcomeEmail({

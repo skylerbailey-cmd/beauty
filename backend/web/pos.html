@@ -588,11 +588,12 @@
             <input type="file" id="importFile" accept=".csv" style="display:none" onchange="handleImportFile(this)">
             <button class="btn" id="importCsvBtn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:7px 14px;font-size:.82rem" onclick="document.getElementById('importFile').click()">Import CSV</button>
             <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportTransactionsCSV()">Export CSV</button>
+            <button class="btn" id="deleteSelectedTxBtn" style="background:var(--danger);color:#fff;padding:7px 14px;font-size:.82rem;display:none" onclick="startBulkDeleteTransactions()">Delete Selected</button>
           </div>
         </div>
         <div id="txSummary" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:10px 0"></div>
         <table class="report-table">
-          <thead><tr><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Items</th><th>Subtotal</th><th>Total</th><th></th></tr></thead>
+          <thead><tr><th id="txSelectAllHeader" style="display:none;width:28px"><input type="checkbox" id="txSelectAll" onchange="toggleSelectAllTx(this.checked)"></th><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Items</th><th>Subtotal</th><th>Total</th><th></th></tr></thead>
           <tbody id="txHistoryBody"></tbody>
         </table>
       </div>
@@ -968,9 +969,30 @@
     <div id="emailReceiptForm" style="display:none;margin-top:12px">
       <div style="display:flex;gap:8px">
         <input type="email" id="receiptEmail" placeholder="Customer email" style="flex:1;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
-        <button class="btn btn-confirm" id="emailSendBtn" onclick="sendReceiptEmailOrInstructions()">Send Receipt</button>
+        <button class="btn btn-confirm" id="emailSendBtn" onclick="sendReceiptEmailOrInstructions()">Preview Receipt</button>
       </div>
       <div id="emailStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Email Preview Modal (edit before sending) ─── -->
+<div class="modal-overlay" id="emailPreviewModal">
+  <div class="modal" style="max-width:600px">
+    <h2>Preview Email</h2>
+    <p class="sub" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:8px">Sending to <strong id="emailPreviewTo"></strong>. Edit the subject or body below before sending — nothing has been sent yet.</p>
+    <div class="field">
+      <label>Subject</label>
+      <input type="text" id="emailPreviewSubject" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;font-family:system-ui,sans-serif;outline:none">
+    </div>
+    <div class="field">
+      <label>Body</label>
+      <div id="emailPreviewBody" contenteditable="true" style="border:1.5px solid var(--border);border-radius:8px;padding:16px;max-height:50vh;overflow-y:auto;background:#fff"></div>
+    </div>
+    <div id="emailPreviewError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger);min-height:1em"></div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeEmailPreview()">Cancel</button>
+      <button class="btn btn-confirm" id="emailPreviewSendBtn" onclick="confirmSendPreviewedEmail()">Send Email</button>
     </div>
   </div>
 </div>
@@ -2014,7 +2036,7 @@ function showInstructionsForm() {
   emailMode = 'welcome';
   const form = document.getElementById('emailReceiptForm');
   form.style.display = 'block';
-  document.getElementById('emailSendBtn').textContent = 'Send Welcome Email';
+  document.getElementById('emailSendBtn').textContent = 'Preview Welcome Email';
   document.getElementById('emailStatus').textContent = '';
 }
 
@@ -2022,16 +2044,24 @@ function emailReceipt() {
   emailMode = 'receipt';
   const form = document.getElementById('emailReceiptForm');
   form.style.display = form.style.display === 'none' ? 'block' : 'none';
-  document.getElementById('emailSendBtn').textContent = 'Send Receipt';
+  document.getElementById('emailSendBtn').textContent = 'Preview Receipt';
   document.getElementById('emailStatus').textContent = '';
 }
 
+// Fetches the generated email (without sending it) and opens it in an
+// editable preview — nothing goes out until the user confirms in that modal.
 async function sendReceiptEmailOrInstructions() {
   const email = document.getElementById('receiptEmail').value.trim();
   if (!email || !lastTransaction) return;
+  if (!isValidEmail(email)) {
+    const statusEl = document.getElementById('emailStatus');
+    statusEl.textContent = 'Enter a valid email address.';
+    statusEl.style.color = 'var(--danger)';
+    return;
+  }
 
   const statusEl = document.getElementById('emailStatus');
-  statusEl.textContent = 'Sending...';
+  statusEl.textContent = 'Loading preview…';
   statusEl.style.color = 'var(--mid)';
 
   const endpoint = emailMode === 'welcome'
@@ -2043,16 +2073,67 @@ async function sendReceiptEmailOrInstructions() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ email, customer_name: lastTransaction.customer_name || '' }),
+      body: JSON.stringify({ email, customer_name: lastTransaction.customer_name || '', preview: true }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error);
-    const label = emailMode === 'welcome' ? 'Welcome email' : 'Receipt';
-    statusEl.textContent = `${label} sent to ${email}`;
-    statusEl.style.color = 'var(--success)';
+    statusEl.textContent = '';
+    openEmailPreview({ endpoint, email, customerName: lastTransaction.customer_name || '', subject: data.subject, html: data.html });
   } catch (err) {
     statusEl.textContent = 'Failed: ' + err.message;
     statusEl.style.color = 'var(--danger)';
+  }
+}
+
+// ─── Email Preview (edit-before-send) ───────────────────────────────────────
+let emailPreviewTarget = null; // { endpoint, email, customerName }
+
+function openEmailPreview({ endpoint, email, customerName, subject, html }) {
+  emailPreviewTarget = { endpoint, email, customerName };
+  document.getElementById('emailPreviewTo').textContent = email;
+  document.getElementById('emailPreviewSubject').value = subject || '';
+  document.getElementById('emailPreviewBody').innerHTML = html || '';
+  document.getElementById('emailPreviewError').textContent = '';
+  const btn = document.getElementById('emailPreviewSendBtn');
+  btn.disabled = false;
+  btn.textContent = 'Send Email';
+  document.getElementById('emailPreviewModal').classList.add('show');
+}
+
+function closeEmailPreview() {
+  document.getElementById('emailPreviewModal').classList.remove('show');
+  emailPreviewTarget = null;
+}
+
+async function confirmSendPreviewedEmail() {
+  if (!emailPreviewTarget) return;
+  const { endpoint, email, customerName } = emailPreviewTarget;
+  const errEl = document.getElementById('emailPreviewError');
+  errEl.textContent = '';
+  const subject = document.getElementById('emailPreviewSubject').value.trim();
+  const html = document.getElementById('emailPreviewBody').innerHTML;
+  if (!subject) { errEl.textContent = 'Subject is required.'; return; }
+
+  const btn = document.getElementById('emailPreviewSendBtn');
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email, customer_name: customerName, subject, html }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    closeEmailPreview();
+    const statusEl = document.getElementById('emailStatus');
+    statusEl.style.color = 'var(--success)';
+    statusEl.textContent = `${emailMode === 'welcome' ? 'Welcome email' : 'Receipt'} sent to ${email}`;
+  } catch (err) {
+    errEl.textContent = err.message;
+    btn.disabled = false;
+    btn.textContent = 'Send Email';
   }
 }
 
@@ -2536,9 +2617,16 @@ function applyTxFilters() {
   filteredTransactions = rows;
 
   const canManage = !!(txAccess && txAccess.role === 'manager');
+  document.getElementById('txSelectAllHeader').style.display = canManage ? '' : 'none';
+  // Selections only ever make sense for rows currently on screen — drop any
+  // that scrolled out of the filtered set (e.g. the filter changed).
+  const visibleIds = new Set(rows.map(tx => tx.id));
+  for (const id of [...selectedTxIds]) if (!visibleIds.has(id)) selectedTxIds.delete(id);
+
   const body = document.getElementById('txHistoryBody');
   body.innerHTML = rows.map(tx => `
     <tr>
+      ${canManage ? `<td><input type="checkbox" class="tx-select" onchange="toggleTxSelect(${tx.id}, this.checked)" ${selectedTxIds.has(tx.id) ? 'checked' : ''}></td>` : ''}
       <td style="font-family:monospace">${tx.receipt_number}</td>
       <td>${new Date(tx.created_at).toLocaleString()}</td>
       <td><span class="tx-type-${tx.type}">${tx.type.toUpperCase()}</span></td>
@@ -2554,7 +2642,8 @@ function applyTxFilters() {
         <button onclick="startDeleteTransaction(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--danger);text-decoration:underline;font-size:.82rem">Delete</button>` : ''}
       </td>
     </tr>
-  `).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--mid)">No transactions in this date range. Click <b>Show All</b> above to see historical/imported transactions.</td></tr>';
+  `).join('') || `<tr><td colspan="${canManage ? 10 : 9}" style="text-align:center;color:var(--mid)">No transactions in this date range. Click <b>Show All</b> above to see historical/imported transactions.</td></tr>`;
+  updateBulkDeleteUI();
 
   // Summary line
   const saleTotal = rows.filter(t => t.type === 'sale').reduce((s, t) => s + t.total, 0);
@@ -2743,7 +2832,7 @@ function startDeleteTransaction(txId) {
 
 function openManagerAuth(type, txId, msg) {
   managerAction = { type, txId };
-  const titles = { delete: 'Delete Transaction', edit: 'Edit Transaction', 'return-override': 'Manager Override — Card Mismatch' };
+  const titles = { delete: 'Delete Transaction', 'bulk-delete': 'Delete Transactions', edit: 'Edit Transaction', 'return-override': 'Manager Override — Card Mismatch' };
   document.getElementById('managerAuthTitle').textContent = titles[type] || 'Manager Authorization';
   document.getElementById('managerAuthMsg').textContent = msg;
   document.getElementById('managerAuthName').value = '';
@@ -2777,6 +2866,8 @@ async function submitManagerAuth() {
     closeManagerAuth();
     if (action.type === 'delete') {
       await performDeleteTransaction(action.txId);
+    } else if (action.type === 'bulk-delete') {
+      await performBulkDeleteTransactions();
     } else if (action.type === 'return-override') {
       // Re-submit the held return with the manager's approval
       if (pendingTxBody) {
@@ -2802,6 +2893,54 @@ async function performDeleteTransaction(txId) {
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error);
     managerCreds = null;
+    loadTransactions();
+  } catch (err) {
+    alert('Failed to delete: ' + err.message);
+  }
+}
+
+// ─── Multi-select + bulk delete ─────────────────────────────────────────────
+let selectedTxIds = new Set();
+
+function toggleTxSelect(txId, checked) {
+  if (checked) selectedTxIds.add(txId); else selectedTxIds.delete(txId);
+  const allBox = document.getElementById('txSelectAll');
+  if (allBox) allBox.checked = filteredTransactions.length > 0 && filteredTransactions.every(tx => selectedTxIds.has(tx.id));
+  updateBulkDeleteUI();
+}
+
+function toggleSelectAllTx(checked) {
+  if (checked) filteredTransactions.forEach(tx => selectedTxIds.add(tx.id));
+  else filteredTransactions.forEach(tx => selectedTxIds.delete(tx.id));
+  applyTxFilters();
+}
+
+function updateBulkDeleteUI() {
+  const btn = document.getElementById('deleteSelectedTxBtn');
+  if (!btn) return;
+  const canManage = !!(txAccess && txAccess.role === 'manager');
+  const n = selectedTxIds.size;
+  btn.style.display = canManage && n > 0 ? '' : 'none';
+  btn.textContent = `Delete Selected (${n})`;
+}
+
+function startBulkDeleteTransactions() {
+  if (selectedTxIds.size === 0) return;
+  openManagerAuth('bulk-delete', null, `Only a manager can delete transactions. Enter the manager name and code to delete ${selectedTxIds.size} selected transaction${selectedTxIds.size !== 1 ? 's' : ''}.`);
+}
+
+async function performBulkDeleteTransactions() {
+  const ids = [...selectedTxIds];
+  if (!confirm(`Are you sure you want to permanently delete ${ids.length} transaction${ids.length !== 1 ? 's' : ''}? This cannot be undone.`)) { managerCreds = null; return; }
+  try {
+    const resp = await fetch(`${API}/api/pos/transactions/bulk-delete`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ ids, manager_name: managerCreds.name, manager_pin: managerCreds.pin }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    managerCreds = null;
+    selectedTxIds.clear();
     loadTransactions();
   } catch (err) {
     alert('Failed to delete: ' + err.message);
@@ -3597,7 +3736,7 @@ function switchTab(tabName) {
     openTxAuth();
     return;
   }
-  if (tabName !== 'history') { txAccess = null; txCreds = null; }
+  if (tabName !== 'history') { txAccess = null; txCreds = null; selectedTxIds.clear(); }
   // Settings is re-locked the same way, for the same reason.
   if (tabName !== 'settings') { settingsAccess = null; settingsCreds = null; }
 
