@@ -1403,7 +1403,14 @@ function confirmPriceEdit() {
     return;
   }
 
-  const existing = cart.find(c => c.product_id === pendingProduct.id && c.unit_price === price && !c.discount_per_unit);
+  // Track this against the product's normal price (this store's configured
+  // price, or the website price if none is set) so a lower entry here shows
+  // as a discount on the receipt instead of silently becoming the new "full"
+  // price — same as editing an already-in-cart item's price does.
+  const normalPrice = pendingProduct.price > 0 ? pendingProduct.price : (pendingProduct.retailPrice || 0);
+  const discountPerUnit = Math.round((normalPrice - price) * 100) / 100;
+
+  const existing = cart.find(c => c.product_id === pendingProduct.id && c.unit_price === normalPrice && (c.discount_per_unit || 0) === discountPerUnit);
   if (existing) {
     existing.quantity++;
   } else {
@@ -1411,9 +1418,9 @@ function confirmPriceEdit() {
       product_id: pendingProduct.id,
       product_name: pendingProduct.name,
       brand: pendingProduct.brand,
-      unit_price: price,
+      unit_price: normalPrice,
       quantity: 1,
-      discount_per_unit: 0,
+      discount_per_unit: discountPerUnit,
     });
   }
   closePriceEdit();

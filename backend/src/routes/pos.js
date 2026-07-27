@@ -309,6 +309,24 @@ router.post('/employees/import-from', async (req, res) => {
 
 // ─── Transactions ──────────────────────────────────────────────────────────
 
+// A transaction must be assigned to at least one REAL, active employee of
+// this company — not just any truthy id. Returns an error string, or null
+// if the assignment is valid.
+async function validateEmployeeAssignment(userId, employeeAssignments, employeeId) {
+  const assignedIds = (Array.isArray(employeeAssignments) && employeeAssignments.length)
+    ? employeeAssignments.map(e => e && e.employee_id).filter(id => id != null)
+    : (employeeId ? [employeeId] : []);
+  if (assignedIds.length === 0) {
+    return 'At least one employee must be added to complete this transaction.';
+  }
+  const roster = await pgDb.getEmployees(userId);
+  const validIds = new Set(roster.filter(e => e.active).map(e => e.id));
+  if (assignedIds.some(id => !validIds.has(id))) {
+    return 'One of the assigned employees is no longer active or does not exist. Refresh and re-select employees.';
+  }
+  return null;
+}
+
 router.post('/transactions', async (req, res) => {
   const userId = req.session.userId;
   const { type, employee_id, employees: employeeAssignments, customer_name, customer_email, customer_phone, items, payment_method, card_last4, payments, notes, tax_rate, discount_amount, original_receipt, manager_name, manager_pin } = req.body;
@@ -318,9 +336,9 @@ router.post('/transactions', async (req, res) => {
   }
 
   // An employee must be assigned before a transaction can be completed.
-  const hasEmployee = (Array.isArray(employeeAssignments) && employeeAssignments.some(e => e && e.employee_id)) || !!employee_id;
-  if (!hasEmployee) {
-    return res.status(400).json({ error: 'At least one employee must be added to complete this transaction.' });
+  const employeeError = await validateEmployeeAssignment(userId, employeeAssignments, employee_id);
+  if (employeeError) {
+    return res.status(400).json({ error: employeeError });
   }
 
   // Sales (not returns) require a customer name and a valid email before they
@@ -612,8 +630,8 @@ router.put('/transactions/:id', async (req, res) => {
   const manager = await verifyManager(userId, manager_name, manager_pin);
   if (!manager) return res.status(403).json({ error: 'Only a manager can edit a transaction. Manager name and code did not match.' });
 
-  const hasEmployee = Array.isArray(req.body.employees) && req.body.employees.some(e => e && e.employee_id);
-  if (!hasEmployee) return res.status(400).json({ error: 'At least one employee must be assigned to the transaction.' });
+  const employeeError = await validateEmployeeAssignment(userId, req.body.employees, null);
+  if (employeeError) return res.status(400).json({ error: employeeError });
 
   try {
     const tx = await pgDb.updateTransaction(parseInt(req.params.id), userId, req.body);
