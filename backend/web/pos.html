@@ -593,7 +593,7 @@
         </div>
         <div id="txSummary" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:10px 0"></div>
         <table class="report-table">
-          <thead><tr><th id="txSelectAllHeader" style="display:none;width:28px"><input type="checkbox" id="txSelectAll" onchange="toggleSelectAllTx(this.checked)"></th><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Items</th><th>Subtotal</th><th>Total</th><th></th></tr></thead>
+          <thead><tr><th id="txSelectAllHeader" style="display:none;width:28px"><input type="checkbox" id="txSelectAll" onchange="toggleSelectAllTx(this.checked)"></th><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Items</th><th>Subtotal</th><th>Total</th><th>Payment</th><th></th></tr></thead>
           <tbody id="txHistoryBody"></tbody>
         </table>
       </div>
@@ -2604,6 +2604,20 @@ function clearTxFilters() {
   applyTxFilters();
 }
 
+// How a transaction was paid — cash, card (with last 4), or other (check/
+// store credit/etc., which imported rows collapse into since this POS
+// doesn't distinguish them). Falls back to the legacy single payment_method/
+// card_last4 columns for older rows with no explicit tender rows.
+function paymentSummary(tx) {
+  const pays = (tx.payments && tx.payments.length) ? tx.payments : [{ method: tx.payment_method, amount: tx.total, card_last4: tx.card_last4 }];
+  const label = (p) => `${(p.method || '').toUpperCase()}${p.card_last4 ? ' ****' + p.card_last4 : ''}`;
+  if (pays.length > 1) {
+    const detail = pays.map(p => `${label(p)} $${money(p.amount)}`).join(', ');
+    return `Split <span style="color:var(--mid)" title="${escapeHtml(detail)}">(${pays.map(label).join(' + ')})</span>`;
+  }
+  return label(pays[0]);
+}
+
 // One free-text search across every value in the loaded transactions.
 function applyTxFilters() {
   const q = document.getElementById('histSearch').value.trim().toLowerCase();
@@ -2642,6 +2656,7 @@ function applyTxFilters() {
       <td>${tx.items.length}</td>
       <td>$${money((tx.subtotal || 0))}</td>
       <td style="font-weight:600">$${money(tx.total)}</td>
+      <td style="font-size:.82rem">${paymentSummary(tx)}</td>
       <td style="white-space:nowrap">
         <button onclick="viewReceipt(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--rose);text-decoration:underline;font-size:.82rem">View</button>
         ${canManage ? `
@@ -2649,7 +2664,7 @@ function applyTxFilters() {
         <button onclick="startDeleteTransaction(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--danger);text-decoration:underline;font-size:.82rem">Delete</button>` : ''}
       </td>
     </tr>
-  `).join('') || `<tr><td colspan="${canManage ? 10 : 9}" style="text-align:center;color:var(--mid)">No transactions in this date range. Click <b>Show All</b> above to see historical/imported transactions.</td></tr>`;
+  `).join('') || `<tr><td colspan="${canManage ? 11 : 10}" style="text-align:center;color:var(--mid)">No transactions in this date range. Click <b>Show All</b> above to see historical/imported transactions.</td></tr>`;
   updateBulkDeleteUI();
 
   // Summary line
