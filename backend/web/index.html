@@ -2500,6 +2500,16 @@
     }
     renderWebsites(currentUser?.websites || []);
     renderBrandCheckboxes(currentUser?.brands || ['avologi', 'avinichi', 'hydrasphere', 'spacetouch']);
+    // Re-render the welcome-email product picker once we know which products
+    // this store currently has visible (per POS Settings), so a hidden
+    // product can't be selected here even though the initial render (before
+    // login finishes) shows the full catalog.
+    loadProductVisibility().then(() => {
+      renderGrid('hydrasphere');
+      renderGrid('avinichi');
+      renderGrid('avologi');
+      renderGrid('spacetouch');
+    });
     // Inside the POS Emails tab, default to the Sent Emails view
     if (typeof IS_EMBEDDED !== 'undefined' && IS_EMBEDDED) {
       switchTab('sent');
@@ -3010,10 +3020,37 @@
 
   // ── Render product grids ────────────────────────────────────────────────────
 
+  // Which catalog product ids the store currently has visible/active, per the
+  // same per-product visibility toggle set in the POS Settings tab. Null until
+  // loaded — renderGrid shows everything while it's null so the picker never
+  // ends up empty if this fetch fails or hasn't resolved yet.
+  let visibleProductIds = null;
+  async function loadProductVisibility() {
+    try {
+      const resp = await fetch('/api/pos/products', { credentials: 'include' });
+      if (!resp.ok) return;
+      const data = await resp.json();
+      visibleProductIds = new Set((data.products || []).filter(p => p.visible !== false && !p.isCustom).map(p => p.id));
+    } catch (_) { /* best effort — keep showing the full catalog */ }
+  }
+
+  // The "set" bundle isn't a real catalog product with its own visibility
+  // toggle in POS Settings — it's just a picker convenience for its 3
+  // individual components (see THERMAL_SET_ID below). Only offer it when all
+  // 3 components are visible, since selecting it sends all 3 regardless.
+  function isProductVisible(product) {
+    if (!visibleProductIds) return true;
+    if (product.isSet) {
+      return ['hydrasphere-mineralift-thermal-serum', 'hydrasphere-mineralift-thermal-cream', 'hydrasphere-mineralift-thermal-mask']
+        .every(id => visibleProductIds.has(id));
+    }
+    return visibleProductIds.has(product.id);
+  }
+
   function renderGrid(brand) {
     const grid = document.getElementById('grid-' + brand);
     grid.innerHTML = '';
-    PRODUCTS[brand].forEach(product => {
+    PRODUCTS[brand].filter(isProductVisible).forEach(product => {
       const card = document.createElement('label');
       card.className = 'product-card';
       const imgHtml = product.image
