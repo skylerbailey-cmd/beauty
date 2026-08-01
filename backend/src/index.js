@@ -77,7 +77,12 @@ app.use(async (req, res, next) => {
       if (savedTheme && savedTheme !== 'rose' && (!user.theme || user.theme === 'rose')) {
         updateUserTheme(user.id, savedTheme);
       }
-      if (savedBrands && (!user.brands || user.brands === '["avologi","avinichi","hydrasphere"]')) {
+      // "Looks like a never-customized row" — both the original 3-brand
+      // default and the current 5-brand default (added when spacetouch/
+      // lumieres launched) count, so a DB wipe doesn't strand a user back on
+      // whichever default happens to be current at the time.
+      const DEFAULT_BRANDS_JSON = ['["avologi","avinichi","hydrasphere"]', '["avologi","avinichi","hydrasphere","spacetouch","lumieres"]'];
+      if (savedBrands && (!user.brands || DEFAULT_BRANDS_JSON.includes(user.brands))) {
         try { updateUserBrands(user.id, JSON.parse(savedBrands)); } catch (_) {}
       }
       if (savedWebsites && (!user.websites || user.websites === '[]')) {
