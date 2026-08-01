@@ -73,7 +73,7 @@ const PRODUCTS = {
       ingredients: 'Aqua (Water), Sodium Laurylglucosides Hydroxypropylsulfonate, Lauramidopropyl Betaine 30, Disodium Laureth Sulfosuccinate, Sodium Methyl Oleoyl Taurate, Glycerin- Apple, Seppic Proteol APL EF, Hemp Extract, Perfluorodecalin, Azelamidopropyl Dimethyl Amine, Butylene Glyco, Kathon CG, Fragrance.',
       howToUse: 'Massage cleanser into the skin in a gentle circular motion. Rinse with warm water. For best results, use Hydrasphere+ Deep Moisturizing Cream.',
       step: 'AM Routine',
-      image: 'https://hydrasphereplus.com/wp-content/uploads/2023/10/1-2.png',
+      image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260723_145600_2a2f4030-e3e4-4efc-87e8-66d46222a135.png?v=1785176027',
       url: 'https://hydrasphereplus.com/product/advanced-foaming-cleanser/',
     },
     {
@@ -86,7 +86,7 @@ const PRODUCTS = {
       ingredients: '',
       howToUse: 'Use after cleansing. Apply with a cotton ball and smooth over the face, neck, and decollete. Use daily.',
       step: 'toner',
-      image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/25-1024x1024.png',
+      image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260724_125732_54de942a-3075-4da4-9da5-5266cb97f532.png?v=1785176860',
       url: 'https://hydrasphereplus.com/product/hydra-toning-solution/',
     },
     {
@@ -99,7 +99,7 @@ const PRODUCTS = {
       ingredients: 'Water(Aqua), Ascorbic Acid(Vitamin C), Collagen, Glycerin, Macrocystis Pyrifera(Kelp)Extract (Organic), Propylene Glycol, Algae, Proline, Acetyl Hexapeptide-3, Sodium Hyaluronate, Sodium Ascorbyl Phosphate, Tocopheryl Acetate, Retinyl Palmitate, Aloe Barbadensis(Aloe Vera)Leaf Juice (Organic), Chamomilla Recutita(Chamomile)Flower Extract (Organic), Carbomer, Triethanolamine, Ethylhexylglycerin, Phenoxyethanol',
       howToUse: 'After cleansing your skin, apply several drops over your face and neck, avoiding the eye area. Gently massage in an upward and outward motion until fully absorbed. Use alone or before applying moisturizer.',
       step: 'AM Routine',
-      image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/73.png',
+      image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/IMG_6354.webp?v=1785181432',
       url: 'https://hydrasphereplus.com/product/vitamin-c-serum/',
     },
     {
@@ -112,7 +112,7 @@ const PRODUCTS = {
       ingredients: 'Water(Aqua), Collagen, Glycerin, Macrocystis Pyrifera (Kelp) Extract (Organic), Propylene Glycol, Algae, Squalane, Acetyl Hexapeptide-3, Hyaluronic Acid, Allantoin, Tocopheryl Acetate, Retinyl Palmitate, Ascorbic Acid (Vitamin C), Aloe Barbadensis (Aloe Vera) Leaf Juice (Organic), Vanillyl Butyl Ether, Chamomilla Recutita (Chamomile) Flower Extract (Organic), Carbomer, Triethanolamine, Ethylhexylglycerin, Phenoxyethanol',
       howToUse: 'After cleansing your skin, apply several drops over your face and neck, avoiding the eye area. Gently massage in an upward and outward motion until fully absorbed. Use alone or before applying moisturizer. Use daily, morning and night. Apply 1-3 pumps to a cleansed face and eye area. Spread a thin veil over the skin, blending in small circles with a gentle tapping motion until the product disappears into the skin.',
       step: 'AM Routine',
-      image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/59.png',
+      image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/IMG_6299.webp?v=1785181149',
       url: 'https://hydrasphereplus.com/product/minerallift-thermal-serum/',
     },
     {
@@ -125,7 +125,7 @@ const PRODUCTS = {
       ingredients: '',
       howToUse: 'Apply generously to the face, neck, and delicate under-eye area. For best results, use the HydraSphere+ Active Foaming Cleanser.',
       step: 'moisturizer',
-      image: 'https://hydrasphereplus.com/wp-content/uploads/2023/10/13-1-1024x1024.png',
+      image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260723_174746_29bfb4eb-2c7c-4044-a621-1df7fd65b0fe.jpg?v=1785176674',
       url: 'https://hydrasphereplus.com/product/deep-moisturizing-cream/',
     },
     {
@@ -138,7 +138,7 @@ const PRODUCTS = {
       ingredients: 'Water(Aqua), Caprylic/Capric Triglyceride, Glycerin, Simmondsia Chinensis(Jojoba)Seed Oil, Collagen, Stearic Acid, Cetyl Alcohol, Algae, Squalane, Allantoin, Acetyl Hexapeptide-3, Euterpe Oleracea(Acai)Fruit Oil, Ascorbic Acid(Vitamin C), Aloe Barbadensis(Aloe Vera)Leaf Juice(Organic), Chamomilla Recutita(Chamomile)Flower Extract(Organic), Hyaluronic Acid, Sorbitan Stearate, PEG-100 Stearate, Glyceryl Stearate, Tocopheryl Acetate(Vitamin E), Retinyl Palmitate(Vitamin A), Carbomer, Triethanolamine, Ethylhexylglycerin, Phenoxyethanol',
       howToUse: 'Apply Smooth MineralLift Thermal Cream thoroughly over the face and neck, avoiding the eye area. Gently massage until fully absorbed.',
       step: 'PM Routine',
-      image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/51.png',
+      image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/IMG_6316.webp?v=1785181034',
       url: 'https://hydrasphereplus.com/product/minerallift-thermal-cream/',
     },
     {
@@ -151,7 +151,7 @@ const PRODUCTS = {
       ingredients: 'Hyaluronic Acid, Retinol, Stem Cells, Peptides.',
       howToUse: 'Apply directly to deep facial lines and wrinkles in the targeted area. Avoid direct contact with the eyes. In case of excess product, gently remove with a cotton swab.',
       step: 'treatment cream',
-      image: 'https://hydrasphereplus.com/wp-content/uploads/2025/06/87-1024x1024.png',
+      image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260723_170404_0951518a-4e98-4249-b0de-cc9c15ce4b34.jpg?v=1785176552',
       url: 'https://hydrasphereplus.com/product/anti-wrinkle-correction-prevention-30g/',
     },
     {
@@ -164,7 +164,7 @@ const PRODUCTS = {
       ingredients: 'Hyaluronic Acid, Retinol, Stem Cells, Peptides.',
       howToUse: 'Apply directly to deep facial lines and wrinkles in the targeted area. Avoid direct contact with the eyes. In case of excess product, gently remove with a cotton swab.',
       step: 'treatment cream',
-      image: 'https://hydrasphereplus.com/wp-content/uploads/2025/06/82-1024x1024.png',
+      image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260723_163859_6855dac9-c205-4c78-96c4-c82e7159aa43.jpg?v=1785176495',
       url: 'https://hydrasphereplus.com/product/anti-wrinkle-correction-prevention-15g/',
     },
     {
@@ -190,7 +190,7 @@ const PRODUCTS = {
       ingredients: 'Water, Ethylhexyl Palmitate, Cetyl Ethylhexanoate, Titanium Dioxide, Zinc Oxide (Non-Nano), Tinosorb S (Bis-Ethylhexyloxyphenol Methoxyphenyl Triazine), Butyloctyl Salicylate, Pentaerythrityl Tetraethylhexanoate, Potassium Cetyl Phosphate, Cetearyl Alcohol, Hemisqualane, Silica, Glyceryl Stearate, Sodium PCA, Panthenol, Niacinamide, Ascorbyl Glucoside, Sodium Hyaluronate, Acetylated Hyaluronic Acid, Polypodium Leucotomos Extract, Green Tea Extract, Fullerene, Collagen Peptide, Pro-Xylane, Tri(Cetearyl-4) Phosphate, Aluminum Hydroxide, Stearic Acid, Tocopheryl Acetate, Natural Bisabolol.',
       howToUse: 'Apply generously to clean, dry skin as the final step in your skincare routine. Use at least 15 minutes before sun exposure. Reapply every 2 hours or after swimming, sweating, or towel drying.',
       step: 'AM Routine',
-      image: 'https://hydrasphereplus.com/wp-content/uploads/2025/11/77-1.png',
+      image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/IMG_6344.webp?v=1785181385',
       url: 'https://hydrasphereplus.com/product/spf-50-shield-cream/',
     },
     {
@@ -203,7 +203,7 @@ const PRODUCTS = {
       ingredients: 'Mandelic Acid (AHA), Vitamin C, Vitamin E, Vitamin A, Grapefruit Extract, Avocado Oil, Centella Asiatica.',
       howToUse: 'Apply a thin layer to dry skin. Massage in circular motions until dry. Wash with warm water. Use 1–2 times a week. For optimal results, pair with the HydraSphere+ Deep Moisturizing Cream.',
       step: 'exfoliant',
-      image: 'https://hydrasphereplus.com/wp-content/uploads/2023/10/21-1024x1024.png',
+      image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260723_175336_9b666839-e2d6-4060-a1d7-f5495916e799.jpg?v=1785176729',
       url: 'https://hydrasphereplus.com/product/facial-peeling-gel/',
     },
     {
@@ -217,7 +217,7 @@ const PRODUCTS = {
       howToUse: 'Thoroughly cleanse your face. Apply a thin layer to wet skin by gently massaging the chin, nose, forehead, and cheeks in a circular motion, avoiding the eye area. You will experience a warming sensation in treated areas, which is normal. Wet again to accelerate the heating process. Leave the mask on for three minutes. Rinse with warm water. Use once a month.',
       frequency: '1/month',
       step: 'mask',
-      image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/55-1024x1024.png',
+      image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/IMG_6326.webp?v=1785181083',
       url: 'https://hydrasphereplus.com/product/minerallift-thermal-mask/',
     },
     {
@@ -231,7 +231,7 @@ const PRODUCTS = {
       howToUse: 'Apply a thin, even layer to clean, dry skin. Focus on areas with fine lines or visible pores. Gently pat and smooth until fully absorbed. Do not rinse. Use once or twice a week or before special occasions. For best results, apply before using your laser device.',
       frequency: '1-2x/week',
       step: 'weekly-mask',
-      image: 'https://hydrasphereplus.com/wp-content/uploads/2025/11/14-scaled.png',
+      image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260727_181303_60749e12-5393-401f-aced-1a90e9fc39ab.png?v=1785178014',
       url: 'https://hydrasphereplus.com/product/hydrocharcoal-silk-mask/',
     },
     {
@@ -244,7 +244,7 @@ const PRODUCTS = {
       ingredients: 'Soluble Collagen, Activated Charcoal, Sodium Hyaluronate, Retinyl Palmitate, Allantoin, Chondrus Crispus (Carrageenan).',
       howToUse: 'Apply to clean, dry skin on neck and chest area. Leave on for 10 minutes or longer as desired. Remove mask and gently pat remaining emulsion into skin. No rinsing required. Use weekly or as needed.',
       step: 'mask',
-      image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/37.png',
+      image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260727_174227_9eb89372-01dc-4b06-b816-afb8fda6e60e.png?v=1785177773',
       url: 'https://hydrasphereplus.com/product/hydrocharcoal-collagen-neck-and-decollete-mask/',
     },
     {
@@ -257,7 +257,7 @@ const PRODUCTS = {
       ingredients: 'Water, Sweet Almond Oil, Glycerin, Jojoba Seed Oil, Collagen, Stearic Acid, Cetyl Alcohol, Algae, Tocopheryl Acetate (Vitamin E), Ascorbic Acid (Vitamin C), Acetyl Hexapeptide-3, Euterpe Oleracea (Acai) Fruit Oil, Aloe Barbadensis (Aloe Vera) Leaf Juice, Chamomilla Recutita (Chamomile) Flower Extract, Hyaluronic Acid, Ethylhexylglycerin, Phenoxyethanol.',
       howToUse: 'Apply a thin layer to clean, dry facial and neck skin before bedtime. Massage in small upward circles over the face and neck. Allow full absorption before sleep. Use 1–2 times weekly for optimal results.',
       step: 'PM Routine',
-      image: 'https://hydrasphereplus.com/wp-content/uploads/2024/02/5-9-600x600.png',
+      image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260723_155102_5e7dcfa7-0943-47d3-b7e7-0d19dc419259.png?v=1785176338',
       url: 'https://hydrasphereplus.com/product/advanced-night-repair/',
     },
     {
@@ -270,7 +270,7 @@ const PRODUCTS = {
       ingredients: 'Collagen, Glycerin, Macrocystis Pyrifera (Kelp) Extract, Sodium Hyaluronate, Acetyl Hexapeptide-3, Retinyl Palmitate (Vitamin A), Ascorbic Acid (Vitamin C), Tocopheryl Acetate (Vitamin E), Aloe Barbadensis (Aloe Vera) Leaf Juice, Caviar Extract, Chamomilla Recutita (Chamomile) Flower Extract, Euterpe Oleracea (Acai) Fruit Oil.',
       howToUse: 'Apply 1–3 pumps daily, morning and night, to cleansed skin around the eye area. Spread a thin veil over the skin, blending in small circles with a gentle tapping motion until the product disappears.',
       step: 'AM Routine',
-      image: 'https://hydrasphereplus.com/wp-content/uploads/2023/10/17-600x600.png',
+      image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260723_152836_82eb9892-326f-497a-9c08-3b5cf8bee2d8.jpg?v=1785175888',
       url: 'https://hydrasphereplus.com/product/advanced-eye-lifting-serum/',
     },
   ],
