@@ -1736,18 +1736,20 @@ router.get('/reconciliation-day', async (req, res) => {
   }));
 
   const TOL = 1.00; // $ tolerance for tax/rounding differences
-  // Require an actual matching card number on both sides — an empty/unknown
-  // last-4 on either side can't be confirmed as the same card, so it's not
-  // a match, not a fallback candidate.
-  const sameCard = (p, m) => !!p.last4 && !!m.last4 && p.last4 === m.last4;
+  // If both sides have a recorded card number, it must match — a confirmed
+  // different last-4 disqualifies the pair. If either side has no last-4 on
+  // file (e.g. an imported transaction that never captured one), fall back
+  // to amount+direction only, since there's nothing to check against.
+  const cardOk = (p, m) => !p.last4 || !m.last4 || p.last4 === m.last4;
 
-  // One-to-one exact/near match: same direction, same card, amount within tolerance.
+  // One-to-one exact/near match: same direction, amount within tolerance,
+  // preferring a confirmed same-card candidate over an unknown-card one.
   const matchOne = (poolPos, poolMerch) => {
     for (const p of poolPos) {
       if (p.matched) continue;
-      const cands = poolMerch.filter(m => !m.matched && m.dir === p.dir && Math.abs(m.amount - p.amount) <= TOL && sameCard(p, m));
+      const cands = poolMerch.filter(m => !m.matched && m.dir === p.dir && Math.abs(m.amount - p.amount) <= TOL && cardOk(p, m));
       if (!cands.length) continue;
-      const m = cands[0];
+      const m = cands.find(c => p.last4 && c.last4 && c.last4 === p.last4) || cands[0];
       m.matched = true; p.matched = true; p.matched_date = m.bdate;
     }
   };
@@ -1771,7 +1773,7 @@ router.get('/reconciliation-day', async (req, res) => {
   const matchSplit = (poolPos, poolMerch) => {
     for (const p of poolPos) {
       if (p.matched) continue;
-      const combo = findSubset(poolMerch.filter(m => m.dir === p.dir && sameCard(p, m)), p.amount);
+      const combo = findSubset(poolMerch.filter(m => m.dir === p.dir && cardOk(p, m)), p.amount);
       if (combo) {
         combo.forEach(m => m.matched = true);
         p.matched = true;
@@ -1780,7 +1782,7 @@ router.get('/reconciliation-day', async (req, res) => {
     }
     for (const m of poolMerch) {
       if (m.matched) continue;
-      const combo = findSubset(poolPos.filter(p => p.dir === m.dir && sameCard(p, m)), m.amount);
+      const combo = findSubset(poolPos.filter(p => p.dir === m.dir && cardOk(p, m)), m.amount);
       if (combo) { combo.forEach(p => { p.matched = true; p.matched_date = m.bdate; }); m.matched = true; }
     }
   };
@@ -1811,9 +1813,9 @@ router.get('/reconciliation-day', async (req, res) => {
   for (const m of merchDay) {
     if (m.matched) continue;
     const wantDir = m.dir === 'credit' ? 'debit' : 'credit';
-    const cands = merchDay.filter(x => !x.matched && x !== m && x.dir === wantDir && Math.abs(x.amount - m.amount) <= TOL && sameCard(x, m));
+    const cands = merchDay.filter(x => !x.matched && x !== m && x.dir === wantDir && Math.abs(x.amount - m.amount) <= TOL && cardOk(x, m));
     if (!cands.length) continue;
-    const pair = cands[0];
+    const pair = cands.find(c => c.last4 && m.last4 && c.last4 === m.last4) || cands[0];
     m.matched = true; m.offset = true;
     pair.matched = true; pair.offset = true;
     offsetMerchant.push(m, pair);
