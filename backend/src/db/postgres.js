@@ -955,7 +955,11 @@ async function getCardTransactionsForDate(userId, dateStr, tz) {
   const timezone = tz || 'America/Los_Angeles';
   return (await query(`
     ${CARD_TENDERS_CTE}
-    SELECT t.id, t.type, cp.amount AS total, cp.card_last4, t.receipt_number, t.customer_name, t.created_at
+    SELECT t.id, t.type, cp.amount AS total, cp.card_last4, t.receipt_number, t.customer_name, t.created_at,
+      (SELECT string_agg(e.name, ', ' ORDER BY e.name)
+       FROM pos_transaction_employees te
+       JOIN pos_employees e ON te.employee_id = e.id
+       WHERE te.transaction_id = t.id) AS employee_names
     FROM pos_transactions t
     JOIN card_pay cp ON cp.transaction_id = t.id
     WHERE t.user_id = $1

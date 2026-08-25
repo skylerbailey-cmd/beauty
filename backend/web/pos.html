@@ -2852,8 +2852,16 @@ function startDeleteTransaction(txId) {
   openManagerAuth('delete', txId, 'Only a manager can delete a transaction. Enter the manager name and code.');
 }
 
+let hiddenDrilldownForAuth = false;
 function openManagerAuth(type, txId, msg) {
   managerAction = { type, txId };
+  // Same DOM-order/z-index issue as openTxEdit: hide the drilldown modal
+  // while the auth prompt is up, restore it on close.
+  const drilldownModal = document.getElementById('dayDrilldownModal');
+  if (drilldownModal.classList.contains('show')) {
+    drilldownModal.classList.remove('show');
+    hiddenDrilldownForAuth = true;
+  }
   const titles = { delete: 'Delete Transaction', 'bulk-delete': 'Delete Transactions', edit: 'Edit Transaction', 'return-override': 'Manager Override — Card Mismatch' };
   document.getElementById('managerAuthTitle').textContent = titles[type] || 'Manager Authorization';
   document.getElementById('managerAuthMsg').textContent = msg;
@@ -2867,6 +2875,10 @@ function closeManagerAuth() {
   document.getElementById('managerAuthModal').classList.remove('show');
   managerAction = null;
   pendingTabSwitch = null;
+  if (hiddenDrilldownForAuth) {
+    hiddenDrilldownForAuth = false;
+    document.getElementById('dayDrilldownModal').classList.add('show');
+  }
 }
 
 async function submitManagerAuth() {
@@ -2969,7 +2981,16 @@ async function performBulkDeleteTransactions() {
   }
 }
 
+let hiddenDrilldownForEdit = false;
 async function openTxEdit(txId) {
+  // dayDrilldownModal and txEditModal share a z-index and dayDrilldownModal
+  // sits later in the DOM, so it would paint over txEditModal if both were
+  // left showing — hide it while editing and restore it on close.
+  const drilldownModal = document.getElementById('dayDrilldownModal');
+  if (drilldownModal.classList.contains('show')) {
+    drilldownModal.classList.remove('show');
+    hiddenDrilldownForEdit = true;
+  }
   try {
     const resp = await fetch(`${API}/api/pos/transactions/${txId}`, { credentials: 'include' });
     const data = await resp.json();
@@ -3002,6 +3023,10 @@ async function openTxEdit(txId) {
 function closeTxEdit() {
   document.getElementById('txEditModal').classList.remove('show');
   editTx = null; managerCreds = null;
+  if (hiddenDrilldownForEdit) {
+    hiddenDrilldownForEdit = false;
+    document.getElementById('dayDrilldownModal').classList.add('show');
+  }
 }
 
 function txEditTotals() {
@@ -3144,6 +3169,9 @@ async function saveTxEdit() {
     if (!resp.ok) throw new Error(data.error);
     closeTxEdit();
     loadTransactions();
+    if (currentDrilldownDate && document.getElementById('dayDrilldownModal').classList.contains('show')) {
+      openDayDrilldown(currentDrilldownDate);
+    }
   } catch (err) {
     errEl.textContent = err.message;
   }
@@ -3578,7 +3606,9 @@ function renderAudit(data) {
   }
 }
 
+let currentDrilldownDate = null;
 async function openDayDrilldown(date) {
+  currentDrilldownDate = date;
   const modal = document.getElementById('dayDrilldownModal');
   const body = document.getElementById('drilldownBody');
   document.getElementById('drilldownDate').textContent = date;
@@ -3596,9 +3626,11 @@ async function openDayDrilldown(date) {
     const allMerch = data.all_merchant_day || [];
     const statusCell = (x) => x.offset
       ? '<span style="color:var(--mid);font-weight:600">⚖ offsetting</span>'
-      : x.matched
-        ? '<span style="color:var(--success);font-weight:600">✓ matched</span>'
-        : '<span style="color:var(--danger);font-weight:600">⚠ unmatched</span>';
+      : x.settled_adjacent_day
+        ? '<span style="color:#b8860b;font-weight:600" title="Matched, but to a merchant settlement from a different day — not in today\'s merchant total below, which is why the day\'s totals don\'t line up.">✓ matched (settled adjacent day)</span>'
+        : x.matched
+          ? '<span style="color:var(--success);font-weight:600">✓ matched</span>'
+          : '<span style="color:var(--danger);font-weight:600">⚠ unmatched</span>';
 
     // Validation summary: sales, credits and net must add up on both sides.
     const posNet = (data.pos_sales_total || 0) - (data.pos_credits_total || 0);
@@ -3634,7 +3666,8 @@ async function openDayDrilldown(date) {
         <td>${escapeHtml(p.customer || '-')}</td>
         <td style="text-align:right;font-weight:600">${p.dir === 'credit' ? '−' : ''}$${money2(p.amount)}</td>
         <td>${statusCell(p)}</td>
-      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No POS card transactions this day</td></tr>';
+        <td>${escapeHtml(p.employees || '-')} ${p.id ? `<button onclick="startEditTransaction(${p.id})" style="border:none;background:none;cursor:pointer;color:var(--gold-dk,#b8860b);text-decoration:underline;font-size:.78rem">${p.employees ? 'Edit' : '+ Add'}</button>` : ''}</td>
+      </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No POS card transactions this day</td></tr>';
 
     const merchRows = allMerch.map(m => `
       <tr style="${m.matched ? '' : 'background:#fff6f8'}">
@@ -3714,7 +3747,7 @@ async function openDayDrilldown(date) {
       <div style="margin-bottom:18px">
         <h3 style="margin:0 0 6px">All POS card transactions <span style="font-weight:400;color:var(--mid);font-size:.82rem">(${allPos.length})</span></h3>
         <table class="report-table">
-          <thead><tr><th>Receipt #</th><th>Type</th><th>Card</th><th>Customer</th><th style="text-align:right">Amount</th><th>Status</th></tr></thead>
+          <thead><tr><th>Receipt #</th><th>Type</th><th>Card</th><th>Customer</th><th style="text-align:right">Amount</th><th>Status</th><th>Employee</th></tr></thead>
           <tbody>${posRows}</tbody>
         </table>
       </div>

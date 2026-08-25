@@ -1724,11 +1724,13 @@ router.get('/reconciliation-day', async (req, res) => {
 
   const posRows = await pgDb.getCardTransactionsForDate(userId, date, tz);
   const pos = posRows.map(t => ({
+    id: t.id,
     amount: Math.abs(Number(t.total) || 0),
     dir: t.type === 'return' ? 'credit' : 'debit',
     last4: last4Of(t.card_last4),
     receipt: t.receipt_number,
     customer: t.customer_name || '',
+    employees: t.employee_names || '',
     type: t.type,
     matched: false,
   }));
@@ -1778,9 +1780,17 @@ router.get('/reconciliation-day', async (req, res) => {
   // Pass A: match against the same day's merchant settlements.
   matchOne(pos, merchDay);
   matchSplit(pos, merchDay);
-  // Pass B: remaining POS against ±1 day (settlement cutoff timing).
+  // Pass B: remaining POS against ±1 day (settlement cutoff timing). Tag
+  // anything that only matches here so the UI can show it settled on a
+  // different day instead of today's merchant batch — otherwise it reads
+  // as a plain "matched" row even though it explains the day's totals not
+  // adding up.
+  const matchedAfterSameDay = new Set(pos.filter(p => p.matched));
   matchOne(pos, merchAdj);
   matchSplit(pos, merchAdj);
+  for (const p of pos) {
+    if (p.matched && !matchedAfterSameDay.has(p)) p.settled_adjacent_day = true;
+  }
 
   // Pass C: a sale and a refund that both settled at the merchant for the same
   // amount but were never rung up in the POS at all (e.g. a customer bought
