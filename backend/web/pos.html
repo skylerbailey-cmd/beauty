@@ -3627,7 +3627,7 @@ async function openDayDrilldown(date) {
     const statusCell = (x) => x.offset
       ? '<span style="color:var(--mid);font-weight:600">⚖ offsetting</span>'
       : x.settled_adjacent_day
-        ? '<span style="color:#b8860b;font-weight:600" title="Matched, but to a merchant settlement from a different day — not in today\'s merchant total below, which is why the day\'s totals don\'t line up.">✓ matched (settled adjacent day)</span>'
+        ? `<span style="color:#b8860b;font-weight:600" title="Matched, but to a merchant settlement from a different day — not in today's merchant total below, which is why the day's totals don't line up.">✓ matched (settled ${escapeHtml(x.matched_date || 'a different day')})</span>`
         : x.matched
           ? '<span style="color:var(--success);font-weight:600">✓ matched</span>'
           : '<span style="color:var(--danger);font-weight:600">⚠ unmatched</span>';

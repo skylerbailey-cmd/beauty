@@ -1744,7 +1744,7 @@ router.get('/reconciliation-day', async (req, res) => {
       const cands = poolMerch.filter(m => !m.matched && m.dir === p.dir && Math.abs(m.amount - p.amount) <= TOL);
       if (!cands.length) continue;
       const m = (p.last4 && cands.find(c => c.last4 === p.last4)) || cands[0];
-      m.matched = true; p.matched = true;
+      m.matched = true; p.matched = true; p.matched_date = m.bdate;
     }
   };
   // Split funding: one item equals the sum of 2-4 items on the other side.
@@ -1768,12 +1768,16 @@ router.get('/reconciliation-day', async (req, res) => {
     for (const p of poolPos) {
       if (p.matched) continue;
       const combo = findSubset(poolMerch.filter(m => m.dir === p.dir), p.amount);
-      if (combo) { combo.forEach(m => m.matched = true); p.matched = true; }
+      if (combo) {
+        combo.forEach(m => m.matched = true);
+        p.matched = true;
+        p.matched_date = [...new Set(combo.map(m => m.bdate))].join(', ');
+      }
     }
     for (const m of poolMerch) {
       if (m.matched) continue;
       const combo = findSubset(poolPos.filter(p => p.dir === m.dir), m.amount);
-      if (combo) { combo.forEach(p => p.matched = true); m.matched = true; }
+      if (combo) { combo.forEach(p => { p.matched = true; p.matched_date = m.bdate; }); m.matched = true; }
     }
   };
 
