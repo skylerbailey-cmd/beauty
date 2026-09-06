@@ -149,7 +149,8 @@ const PRODUCTS = {
       description: 'A clinically advanced cream designed to visibly reduce deep lines, fine lines, puffiness, and dark circles. Powered by Hyaluronic Acid, Retinol, Stem Cells, and Peptides — this high-performance formula supports firmer, smoother, and more youthful-looking skin.',
       benefits: 'Visibly reduces deep lines and fine lines, diminishes puffiness and dark circles, firms and smooths skin, supports a more youthful appearance.',
       ingredients: 'Hyaluronic Acid, Retinol, Stem Cells, Peptides.',
-      howToUse: 'Apply directly to deep facial lines and wrinkles in the targeted area. Avoid direct contact with the eyes. In case of excess product, gently remove with a cotton swab.',
+      howToUse: 'Once a week at night, apply over the eye area — crow\'s feet, under-eye lines, and brow — along with any other deep lines you\'re targeting. Avoid getting the product directly in your eyes; gently remove any excess with a cotton swab. Keep this up weekly for about 6 months (some people see results sooner, others take a bit longer). Once you\'re happy with the results, you can take a break of up to 2 years before running another course.',
+      frequency: '1x/week',
       step: 'treatment cream',
       image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260723_170404_0951518a-4e98-4249-b0de-cc9c15ce4b34.jpg?v=1785176552',
       url: 'https://hydrasphereplus.com/product/anti-wrinkle-correction-prevention-30g/',
@@ -162,7 +163,8 @@ const PRODUCTS = {
       description: 'The travel-size version of the Anti Wrinkle Correction & Prevention cream — same clinically advanced formula with Hyaluronic Acid, Retinol, Stem Cells, and Peptides in a convenient smaller size.',
       benefits: 'Visibly reduces deep lines and fine lines, diminishes puffiness and dark circles, firms and smooths skin, supports a more youthful appearance.',
       ingredients: 'Hyaluronic Acid, Retinol, Stem Cells, Peptides.',
-      howToUse: 'Apply directly to deep facial lines and wrinkles in the targeted area. Avoid direct contact with the eyes. In case of excess product, gently remove with a cotton swab.',
+      howToUse: 'Once a week at night, apply over the eye area — crow\'s feet, under-eye lines, and brow — along with any other deep lines you\'re targeting. Avoid getting the product directly in your eyes; gently remove any excess with a cotton swab. Keep this up weekly for about 6 months (some people see results sooner, others take a bit longer). Once you\'re happy with the results, you can take a break of up to 2 years before running another course.',
+      frequency: '1x/week',
       step: 'treatment cream',
       image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260723_163859_6855dac9-c205-4c78-96c4-c82e7159aa43.jpg?v=1785176495',
       url: 'https://hydrasphereplus.com/product/anti-wrinkle-correction-prevention-15g/',
@@ -770,9 +772,19 @@ const LOVE_LINES = {
   'avinichi-mulberry-hydrating-regimen': 'This is your complete hydration ritual! The mulberry-infused trio works together beautifully — the overnight mask repairs while you sleep, the serum plumps and firms in the morning, and the silk crème locks it all in with a velvety finish. Your skin is going to feel incredible!',
 };
 
+const isRetinolProduct = (p) =>
+  p.name.toLowerCase().includes('anti wrinkle') || (p.ingredients || '').toLowerCase().includes('retinol');
+const isWeeklyCadence = (p) => /week/i.test(p.frequency || '');
+
 const TIPS_BANK = [
   {
-    match: (products) => products.some(p => p.name.toLowerCase().includes('anti wrinkle') || p.ingredients.toLowerCase().includes('retinol')),
+    // A retinol product on an explicit weekly schedule — never tell the
+    // customer to work up to nightly, that contradicts its own instructions.
+    match: (products) => products.some(p => isRetinolProduct(p) && isWeeklyCadence(p)),
+    tip: 'Stick to the once-a-week schedule for your retinol treatment rather than using it more often — with retinol more isn\'t better, especially around the delicate eye area. Always wear SPF in the morning; retinol can make skin more sun-sensitive.',
+  },
+  {
+    match: (products) => products.some(p => isRetinolProduct(p) && !isWeeklyCadence(p)),
     tip: 'Since you have a retinol-based product, start by using it every other evening and gradually increase to nightly. Always follow with SPF in the morning — retinol can make skin more sun-sensitive.',
   },
   {
@@ -1012,22 +1024,30 @@ function generateWelcomeEmailBody({ customerEmail, customerName, selectedProduct
     }
   }
 
-  // Split into weekly (exfoliants/devices/weekly masks) and monthly (monthly masks/treatments)
-  const treatments = selectedProducts.filter(isTreatment);
+  // Split into weekly (exfoliants/devices/weekly masks/weekly treatments) and
+  // monthly (monthly masks, treatments with no weekly cadence)
   const isSet = (p) => (p.step || '').toLowerCase() === 'set';
   const sets = selectedProducts.filter(isSet);
   const isWeeklyMask = (p) => isMask(p) && (p.step || '').toLowerCase().includes('weekly');
   const isMonthlyMask = (p) => isMask(p) && !(p.step || '').toLowerCase().includes('weekly');
+  // A treatment whose frequency is weekly belongs under "Treatments", not
+  // "Monthly Treatments" — the same weekly/monthly split the masks already use.
+  const isWeeklyTreatment = (p) => isTreatment(p) && /week/i.test(p.frequency || '');
+  const weeklyTreatments = selectedProducts.filter(p => isWeeklyTreatment(p));
+  const treatments = selectedProducts.filter(p => isTreatment(p) && !isWeeklyTreatment(p));
   const weeklyExfoliants = selectedProducts.filter(p => isExfoliant(p) || isDevice(p) || isWeeklyMask(p));
   const monthlyMasks = selectedProducts.filter(p => isMonthlyMask(p));
   let weeklyHtml = '';
 
-  // ── Treatments (exfoliants, devices, and sets) ────────────────────────
-  if (weeklyExfoliants.length > 0 || sets.length > 0) {
+  // ── Treatments (exfoliants, devices, weekly treatments, and sets) ──────
+  if (weeklyExfoliants.length > 0 || sets.length > 0 || weeklyTreatments.length > 0) {
     weeklyHtml += `<p style="margin-bottom:10px;font-size:17px;color:${tc.routineAccent}"><b>📅 Treatments</b></p>\n`;
     weeklyExfoliants.forEach(p => {
       const freq = p.frequency || (isExfoliant(p) ? '1-2x/week' : 'as directed');
       weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${p.name}</b> (${freq}) — ${p.howToUse || ''}</p>`;
+    });
+    weeklyTreatments.forEach(p => {
+      weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${productLink(p, userTheme)}</b> (${p.frequency}) — ${p.howToUse || ''}</p>`;
     });
     sets.forEach(p => {
       const freq = p.frequency ? ` (${p.frequency})` : '';
