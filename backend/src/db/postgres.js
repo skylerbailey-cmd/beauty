@@ -412,8 +412,21 @@ async function updateEmployee(id, fields) {
   await query(`UPDATE pos_employees SET ${sets.join(', ')} WHERE id = $${idx}`, params);
 }
 
-async function verifyEmployeePin(pin, userId) {
-  return (await query('SELECT * FROM pos_employees WHERE pin = $1 AND user_id = $2 AND active = 1', [pin, userId])).rows[0];
+// Verify an employee's PIN for a company, optionally requiring their name to
+// match as well. The name has to be matched HERE rather than by the caller:
+// PINs are only 4 digits and nothing enforced uniqueness historically, so
+// looking up by PIN alone can return a different employee who happens to share
+// that PIN — and a caller that then compares names would reject someone who
+// typed their own PIN correctly. Matching both together picks the right row.
+async function verifyEmployeePin(pin, userId, name) {
+  const rows = (await query(
+    'SELECT * FROM pos_employees WHERE pin = $1 AND user_id = $2 AND active = 1 ORDER BY id',
+    [pin, userId]
+  )).rows;
+  if (!rows.length) return undefined;
+  const wanted = String(name || '').trim().toLowerCase();
+  if (!wanted) return rows[0];
+  return rows.find(e => String(e.name || '').trim().toLowerCase() === wanted);
 }
 
 // ─── Product Prices ─────────────────────────────────────────────────────────

@@ -187,16 +187,33 @@ router.get('/employees', async (req, res) => {
   res.json({ employees: await pgDb.getEmployees(req.session.userId) });
 });
 
+// Two active employees at the same company must not share a PIN — the register
+// identifies people by name + PIN, so a shared PIN makes logins ambiguous and
+// muddies commission attribution. Returns an error string, or null if free.
+async function pinConflict(userId, pin, excludeId) {
+  if (!pin) return null;
+  const roster = await pgDb.getEmployees(userId);
+  const clash = roster.find(e => e.active && String(e.pin) === String(pin) && e.id !== excludeId);
+  return clash ? `That PIN is already used by ${clash.name}. Give this employee a different PIN — each person needs their own.` : null;
+}
+
 router.post('/employees', async (req, res) => {
   const { name, pin, role, commission_rate } = req.body;
   if (!name || !pin) return res.status(400).json({ error: 'name and pin required' });
   if (pin.length < 4) return res.status(400).json({ error: 'PIN must be at least 4 digits' });
+  const conflict = await pinConflict(req.session.userId, pin, null);
+  if (conflict) return res.status(400).json({ error: conflict });
   const employee = await pgDb.createEmployee(name, pin, role, commission_rate, req.session.userId);
   res.json({ employee });
 });
 
 router.put('/employees/:id', async (req, res) => {
-  await pgDb.updateEmployee(parseInt(req.params.id), req.body);
+  const id = parseInt(req.params.id);
+  if (req.body.pin !== undefined) {
+    const conflict = await pinConflict(req.session.userId, req.body.pin, id);
+    if (conflict) return res.status(400).json({ error: conflict });
+  }
+  await pgDb.updateEmployee(id, req.body);
   res.json({ ok: true });
 });
 
@@ -251,7 +268,7 @@ router.delete('/employees/:id/commission-plan', async (req, res) => {
 router.post('/employees/verify', async (req, res) => {
   const { name, pin } = req.body;
   if (!pin) return res.status(400).json({ error: 'PIN required' });
-  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId);
+  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
   if (!employee) return res.status(401).json({ error: 'Invalid name or PIN' });
   if (name && employee.name.trim().toLowerCase() !== String(name).trim().toLowerCase()) {
     return res.status(401).json({ error: 'Invalid name or PIN' });
@@ -266,13 +283,15 @@ router.post('/employees/verify', async (req, res) => {
 router.post('/employees/change-pin', async (req, res) => {
   const { name, pin, new_pin } = req.body;
   if (!pin) return res.status(400).json({ error: 'Current PIN required' });
-  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId);
+  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
   if (!employee) return res.status(401).json({ error: 'Invalid name or PIN' });
   if (name && employee.name.trim().toLowerCase() !== String(name).trim().toLowerCase()) {
     return res.status(401).json({ error: 'Invalid name or PIN' });
   }
   const newPin = String(new_pin || '').trim();
   if (newPin.length < 4) return res.status(400).json({ error: 'New PIN must be at least 4 digits' });
+  const conflict = await pinConflict(req.session.userId, newPin, employee.id);
+  if (conflict) return res.status(400).json({ error: 'That PIN is already taken. Please choose a different one.' });
   await pgDb.updateEmployee(employee.id, { pin: newPin });
   res.json({ ok: true });
 });
@@ -597,7 +616,7 @@ router.post('/transactions/mine', async (req, res) => {
   const { name, pin, start, end } = req.body;
   if (!pin) return res.status(400).json({ error: 'PIN required' });
 
-  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId);
+  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
   if (!employee) return res.status(401).json({ error: 'Invalid name or PIN' });
   if (name && employee.name.trim().toLowerCase() !== String(name).trim().toLowerCase()) {
     return res.status(401).json({ error: 'Invalid name or PIN' });
@@ -621,7 +640,7 @@ router.post('/transactions/mine', async (req, res) => {
 // employee record or null.
 async function verifyManager(userId, name, pin) {
   if (!pin) return null;
-  const emp = await pgDb.verifyEmployeePin(pin, userId);
+  const emp = await pgDb.verifyEmployeePin(pin, userId, name);
   if (!emp || emp.role !== 'manager') return null;
   // Name must match the PIN's employee (case-insensitive, trimmed) when provided
   if (name && emp.name.trim().toLowerCase() !== String(name).trim().toLowerCase()) return null;
@@ -1014,7 +1033,7 @@ router.post('/reports/employee-personal', async (req, res) => {
   const { name, pin, start, end } = req.body;
   if (!pin) return res.status(400).json({ error: 'PIN required' });
 
-  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId);
+  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
   if (!employee) return res.status(401).json({ error: 'Invalid name or PIN' });
   if (name && employee.name.trim().toLowerCase() !== String(name).trim().toLowerCase()) {
     return res.status(401).json({ error: 'Invalid name or PIN' });
