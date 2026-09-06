@@ -790,6 +790,9 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
       row.sales_total = recalc.sales_total;
       row.returns_total = recalc.returns_total;
       row.net_total = recalc.net_total;
+      // Sale columns above stay comparable across every employee; the plan's
+      // computed payout rides along separately for the Commission column.
+      row.commission_total = recalc.commission_total;
       row.has_special_plan = true;
     }
   }
@@ -1152,14 +1155,25 @@ async function getAllCommissionPlans(userId) {
   return (await query('SELECT * FROM pos_commission_plans WHERE user_id = $1', [userId])).rows;
 }
 
-// Calculate actual commission for an employee over a date range,
-// respecting daily threshold tiers
+// An employee's credited SALE amounts over a date range, plus the commission
+// those earn under their plan.
+//
+// sales_total / returns_total / net_total are always credited SALE dollars —
+// the same thing the plain SQL report returns for employees with no plan — so
+// the Sales/Net Sales columns and the leaderboard mean the same thing for
+// everyone. The commission itself is reported separately as commission_total.
+// (These used to be overwritten with the commission for tiered-plan employees,
+// which made the leaderboard show their commission next to everyone else's
+// sales — e.g. $157.50 of commission beside $800 of sales.)
+//
+// pos_transaction_employees.commission_amount is misleadingly named: it stores
+// the employee's credited share of the pre-tax subtotal, not a commission.
 async function calculateEmployeeCommission(employeeId, userId, startDate, endDate) {
   const plan = await getCommissionPlan(employeeId);
 
   // Get all transactions this employee was on
   const txResult = await query(`
-    SELECT t.id, t.type, t.subtotal, t.created_at, te.commission_value, te.commission_amount
+    SELECT t.id, t.type, t.created_at, te.commission_value, te.commission_amount
     FROM pos_transactions t
     JOIN pos_transaction_employees te ON t.id = te.transaction_id
     WHERE te.employee_id = $1 AND t.user_id = $2
@@ -1168,13 +1182,20 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
   `, [employeeId, userId, startDate, endDate]);
 
   if (!plan || plan.plan_type === 'flat') {
-    // Simple: sum up commission_amount as recorded
     let salesTotal = 0, returnsTotal = 0, saleCount = 0, returnCount = 0;
     for (const tx of txResult.rows) {
       if (tx.type === 'sale') { salesTotal += tx.commission_amount; saleCount++; }
       else { returnsTotal += tx.commission_amount; returnCount++; }
     }
-    return { sale_count: saleCount, return_count: returnCount, sales_total: salesTotal, returns_total: returnsTotal, net_total: salesTotal - returnsTotal };
+    const netTotal = salesTotal - returnsTotal;
+    const rate = plan ? Number(plan.base_rate) || 0 : null;
+    return {
+      sale_count: saleCount, return_count: returnCount,
+      sales_total: salesTotal, returns_total: returnsTotal, net_total: netTotal,
+      // No plan row at all → let the caller fall back to the employee's own
+      // commission_rate rather than asserting a rate here.
+      commission_total: rate === null ? null : netTotal * rate / 100,
+    };
   }
 
   if (plan.plan_type === 'daily_threshold') {
@@ -1186,30 +1207,33 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
       byDay[day].push(tx);
     }
 
-    let salesTotal = 0, returnsTotal = 0, saleCount = 0, returnCount = 0;
+    let salesTotal = 0, returnsTotal = 0, saleCount = 0, returnCount = 0, commissionTotal = 0;
     for (const [, dayTxs] of Object.entries(byDay)) {
-      // Day's net credited sales (this employee's % of each sale). Based on the
-      // pre-tax SUBTOTAL, matching how flat commissions are recorded at
-      // checkout — using the tax-inclusive total here both overpaid the
-      // employee and pushed them over the tier threshold early.
+      // Which rate the day earns depends on that day's net credited SALES
+      // (pre-tax, this employee's share) — not on commission dollars, and not
+      // on the tax-inclusive total, which would push them over the threshold
+      // early and inflate the payout.
       const dayNetSales = dayTxs.reduce((sum, tx) => {
-        const empShare = tx.subtotal * (tx.commission_value / 100);
-        return sum + (tx.type === 'sale' ? empShare : -empShare);
+        return sum + (tx.type === 'sale' ? tx.commission_amount : -tx.commission_amount);
       }, 0);
 
       const rate = dayNetSales > plan.tier_threshold ? plan.tier_rate : plan.base_rate;
 
       for (const tx of dayTxs) {
-        const empShare = tx.subtotal * (tx.commission_value / 100);
+        const empShare = tx.commission_amount;
         const commission = empShare * (rate / 100);
-        if (tx.type === 'sale') { salesTotal += commission; saleCount++; }
-        else { returnsTotal += commission; returnCount++; }
+        if (tx.type === 'sale') { salesTotal += empShare; commissionTotal += commission; saleCount++; }
+        else { returnsTotal += empShare; commissionTotal -= commission; returnCount++; }
       }
     }
-    return { sale_count: saleCount, return_count: returnCount, sales_total: salesTotal, returns_total: returnsTotal, net_total: salesTotal - returnsTotal };
+    return {
+      sale_count: saleCount, return_count: returnCount,
+      sales_total: salesTotal, returns_total: returnsTotal, net_total: salesTotal - returnsTotal,
+      commission_total: commissionTotal,
+    };
   }
 
-  return { sale_count: 0, return_count: 0, sales_total: 0, returns_total: 0, net_total: 0 };
+  return { sale_count: 0, return_count: 0, sales_total: 0, returns_total: 0, net_total: 0, commission_total: 0 };
 }
 
 // ─── Additional Customer queries ────────────────────────────────────────────

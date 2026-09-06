@@ -2691,12 +2691,13 @@ function applyTxFilters() {
   `).join('') || `<tr><td colspan="${canManage ? 11 : 10}" style="text-align:center;color:var(--mid)">No transactions in this date range. Click <b>Show All</b> above to see historical/imported transactions.</td></tr>`;
   updateBulkDeleteUI();
 
-  // Summary line
-  const saleTotal = rows.filter(t => t.type === 'sale').reduce((s, t) => s + t.total, 0);
-  const returnTotal = rows.filter(t => t.type === 'return').reduce((s, t) => s + t.total, 0);
+  // Summary line — pre-tax subtotals, so this reconciles with the Reports tab
+  // (which reports revenue excluding tax) instead of reading higher here.
+  const saleTotal = rows.filter(t => t.type === 'sale').reduce((s, t) => s + (t.subtotal || 0), 0);
+  const returnTotal = rows.filter(t => t.type === 'return').reduce((s, t) => s + (t.subtotal || 0), 0);
   const summary = document.getElementById('txSummary');
   if (summary) {
-    summary.textContent = `${rows.length} transaction${rows.length !== 1 ? 's' : ''} · Sales $${money(saleTotal)}`
+    summary.textContent = `${rows.length} transaction${rows.length !== 1 ? 's' : ''} · Sales $${money(saleTotal)} (pre-tax)`
       + (returnTotal ? ` · Returns $${money(returnTotal)} · Net $${money((saleTotal - returnTotal))}` : '');
   }
 }
@@ -4057,7 +4058,10 @@ function renderLeaderboard(employees, containerId) {
 // Commission earned = credited amount × the employee's commission % from
 // Settings (unless a special commission plan already applied it server-side).
 function commissionAmt(e, amount) {
-  if (e.has_special_plan) return Number(amount) || 0;
+  // An employee on a commission plan has their payout computed server-side
+  // (tiered rates depend on each day's sales), so use that figure. Everyone
+  // else earns their flat rate on the credited amount.
+  if (e.has_special_plan && e.commission_total != null) return Number(e.commission_total) || 0;
   const rate = Number(e.commission_rate) || 0;
   return (Number(amount) || 0) * rate / 100;
 }
