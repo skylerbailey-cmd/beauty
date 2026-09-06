@@ -2569,11 +2569,13 @@ async function submitSettingsAuth() {
 // PIN change for a sales employee — and only fetch the company-wide data
 // (full roster, store settings, brands) when a manager is actually looking.
 function applySettingsAccessUI() {
-  if (!settingsAccess) return;
-  const isManager = settingsAccess.role === 'manager';
+  // When locked (e.g. right after a company switch) hide every gated section
+  // rather than leaving the last unlock's layout on screen.
+  const isManager = !!settingsAccess && settingsAccess.role === 'manager';
   document.getElementById('settingsManagerOnly').style.display = isManager ? '' : 'none';
   document.getElementById('empManagerView').style.display = isManager ? '' : 'none';
-  document.getElementById('empSelfView').style.display = isManager ? 'none' : '';
+  document.getElementById('empSelfView').style.display = (settingsAccess && !isManager) ? '' : 'none';
+  if (!settingsAccess) return;
 
   if (isManager) {
     loadEmployees();
@@ -3823,6 +3825,13 @@ function switchTab(tabName) {
   const navBtn = document.querySelector(`.pos-subtabs button[data-tab="${tabName}"]`);
   if (navBtn) navBtn.classList.add('active');
 
+  loadTabData(tabName);
+}
+
+// What each tab needs to fetch when it becomes visible. Shared by switchTab and
+// the company switcher, so the two can't drift out of sync — previously the
+// switcher hand-listed its own loaders and had already fallen behind.
+function loadTabData(tabName) {
   if (tabName === 'history') loadTransactions();
   if (tabName === 'reports') { loadReports(); loadTodayLeaderboard(); }
   if (tabName === 'customers') loadCustomers();
@@ -3831,6 +3840,26 @@ function switchTab(tabName) {
     if (f && !f.src) f.src = f.dataset.src; // load once, on first open
   }
   if (tabName === 'settings') applySettingsAccessUI();
+}
+
+// Everything on screen that belongs to a single company. Wiped the moment a
+// switch starts, so no rows from the previous company linger while the new
+// company's data loads — or while a PIN-gated tab waits to be unlocked.
+function clearCompanyScopedViews() {
+  ['txHistoryBody', 'custReportBody', 'empReportBody', 'prodReportBody', 'leaderboard',
+   'todayLeaderboard', 'empPersonalBody', 'flaggedReturnsBody', 'salesSummary', 'batchBody']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
+  ['txSummary', 'custFilterSummary', 'importStatus', 'batchStatus']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ''; });
+  const flagged = document.getElementById('flaggedReturnsCard');
+  if (flagged) flagged.style.display = 'none';
+  // Manager-only controls are re-shown by loadTransactions once someone
+  // verifies against the new company; until then they shouldn't be clickable.
+  ['importCsvBtn', 'runAuditBtn', 'deleteSelectedTxBtn'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.style.display = 'none';
+  });
+  const selectAll = document.getElementById('txSelectAllHeader');
+  if (selectAll) selectAll.style.display = 'none';
 }
 
 // ─── Brand Product Panels ───────────────────────────────────────────────────
@@ -4348,26 +4377,40 @@ async function switchAccount(email) {
     empManuallyEdited = false;
     renderSaleEmployees();
     renderCart();
-    await loadStoreSettings();   // pulls this company's store settings + brands + theme from Postgres
-    renderBrandCheckboxes();     // sync the Settings-tab brand checkboxes
-    refreshMaverickConnState();  // reflect this company's Maverick connection
-    document.getElementById('batchResult').style.display = 'none';
-    loadProducts();
-    loadEmployees();
-    // Clear + reload the Transactions and Reports tabs so they never show the
-    // previous company's data (this was the "shared" transactions/customers).
+
+    // Drop every scrap of the previous company's data, then blank the views so
+    // nothing stale is on screen while the new company's data loads.
     histTransactions = [];
     filteredTransactions = [];
     custReportData = [];
     custFiltered = [];
+    lastEmployeesReport = [];
+    lastSalesSummaryHtml = '';
+    lastProductsHtml = '';
+    // Unlocks are per-company: whoever unlocked Transactions or Settings for
+    // the previous company has to verify again against this one.
+    txAccess = null; txCreds = null; selectedTxIds.clear();
+    settingsAccess = null; settingsCreds = null;
     managerReportsUnlocked = false;
-    settingsAccess = null; settingsCreds = null; // require a fresh name+PIN for this company's Settings
     lockPersonalReport();
-    loadTransactions();
-    loadReports();
+    clearCompanyScopedViews();
+    applySettingsAccessUI(); // now locked — hides the previous unlock's sections
+    document.getElementById('batchResult').style.display = 'none';
+
+    await loadStoreSettings();   // pulls this company's store settings + brands + theme from Postgres
+    renderBrandCheckboxes();     // sync the Settings-tab brand checkboxes
+    refreshMaverickConnState();  // reflect this company's Maverick connection
+    loadProducts();
+    loadEmployees();
     // Reset the embedded Emails tab so it reloads for the newly selected company
     const ef = document.getElementById('emailsFrame');
     if (ef && ef.src) { ef.removeAttribute('src'); }
+
+    // Finally, re-drive whichever tab is actually open so it shows THIS
+    // company's data. Routing through switchTab means a PIN-gated tab
+    // re-prompts for the new company instead of sitting there blank.
+    const activeTab = (document.querySelector('.tab-content.show')?.id || 'tab-register').replace('tab-', '');
+    switchTab(activeTab);
   } catch (err) { alert('Failed to switch account: ' + err.message); }
   document.getElementById('companySwitcherMenu').classList.remove('show');
 }
