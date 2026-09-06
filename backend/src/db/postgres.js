@@ -243,8 +243,7 @@ async function initSchema() {
       timezone TEXT DEFAULT 'America/Los_Angeles',
       tax_rate REAL DEFAULT 0.081875,
       theme TEXT DEFAULT 'rose',
-      brands TEXT DEFAULT '["avologi","avinichi","hydrasphere","spacetouch","lumieres"]',
-      receipt_copies INTEGER DEFAULT 2
+      brands TEXT DEFAULT '["avologi","avinichi","hydrasphere","spacetouch","lumieres"]'
     );
 
     -- Registry of stable (email-derived) user IDs, so the one-time legacy-data
@@ -278,7 +277,6 @@ async function initSchema() {
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS tax_rate REAL DEFAULT 0.0875');
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS theme TEXT DEFAULT 'rose'");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS brands TEXT DEFAULT '[\"avologi\",\"avinichi\",\"hydrasphere\",\"spacetouch\",\"lumieres\"]'");
-  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS receipt_copies INTEGER DEFAULT 2');
   // New companies default to the current 8.1875% sales tax
   await migrate('ALTER TABLE pos_settings ALTER COLUMN tax_rate SET DEFAULT 0.081875');
   // Maverick Payments reporting credentials (per company, server-side only)
@@ -1089,7 +1087,7 @@ async function getSettings(userId) {
 }
 
 async function updateSettings(userId, fields) {
-  const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'receipt_copies'];
+  const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token'];
   const sets = [];
   const params = [];
   let idx = 1;

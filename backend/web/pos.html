@@ -322,10 +322,6 @@
         font-size: 16px; line-height: 1.45; font-weight: 700; color: #000;
         -webkit-print-color-adjust: exact; print-color-adjust: exact;
       }
-      /* Multiple copies: each one starts a new page so the thermal printer
-         feeds/cuts between them, giving separate receipts rather than one
-         long strip. No break before the first copy, or it feeds a blank. */
-      .receipt-copy + .receipt-copy { page-break-before: always; break-before: page; }
       /* The receipt/day-summary HTML sets its own inline colors for
          de-emphasized lines (e.g. a muted gray "sub" label) — those read fine
          on screen but print too light on a thermal printer. Force every line
@@ -795,32 +791,6 @@
         </div>
         <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end">
           <button class="btn btn-confirm" style="padding:9px 24px;font-size:.85rem" onclick="saveStoreSettings();saveCompanyName()">Save Settings</button>
-        </div>
-      </div>
-
-      <!-- Receipt Printing -->
-      <div class="report-card" style="margin-top:16px">
-        <h3>Receipt Printing</h3>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <div class="field">
-            <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Copies per receipt</label>
-            <input type="number" id="settingsReceiptCopies" min="1" max="5" step="1" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
-            <div style="font-family:system-ui,sans-serif;font-size:.72rem;color:var(--mid);margin-top:4px">Printed as one job — the printer cuts between copies. Saved with <b>Save Settings</b> above.</div>
-          </div>
-        </div>
-
-        <div style="margin-top:14px;padding:12px 14px;background:var(--cream);border:1px solid var(--border);border-radius:10px;font-family:system-ui,sans-serif;font-size:.82rem;color:var(--dark);line-height:1.55">
-          <div style="font-weight:700;margin-bottom:6px">Skipping the print dialog</div>
-          <p style="margin:0 0 8px;color:var(--mid)">A web page can't choose a printer or bypass the print dialog on its own — browsers don't allow it, for security reasons. Chrome has a mode built for registers like this one that does both:</p>
-          <ol style="margin:0 0 8px;padding-left:18px;color:var(--mid)">
-            <li style="margin-bottom:4px">Set your receipt printer as the <b>system default printer</b> (macOS: System Settings → Printers &amp; Scanners; Windows: Settings → Printers &amp; scanners, and turn off "let Windows manage my default printer").</li>
-            <li style="margin-bottom:4px">Close Chrome completely, then relaunch it with the kiosk-printing flag and open this page in it.</li>
-          </ol>
-          <div style="font-weight:600;margin-bottom:4px">macOS</div>
-          <code id="kioskCmdMac" style="display:block;background:var(--white);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:.75rem;overflow-x:auto;white-space:nowrap;margin-bottom:8px">open -a "Google Chrome" --args --kiosk-printing</code>
-          <div style="font-weight:600;margin-bottom:4px">Windows</div>
-          <code id="kioskCmdWin" style="display:block;background:var(--white);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:.75rem;overflow-x:auto;white-space:nowrap;margin-bottom:8px">chrome.exe --kiosk-printing</code>
-          <p style="margin:0;color:var(--mid)">With that running, <b>Print</b> sends the copies straight to the default printer with no dialog. Without it, Print still works — you'll just see the dialog, already loaded with the right number of copies.</p>
         </div>
       </div>
 
@@ -2018,12 +1988,7 @@ function showReceipt(tx) {
 function printReceipt() {
   const content = document.getElementById('receiptContent').innerHTML;
   const printEl = document.getElementById('printReceipt');
-  // Print the configured number of copies (Settings → Receipt Printing) as one
-  // job — each copy is its own page so the printer cuts between them. Doing it
-  // in a single job matters: repeated window.print() calls would stack dialogs
-  // (or race each other in kiosk mode).
-  const copies = Math.min(5, Math.max(1, parseInt(storeSettings.receipt_copies, 10) || 1));
-  printEl.innerHTML = Array.from({ length: copies }, () => `<div class="receipt-copy">${content}</div>`).join('');
+  printEl.innerHTML = content;
   printEl.style.display = 'block';
   window.print();
   setTimeout(() => { printEl.style.display = 'none'; }, 500);
@@ -4198,7 +4163,6 @@ async function loadStoreSettings() {
     document.getElementById('settingsReceiptFooter').value = storeSettings.receipt_footer || '';
     document.getElementById('settingsTimezone').value = storeSettings.timezone || 'America/Los_Angeles';
     document.getElementById('settingsTaxRate').value = storeSettings.tax_rate != null ? taxPctStr(storeSettings.tax_rate) : '8.1875';
-    document.getElementById('settingsReceiptCopies').value = storeSettings.receipt_copies != null ? storeSettings.receipt_copies : 2;
     // Restore theme and brands from Postgres (survives redeploys)
     if (storeSettings.theme) applyTheme(storeSettings.theme);
     if (storeSettings.brands) {
@@ -4223,12 +4187,10 @@ async function saveStoreSettings() {
   const taxPct = parseFloat(document.getElementById('settingsTaxRate').value);
   const tax_rate = !isNaN(taxPct) ? taxPct / 100 : 0.0875;
   const theme = document.getElementById('settingsTheme').value;
-  const copiesRaw = parseInt(document.getElementById('settingsReceiptCopies').value, 10);
-  const receipt_copies = Math.min(5, Math.max(1, isNaN(copiesRaw) ? 2 : copiesRaw));
   try {
     const resp = await fetch(`${API}/api/pos/settings`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ store_name, store_address, store_city, store_state, store_zip, receipt_footer, timezone, tax_rate, theme, receipt_copies }),
+      body: JSON.stringify({ store_name, store_address, store_city, store_state, store_zip, receipt_footer, timezone, tax_rate, theme }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Save failed');
