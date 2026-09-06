@@ -798,7 +798,12 @@ async function getCustomerReport(userId, startDate, endDate) {
       COUNT(CASE WHEN t.type = 'sale' THEN 1 END) as purchases,
       COUNT(CASE WHEN t.type = 'return' THEN 1 END) as returns,
       COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.total ELSE -t.total END), 0) as total_spent,
-      cust.id as customer_id, cust.phone, cust.birthday, cust.address, cust.notes
+      cust.id as customer_id, cust.birthday, cust.address, cust.notes,
+      -- Prefer the CRM record's phone (a manager may have corrected it in the
+      -- Customers detail view), but fall back to whatever the sale itself
+      -- captured — phone-only customers have no CRM row to join to, since
+      -- that table is keyed by email.
+      COALESCE(NULLIF(cust.phone, ''), NULLIF(MAX(t.customer_phone), '')) as phone
     FROM pos_transactions t
     LEFT JOIN customers cust ON cust.email = t.customer_email AND cust.user_id = t.user_id AND t.customer_email != ''
     WHERE t.user_id = $1

@@ -516,7 +516,8 @@
           <div class="customer-section">
             <input type="text" id="custName" placeholder="Customer name" oninput="updateCheckoutEnabled()">
             <input type="email" id="custEmail" placeholder="Customer email" oninput="updateCheckoutEnabled()">
-            <input type="tel" id="custPhone" placeholder="Customer phone (optional)">
+            <input type="tel" id="custPhone" placeholder="Customer phone" oninput="updateCheckoutEnabled()">
+            <div style="font-family:system-ui,sans-serif;font-size:.72rem;color:var(--mid);margin-top:-4px">Email or phone required — either one is fine.</div>
           </div>
           <!-- Employee assignment -->
           <div class="employee-assign" style="margin-bottom:12px">
@@ -1735,8 +1736,16 @@ function updateCheckoutEnabled() {
   if (!isReturn) {
     const custName = document.getElementById('custName')?.value.trim() || '';
     const custEmail = document.getElementById('custEmail')?.value.trim() || '';
+    const custPhone = document.getElementById('custPhone')?.value.trim() || '';
     reasons.push({ ok: !!custName, label: "Enter the customer's name" });
-    reasons.push({ ok: isValidEmail(custEmail), label: 'Enter a valid customer email' });
+    // Either contact method satisfies the requirement, but whichever one was
+    // typed has to actually be valid.
+    reasons.push({ ok: !!custEmail || !!custPhone, label: "Enter the customer's email or phone number" });
+    if (custEmail) {
+      reasons.push({ ok: isValidEmail(custEmail), label: 'Enter a valid customer email (or clear it and use a phone number)' });
+    } else if (custPhone) {
+      reasons.push({ ok: isValidPhone(custPhone), label: 'Enter a valid customer phone number (or use an email instead)' });
+    }
   }
 
   // Every sale/return starts with a blank employee row (see defaultSaleEmployees).
@@ -1756,6 +1765,9 @@ function updateCheckoutEnabled() {
 
 // ─── Transaction ────────────────────────────────────────────────────────────
 function isValidEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v || ''); }
+// 10+ digits once formatting is stripped — catches a stray keystroke without
+// rejecting country codes or extensions. Mirrors the server-side check.
+function isValidPhone(v) { return String(v || '').replace(/\D/g, '').length >= 10; }
 
 async function processTransaction() {
   if (cart.length === 0) return;
@@ -1767,16 +1779,26 @@ async function processTransaction() {
     return;
   }
 
-  // A customer name and a valid email are required before a sale can be completed.
+  // A customer name plus at least one contact method (email OR phone) are
+  // required before a sale can be completed.
   if (currentMode === 'sale') {
     const custName = document.getElementById('custName').value.trim();
     const custEmail = document.getElementById('custEmail').value.trim();
+    const custPhone = document.getElementById('custPhone').value.trim();
     if (!custName) {
       alert('Please enter the customer\'s name before completing the sale.');
       return;
     }
-    if (!isValidEmail(custEmail)) {
-      alert('Please enter a valid customer email before completing the sale.');
+    if (!custEmail && !custPhone) {
+      alert('Please enter the customer\'s email or phone number before completing the sale.');
+      return;
+    }
+    if (custEmail && !isValidEmail(custEmail)) {
+      alert('Please enter a valid customer email, or clear it and use a phone number instead.');
+      return;
+    }
+    if (!custEmail && !isValidPhone(custPhone)) {
+      alert('Please enter a valid customer phone number, or use an email instead.');
       return;
     }
   }

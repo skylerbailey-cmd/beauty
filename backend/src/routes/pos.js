@@ -341,14 +341,25 @@ router.post('/transactions', async (req, res) => {
     return res.status(400).json({ error: employeeError });
   }
 
-  // Sales (not returns) require a customer name and a valid email before they
-  // can be completed.
+  // Sales (not returns) require a customer name plus at least one way to reach
+  // them — an email OR a phone number. Whichever is provided must be valid,
+  // but neither one is individually mandatory.
   if (type !== 'return') {
     if (!customer_name || !String(customer_name).trim()) {
       return res.status(400).json({ error: 'Customer name is required to complete a sale.' });
     }
-    if (!customer_email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(customer_email).trim())) {
-      return res.status(400).json({ error: 'A valid customer email is required to complete a sale.' });
+    const emailStr = String(customer_email || '').trim();
+    const phoneStr = String(customer_phone || '').trim();
+    if (!emailStr && !phoneStr) {
+      return res.status(400).json({ error: 'A customer email or phone number is required to complete a sale.' });
+    }
+    if (emailStr && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailStr)) {
+      return res.status(400).json({ error: 'The customer email is not valid. Correct it or clear it and use a phone number instead.' });
+    }
+    // 10+ digits after stripping formatting — enough to catch a stray keystroke
+    // without rejecting country codes or extensions.
+    if (!emailStr && phoneStr.replace(/\D/g, '').length < 10) {
+      return res.status(400).json({ error: 'The customer phone number is not valid. Enter a full phone number or use an email instead.' });
     }
   }
 
