@@ -4062,9 +4062,14 @@ function commissionAmt(e, amount) {
   return (Number(amount) || 0) * rate / 100;
 }
 function commissionRow(e) {
+  // A deactivated employee still shows here when they had activity in the
+  // range — their sales are real and belong in the totals — but flag them so
+  // it's clear why a name that's off the roster is listed.
+  const inactive = e.active === 0 || e.active === false
+    ? ' <span style="font-size:.72rem;color:var(--mid);font-weight:400">(deactivated)</span>' : '';
   return `
     <tr>
-      <td style="font-weight:600">${e.employee_name}</td>
+      <td style="font-weight:600">${e.employee_name}${inactive}</td>
       <td>${e.sale_count}</td>
       <td>$${money(Number(e.sales_total))}</td>
       <td>$${money(Number(e.returns_total))}</td>

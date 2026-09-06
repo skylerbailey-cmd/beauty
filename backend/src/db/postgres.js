@@ -735,10 +735,14 @@ async function getSalesReport(userId, startDate, endDate) {
     SELECT
       COUNT(CASE WHEN type = 'sale' THEN 1 END) as total_sales,
       COUNT(CASE WHEN type = 'return' THEN 1 END) as total_returns,
-      -- Revenue figures EXCLUDE tax (tax is reported separately as net_tax)
-      COALESCE(SUM(CASE WHEN type = 'sale' THEN total - tax_amount ELSE 0 END), 0) as sales_revenue,
-      COALESCE(SUM(CASE WHEN type = 'return' THEN total - tax_amount ELSE 0 END), 0) as returns_total,
-      COALESCE(SUM(CASE WHEN type = 'sale' THEN total - tax_amount ELSE -(total - tax_amount) END), 0) as net_revenue,
+      -- Revenue figures EXCLUDE tax (tax is reported separately as net_tax).
+      -- Use the stored subtotal directly rather than deriving it as
+      -- total - tax_amount: the stored value is the authoritative pre-tax
+      -- amount, and the derived form also silently subtracts any order-level
+      -- discount_amount and carries the rounding done when total was computed.
+      COALESCE(SUM(CASE WHEN type = 'sale' THEN subtotal ELSE 0 END), 0) as sales_revenue,
+      COALESCE(SUM(CASE WHEN type = 'return' THEN subtotal ELSE 0 END), 0) as returns_total,
+      COALESCE(SUM(CASE WHEN type = 'sale' THEN subtotal ELSE -subtotal END), 0) as net_revenue,
       COALESCE(SUM(CASE WHEN type = 'sale' THEN tax_amount ELSE -tax_amount END), 0) as net_tax
     FROM pos_transactions
     WHERE user_id = $1
@@ -752,7 +756,7 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
   // Get base report from the standard query
   const baseReport = (await query(`
     SELECT
-      e.id as employee_id, e.name as employee_name, e.commission_rate,
+      e.id as employee_id, e.name as employee_name, e.commission_rate, e.active,
       COUNT(DISTINCT CASE WHEN t.type = 'sale' THEN t.id END) as sale_count,
       COUNT(DISTINCT CASE WHEN t.type = 'return' THEN t.id END) as return_count,
       COALESCE(SUM(CASE WHEN t.type = 'sale' THEN te.commission_amount ELSE 0 END), 0) as sales_total,
@@ -766,7 +770,12 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
       AND t.user_id = $1
       AND COALESCE(t.original_sale_date, t.created_at) >= $2
       AND COALESCE(t.original_sale_date, t.created_at) <= $3
-    WHERE e.user_id = $4 AND e.active = 1
+    -- Active employees always appear (even with no sales, so the roster is
+    -- complete). A DEACTIVATED employee still appears if they have activity in
+    -- this range — otherwise their sales silently vanish from this table and
+    -- the leaderboard while still counting in the KPI tiles above, making the
+    -- report under-report revenue by exactly their share.
+    WHERE e.user_id = $4 AND (e.active = 1 OR t.id IS NOT NULL)
     GROUP BY e.id ORDER BY net_total DESC
   `, [userId, startDate, endDate, userId])).rows;
 
@@ -1150,7 +1159,7 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
 
   // Get all transactions this employee was on
   const txResult = await query(`
-    SELECT t.id, t.type, t.total, t.created_at, te.commission_value, te.commission_amount
+    SELECT t.id, t.type, t.subtotal, t.created_at, te.commission_value, te.commission_amount
     FROM pos_transactions t
     JOIN pos_transaction_employees te ON t.id = te.transaction_id
     WHERE te.employee_id = $1 AND t.user_id = $2
@@ -1179,16 +1188,19 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
 
     let salesTotal = 0, returnsTotal = 0, saleCount = 0, returnCount = 0;
     for (const [, dayTxs] of Object.entries(byDay)) {
-      // Calculate day's net credited sales (using the % of sale assigned to this employee)
+      // Day's net credited sales (this employee's % of each sale). Based on the
+      // pre-tax SUBTOTAL, matching how flat commissions are recorded at
+      // checkout — using the tax-inclusive total here both overpaid the
+      // employee and pushed them over the tier threshold early.
       const dayNetSales = dayTxs.reduce((sum, tx) => {
-        const empShare = tx.total * (tx.commission_value / 100);
+        const empShare = tx.subtotal * (tx.commission_value / 100);
         return sum + (tx.type === 'sale' ? empShare : -empShare);
       }, 0);
 
       const rate = dayNetSales > plan.tier_threshold ? plan.tier_rate : plan.base_rate;
 
       for (const tx of dayTxs) {
-        const empShare = tx.total * (tx.commission_value / 100);
+        const empShare = tx.subtotal * (tx.commission_value / 100);
         const commission = empShare * (rate / 100);
         if (tx.type === 'sale') { salesTotal += commission; saleCount++; }
         else { returnsTotal += commission; returnCount++; }
