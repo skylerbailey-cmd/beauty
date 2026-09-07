@@ -514,7 +514,10 @@
         </div>
         <div class="cart-footer">
           <div class="customer-section">
-            <input type="text" id="custName" placeholder="Customer name" oninput="updateCheckoutEnabled()">
+            <div style="display:flex;gap:6px">
+              <input type="text" id="custFirstName" placeholder="First name" style="flex:1;min-width:0" oninput="updateCheckoutEnabled()">
+              <input type="text" id="custLastName" placeholder="Last name" style="flex:1;min-width:0" oninput="updateCheckoutEnabled()">
+            </div>
             <input type="email" id="custEmail" placeholder="Customer email" oninput="updateCheckoutEnabled()">
             <input type="tel" id="custPhone" placeholder="Customer phone" oninput="updateCheckoutEnabled()">
             <div style="font-family:system-ui,sans-serif;font-size:.72rem;color:var(--mid);margin-top:-4px">Email or phone required — either one is fine.</div>
@@ -1624,7 +1627,7 @@ async function lookupReceipt() {
     `).join('');
 
     // Pre-fill customer info
-    document.getElementById('custName').value = tx.customer_name || '';
+    setCustomerNameFields(tx.customer_name);
     document.getElementById('custEmail').value = tx.customer_email || '';
     document.getElementById('custPhone').value = tx.customer_phone || '';
 
@@ -1747,10 +1750,12 @@ function updateCheckoutEnabled() {
   const reasons = [{ ok: cart.length > 0, label: isReturn ? 'Add at least one item to the return' : 'Add at least one item to the cart' }];
 
   if (!isReturn) {
-    const custName = document.getElementById('custName')?.value.trim() || '';
+    const custFirst = document.getElementById('custFirstName')?.value.trim() || '';
     const custEmail = document.getElementById('custEmail')?.value.trim() || '';
     const custPhone = document.getElementById('custPhone')?.value.trim() || '';
-    reasons.push({ ok: !!custName, label: "Enter the customer's name" });
+    // First name required, matching the old single-field rule. Last name is
+    // encouraged but not blocking, so a walk-in doesn't stall checkout.
+    reasons.push({ ok: !!custFirst, label: "Enter the customer's first name" });
     // Either contact method satisfies the requirement, but whichever one was
     // typed has to actually be valid.
     reasons.push({ ok: !!custEmail || !!custPhone, label: "Enter the customer's email or phone number" });
@@ -1782,6 +1787,23 @@ function isValidEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v || ''); }
 // rejecting country codes or extensions. Mirrors the server-side check.
 function isValidPhone(v) { return String(v || '').replace(/\D/g, '').length >= 10; }
 
+// The register collects first/last separately, but everything downstream —
+// receipts, emails, the CRM, reports, CSV export — stores and displays one
+// customer_name. These two keep that single stored form and the split inputs
+// in sync.
+function customerNameFromFields() {
+  const first = document.getElementById('custFirstName').value.trim();
+  const last = document.getElementById('custLastName').value.trim();
+  return [first, last].filter(Boolean).join(' ');
+}
+// Split on the FIRST space so multi-word surnames survive a round trip
+// ("Jane Van Der Berg" -> Jane / Van Der Berg), which is the common case.
+function setCustomerNameFields(fullName) {
+  const parts = String(fullName || '').trim().split(/\s+/);
+  document.getElementById('custFirstName').value = parts.shift() || '';
+  document.getElementById('custLastName').value = parts.join(' ');
+}
+
 async function processTransaction() {
   if (cart.length === 0) return;
 
@@ -1795,11 +1817,11 @@ async function processTransaction() {
   // A customer name plus at least one contact method (email OR phone) are
   // required before a sale can be completed.
   if (currentMode === 'sale') {
-    const custName = document.getElementById('custName').value.trim();
+    const custFirst = document.getElementById('custFirstName').value.trim();
     const custEmail = document.getElementById('custEmail').value.trim();
     const custPhone = document.getElementById('custPhone').value.trim();
-    if (!custName) {
-      alert('Please enter the customer\'s name before completing the sale.');
+    if (!custFirst) {
+      alert('Please enter the customer\'s first name before completing the sale.');
       return;
     }
     if (!custEmail && !custPhone) {
@@ -1844,7 +1866,7 @@ async function processTransaction() {
   const body = {
     type: currentMode,
     employees: employeeAssignments.length > 0 ? employeeAssignments : undefined,
-    customer_name: document.getElementById('custName').value.trim(),
+    customer_name: customerNameFromFields(),
     customer_email: document.getElementById('custEmail').value.trim(),
     customer_phone: document.getElementById('custPhone').value.trim(),
     items: cart.map(i => ({
@@ -1917,7 +1939,8 @@ async function submitTransaction(body) {
     renderSaleEmployees();
     renderCart();
     resetTenders();
-    document.getElementById('custName').value = '';
+    document.getElementById('custFirstName').value = '';
+    document.getElementById('custLastName').value = '';
     document.getElementById('custEmail').value = '';
     document.getElementById('custPhone').value = '';
     if (body.type === 'return') {
