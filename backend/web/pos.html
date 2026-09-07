@@ -1189,6 +1189,19 @@
       <div style="display:flex;justify-content:space-between;font-weight:700;font-size:1.05rem"><span>Total</span><span id="txEditTotal">$0.00</span></div>
     </div>
     <div id="txEditError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger);min-height:1em;margin-top:6px"></div>
+
+    <!-- Rung up on the wrong company: move it rather than delete + re-ring, so
+         the receipt number, date, items and totals are preserved. -->
+    <div id="txMoveRow" style="display:none;margin-top:10px;padding:12px 14px;background:var(--cream);border:1px solid var(--border);border-radius:10px">
+      <div style="font-family:system-ui,sans-serif;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Wrong company?</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="txMoveTarget" style="flex:1;min-width:200px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none"></select>
+        <button class="btn" style="background:var(--gold);color:#fff;padding:8px 16px;font-size:.82rem" onclick="moveTxToCompany()">Move sale</button>
+      </div>
+      <div style="font-family:system-ui,sans-serif;font-size:.72rem;color:var(--mid);margin-top:6px">Keeps the receipt number, date, items and totals. The employees credited must also exist on that company.</div>
+      <div id="txMoveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeTxEdit()">Cancel</button>
       <button class="btn btn-confirm" onclick="saveTxEdit()">Save Changes</button>
@@ -3061,6 +3074,20 @@ async function openTxEdit(txId) {
     document.getElementById('txEditCustEmail').value = editTx.customer_email;
     document.getElementById('txEditCustPhone').value = editTx.customer_phone;
     document.getElementById('txEditError').textContent = '';
+
+    // "Move to another company" — only offered when another company is actually
+    // signed in on this browser, since that's where the target list comes from.
+    const others = getLinkedAccounts().filter(a => a.email !== currentUser?.email);
+    const moveRow = document.getElementById('txMoveRow');
+    document.getElementById('txMoveStatus').textContent = '';
+    if (others.length) {
+      document.getElementById('txMoveTarget').innerHTML =
+        others.map(a => `<option value="${escapeHtml(a.email)}">${escapeHtml(a.companyName || a.email)}</option>`).join('');
+      moveRow.style.display = '';
+    } else {
+      moveRow.style.display = 'none';
+    }
+
     const picker = document.getElementById('txEditNewItem');
     picker.innerHTML = products.filter(p => p.visible !== false).map(p => `<option value="${p.id}">${p.name} — $${money((p.price || 0))}</option>`).join('');
     renderTxEditItems();
@@ -3189,6 +3216,34 @@ function txEditAddEmployee() {
   const rem = 100 - even * editTx.employees.length;
   if (Math.abs(rem) > 0.001) editTx.employees[0].commission_value += rem;
   renderTxEditEmployees();
+}
+
+// Move this sale to another company. Reuses the manager credentials already
+// verified to open this edit modal.
+async function moveTxToCompany() {
+  if (!editTx) return;
+  const statusEl = document.getElementById('txMoveStatus');
+  const target = document.getElementById('txMoveTarget').value;
+  const label = document.getElementById('txMoveTarget').selectedOptions[0]?.text || target;
+  if (!managerCreds) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Manager authorization expired. Close and try again.'; return; }
+  if (!confirm(`Move receipt #${editTx.receipt_number} to ${label}?\n\nIt will no longer appear on this company's transactions or reports.`)) return;
+
+  statusEl.style.color = 'var(--mid)';
+  statusEl.textContent = 'Moving…';
+  try {
+    const resp = await fetch(`${API}/api/pos/transactions/${editTx.id}/move`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ target_email: target, manager_name: managerCreds.name, manager_pin: managerCreds.pin }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Move failed');
+    closeTxEdit();
+    loadTransactions();
+    alert(`Receipt #${data.receipt_number} moved to ${data.moved_to}.\n\nSwitch to that company to see it.`);
+  } catch (err) {
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = err.message;
+  }
 }
 
 async function saveTxEdit() {

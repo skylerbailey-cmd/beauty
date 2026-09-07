@@ -683,6 +683,35 @@ router.delete('/transactions/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Move a sale that was rung up on the wrong company over to the right one,
+// keeping its receipt number, date, items and totals intact.
+router.post('/transactions/:id/move', async (req, res) => {
+  const userId = req.session.userId;
+  const { target_email, manager_name, manager_pin } = req.body;
+  const manager = await verifyManager(userId, manager_name, manager_pin);
+  if (!manager) return res.status(403).json({ error: 'Only a manager can move a transaction. Manager name and code did not match.' });
+
+  const email = String(target_email || '').trim().toLowerCase();
+  if (!email) return res.status(400).json({ error: 'Pick the company to move this sale to.' });
+
+  const { getUserByEmail } = require('../db');
+  const target = getUserByEmail(email);
+  if (!target) {
+    return res.status(404).json({ error: `No company found for ${email}. Sign into it once from the account menu, then try again.` });
+  }
+
+  const result = await pgDb.moveTransactionToCompany(parseInt(req.params.id), userId, target.id);
+  if (result.notFound) return res.status(404).json({ error: 'Transaction not found' });
+  if (result.sameCompany) return res.status(400).json({ error: 'That sale is already on this company.' });
+  if (result.missing) {
+    return res.status(400).json({
+      error: `${target.company_name || email} has no active employee named ${result.missing.join(' or ')}. `
+        + `Add them under Settings → Employees on that company first, so the sale keeps its commission credit.`,
+    });
+  }
+  res.json({ ok: true, receipt_number: result.receipt_number, moved_to: target.company_name || email });
+});
+
 // One manager approval covers the whole batch — each id is still scoped to
 // this company and independently checked, so a bad id in the list just gets
 // skipped rather than failing the others.

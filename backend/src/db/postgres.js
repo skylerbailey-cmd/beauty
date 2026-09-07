@@ -645,6 +645,59 @@ async function updateTransaction(id, userId, data) {
   return getTransaction(id, userId);
 }
 
+// Move a transaction to another company (rung up on the wrong one).
+//
+// Only pos_transactions carries user_id — items and payments hang off
+// transaction_id and travel with it automatically. The credited employees do
+// NOT: pos_employees is company-scoped, so the crediting rows have to be
+// re-pointed at the destination company's employees of the same name, or the
+// sale would credit someone who isn't on that roster and would drop out of the
+// destination's employee report entirely.
+//
+// Refuses rather than guesses when a name has no counterpart, so a move never
+// silently loses an employee's credit. Returns { ok } or { ok:false, missing }.
+async function moveTransactionToCompany(id, fromUserId, toUserId) {
+  const tx = (await query('SELECT * FROM pos_transactions WHERE id = $1 AND user_id = $2', [id, fromUserId])).rows[0];
+  if (!tx) return { ok: false, notFound: true };
+  if (fromUserId === toUserId) return { ok: false, sameCompany: true };
+
+  const credited = (await query(
+    `SELECT te.id, te.employee_id, e.name FROM pos_transaction_employees te
+     JOIN pos_employees e ON te.employee_id = e.id WHERE te.transaction_id = $1`, [id]
+  )).rows;
+
+  const destRoster = (await query(
+    'SELECT id, name FROM pos_employees WHERE user_id = $1 AND active = 1', [toUserId]
+  )).rows;
+  const byName = new Map(destRoster.map(e => [String(e.name).trim().toLowerCase(), e.id]));
+
+  const remap = [];
+  const missing = [];
+  for (const c of credited) {
+    const destId = byName.get(String(c.name).trim().toLowerCase());
+    if (destId) remap.push({ rowId: c.id, destId });
+    else missing.push(c.name);
+  }
+  if (missing.length) return { ok: false, missing: [...new Set(missing)] };
+
+  for (const r of remap) {
+    await query('UPDATE pos_transaction_employees SET employee_id = $1 WHERE id = $2', [r.destId, r.rowId]);
+  }
+  // Keep the summary column pointing at a valid employee for the new company.
+  const primary = remap[0]?.destId || null;
+  await query('UPDATE pos_transactions SET user_id = $1, employee_id = $2 WHERE id = $3 AND user_id = $4',
+    [toUserId, primary, id, fromUserId]);
+
+  // Mirror the customer into the destination company's CRM so their history
+  // there is complete (keyed by email, same as a normal sale).
+  if (tx.customer_email && String(tx.customer_email).trim()) {
+    try {
+      await findOrCreateCustomer(tx.customer_name || '', tx.customer_email, toUserId, tx.customer_phone || '');
+    } catch (_) { /* non-critical */ }
+  }
+  return { ok: true, receipt_number: tx.receipt_number };
+}
+
 // Manager-gated delete. Scoped by userId (company).
 async function deleteTransaction(id, userId) {
   const existing = (await query('SELECT id FROM pos_transactions WHERE id = $1 AND user_id = $2', [id, userId])).rows[0];
@@ -1531,6 +1584,7 @@ module.exports = {
   getEmployeeTransactions,
   updateTransaction,
   deleteTransaction,
+  moveTransactionToCompany,
   receiptExists,
   importTransaction,
   // Reports
