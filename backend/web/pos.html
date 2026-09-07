@@ -2697,9 +2697,34 @@ function applyTxFilters() {
   const returnTotal = rows.filter(t => t.type === 'return').reduce((s, t) => s + (t.subtotal || 0), 0);
   const summary = document.getElementById('txSummary');
   if (summary) {
-    summary.textContent = `${rows.length} transaction${rows.length !== 1 ? 's' : ''} · Sales $${money(saleTotal)} (pre-tax)`
+    const counts = `${rows.length} transaction${rows.length !== 1 ? 's' : ''} · Sales $${money(saleTotal)} (pre-tax)`
       + (returnTotal ? ` · Returns $${money(returnTotal)} · Net $${money((saleTotal - returnTotal))}` : '');
+    // Say whose view this is. A non-manager only ever sees transactions they
+    // were personally on, so without this an unexpectedly short list looks
+    // like missing data rather than a filtered view.
+    let who = '';
+    if (txAccess) {
+      const swap = ` <button onclick="relockTransactions()" style="border:none;background:none;cursor:pointer;color:var(--rose);text-decoration:underline;font:inherit;padding:0">Switch user</button>`;
+      who = txAccess.role === 'manager'
+        ? `<div style="color:var(--mid)">Viewing as <b>${escapeHtml(txAccess.name)}</b> (manager) — all employees.${swap}</div>`
+        : `<div style="color:var(--danger)">Viewing as <b>${escapeHtml(txAccess.name)}</b> — showing <b>only transactions you were on</b>. Unlock with a manager's name and PIN to see everyone's.${swap}</div>`;
+    }
+    summary.innerHTML = who + `<div>${counts}</div>`;
   }
+}
+
+// Re-lock the Transactions tab so a different person can unlock it — the list
+// is scoped to whoever verified, and there was previously no way to change
+// that without navigating away and back.
+function relockTransactions() {
+  txAccess = null; txCreds = null; selectedTxIds.clear();
+  histTransactions = []; filteredTransactions = [];
+  const body = document.getElementById('txHistoryBody');
+  if (body) body.innerHTML = '';
+  const summary = document.getElementById('txSummary');
+  if (summary) summary.innerHTML = '';
+  pendingTabSwitch = 'history';
+  openTxAuth();
 }
 
 function viewReceipt(txId) {
