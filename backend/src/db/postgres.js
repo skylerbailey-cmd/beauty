@@ -882,6 +882,10 @@ async function getCustomerReport(userId, startDate, endDate) {
       COUNT(CASE WHEN t.type = 'sale' THEN 1 END) as purchases,
       COUNT(CASE WHEN t.type = 'return' THEN 1 END) as returns,
       COALESCE(SUM(CASE WHEN t.type = 'sale' THEN t.total ELSE -t.total END), 0) as total_spent,
+      -- Biggest single sale, used to flag high-value customers in the Customers
+      -- tab. Subtotal, not total, so the threshold is the value of what was
+      -- actually bought and doesn't move with the tax rate.
+      COALESCE(MAX(CASE WHEN t.type = 'sale' THEN t.subtotal END), 0) as largest_sale,
       cust.id as customer_id, cust.birthday, cust.address, cust.notes,
       -- Prefer the CRM record's phone (a manager may have corrected it in the
       -- Customers detail view), but fall back to whatever the sale itself

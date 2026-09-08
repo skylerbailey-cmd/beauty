@@ -726,7 +726,7 @@
         </div>
         <div id="custFilterSummary" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin-top:8px"></div>
         <table class="report-table" style="margin-top:8px">
-          <thead><tr><th>Customer</th><th>Email</th><th>Purchases</th><th>Returns</th><th>Total Spent</th><th>Employee(s)</th><th>Items</th></tr></thead>
+          <thead><tr><th>Customer</th><th>Email</th><th>Purchases</th><th>Returns</th><th>Total Spent</th><th>Employee(s)</th><th>Items</th><th></th></tr></thead>
           <tbody id="custReportBody"></tbody>
         </table>
         <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:8px">Click a customer for their full details (phone, address, notes).</p>
@@ -3682,8 +3682,21 @@ function applyCustomerFilters() {
     `${custFiltered.length} customer${custFiltered.length !== 1 ? 's' : ''}` + extra + ` · ${withEmail} with an email`;
 }
 
+// A customer qualifies for the welcome-email shortcut on the strength of one
+// big purchase, not their running total — measured on the sale's subtotal.
+const WELCOME_EMAIL_MIN_SALE = 2000;
+
 function renderCustomers(list) {
-  document.getElementById('custReportBody').innerHTML = list.map((c, i) => `
+  document.getElementById('custReportBody').innerHTML = list.map((c, i) => {
+    const bigSpender = Number(c.largest_sale) > WELCOME_EMAIL_MIN_SALE;
+    const hasEmail = !!(c.customer_email || '').trim();
+    // stopPropagation so the button doesn't also open the row's detail popup.
+    const welcomeBtn = !bigSpender ? '' : hasEmail
+      ? `<button class="btn" onclick="event.stopPropagation();composeWelcomeForCustomer(custFiltered[${i}])"
+           style="background:var(--success);color:#fff;padding:5px 10px;font-size:.72rem;white-space:nowrap"
+           title="Largest sale $${money(Number(c.largest_sale))} — open the welcome email for this customer">Send Welcome Email</button>`
+      : `<span style="font-size:.72rem;color:var(--mid)" title="Largest sale $${money(Number(c.largest_sale))}, but no email on file">No email on file</span>`;
+    return `
     <tr onclick="openCustomerDetail(${i})" style="cursor:pointer" title="Click for this customer's details">
       <td style="font-weight:600">${escapeHtml(c.customer_name)}</td>
       <td>${escapeHtml(c.customer_email)}</td>
@@ -3692,8 +3705,10 @@ function renderCustomers(list) {
       <td style="font-weight:600">$${money(Number(c.total_spent))}</td>
       <td style="font-size:.78rem;color:var(--mid)">${(c.employees || []).map(e => escapeHtml(e.name)).join(', ') || '-'}</td>
       <td style="font-size:.78rem;color:var(--mid)">${(c.products || []).map(p => escapeHtml(p.product_name)).join(', ')}</td>
+      <td style="text-align:right">${welcomeBtn}</td>
     </tr>
-  `).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No customers match this filter</td></tr>';
+  `;
+  }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--mid)">No customers match this filter</td></tr>';
 }
 
 // ─── Customer Detail ─────────────────────────────────────────────────────────
@@ -3735,12 +3750,17 @@ function openCustomerDetail(i) {
 // Open the Emails tab's welcome-email composer for this customer, with their
 // name, email and everything they've bought already filled in. The composer is
 // an embedded page, so the details ride in on its URL and it prefills on load.
-function composeWelcomeForCustomer() {
-  const c = custDetailTarget;
+// Called both from the detail popup (no argument — uses whoever is open) and
+// from the button on a high-value row in the Customers list.
+function composeWelcomeForCustomer(customer) {
+  const c = customer || custDetailTarget;
   if (!c) return;
   if (!c.customer_email || !c.customer_email.trim()) {
-    document.getElementById('custDetailError').textContent =
-      'This customer has no email on file, so there\'s nowhere to send a welcome email. Add one above and save first.';
+    // Only the popup has somewhere to put an error; from the list, say it here.
+    const errEl = customer ? null : document.getElementById('custDetailError');
+    const msg = 'This customer has no email on file, so there\'s nowhere to send a welcome email. Add one above and save first.';
+    if (errEl) errEl.textContent = msg;
+    else alert('This customer has no email on file, so there\'s nowhere to send a welcome email. Open them and add one first.');
     return;
   }
   // The composer asks for a FIRST name, and greets the customer with it.
