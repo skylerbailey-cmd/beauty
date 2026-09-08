@@ -3678,8 +3678,13 @@ function applyCustomerFilters() {
   let extra = '';
   if (prodLabel) extra += ` who purchased “${prodLabel}”`;
   if (empLabel) extra += `${prodLabel ? ' and' : ' who were'} served by ${empLabel}`;
+  // Say how many qualify for the welcome-email button. Without this, a range
+  // where nobody does is indistinguishable from the feature being broken —
+  // the button is just absent either way.
+  const bigSpenders = custFiltered.filter(c => Number(c.largest_sale) > WELCOME_EMAIL_MIN_SALE).length;
   document.getElementById('custFilterSummary').textContent =
-    `${custFiltered.length} customer${custFiltered.length !== 1 ? 's' : ''}` + extra + ` · ${withEmail} with an email`;
+    `${custFiltered.length} customer${custFiltered.length !== 1 ? 's' : ''}` + extra + ` · ${withEmail} with an email`
+    + ` · ${bigSpenders} with a sale over $${WELCOME_EMAIL_MIN_SALE.toLocaleString()} in these dates`;
 }
 
 // A customer qualifies for the welcome-email shortcut on the strength of one
