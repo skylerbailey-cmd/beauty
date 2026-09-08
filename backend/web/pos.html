@@ -49,8 +49,22 @@
     header {
       background: var(--white); border-bottom: 1px solid var(--border);
       padding: 12px 24px; display: flex; align-items: center; gap: 16px;
+      position: relative;
     }
     header h1 { font-size: 1.2rem; color: var(--rose-dk); }
+    /* Which company you're currently in. Centred on the header itself rather
+       than in a flex slot, because the left and right sides are different
+       widths so a middle column wouldn't sit in the true centre. */
+    .header-company {
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+      font-size: 1.6rem; font-weight: 700; color: var(--rose-dk);
+      letter-spacing: .01em; white-space: nowrap; max-width: 42%;
+      overflow: hidden; text-overflow: ellipsis;
+      pointer-events: none;  /* never blocks the controls it sits between */
+    }
+    /* Below this the sides would collide with it — the company switcher in the
+       corner still names the company, so nothing is lost by dropping it. */
+    @media (max-width: 900px) { .header-company { display: none; } }
     header p { font-size: .78rem; color: var(--mid); font-family: system-ui, sans-serif; margin-top: 2px; }
 
     /* ── App Switcher ─── */
@@ -408,6 +422,7 @@
     <h1>SkySale</h1>
     <p id="headerSub">Sales & receipts</p>
   </div>
+  <div class="header-company" id="headerCompanyBig"></div>
   <div id="headerUser" style="display:none;font-family:system-ui,sans-serif;font-size:.82rem;text-align:right;">
     <div style="display:flex;align-items:center;gap:8px;">
       <div class="company-switcher" id="companySwitcher">
@@ -1298,6 +1313,17 @@ const API = '';
 // ─── State ──────────────────────────────────────────────────────────────────
 let currentUser = null;
 
+// The company name appears twice in the header — big in the centre, and in the
+// switcher in the corner. Set both together so they can never disagree about
+// which company you're looking at.
+function setHeaderCompany(name) {
+  const label = name || 'My Store';
+  const corner = document.getElementById('headerCompany');
+  const big = document.getElementById('headerCompanyBig');
+  if (corner) corner.textContent = label;
+  if (big) { big.textContent = label; big.title = label; }
+}
+
 // ─── Init ───────────────────────────────────────────────────────────────────
 async function init() {
   try {
@@ -1312,7 +1338,7 @@ async function init() {
     el.style.display = 'flex';
     el.style.alignItems = 'center';
     el.style.gap = '8px';
-    document.getElementById('headerCompany').textContent = currentUser.companyName || 'My Store';
+    setHeaderCompany(currentUser.companyName);
     document.getElementById('headerEmail').textContent = currentUser.email || '';
 
     const theme = currentUser.theme || localStorage.getItem('glowTheme') || 'rose';
@@ -4707,7 +4733,7 @@ async function saveCompanyName() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
     currentUser.companyName = data.companyName;
-    document.getElementById('headerCompany').textContent = data.companyName;
+    setHeaderCompany(data.companyName);
     addLinkedAccount(currentUser.email, data.companyName);
     input.style.borderColor = '#81c784';
     setTimeout(() => { input.style.borderColor = ''; }, 1500);
@@ -4792,7 +4818,7 @@ async function switchAccount(email) {
     selectedBrands = data.user.brands || ['avologi', 'avinichi', 'hydrasphere', 'spacetouch', 'lumieres'];
     addLinkedAccount(currentUser.email, currentUser.companyName);
     applyTheme(currentUser.theme || 'rose');
-    document.getElementById('headerCompany').textContent = currentUser.companyName || '';
+    setHeaderCompany(currentUser.companyName);
     document.getElementById('headerEmail').textContent = currentUser.email;
     document.getElementById('settingsCompanyName').value = currentUser.companyName || '';
     // Reload ALL company-specific data for the new account
