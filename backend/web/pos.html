@@ -2943,6 +2943,15 @@ function receiptForTxId(txId) {
 
 function startEditTransaction(txId) {
   const receipt = receiptForTxId(txId);
+  // Opening the Transactions tab already required a manager's name + PIN, and
+  // the Edit button only renders for managers — so reuse those credentials
+  // instead of asking for the same ones again. The server still verifies a
+  // manager PIN on every save; this drops the duplicate prompt, not the check.
+  if (txAccess?.role === 'manager' && txCreds?.name && txCreds?.pin) {
+    managerCreds = { name: txCreds.name, pin: txCreds.pin };
+    openTxEdit(txId, receipt);
+    return;
+  }
   openManagerAuth('edit', txId,
     `Only a manager can edit a transaction. Enter the manager name and code to edit ${receipt ? 'receipt #' + receipt : 'this transaction'}.`,
     receipt);
@@ -3355,6 +3364,12 @@ async function saveTxEdit() {
       body: JSON.stringify(body),
     });
     const data = await resp.json();
+    // 403 here means the credentials carried over from unlocking the tab are no
+    // longer valid (e.g. the PIN was changed since). Point at the fix rather
+    // than repeating the raw server message.
+    if (resp.status === 403) {
+      throw new Error('Your manager sign-in is no longer valid. Close this, click "Switch user" above the list, and sign in again.');
+    }
     if (!resp.ok) throw new Error(data.error);
     closeTxEdit();
     loadTransactions();
