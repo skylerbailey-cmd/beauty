@@ -3116,7 +3116,21 @@ async function openTxEdit(txId, expectedReceipt) {
       customer_name: tx.customer_name || '',
       customer_email: tx.customer_email || '',
       customer_phone: tx.customer_phone || '',
-      items: tx.items.map(i => ({ product_id: i.product_id, product_name: i.product_name, brand: i.brand || '', quantity: i.quantity, unit_price: i.unit_price })),
+      // unit_price is the product's LIST price; any markdown lives in
+      // `discount` (see confirmPriceEdit). Carry both, and edit the price
+      // actually charged — showing the list price here would misstate the sale
+      // and, on save, silently wipe the discount and inflate the total.
+      items: tx.items.map(i => {
+        const qty = i.quantity || 1;
+        const listPrice = Number(i.unit_price) || 0;
+        const discPerUnit = qty ? (Number(i.discount) || 0) / qty : 0;
+        return {
+          product_id: i.product_id, product_name: i.product_name, brand: i.brand || '',
+          quantity: qty,
+          unit_price: listPrice,
+          charged: round2(listPrice - discPerUnit),
+        };
+      }),
       employees: (tx.employees || []).map(e => ({ employee_id: e.employee_id, name: e.employee_name, commission_type: 'percent', commission_value: e.commission_value || 0 })),
     };
     document.getElementById('txEditReceipt').textContent = '#' + tx.receipt_number;
@@ -3161,7 +3175,7 @@ function closeTxEdit() {
 }
 
 function txEditTotals() {
-  const subtotal = editTx.items.reduce((s, i) => s + i.unit_price * i.quantity, 0);
+  const subtotal = editTx.items.reduce((s, i) => s + i.charged * i.quantity, 0);
   const tax = Math.round(subtotal * editTx.tax_rate * 100) / 100;
   const total = Math.round((subtotal + tax) * 100) / 100;
   return { subtotal, tax, total };
@@ -3177,8 +3191,9 @@ function renderTxEditItems() {
         <div style="flex:1">${it.product_name}<br><span style="font-size:.7rem;color:var(--mid)">${it.brand || ''}</span></div>
         <input type="number" min="1" value="${it.quantity}" onchange="txEditItemQty(${i},this.value)" style="width:48px;padding:5px;border:1px solid var(--border);border-radius:6px;text-align:center;outline:none">
         <span style="color:var(--mid)">×&nbsp;$</span>
-        <input type="number" min="0" step="0.01" value="${it.unit_price}" onchange="txEditItemPrice(${i},this.value)" style="width:78px;padding:5px;border:1px solid var(--border);border-radius:6px;text-align:right;outline:none">
-        <span style="width:64px;text-align:right">$${money((it.unit_price * it.quantity))}</span>
+        <input type="number" min="0" step="0.01" value="${it.charged}" onchange="txEditItemPrice(${i},this.value)" style="width:78px;padding:5px;border:1px solid var(--border);border-radius:6px;text-align:right;outline:none">
+        <span style="width:64px;text-align:right">${it.charged < it.unit_price - 0.005
+          ? `<span style="text-decoration:line-through;color:var(--mid);font-size:.72rem">$${money(it.unit_price * it.quantity)}</span><br>` : ''}$${money(it.charged * it.quantity)}</span>
         <button onclick="txEditRemoveItem(${i})" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:1rem">&times;</button>
       </div>`).join('');
   }
@@ -3195,13 +3210,15 @@ function renderTxEditTotalsDisplay() {
 }
 
 function txEditItemQty(i, v) { editTx.items[i].quantity = Math.max(1, parseInt(v) || 1); renderTxEditItems(); }
-function txEditItemPrice(i, v) { editTx.items[i].unit_price = Math.max(0, parseFloat(v) || 0); renderTxEditItems(); }
+// Edits the price actually charged. The list price is left alone so the
+// difference stays recorded as a discount on the receipt.
+function txEditItemPrice(i, v) { editTx.items[i].charged = Math.max(0, parseFloat(v) || 0); renderTxEditItems(); }
 function txEditRemoveItem(i) { editTx.items.splice(i, 1); renderTxEditItems(); }
 function txEditAddItem() {
   const id = document.getElementById('txEditNewItem').value;
   const p = products.find(x => x.id === id);
   if (!p) return;
-  editTx.items.push({ product_id: p.id, product_name: p.name, brand: p.brand || '', quantity: 1, unit_price: p.price || 0 });
+  editTx.items.push({ product_id: p.id, product_name: p.name, brand: p.brand || '', quantity: 1, unit_price: p.price || 0, charged: p.price || 0 });
   renderTxEditItems();
 }
 
@@ -3316,7 +3333,20 @@ async function saveTxEdit() {
     customer_name: document.getElementById('txEditCustName').value.trim(),
     customer_email: document.getElementById('txEditCustEmail').value.trim(),
     customer_phone: document.getElementById('txEditCustPhone').value.trim(),
-    items: editTx.items.map(i => ({ product_id: i.product_id, product_name: i.product_name, brand: i.brand, quantity: i.quantity, unit_price: i.unit_price })),
+    // Send the list price plus the markdown, so a discounted line stays
+    // discounted (and keeps its struck-through original on the receipt)
+    // instead of being rewritten at full price.
+    items: editTx.items.map(i => {
+      // Raising the charged price above list re-bases the list price, so the
+      // increase isn't swallowed by a negative discount.
+      const listPrice = Math.max(Number(i.unit_price) || 0, Number(i.charged) || 0);
+      return {
+        product_id: i.product_id, product_name: i.product_name, brand: i.brand,
+        quantity: i.quantity,
+        unit_price: listPrice,
+        discount: round2((listPrice - (Number(i.charged) || 0)) * i.quantity),
+      };
+    }),
     employees: editTx.employees.map(e => ({ employee_id: e.employee_id, commission_type: 'percent', commission_value: e.commission_value })),
   };
   try {
