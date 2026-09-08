@@ -2061,6 +2061,8 @@
           <h2 class="card-title">New Customer Welcome</h2>
           <p class="card-sub">Enter the customer's email and select the products they purchased. We'll generate a personalized welcome email with usage instructions.</p>
 
+          <div id="prefillNote" hidden style="margin-bottom:14px;padding:10px 14px;background:#f2dde2;border:1px solid #e0c3cb;border-radius:8px;font-size:.86rem;color:#6b3a48"></div>
+
           <!-- Customer Name -->
           <div class="field">
             <label for="customerName">Customer First Name</label>
@@ -2127,6 +2129,20 @@
               <button class="select-all-btn" onclick="clearAll('spacetouch')">Clear all</button>
             </div>
             <div class="product-grid" id="grid-spacetouch"></div>
+          </div>
+
+          <!-- Lumieres -->
+          <div class="brand-section" id="brand-section-lumieres">
+            <div class="brand-header">
+              <span class="brand-badge" style="background:#f3e8ee;color:#7a3b5c;">Lumi&#232;res</span>
+              <span class="brand-name">Red/NIR/Blue Light Therapy Devices</span>
+              <a class="brand-url" href="https://lumiereslights.com/" target="_blank">lumiereslights.com &#8599;</a>
+            </div>
+            <div class="select-all-row">
+              <button class="select-all-btn" onclick="selectAll('lumieres')">Select all</button>
+              <button class="select-all-btn" onclick="clearAll('lumieres')">Clear all</button>
+            </div>
+            <div class="product-grid" id="grid-lumieres"></div>
           </div>
 
           <div id="formError" class="error-box" hidden></div>
@@ -2509,11 +2525,57 @@
       renderGrid('avinichi');
       renderGrid('avologi');
       renderGrid('spacetouch');
+      renderGrid('lumieres');
+      // Grids must exist before their checkboxes can be ticked.
+      applyPrefillFromUrl();
     });
-    // Inside the POS Emails tab, default to the Sent Emails view
-    if (typeof IS_EMBEDDED !== 'undefined' && IS_EMBEDDED) {
+    // Inside the POS Emails tab, default to the Sent Emails view — unless we
+    // were opened to compose for a specific customer.
+    if (typeof IS_EMBEDDED !== 'undefined' && IS_EMBEDDED && !hasPrefill()) {
       switchTab('sent');
     }
+  }
+
+  // ── Prefill from the POS Customers tab ──────────────────────────────────────
+  // Opened as ?name=&email=&products=id1,id2 so a welcome email can be started
+  // for a customer with everything they bought already ticked.
+  function prefillParams() { return new URLSearchParams(location.search); }
+  function hasPrefill() {
+    const q = prefillParams();
+    return !!(q.get('email') || q.get('name') || q.get('products'));
+  }
+
+  function applyPrefillFromUrl() {
+    const q = prefillParams();
+    if (!hasPrefill()) return;
+
+    switchTab('welcome');
+    const name = (q.get('name') || '').trim();
+    const email = (q.get('email') || '').trim();
+    if (name) document.getElementById('customerName').value = name;
+    if (email) document.getElementById('customerEmail').value = email;
+
+    const wanted = (q.get('products') || '').split(',').map(s => s.trim()).filter(Boolean);
+    const missing = [];
+    for (const id of wanted) {
+      const cb = document.querySelector(`.product-card input[type=checkbox][value="${CSS.escape(id)}"]`);
+      // A product can be absent because the store hid it in POS Settings, or
+      // because it was a custom/imported item that isn't in this catalog.
+      if (!cb) { missing.push(id); continue; }
+      cb.checked = true;
+      syncCardState(cb);
+    }
+
+    const note = document.getElementById('prefillNote');
+    if (note) {
+      const ticked = wanted.length - missing.length;
+      note.innerHTML = `Started from the POS for <b>${escapeHtml(name || email || 'this customer')}</b> — `
+        + `${ticked} of ${wanted.length} purchased product${wanted.length === 1 ? '' : 's'} pre-selected.`
+        + (missing.length ? ` <span style="color:#b3261e">${missing.length} couldn't be ticked (not in this catalog, or hidden in POS Settings).</span>` : '');
+      note.hidden = false;
+    }
+    // Don't re-apply on a manual reload of the same URL.
+    history.replaceState(null, '', location.pathname + (IS_EMBEDDED ? '?embed=1' : ''));
   }
 
   // ── Sidebar tab switching ───────────────────────────────────────────────────
@@ -3016,6 +3078,12 @@
     spacetouch: [
       { id: 'spacetouch-cosmo', name: 'Cosmo', description: 'Portable, foldable full-body LED skin care device — 360 LED and infrared points across a 23-inch panel with six therapeutic wavelengths and AI-enhanced Flash Mode. Targets body pain, wrinkles, pigmentation, cellulite, scarring, tightening, and acne. FDA approved with a lifetime warranty.', image: 'https://spacetouch.com/cdn/shop/files/SpacetouchCosmostomachtightenting.png?v=1710228368' },
     ],
+    lumieres: [
+      { id: 'lumieres-medlight', name: 'MedLight', description: 'Multi-spectrum light therapy device for pain relief and skin care, with seven pre-set modes plus a fully customizable mode on a touchscreen controller.', image: 'https://lumiereslights.com/wp-content/uploads/2024/08/Lumieres-White-Devices-2-1-600x600.png' },
+      { id: 'lumieres-max', name: 'Smart Medical Device Max', description: 'Full-body FDA-certified red/near-infrared/blue light therapy panel — 304 LEDs across six bands with voice-guided Voice Mentor sessions and floor, wall or door mounting.', image: 'https://lumiereslights.com/wp-content/uploads/2024/08/9-1-scaled.jpg' },
+      { id: 'lumieres-medium', name: 'Smart Device Medium', description: 'Half-body red/near-infrared/blue light therapy panel — 152 LEDs across six bands with Voice Mentor guided sessions, for targeted relief across larger muscle groups.', image: 'https://lumiereslights.com/wp-content/uploads/2024/08/Lumieres-Smart-Device-Medium-1-600x600.jpg' },
+      { id: 'lumieres-small', name: 'Smart Device Small', description: 'The most compact panel in the line — 64 LEDs across six bands in an aluminium housing, for targeted localized pain relief and skin care.', image: 'https://lumiereslights.com/wp-content/uploads/2024/08/Lumieres-6-600x600.png' },
+    ],
   };
 
   // ── Render product grids ────────────────────────────────────────────────────
@@ -3072,6 +3140,7 @@
   renderGrid('avologi');
   renderGrid('avinichi');
   renderGrid('spacetouch');
+  renderGrid('lumieres');
 
   const THERMAL_SET_ID = 'hydrasphere-mineralift-thermal-set';
   const THERMAL_INDIVIDUAL_IDS = ['hydrasphere-mineralift-thermal-serum', 'hydrasphere-mineralift-thermal-cream', 'hydrasphere-mineralift-thermal-mask'];

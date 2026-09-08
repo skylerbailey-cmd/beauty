@@ -1171,6 +1171,7 @@
     <div id="custDetailError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger);min-height:1em"></div>
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeCustomerDetail()">Close</button>
+      <button class="btn" id="custDetailWelcomeBtn" style="background:var(--success);color:#fff" onclick="composeWelcomeForCustomer()">Send Welcome Email</button>
       <button class="btn btn-confirm" id="custDetailSaveBtn" onclick="saveCustomerDetail()">Save</button>
     </div>
   </div>
@@ -3647,11 +3648,40 @@ function openCustomerDetail(i) {
   document.getElementById('custDetailAddress').disabled = !canEdit;
   document.getElementById('custDetailNotes').disabled = !canEdit;
   document.getElementById('custDetailSaveBtn').style.display = canEdit ? '' : 'none';
+  // No email means nowhere to send a welcome email either.
+  document.getElementById('custDetailWelcomeBtn').style.display = canEdit ? '' : 'none';
   document.getElementById('custDetailError').textContent = canEdit ? '' :
     'This customer has no email on file, so their info can\'t be saved yet.';
 
   document.getElementById('customerDetailModal').classList.add('show');
 }
+// Open the Emails tab's welcome-email composer for this customer, with their
+// name, email and everything they've bought already filled in. The composer is
+// an embedded page, so the details ride in on its URL and it prefills on load.
+function composeWelcomeForCustomer() {
+  const c = custDetailTarget;
+  if (!c) return;
+  if (!c.customer_email || !c.customer_email.trim()) {
+    document.getElementById('custDetailError').textContent =
+      'This customer has no email on file, so there\'s nowhere to send a welcome email. Add one above and save first.';
+    return;
+  }
+  // The composer asks for a FIRST name, and greets the customer with it.
+  const firstName = String(c.customer_name || '').trim().split(/\s+/)[0] || '';
+  const productIds = [...new Set((c.products || []).map(p => p.product_id).filter(Boolean))];
+
+  const qs = new URLSearchParams({ embed: '1', name: firstName, email: c.customer_email.trim() });
+  if (productIds.length) qs.set('products', productIds.join(','));
+
+  const frame = document.getElementById('emailsFrame');
+  // Point the iframe at the prefilled URL before switching, and set src
+  // directly rather than via dataset so switchTab's "load once" check doesn't
+  // skip it — and so a second customer replaces the first one's details.
+  if (frame) frame.src = `/?${qs.toString()}`;
+  closeCustomerDetail();
+  switchTab('emails');
+}
+
 function closeCustomerDetail() {
   document.getElementById('customerDetailModal').classList.remove('show');
   custDetailTarget = null;
