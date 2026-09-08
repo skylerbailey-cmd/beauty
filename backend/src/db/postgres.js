@@ -1237,20 +1237,28 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
   const plan = await getCommissionPlan(employeeId);
 
   // Get all transactions this employee was on
+  // userId is a company SCOPE (an array) everywhere this is called from, so it
+  // has to be matched with ANY. A plain `= $2` silently matched nothing —
+  // node-pg renders the array as the literal '{company-a}', which never equals
+  // a company id — zeroing the sales of every employee on a commission plan.
   const txResult = await query(`
     SELECT t.id, t.type, t.created_at, te.commission_value, te.commission_amount
     FROM pos_transactions t
     JOIN pos_transaction_employees te ON t.id = te.transaction_id
-    WHERE te.employee_id = $1 AND t.user_id = $2
+    WHERE te.employee_id = $1 AND t.user_id = ANY($2::text[])
       AND COALESCE(t.original_sale_date, t.created_at) >= $3
       AND COALESCE(t.original_sale_date, t.created_at) <= $4
-  `, [employeeId, userId, startDate, endDate]);
+  `, [employeeId, asCompanyIds(userId), startDate, endDate]);
 
   if (!plan || plan.plan_type === 'flat') {
     let salesTotal = 0, returnsTotal = 0, saleCount = 0, returnCount = 0;
     for (const tx of txResult.rows) {
-      if (tx.type === 'sale') { salesTotal += tx.commission_amount; saleCount++; }
-      else { returnsTotal += tx.commission_amount; returnCount++; }
+      // Number() because commission_amount only arrives as a JS number while
+      // the column is REAL — as NUMERIC it would come back a string and these
+      // += would concatenate ("5400" + "150" = "5400150") rather than add.
+      const amt = Number(tx.commission_amount) || 0;
+      if (tx.type === 'sale') { salesTotal += amt; saleCount++; }
+      else { returnsTotal += amt; returnCount++; }
     }
     const netTotal = salesTotal - returnsTotal;
     const rate = plan ? Number(plan.base_rate) || 0 : null;
@@ -1279,13 +1287,14 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
       // on the tax-inclusive total, which would push them over the threshold
       // early and inflate the payout.
       const dayNetSales = dayTxs.reduce((sum, tx) => {
-        return sum + (tx.type === 'sale' ? tx.commission_amount : -tx.commission_amount);
+        const amt = Number(tx.commission_amount) || 0;
+        return sum + (tx.type === 'sale' ? amt : -amt);
       }, 0);
 
       const rate = dayNetSales > plan.tier_threshold ? plan.tier_rate : plan.base_rate;
 
       for (const tx of dayTxs) {
-        const empShare = tx.commission_amount;
+        const empShare = Number(tx.commission_amount) || 0;
         const commission = empShare * (rate / 100);
         if (tx.type === 'sale') { salesTotal += empShare; commissionTotal += commission; saleCount++; }
         else { returnsTotal += empShare; commissionTotal -= commission; returnCount++; }
