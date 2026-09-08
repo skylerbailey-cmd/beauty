@@ -1169,7 +1169,8 @@
 <!-- ─── Transaction Edit Modal ─── -->
 <div class="modal-overlay" id="txEditModal">
   <div class="modal" style="max-width:660px">
-    <h2>Edit Transaction <span id="txEditReceipt" style="font-size:.82rem;color:var(--mid);font-weight:400"></span></h2>
+    <h2>Edit Transaction <span id="txEditReceipt" style="font-size:.95rem;color:var(--rose-dk);font-weight:700"></span></h2>
+    <p id="txEditWho" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin:-4px 0 10px"></p>
     <div style="display:flex;gap:12px">
       <div class="field" style="flex:1"><label>Customer Name</label><input type="text" id="txEditCustName"></div>
       <div class="field" style="flex:1"><label>Customer Email</label><input type="email" id="txEditCustEmail"></div>
@@ -2931,16 +2932,33 @@ let managerAction = null;   // { type: 'edit'|'delete', txId }
 let managerCreds = null;    // { name, pin } captured after manager verification
 let editTx = null;          // working copy of the transaction being edited
 
+// Which receipt an id belongs to, per the list currently on screen. Used to
+// name the transaction in the prompt and to confirm the modal opens the one
+// that was actually clicked.
+function receiptForTxId(txId) {
+  const row = (filteredTransactions || []).find(t => t.id === txId)
+    || (histTransactions || []).find(t => t.id === txId);
+  return row ? String(row.receipt_number) : null;
+}
+
 function startEditTransaction(txId) {
-  openManagerAuth('edit', txId, 'Only a manager can edit a transaction. Enter the manager name and code.');
+  const receipt = receiptForTxId(txId);
+  openManagerAuth('edit', txId,
+    `Only a manager can edit a transaction. Enter the manager name and code to edit ${receipt ? 'receipt #' + receipt : 'this transaction'}.`,
+    receipt);
 }
 function startDeleteTransaction(txId) {
-  openManagerAuth('delete', txId, 'Only a manager can delete a transaction. Enter the manager name and code.');
+  const receipt = receiptForTxId(txId);
+  openManagerAuth('delete', txId,
+    `Only a manager can delete a transaction. Enter the manager name and code to delete ${receipt ? 'receipt #' + receipt : 'this transaction'}.`,
+    receipt);
 }
 
 let hiddenDrilldownForAuth = false;
-function openManagerAuth(type, txId, msg) {
-  managerAction = { type, txId };
+function openManagerAuth(type, txId, msg, receipt) {
+  // Carry the receipt the user actually clicked, so the transaction that
+  // finally opens can be checked against it.
+  managerAction = { type, txId, receipt: receipt || null };
   // Same DOM-order/z-index issue as openTxEdit: hide the drilldown modal
   // while the auth prompt is up, restore it on close.
   const drilldownModal = document.getElementById('dayDrilldownModal');
@@ -2996,7 +3014,7 @@ async function submitManagerAuth() {
         await submitTransaction(pendingTxBody);
       }
     } else {
-      await openTxEdit(action.txId);
+      await openTxEdit(action.txId, action.receipt);
     }
   } catch (err) {
     errEl.textContent = err.message;
@@ -3068,7 +3086,7 @@ async function performBulkDeleteTransactions() {
 }
 
 let hiddenDrilldownForEdit = false;
-async function openTxEdit(txId) {
+async function openTxEdit(txId, expectedReceipt) {
   // dayDrilldownModal and txEditModal share a z-index and dayDrilldownModal
   // sits later in the DOM, so it would paint over txEditModal if both were
   // left showing — hide it while editing and restore it on close.
@@ -3078,10 +3096,19 @@ async function openTxEdit(txId) {
     hiddenDrilldownForEdit = true;
   }
   try {
-    const resp = await fetch(`${API}/api/pos/transactions/${txId}`, { credentials: 'include' });
+    // cache: 'no-store' — without it the browser can serve a previously cached
+    // copy of this transaction (Express sets an ETag on JSON), so a record
+    // edited a moment ago could reopen with its old contents.
+    const resp = await fetch(`${API}/api/pos/transactions/${txId}`, { credentials: 'include', cache: 'no-store' });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error);
     const tx = data.transaction;
+    // Refuse to open a transaction other than the row that was clicked, rather
+    // than silently editing the wrong sale.
+    if (expectedReceipt && String(tx.receipt_number) !== String(expectedReceipt)) {
+      alert(`This opened the wrong transaction — you clicked receipt #${expectedReceipt} but the server returned #${tx.receipt_number} (id ${txId}).\n\nNothing has been changed. Please refresh the page and try again, and let support know both receipt numbers.`);
+      return;
+    }
     editTx = {
       id: tx.id,
       receipt_number: tx.receipt_number,
@@ -3093,6 +3120,10 @@ async function openTxEdit(txId) {
       employees: (tx.employees || []).map(e => ({ employee_id: e.employee_id, name: e.employee_name, commission_type: 'percent', commission_value: e.commission_value || 0 })),
     };
     document.getElementById('txEditReceipt').textContent = '#' + tx.receipt_number;
+    // Restate the sale being edited, so it's immediately obvious if this isn't
+    // the row that was clicked.
+    document.getElementById('txEditWho').textContent =
+      `${new Date(tx.created_at).toLocaleString()} · ${tx.customer_name || 'no customer'} · $${money(tx.total)}`;
     document.getElementById('txEditCustName').value = editTx.customer_name;
     document.getElementById('txEditCustEmail').value = editTx.customer_email;
     document.getElementById('txEditCustPhone').value = editTx.customer_phone;
