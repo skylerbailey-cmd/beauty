@@ -645,7 +645,9 @@
           <span id="empPersonalError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger)"></span>
         </div>
         <div id="empPersonalReport" style="display:none;margin-top:12px">
-          <div style="font-family:system-ui,sans-serif;font-size:.88rem;font-weight:600;color:var(--dark);margin-bottom:8px" id="empPersonalName"></div>
+          <div style="font-family:system-ui,sans-serif;font-size:.88rem;font-weight:600;color:var(--dark);margin-bottom:4px" id="empPersonalName"></div>
+          <div id="rptRangeNote" style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-bottom:8px"></div>
+          <div style="font-family:system-ui,sans-serif;font-size:.75rem;color:var(--mid);margin-bottom:8px">A return is counted against the day the item was originally sold, not the day it came back.</div>
           <table class="report-table">
             <thead><tr><th>Employee</th><th>Sales</th><th>Sales $</th><th>Returns $</th><th>Net Sales $</th><th>Commission</th></tr></thead>
             <tbody id="empPersonalBody"></tbody>
@@ -3523,6 +3525,12 @@ async function loadReports() {
     renderLeaderboard(employees);
     renderManagerCommissions();
   }
+
+  // Changing the dates and pressing Update must also refresh the unlocked
+  // employee's own figures — otherwise the KPIs above move to the new period
+  // while their personal sales/returns still show the period they unlocked on.
+  // Re-run the same request with the credentials from that unlock, silently.
+  if (personalCreds) await unlockPersonalReport(true);
 }
 
 // Always-visible leaderboard for TODAY specifically — independent of the
@@ -4347,12 +4355,16 @@ function renderManagerCommissions() {
 }
 
 // ─── Employee Personal Report / Manager unlock ──────────────────────────────
-async function unlockPersonalReport() {
-  const name = document.getElementById('empPersonalName2').value.trim();
-  const pin = document.getElementById('empPersonalPin').value.trim();
+// Credentials from the unlock, kept so changing the dates and pressing Update
+// can refresh these figures without making the employee sign in again.
+let personalCreds = null;
+
+async function unlockPersonalReport(silent) {
+  const name = silent ? personalCreds?.name : document.getElementById('empPersonalName2').value.trim();
+  const pin = silent ? personalCreds?.pin : document.getElementById('empPersonalPin').value.trim();
   const errorEl = document.getElementById('empPersonalError');
-  if (!name) { errorEl.textContent = 'Enter your name'; return; }
-  if (!pin) { errorEl.textContent = 'Enter your PIN'; return; }
+  if (!name) { if (!silent) errorEl.textContent = 'Enter your name'; return; }
+  if (!pin) { if (!silent) errorEl.textContent = 'Enter your PIN'; return; }
 
   const start = document.getElementById('rptStart').value;
   const end = document.getElementById('rptEnd').value;
@@ -4366,10 +4378,19 @@ async function unlockPersonalReport() {
     if (!resp.ok) throw new Error(data.error);
 
     errorEl.textContent = '';
+    personalCreds = { name, pin }; // lets Update re-run this without a re-unlock
     document.getElementById('empLockBtn').style.display = '';
     // The date filter only ever applies to what's behind this unlock — reveal
     // it now, whichever role just unlocked.
     document.getElementById('reportsDateFilter').style.display = '';
+    // Say which dates these figures cover, and that the filter drives them.
+    const rangeEl = document.getElementById('rptRangeNote');
+    if (rangeEl) {
+      const fmt = d => new Date(d + 'T12:00:00').toLocaleDateString();
+      rangeEl.innerHTML = start === end
+        ? `Showing <b>${fmt(start)}</b>. Change the dates above and press <b>Update</b> to see another period.`
+        : `Showing <b>${fmt(start)} – ${fmt(end)}</b>. Change the dates above and press <b>Update</b> to see another period.`;
+    }
 
     if (data.role === 'manager') {
       // Managers unlock the KPIs, full leaderboard, commissions, and top products
@@ -4401,6 +4422,7 @@ async function unlockPersonalReport() {
 
 function lockPersonalReport() {
   managerReportsUnlocked = false;
+  personalCreds = null; // Update must not keep refreshing after locking
   document.getElementById('managerCommissionsSection').style.display = 'none';
   document.getElementById('reportsDateFilter').style.display = 'none';
   document.getElementById('salesSummary').innerHTML = '';
