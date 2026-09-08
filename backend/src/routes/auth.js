@@ -34,6 +34,9 @@ router.post('/web-login', (req, res) => {
   }
 
   req.session.userId = user.id;
+  // A multi-company view was authorised against the previous company's manager
+  // PIN, so it must not carry over into a different company's session.
+  req.session.companyScope = null;
 
   // Set long-lived signed cookies so login persists across Railway redeploys
   const cookieOpts = {

@@ -566,6 +566,10 @@
         <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="showAllTransactions()">Show All</button>
         <input type="text" id="histSearch" placeholder="Search anything (receipt, customer, employee, card, amount, type…)" oninput="applyTxFilters()" style="min-width:300px;flex:1">
         <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="clearTxFilters()">Clear</button>
+        <span id="txCompanyPicker" style="display:none;align-items:center;gap:6px">
+          <label>Company:</label>
+          <select id="txCompanyScope" onchange="changeCompanyScope(this.value)"></select>
+        </span>
         <button class="btn" id="runAuditBtn" style="background:var(--gold);color:#fff;padding:8px 16px" onclick="runAudit()">Run Batch Audit</button>
         <span id="batchStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)"></span>
       </div>
@@ -597,7 +601,7 @@
         </div>
         <div id="txSummary" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:10px 0"></div>
         <table class="report-table">
-          <thead><tr><th id="txSelectAllHeader" style="display:none;width:28px"><input type="checkbox" id="txSelectAll" onchange="toggleSelectAllTx(this.checked)"></th><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Items</th><th>Subtotal</th><th>Total</th><th>Payment</th><th></th></tr></thead>
+          <thead><tr><th id="txSelectAllHeader" style="display:none;width:28px"><input type="checkbox" id="txSelectAll" onchange="toggleSelectAllTx(this.checked)"></th><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Items</th><th>Subtotal</th><th>Total</th><th>Payment</th><th id="txCompanyHeader" style="display:none">Company</th><th></th></tr></thead>
           <tbody id="txHistoryBody"></tbody>
         </table>
       </div>
@@ -611,12 +615,16 @@
            or the manager KPIs/leaderboard/commissions/top products) — it stays
            hidden until someone unlocks with their name + PIN, and never
            affects the always-visible Today's Sales Leaderboard. -->
-      <div class="date-range" id="reportsDateFilter" style="display:none">
+      <div class="date-range" id="reportsDateFilter" style="display:none;flex-wrap:wrap">
         <label>From:</label>
         <input type="date" id="rptStart">
         <label>To:</label>
         <input type="date" id="rptEnd">
         <button class="btn btn-confirm" onclick="loadReports()">Update</button>
+        <span id="rptCompanyPicker" style="display:none;align-items:center;gap:6px">
+          <label>Company:</label>
+          <select id="rptCompanyScope" onchange="changeCompanyScope(this.value)"></select>
+        </span>
       </div>
 
       <!-- Always visible, no PIN needed: today's sales per employee. -->
@@ -2523,6 +2531,10 @@ async function loadTransactions() {
   document.getElementById('importCsvBtn').style.display = canManage ? '' : 'none';
   document.getElementById('runAuditBtn').style.display = canManage ? '' : 'none';
   histTransactions = data.transactions || [];
+  // Server is the authority on how many companies the scope actually covers —
+  // a company can be dropped if this manager isn't a manager there.
+  viewingCompanyCount = data.company_count || 1;
+  renderCompanyPickers();
   applyTxFilters();
 }
 
@@ -2705,6 +2717,11 @@ function applyTxFilters() {
   const visibleIds = new Set(rows.map(tx => tx.id));
   for (const id of [...selectedTxIds]) if (!visibleIds.has(id)) selectedTxIds.delete(id);
 
+  // Only show which company a sale belongs to when more than one is in view.
+  const multiCompany = viewingCompanyCount > 1;
+  const companyHeader = document.getElementById('txCompanyHeader');
+  if (companyHeader) companyHeader.style.display = multiCompany ? '' : 'none';
+
   const body = document.getElementById('txHistoryBody');
   body.innerHTML = rows.map(tx => `
     <tr>
@@ -2718,6 +2735,7 @@ function applyTxFilters() {
       <td>$${money((tx.subtotal || 0))}</td>
       <td style="font-weight:600">$${money(tx.total)}</td>
       <td style="font-size:.82rem">${paymentSummary(tx)}</td>
+      ${multiCompany ? `<td style="font-size:.82rem;color:var(--mid)">${escapeHtml(tx.company_name || '-')}</td>` : ''}
       <td style="white-space:nowrap">
         <button onclick="viewReceipt(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--rose);text-decoration:underline;font-size:.82rem">View</button>
         ${canManage ? `
@@ -2725,7 +2743,7 @@ function applyTxFilters() {
         <button onclick="startDeleteTransaction(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--danger);text-decoration:underline;font-size:.82rem">Delete</button>` : ''}
       </td>
     </tr>
-  `).join('') || `<tr><td colspan="${canManage ? 11 : 10}" style="text-align:center;color:var(--mid)">No transactions in this date range. Click <b>Show All</b> above to see historical/imported transactions.</td></tr>`;
+  `).join('') || `<tr><td colspan="${(canManage ? 11 : 10) + (multiCompany ? 1 : 0)}" style="text-align:center;color:var(--mid)">No transactions in this date range. Click <b>Show All</b> above to see historical/imported transactions.</td></tr>`;
   updateBulkDeleteUI();
 
   // Summary line — pre-tax subtotals, so this reconciles with the Reports tab
@@ -2753,6 +2771,67 @@ function applyTxFilters() {
 // Re-lock the Transactions tab so a different person can unlock it — the list
 // is scoped to whoever verified, and there was previously no way to change
 // that without navigating away and back.
+// ─── Multi-company view ─────────────────────────────────────────────────────
+// Defaults to the company you're signed into. When other companies are signed
+// in on this device, a manager can switch to a combined view — the server only
+// grants it for companies where the same name and PIN is also a manager.
+let companyScopeMode = 'current'; // 'current' | 'all'
+let viewingCompanyCount = 1;      // how many companies the server actually returned
+
+function renderCompanyPickers() {
+  const others = getLinkedAccounts().filter(a => a.email !== currentUser?.email);
+  const isManager = txAccess?.role === 'manager' || managerReportsUnlocked;
+  const show = others.length > 0 && isManager;
+  const opts = `<option value="current">${escapeHtml(currentUser?.companyName || 'This company')} only</option>`
+    + `<option value="all">All companies (${others.length + 1})</option>`;
+  for (const [wrapId, selId] of [['txCompanyPicker', 'txCompanyScope'], ['rptCompanyPicker', 'rptCompanyScope']]) {
+    const wrap = document.getElementById(wrapId);
+    const sel = document.getElementById(selId);
+    if (!wrap || !sel) continue;
+    wrap.style.display = show ? 'inline-flex' : 'none';
+    if (show) { sel.innerHTML = opts; sel.value = companyScopeMode; }
+  }
+}
+
+async function changeCompanyScope(mode) {
+  const previous = companyScopeMode;
+  companyScopeMode = mode;
+  // Widening needs a manager PIN verified against each extra company. Reuse the
+  // credentials already given to unlock Transactions when we have them.
+  const creds = txCreds || null;
+  if (mode === 'all' && !creds) {
+    alert('Open the Transactions tab and sign in with your manager name and PIN first — combining companies needs it verified against each one.');
+    companyScopeMode = previous;
+    renderCompanyPickers();
+    return;
+  }
+  const companies = mode === 'all'
+    ? getLinkedAccounts().filter(a => a.email !== currentUser?.email).map(a => a.email)
+    : [];
+  try {
+    const resp = await fetch(`${API}/api/pos/company-scope`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ name: creds?.name, pin: creds?.pin, companies }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Could not change the company view');
+    if (mode === 'all' && data.rejected?.length) {
+      alert('Some companies were left out:\n\n'
+        + data.rejected.map(r => `• ${r.company || r.email} — ${r.reason}`).join('\n')
+        + '\n\nAdd yourself as a manager there, or sign into it once on this device.');
+      if (data.company_count < 2) companyScopeMode = 'current';
+    }
+  } catch (err) {
+    alert(err.message);
+    companyScopeMode = previous;
+  }
+  renderCompanyPickers();
+  // Reload whichever tab is open with the new scope.
+  const active = (document.querySelector('.tab-content.show')?.id || '').replace('tab-', '');
+  if (active === 'history') loadTransactions();
+  if (active === 'reports') { loadReports(); loadTodayLeaderboard(); }
+}
+
 function relockTransactions() {
   txAccess = null; txCreds = null; selectedTxIds.clear();
   histTransactions = []; filteredTransactions = [];
@@ -4295,6 +4374,7 @@ async function unlockPersonalReport() {
     if (data.role === 'manager') {
       // Managers unlock the KPIs, full leaderboard, commissions, and top products
       managerReportsUnlocked = true;
+      renderCompanyPickers(); // a manager can now combine companies here
       document.getElementById('managerCommissionsSection').style.display = 'block';
       document.getElementById('salesSummary').innerHTML = lastSalesSummaryHtml;
       document.getElementById('prodReportBody').innerHTML = lastProductsHtml;
@@ -4579,6 +4659,9 @@ async function switchAccount(email) {
     // the previous company has to verify again against this one.
     txAccess = null; txCreds = null; selectedTxIds.clear();
     settingsAccess = null; settingsCreds = null;
+    // The combined view was authorised against the previous company's manager
+    // PIN; the server drops it on switch, so mirror that here.
+    companyScopeMode = 'current'; viewingCompanyCount = 1; renderCompanyPickers();
     managerReportsUnlocked = false;
     lockPersonalReport();
     clearCompanyScopedViews();

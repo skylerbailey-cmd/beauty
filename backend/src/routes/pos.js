@@ -627,11 +627,24 @@ router.post('/transactions/mine', async (req, res) => {
   if (end) opts.endDate = end;
 
   const role = employee.role === 'manager' ? 'manager' : 'sales';
+  // A manager sees whatever company scope is active (their own by default); a
+  // sales employee is always limited to their own company's sales.
+  const scope = role === 'manager' ? scopeIds(req) : [req.session.userId];
   const transactions = role === 'manager'
-    ? await pgDb.getTransactions(req.session.userId, opts)
+    ? await pgDb.getTransactions(scope, opts)
     : await pgDb.getEmployeeTransactions(req.session.userId, employee.id, opts);
 
-  res.json({ employee: { id: employee.id, name: employee.name }, role, transactions });
+  // Label each row so a combined view shows which company a sale belongs to.
+  const names = {};
+  for (const id of scope) {
+    names[id] = (await pgDb.getSettings(id))?.store_name || '';
+  }
+  for (const t of transactions) t.company_name = names[t.user_id] || '';
+
+  res.json({
+    employee: { id: employee.id, name: employee.name }, role, transactions,
+    company_count: scope.length,
+  });
 });
 
 // ─── Manager-gated Edit / Delete ────────────────────────────────────────────
@@ -1008,25 +1021,65 @@ router.post('/mass-email', async (req, res) => {
 
 // ─── Reports ───────────────────────────────────────────────────────────────
 
+// ─── Multi-company scope ────────────────────────────────────────────────────
+// Reads default to the company you're signed into. A manager can widen that to
+// other companies signed in on this device — but only ones where the SAME name
+// and PIN also verifies as a manager there, so widening never exposes books the
+// person couldn't already open on their own. The chosen scope lives on the
+// session (not in the URL) so a PIN is never put in a query string.
+function scopeIds(req) {
+  const scope = req.session.companyScope;
+  return Array.isArray(scope) && scope.length ? scope : [req.session.userId];
+}
+
+router.post('/company-scope', async (req, res) => {
+  const userId = req.session.userId;
+  const { name, pin, companies } = req.body;
+
+  // No list (or an empty one) = back to just the signed-in company.
+  if (!Array.isArray(companies) || companies.length === 0) {
+    req.session.companyScope = null;
+    return res.json({ ok: true, included: [], rejected: [] });
+  }
+
+  const { getUserByEmail } = require('../db');
+  const ids = [userId];
+  const included = [];
+  const rejected = [];
+  for (const raw of companies) {
+    const email = String(raw || '').trim().toLowerCase();
+    if (!email) continue;
+    const u = getUserByEmail(email);
+    if (!u) { rejected.push({ email, reason: 'not signed in on this device yet' }); continue; }
+    if (ids.includes(u.id)) continue;
+    const mgr = await verifyManager(u.id, name, pin);
+    if (mgr) { ids.push(u.id); included.push(u.company_name || email); }
+    else rejected.push({ email, company: u.company_name || email, reason: 'that name and PIN is not an active manager there' });
+  }
+
+  req.session.companyScope = ids.length > 1 ? ids : null;
+  res.json({ ok: true, included, rejected, company_count: ids.length });
+});
+
 router.get('/reports/sales', async (req, res) => {
   const { start, end } = req.query;
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
-  res.json({ report: await pgDb.getSalesReport(req.session.userId, startDate, endDate) });
+  res.json({ report: await pgDb.getSalesReport(scopeIds(req), startDate, endDate) });
 });
 
 router.get('/reports/employees', async (req, res) => {
   const { start, end } = req.query;
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
-  res.json({ report: await pgDb.getEmployeeSalesReport(req.session.userId, startDate, endDate) });
+  res.json({ report: await pgDb.getEmployeeSalesReport(scopeIds(req), startDate, endDate) });
 });
 
 router.get('/reports/products', async (req, res) => {
   const { start, end } = req.query;
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
-  res.json({ report: await pgDb.getTopProductsReport(req.session.userId, startDate, endDate) });
+  res.json({ report: await pgDb.getTopProductsReport(scopeIds(req), startDate, endDate) });
 });
 
 router.get('/reports/customers', async (req, res) => {
@@ -1040,7 +1093,7 @@ router.get('/reports/flagged-returns', async (req, res) => {
   const { start, end } = req.query;
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
-  res.json({ report: await pgDb.getFlaggedReturns(req.session.userId, startDate, endDate) });
+  res.json({ report: await pgDb.getFlaggedReturns(scopeIds(req), startDate, endDate) });
 });
 
 router.get('/reports/day-summary', async (req, res) => {
@@ -1073,10 +1126,11 @@ router.post('/reports/employee-personal', async (req, res) => {
 
   // Managers see all employees, sales see only their own
   if (employee.role === 'manager') {
-    const report = await pgDb.getEmployeeSalesReport(req.session.userId, startDate, endDate);
+    const report = await pgDb.getEmployeeSalesReport(scopeIds(req), startDate, endDate);
     res.json({ employee, role: 'manager', report });
   } else {
-    // Single employee report
+    // A sales employee belongs to one company, so their personal figures stay
+    // scoped to it regardless of any wider scope a manager set.
     const report = await pgDb.getEmployeeSalesReport(req.session.userId, startDate, endDate);
     const personal = report.filter(r => r.employee_id === employee.id);
     res.json({ employee, role: 'sales', report: personal });

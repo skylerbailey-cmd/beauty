@@ -723,10 +723,16 @@ async function getTransactionByReceipt(receiptNumber, userId) {
   return tx;
 }
 
+// Reads accept either one company id or a list of them, so the Transactions
+// and Reports tabs can show a single company (the default) or several combined.
+// `= ANY($n::text[])` behaves identically to `= $n` for a single id, so every
+// existing caller that passes a plain string keeps working unchanged.
+const asCompanyIds = (u) => (Array.isArray(u) ? u : [u]).filter(Boolean);
+
 async function getTransactions(userId, opts = {}) {
   const { type, startDate, endDate, employeeId, limit = 100 } = opts;
-  let where = 'WHERE t.user_id = $1';
-  const params = [userId];
+  let where = 'WHERE t.user_id = ANY($1::text[])';
+  const params = [asCompanyIds(userId)];
   let idx = 2;
 
   if (type) { where += ` AND t.type = $${idx}`; params.push(type); idx++; }
@@ -798,10 +804,10 @@ async function getSalesReport(userId, startDate, endDate) {
       COALESCE(SUM(CASE WHEN type = 'sale' THEN subtotal ELSE -subtotal END), 0) as net_revenue,
       COALESCE(SUM(CASE WHEN type = 'sale' THEN tax_amount ELSE -tax_amount END), 0) as net_tax
     FROM pos_transactions
-    WHERE user_id = $1
+    WHERE user_id = ANY($1::text[])
       AND COALESCE(original_sale_date, created_at) >= $2
       AND COALESCE(original_sale_date, created_at) <= $3
-  `, [userId, startDate, endDate]);
+  `, [asCompanyIds(userId), startDate, endDate]);
   return result.rows[0];
 }
 
@@ -820,7 +826,7 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
     FROM pos_employees e
     LEFT JOIN pos_transaction_employees te ON e.id = te.employee_id
     LEFT JOIN pos_transactions t ON te.transaction_id = t.id
-      AND t.user_id = $1
+      AND t.user_id = ANY($1::text[])
       AND COALESCE(t.original_sale_date, t.created_at) >= $2
       AND COALESCE(t.original_sale_date, t.created_at) <= $3
     -- Active employees always appear (even with no sales, so the roster is
@@ -828,12 +834,12 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
     -- this range — otherwise their sales silently vanish from this table and
     -- the leaderboard while still counting in the KPI tiles above, making the
     -- report under-report revenue by exactly their share.
-    WHERE e.user_id = $4 AND (e.active = 1 OR t.id IS NOT NULL)
+    WHERE e.user_id = ANY($4::text[]) AND (e.active = 1 OR t.id IS NOT NULL)
     GROUP BY e.id ORDER BY net_total DESC
-  `, [userId, startDate, endDate, userId])).rows;
+  `, [asCompanyIds(userId), startDate, endDate, asCompanyIds(userId)])).rows;
 
   // Check for special commission plans and recalculate those employees
-  const plans = await getAllCommissionPlans(userId);
+  const plans = (await Promise.all(asCompanyIds(userId).map(id => getAllCommissionPlans(id)))).flat();
   const planByEmp = {};
   for (const p of plans) planByEmp[p.employee_id] = p;
 
@@ -862,11 +868,11 @@ async function getTopProductsReport(userId, startDate, endDate) {
       SUM(CASE WHEN t.type = 'sale' THEN ti.line_total ELSE -ti.line_total END) as revenue
     FROM pos_transaction_items ti
     JOIN pos_transactions t ON ti.transaction_id = t.id
-    WHERE t.user_id = $1
+    WHERE t.user_id = ANY($1::text[])
       AND COALESCE(t.original_sale_date, t.created_at) >= $2
       AND COALESCE(t.original_sale_date, t.created_at) <= $3
     GROUP BY ti.product_id, ti.product_name, ti.brand ORDER BY revenue DESC
-  `, [userId, startDate, endDate])).rows;
+  `, [asCompanyIds(userId), startDate, endDate])).rows;
 }
 
 async function getCustomerReport(userId, startDate, endDate) {
@@ -941,11 +947,11 @@ async function getFlaggedReturns(userId, startDate, endDate) {
            orig.receipt_number as original_receipt
     FROM pos_transactions r
     LEFT JOIN pos_transactions orig ON r.original_transaction_id = orig.id
-    WHERE r.user_id = $1 AND r.type = 'return' AND r.employees_changed = 1
+    WHERE r.user_id = ANY($1::text[]) AND r.type = 'return' AND r.employees_changed = 1
       AND COALESCE(r.original_sale_date, r.created_at) >= $2
       AND COALESCE(r.original_sale_date, r.created_at) <= $3
     ORDER BY r.created_at DESC
-  `, [userId, startDate, endDate])).rows;
+  `, [asCompanyIds(userId), startDate, endDate])).rows;
   for (const r of rows) {
     r.return_employees = (await query(
       `SELECT e.name FROM pos_transaction_employees te JOIN pos_employees e ON te.employee_id = e.id WHERE te.transaction_id = $1`, [r.id]
@@ -954,7 +960,7 @@ async function getFlaggedReturns(userId, startDate, endDate) {
       `SELECT e.name FROM pos_transaction_employees te
        JOIN pos_employees e ON te.employee_id = e.id
        JOIN pos_transactions orig ON te.transaction_id = orig.id
-       WHERE orig.receipt_number = $1 AND orig.user_id = $2`, [r.original_receipt, userId]
+       WHERE orig.receipt_number = $1 AND orig.user_id = ANY($2::text[])`, [r.original_receipt, asCompanyIds(userId)]
     )).rows.map(x => x.name) : [];
   }
   return rows;
