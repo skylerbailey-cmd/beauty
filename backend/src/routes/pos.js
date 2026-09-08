@@ -3,7 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const pgDb = require('../db/postgres');
-const { PRODUCTS, generateWelcomeEmailBody } = require('./welcome');
+const { PRODUCTS, BUNDLES, generateWelcomeEmailBody } = require('./welcome');
 
 // Format a money amount with thousands separators (e.g. 15146.25 -> "15,146.25")
 function money(n) { return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -87,7 +87,13 @@ router.get('/products', async (req, res) => {
         id: prod.id,
         name: prod.name,
         brand: prod.brand || brandKey,
+        // brand above is the display name ("Avologi"); brandKey is the catalog
+        // key ("avologi") the Emails picker groups its grids by.
+        brandKey,
         description: prod.description,
+        // Short picker-card copy. The full description is a marketing
+        // paragraph and is far too long for a card.
+        cardDescription: prod.cardDescription || prod.description,
         image: prod.image,
         retailPrice: prod.retailPrice || 0,
         price: priceEntry?.price ?? prod.retailPrice ?? 0,
@@ -115,7 +121,9 @@ router.get('/products', async (req, res) => {
       customId: cp.id,
     });
   }
-  res.json({ products: allProducts });
+  // Bundles ride along so the Emails picker doesn't have to hardcode what a
+  // set contains — the server is the only place that knows.
+  res.json({ products: allProducts, bundles: BUNDLES });
   } catch (err) {
     console.error('[pos] Products error:', err.message, err.stack);
     // Fallback: return catalog products without prices/visibility from Postgres

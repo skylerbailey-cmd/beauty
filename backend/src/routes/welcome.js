@@ -12,6 +12,7 @@ const PRODUCTS = {
     {
       id: 'avologi-lumnen',
       name: 'LUMNEN',
+      cardDescription: 'World\'s first FDA-certified home-use bio-stimulator laser — Nobel Prize-winning technology that stimulates collagen and hyaluronic acid for increased facial volume, firmness, and wrinkle reduction.',
       brand: 'Avologi',
       retailPrice: 18750,
       description: 'The world\'s first FDA-certified home-use bio-stimulator laser system designed to support facial volume, firmness, and skin vitality. Recognized with the 2026 Global Recognition Award. Combines LED light therapy with advanced laser-based bio-stimulation developed by Prof. Barry Barish, Nobel Prize-winning physicist. Targets facial volume loss, sagging, dullness, and wrinkles by stimulating collagen and hyaluronic acid production at the base layer of the dermis.',
@@ -25,6 +26,7 @@ const PRODUCTS = {
     {
       id: 'avologi-eneo-totale',
       name: 'Eneo Totalé',
+      cardDescription: 'FDA-certified 510K anti-aging medical device — Nobel prize-winning technology for smoother, more radiant skin with visible wrinkle reduction through personalized rejuvenation sessions.',
       brand: 'Avologi',
       retailPrice: 11950,
       description: 'Introducing the latest innovation in personalized anti-aging skin rejuvenation solutions; ENEO TOTALÉ. TOTALÉ is a dermatology-recommended, clinically tested, FDA-certified 510K medical device. TOTALÉ delivers a tailor-made anti-aging ritual that reveals smoother, more radiant-looking skin. Made with innovative anti-aging technology developed by a Nobel prize-winning scientist. The second-generation skin rejuvenation device is designed to deliver the most luxurious and personalized experience yet.',
@@ -38,6 +40,7 @@ const PRODUCTS = {
     {
       id: 'avologi-eneo-totale-blu',
       name: 'Eneo Totalé Blu',
+      cardDescription: 'FDA certified blue light (415 nm) medical device — targets acne and skin imperfections with pain-free 4–6 min sessions, zero side effects, no chemicals, suitable for all skin types.',
       brand: 'Avologi',
       retailPrice: 11950,
       description: 'A professional, FDA certified hand-held medical device that utilizes a combined 415 nm wavelength within the blue light spectrum — the most effectively absorbed wavelength for skin imperfections and acne treatments. Features a hypoallergenic, medical-grade metal applicator tip that can be used with any skincare. Clinically tested, safe, zero side effects, dermatologist recommended, suitable for all skin types and tones.',
@@ -51,6 +54,7 @@ const PRODUCTS = {
     {
       id: 'avologi-eneo-blu',
       name: 'Eneo Blu',
+      cardDescription: 'Advanced handheld FDA-approved blue light (415 nm) device — targets acne-causing bacteria with zero side effects, no chemicals, and 4–6 minute sessions. Effective for face, back, and body acne on all skin types.',
       brand: 'Avologi',
       retailPrice: 7050,
       description: 'An advanced, handheld device that utilizes blue light spectrum (415 nm) — the most effectively absorbed wavelength for acne treatments. Clinically tested, FDA-approved technology that targets acne-causing bacteria with zero side effects, no chemicals, and no allergies. ENEO BLU comes with a limited lifetime warranty and is recommended for all skin types and tones.',
@@ -66,6 +70,7 @@ const PRODUCTS = {
     {
       id: 'hydrasphere-advanced-foaming-cleanser',
       name: 'Advanced Foaming Cleanser',
+      cardDescription: 'Alcohol-free luxury foaming cleanser that retextures, lightly exfoliates, and preps skin for moisturizing — powered by hemp extract for a radiant, conditioned complexion.',
       brand: 'HydraSphere Plus',
       retailPrice: 249,
       description: 'Elevate Your Cleansing Ritual with Hydrasphere\'s Advanced Foaming Cleanser – Where Luxury Meets Cleansing Excellence. Our alcohol-free foaming cleanser is more than just a face wash; it\'s a transformative conditioner for your skin. Expertly crafted to prepare your canvas, it paves the way for your skin to absorb the full benefits of subsequent moisturizing. Experience the magic of retexturing and light exfoliation as it gently unveils softer, smoother, and more radiant skin.',
@@ -79,6 +84,7 @@ const PRODUCTS = {
     {
       id: 'hydrasphere-hydra-toning-solution',
       name: 'Hydra Toning Solution',
+      cardDescription: 'Revitalizing toner that refreshes and balances skin\'s natural pH, preparing it to absorb the full benefits of subsequent skincare products.',
       brand: 'HydraSphere Plus',
       retailPrice: 250,
       description: 'Refresh and balance your skin with our revitalizing toner. Our Hydra Toning Solution is formulated to provide a refreshing and invigorating experience for your skin, helping to restore its natural pH balance and prepare it to absorb the benefits of subsequent skincare products.',
@@ -92,6 +98,7 @@ const PRODUCTS = {
     {
       id: 'hydrasphere-vitamin-c-serum',
       name: 'Vitamin C Serum',
+      cardDescription: 'Concentrated anti-aging serum packed with Vitamin C to diminish fine lines, promote collagen production, brighten, and even skin tone.',
       brand: 'HydraSphere Plus',
       retailPrice: 800,
       description: 'Plump up the skin with our Vitamin C Serum. This concentrated serum is packed with powerful anti-aging ingredients, including Vitamin C, to help diminish the appearance of fine lines and wrinkles. It is the perfect addition to your skincare routine as its lightweight texture makes it easy to incorporate into your daily regimen. Its potent formula penetrates deep into the skin, promoting collagen production and improving skin texture. When you use our Vitamin C Serum regularly, you can expect to see a noticeable improvement in the overall appearance of your skin. Its powerful anti-aging benefits make it a must-have for anyone concerned about maintaining a youthful, radiant look!',
@@ -105,6 +112,7 @@ const PRODUCTS = {
     {
       id: 'hydrasphere-mineralift-thermal-serum',
       name: 'MineralLift Thermal Serum',
+      cardDescription: 'Deep-penetrating thermal serum that stimulates collagen and enhances elasticity — visibly firms, lifts, and tightens while reducing fine lines and sagging.',
       brand: 'HydraSphere Plus',
       retailPrice: 1700,
       description: 'Scientific studies have confirmed the efficacy of our MineralLife Thermal Serum in promoting a firmer, more lifted appearance. The carefully selected ingredients penetrate deeply into the skin, helping to stimulate collagen production and enhance elasticity. As a result, your skin feels visibly tighter and more toned, promoting a youthful and rejuvenated look. As our MineralLift Thermal Serum penetrates the skin, it works to revitalize and reinvigorate from within. The carefully selected blend of potent ingredients targets fine lines, wrinkles, and sagging skin, effectively addressing the signs of aging.',
@@ -118,6 +126,7 @@ const PRODUCTS = {
     {
       id: 'hydrasphere-deep-moisturizing-cream',
       name: 'Deep Moisturizing Cream',
+      cardDescription: 'A firming elixir blending botanical wonders and cutting-edge science — deeply nourishes the face, neck, and under-eye area beyond basic hydration.',
       brand: 'HydraSphere Plus',
       retailPrice: 349,
       description: 'Experience the transformative synergy of botanical wonders and cutting-edge science. Our Deep Moisturizing Cream offers more than just hydration; it\'s a firming elixir for your facial tissue and neck, imbued with the essence of nature\'s most potent moisturizers. Each ingredient is carefully selected for its ability to deeply nourish and firm the skin, providing a rich, luxurious experience that goes beyond mere moisturization.',
@@ -131,6 +140,7 @@ const PRODUCTS = {
     {
       id: 'hydrasphere-mineralift-thermal-cream',
       name: 'MineralLift Thermal Cream',
+      cardDescription: 'Silky thermal moisturizer that absorbs instantly with zero greasiness — stimulates collagen and enhances elasticity for tighter, more toned, youthful-looking skin.',
       brand: 'HydraSphere Plus',
       retailPrice: 1600,
       description: 'Our carefully formulated MineralLife Thermal Cream has been scientifically proven to promote a firmer, more lifted appearance for your skin. The carefully selected ingredients penetrate deeply into the skin, helping to stimulate collagen production and enhance elasticity for tighter and more toned skin, promoting a youthful and rejuvenated look. The end result that you\'ll love! When applied to the skin, the MineralLift Thermal Cream has a luxurious texture that glides on smoothly and is quickly absorbed, leaving no greasy residue.',
@@ -144,6 +154,7 @@ const PRODUCTS = {
     {
       id: 'hydrasphere-anti-wrinkle-30g',
       name: 'Anti Wrinkle Correction & Prevention 30g',
+      cardDescription: 'Clinically advanced cream powered by Hyaluronic Acid, Retinol, Stem Cells, and Peptides to visibly reduce deep lines, puffiness, and dark circles for firmer, smoother skin.',
       brand: 'HydraSphere Plus',
       retailPrice: 1895,
       description: 'A clinically advanced cream designed to visibly reduce deep lines, fine lines, puffiness, and dark circles. Powered by Hyaluronic Acid, Retinol, Stem Cells, and Peptides — this high-performance formula supports firmer, smoother, and more youthful-looking skin.',
@@ -158,6 +169,7 @@ const PRODUCTS = {
     {
       id: 'hydrasphere-anti-wrinkle-15g',
       name: 'Anti Wrinkle Correction & Prevention 15g',
+      cardDescription: 'Travel-size version of the Anti Wrinkle Correction & Prevention cream — same clinically advanced formula with Retinol, Stem Cells, and Peptides in a convenient smaller size.',
       brand: 'HydraSphere Plus',
       retailPrice: 1395,
       description: 'The travel-size version of the Anti Wrinkle Correction & Prevention cream — same clinically advanced formula with Hyaluronic Acid, Retinol, Stem Cells, and Peptides in a convenient smaller size.',
@@ -172,6 +184,7 @@ const PRODUCTS = {
     {
       id: 'hydrasphere-oxygen-brightening-cream',
       name: 'Oxygen Brightening Cream',
+      cardDescription: 'Oxygen-infused moisturizing and texturizing treatment that deeply hydrates, brightens, and improves skin texture for a radiant, youthful glow.',
       brand: 'HydraSphere Plus',
       retailPrice: 800,
       description: 'The ultimate moisturizing and texturizing treatment for your skin. This innovative cream is designed to deeply hydrate and nourish your skin, while also brightening and improving its texture. With the power of oxygen-infused ingredients, it helps promote a radiant and youthful complexion. Say goodbye to dull, dry skin and hello to a revitalized and luminous glow.',
@@ -185,6 +198,7 @@ const PRODUCTS = {
     {
       id: 'hydrasphere-spf50-shield-cream',
       name: 'SPF 50 Shield Cream',
+      cardDescription: 'Lightweight mineral SPF 50 with non-nano Zinc Oxide and Titanium Dioxide — broad-spectrum UVA/UVB defense with Niacinamide, Hyaluronic Acid, and antioxidants. No white cast.',
       brand: 'HydraSphere Plus',
       retailPrice: 849,
       description: 'Protect and perfect your skin with the SPF 50 Shield Cream, a lightweight mineral sunscreen offering advanced broad-spectrum defense against UVA and UVB rays. Formulated with non-nano Zinc Oxide and Titanium Dioxide, it provides powerful daily protection without clogging pores or leaving a white cast.',
@@ -198,6 +212,7 @@ const PRODUCTS = {
     {
       id: 'hydrasphere-facial-peeling-gel',
       name: 'Facial Peeling Gel',
+      cardDescription: 'Revolutionary exfoliating gel powered by mandelic acid that gently eliminates dead skin cells while addressing sunspots, pigmentation, acne, redness, and rosacea.',
       brand: 'HydraSphere Plus',
       retailPrice: 349,
       description: 'A revolutionary exfoliating formula that gently eliminates dead skin cells while addressing sunspots, pigmentation, age spots, acne, discoloration, redness, and rosacea. Powered by mandelic acid (a gentle AHA) with Vitamin C, Vitamin E, Vitamin A, Grapefruit Extract, Avocado Oil, and Centella Asiatica.',
@@ -211,6 +226,7 @@ const PRODUCTS = {
     {
       id: 'hydrasphere-mineralift-thermal-mask',
       name: 'MineralLift Thermal Mask',
+      cardDescription: 'Self-warming monthly treatment mask enhanced with mineral water — the gentle heat stimulates facial muscles and circulation while detoxifying and firming.',
       brand: 'HydraSphere Plus',
       retailPrice: 2200,
       description: 'Our MineralLift Thermal Mask, enhanced with the goodness of mineral water, takes your skincare routine to new heights by providing a multifaceted approach to facial rejuvenation. The gentle warmth generated by the mask activates and stimulates your facial muscles, promoting increased blood circulation and muscle toning.',
@@ -225,6 +241,7 @@ const PRODUCTS = {
     {
       id: 'hydrasphere-hydrocharcoal-silk-mask',
       name: 'HydroCharcoal Silk Mask',
+      cardDescription: 'Leave-on luxury mask with bioengineered delivery systems — activated charcoal, hyaluronic acid, and signal peptides detoxify, refine pores, and smooth texture for a radiant glow.',
       brand: 'HydraSphere Plus',
       retailPrice: 1790,
       description: 'Experience the purifying power of the HydroCharcoal Silk Mask, a luxurious leave-on treatment developed with bioengineered delivery systems to detoxify, renew, and deeply hydrate. This advanced formula merges activated charcoal microparticles with encapsulated hyaluronic acid and signal peptides, targeting visible signs of aging at the surface level. The result is instantly smoother texture, refined pores, and a radiant, balanced glow.',
@@ -239,6 +256,7 @@ const PRODUCTS = {
     {
       id: 'hydrasphere-hydrocharcoal-collagen-neck-mask',
       name: 'HydroCharcoal Collagen Neck & Décolleté Mask',
+      cardDescription: 'Targeted mask for neck and chest combining activated charcoal and soluble collagen — lifts, firms, and deeply hydrates while reducing neck lines, breast wrinkles, and pigmentation.',
       brand: 'HydraSphere Plus',
       retailPrice: 5000,
       description: 'A targeted mask formulated specifically for the neck and chest area, combining activated charcoal and soluble collagen with Sodium Hyaluronate, Retinyl Palmitate, and Allantoin. Delivers lifting, firming, and deep hydration to one of the most neglected areas in skincare, visibly reducing neck lines, breast wrinkles, and pigmentation.',
@@ -252,6 +270,7 @@ const PRODUCTS = {
     {
       id: 'hydrasphere-advanced-night-repair',
       name: 'Advanced Night Repair',
+      cardDescription: 'Intensive overnight cream with Collagen, Hyaluronic Acid, Peptides, and nourishing oils — repairs and deeply hydrates while you sleep for a smoother, firmer complexion by morning.',
       brand: 'HydraSphere Plus',
       retailPrice: 325,
       description: 'An intensive night cream that targets signs of aging while you sleep. Formulated with Collagen, Hyaluronic Acid, Acetyl Hexapeptide-3, and a blend of nourishing oils including Sweet Almond, Jojoba, and Acai — it delivers deep hydration and repair to diminish fine lines, wrinkles, and visible aging markers for a smoother, firmer, more radiant complexion by morning.',
@@ -265,6 +284,7 @@ const PRODUCTS = {
     {
       id: 'hydrasphere-advanced-eye-lifting-serum',
       name: 'Advanced Eye Lifting Serum',
+      cardDescription: 'Lightweight serum for the delicate eye area with Collagen, Caviar Extract, and Peptides — reduces fine lines, puffiness, dark circles, and improves elasticity around the eyes.',
       brand: 'HydraSphere Plus',
       retailPrice: 649,
       description: 'A lightweight, all-natural serum formulated specifically for the delicate eye area. Combines Collagen, Caviar Extract, and Acetyl Hexapeptide-3 with Hyaluronic Acid and Vitamins A, C, and E to reduce fine lines, minimize puffiness and under-eye bags, diminish dark circles, and improve elasticity around the eyes.',
@@ -281,6 +301,7 @@ const PRODUCTS = {
     {
       id: 'avinichi-phyto-thermal-collection',
       name: 'Phyto Thermal Collection',
+      cardDescription: 'Luxurious 3-piece collection: self-heating thermal mask, hydrating antioxidant serum, and firming moisture infusion cream with jade roller.',
       brand: 'Avinichi',
       retailPrice: 5000,
       description: 'A luxurious 3-piece collection including the Phyto Remedy Thermal Mask (self-heating, reduces fine lines, wrinkles, and dark spots with a vitamin-rich formula), the Hydrating Antioxidant Serum (feather-light blend of fruit and berry extracts, peptides, and humectants for plump, hydrated skin), and the Mulberr-E Moisture Infusion Cream (vitamin E and fruit extracts for lifting, firming, and redefining the complexion). Includes a jade roller for enhanced product absorption.',
@@ -295,6 +316,7 @@ const PRODUCTS = {
     {
       id: 'avinichi-liquid-lift-overnight-melting-mask',
       name: 'Liquid Lift Overnight Melting Mask',
+      cardDescription: 'Overnight moisture mask with superfruit extracts, vitamins, and peptides for deeply restored, rehydrated skin by morning.',
       brand: 'Avinichi',
       retailPrice: 1800,
       description: 'Transform the look of your skin overnight with the Liquid Lift Overnight Melting Mask. This moisture mask delivers a concentrated cocktail of superfruit extracts, vitamins, and peptides to target the appearance of dullness, dryness, and an uneven skin texture. Wake up to skin that feels deeply restored and rehydrated!',
@@ -308,6 +330,7 @@ const PRODUCTS = {
     {
       id: 'avinichi-hydrating-multifruit-c-serum',
       name: 'Hydrating Multifruit C-Serum',
+      cardDescription: 'Dual vitamin C serum with mulberry extract — brightens, tightens, and targets wrinkles for a glowing complexion.',
       brand: 'Avinichi',
       retailPrice: 600,
       description: 'A must-have vitamin C serum that leaves your skin looking and feeling brighter and tighter. Infused with two potent forms of vitamin C plus mulberry extract to target the appearance of wrinkles, along with multiple vitamins and antioxidants to promote a complexion that glows from within.',
@@ -321,6 +344,7 @@ const PRODUCTS = {
     {
       id: 'avinichi-noni-morning-glow',
       name: 'Noni Morning Glow',
+      cardDescription: 'Lightweight daytime moisturizer with Noni, vitamins, and antioxidants. Fast-absorbing, non-greasy, great makeup base.',
       brand: 'Avinichi',
       retailPrice: 350,
       description: 'A go-to day cream infused with vitamins, antioxidants, and Noni. This daytime moisturizer leaves skin feeling firmer and smoother after each use. Its lightweight, fast-absorbing, non-greasy formula deeply hydrates throughout the day and makes an excellent base for makeup.',
@@ -334,6 +358,7 @@ const PRODUCTS = {
     {
       id: 'avinichi-noni-mousse-cleanser',
       name: 'Noni Mousse Cleanser',
+      cardDescription: 'Gentle daily cleanser with coconut-derived agents and Noni for a fresh, radiant finish.',
       brand: 'Avinichi',
       retailPrice: 250,
       description: 'The perfect start to every skincare routine. Formulated with gentle, coconut-derived cleansing agents and infused with plant extracts and Noni, this lush cleanser removes dirt, makeup, and impurities while giving your skin a fresh and radiant finish.',
@@ -347,6 +372,7 @@ const PRODUCTS = {
     {
       id: 'avinichi-noni-pore-purifying-toner',
       name: 'Noni Pore Purifying Toner',
+      cardDescription: 'Alcohol-free toner with Noni and plant extracts that preps skin after cleansing.',
       brand: 'Avinichi',
       retailPrice: 250,
       description: 'An alcohol-free toner packed with plant extracts and Noni. Designed to remove traces of oil, dirt, and impurities, leaving skin perfectly prepped for the next step of your skincare routine.',
@@ -360,6 +386,7 @@ const PRODUCTS = {
     {
       id: 'avinichi-eye-rescue-phyto-serum',
       name: 'Eye Rescue Phyto-Serum',
+      cardDescription: 'Antioxidant-rich botanical eye serum for plumper, firmer, more lifted skin around the eyes.',
       brand: 'Avinichi',
       retailPrice: 600,
       description: 'Featuring a botanical buffet of flower, leaf, root, and fruit extracts, this antioxidant-rich formula deeply hydrates and restores the skin around your eyes, leaving you with a plumper, fuller, firmer, and more lifted look.',
@@ -373,6 +400,7 @@ const PRODUCTS = {
     {
       id: 'avinichi-noni-polishing-peel',
       name: 'Noni Polishing Peel',
+      cardDescription: 'Gentle exfoliator with Noni, botanical oils, vitamin C, and mandelic acid for brighter, smoother skin.',
       brand: 'Avinichi',
       retailPrice: 300,
       description: 'A multi-tasker that gently yet thoroughly buffs away dull and dead skin cells while hydrating with Noni and lush botanical oils. Expect brighter, smoother, and softer-looking skin after each use.',
@@ -386,6 +414,7 @@ const PRODUCTS = {
     {
       id: 'avinichi-wrinkle-reversal-solution',
       name: 'Wrinkle Reversal Solution',
+      cardDescription: 'Quick-acting syringe formula that instantly smooths fine lines and wrinkles for a taut, firm appearance.',
       brand: 'Avinichi',
       retailPrice: 1300,
       description: 'Effortlessly diminish the visibility of fine lines and wrinkles. Whether for treating fine lines on your forehead, around your eyes, or around your mouth, this quick-acting formula instantly creates a smooth, taut, and firm appearance.',
@@ -399,6 +428,7 @@ const PRODUCTS = {
     {
       id: 'avinichi-noni-night-repair-cream',
       name: 'Noni Night Repair Cream',
+      cardDescription: 'Overnight cream with vitamins, plant butters, and Noni to support skin cell repair while you sleep.',
       brand: 'Avinichi',
       retailPrice: 350,
       description: 'Each night while you\'re asleep, your skin cells work hard to heal and regenerate. The Noni Night Repair Cream has been designed to keep your skin cells feeling supported as they go about those vital tasks. Formulated with vitamins, plant butters, and botanical extracts to restore moisture overnight, leaving skin appearing bright, plump, and refreshed upon waking.',
@@ -412,6 +442,7 @@ const PRODUCTS = {
     {
       id: 'avinichi-dark-circle-eye-perfecting-cream',
       name: 'Dark Circle Eye Perfecting Cream',
+      cardDescription: 'Silky eye cream that minimizes dark circles and crow\'s feet while brightening and de-puffing.',
       brand: 'Avinichi',
       retailPrice: 600,
       description: 'Specially formulated for the thin and delicate skin around the eyes, the Dark Circle Eye Perfecting Cream has been designed to minimize the visibility of both dark circles and crow\'s feet. This silky formula brightens, reduces puffiness, and smooths the eye area for a more youthful appearance.',
@@ -425,6 +456,7 @@ const PRODUCTS = {
     {
       id: 'avinichi-noni-clarifying-lather-purifier',
       name: 'Noni Clarifying Lather Purifier',
+      cardDescription: 'Gentle foaming cleanser with Nettle Leaf, Aloe, Chamomile, and Noni that balances pH and purifies.',
       brand: 'Avinichi',
       retailPrice: 250,
       description: 'The Noni Clarifying Lather Purifier is enriched with the powerful trifecta of Nettle Leaf, Aloe, and Chamomile Extracts. This cleanser purifies and revitalizes skin while restoring natural balance. Nettle Leaf helps regulate oil production, Aloe soothes and hydrates, and Chamomile provides calming effects for a healthy, luminous complexion.',
@@ -438,6 +470,7 @@ const PRODUCTS = {
     {
       id: 'avinichi-mulberry-hydrating-regimen',
       name: 'Mulberry Hydrating Regimen',
+      cardDescription: '3-piece mulberry-infused collection: overnight melting mask, super-dewy bead serum, and velvet silk crème with derma roller for deep hydration and velvety smooth skin.',
       brand: 'Avinichi',
       retailPrice: 7000,
       description: 'A three-piece skincare collection infused with mulberry extract designed to deeply hydrate, leaving your skin with a velvety smooth appearance. Includes the Liquid Lift Overnight Melting Mask, Super-Dewy Bead Serum, and Mulberry Velvet Silk Crème, plus a derma roller for enhanced absorption.',
@@ -454,6 +487,7 @@ const PRODUCTS = {
     {
       id: 'spacetouch-cosmo',
       name: 'Cosmo',
+      cardDescription: 'Portable, foldable full-body LED skin care device — 360 LED and infrared points across a 23-inch panel with six therapeutic wavelengths and AI-enhanced Flash Mode. Targets body pain, wrinkles, pigmentation, cellulite, scarring, tightening, and acne. FDA approved with a lifetime warranty.',
       brand: 'SpaceTouch',
       retailPrice: 100000,
       minPrice: 10000,
@@ -470,6 +504,7 @@ const PRODUCTS = {
     {
       id: 'lumieres-medlight',
       name: 'MedLight',
+      cardDescription: 'Multi-spectrum light therapy device for pain relief and skin care, with seven pre-set modes plus a fully customizable mode on a touchscreen controller.',
       brand: 'Lumières',
       retailPrice: 500000,
       minPrice: 10000,
@@ -484,6 +519,7 @@ const PRODUCTS = {
     {
       id: 'lumieres-max',
       name: 'Smart Medical Device Max',
+      cardDescription: 'Full-body FDA-certified red/near-infrared/blue light therapy panel — 304 LEDs across six bands with voice-guided Voice Mentor sessions and floor, wall or door mounting.',
       brand: 'Lumières',
       retailPrice: 150000,
       minPrice: 5000,
@@ -498,6 +534,7 @@ const PRODUCTS = {
     {
       id: 'lumieres-medium',
       name: 'Smart Device Medium',
+      cardDescription: 'Half-body red/near-infrared/blue light therapy panel — 152 LEDs across six bands with Voice Mentor guided sessions, for targeted relief across larger muscle groups.',
       brand: 'Lumières',
       retailPrice: 100000,
       minPrice: 5000,
@@ -512,6 +549,7 @@ const PRODUCTS = {
     {
       id: 'lumieres-small',
       name: 'Smart Device Small',
+      cardDescription: 'The most compact panel in the line — 64 LEDs across six bands in an aluminium housing, for targeted localized pain relief and skin care.',
       brand: 'Lumières',
       retailPrice: 50000,
       minPrice: 5000,
@@ -525,6 +563,39 @@ const PRODUCTS = {
     },
   ],
 };
+
+// Picker-only bundles. These are not sellable products and have no catalog
+// entry of their own — selecting one is just shorthand for its components,
+// which is what actually goes into the email (see expandBundles). Defined here
+// so the email generator and the picker UI can't disagree about what a bundle
+// contains.
+const BUNDLES = [
+  {
+    id: 'hydrasphere-mineralift-thermal-set',
+    brandKey: 'hydrasphere',
+    name: 'MineralLift Thermal Set',
+    cardDescription: 'Complete 3-piece monthly treatment: Thermal Mask, Thermal Serum, and Thermal Cream. Apply mask, massage serum into mask until warming sensation, leave 10 min, rinse, then moisturize with cream.',
+    image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/IMG_6326.webp?v=1785181083',
+    components: [
+      'hydrasphere-mineralift-thermal-mask',
+      'hydrasphere-mineralift-thermal-serum',
+      'hydrasphere-mineralift-thermal-cream',
+    ],
+  },
+];
+
+// Replace any bundle id with the ids it stands for, leaving everything else
+// alone. Idempotent, and safe if the same component is also selected directly.
+function expandBundles(ids) {
+  const out = [];
+  for (const id of ids || []) {
+    const bundle = BUNDLES.find(b => b.id === id);
+    for (const real of bundle ? bundle.components : [id]) {
+      if (!out.includes(real)) out.push(real);
+    }
+  }
+  return out;
+}
 
 // GET /api/welcome/products — returns the product catalog
 router.get('/products', (req, res) => {
@@ -633,12 +704,12 @@ const ROUTINE_STEPS = {
   ],
 };
 
-// MineralLift Thermal products — excluded from AM/PM, shown only in Monthly
-const THERMAL_SET_IDS = new Set([
-  'hydrasphere-mineralift-thermal-serum',
-  'hydrasphere-mineralift-thermal-cream',
-  'hydrasphere-mineralift-thermal-mask',
-]);
+// MineralLift Thermal products — excluded from AM/PM, shown only in Monthly.
+// Same three items the Thermal Set bundle expands to, so take them from there
+// rather than repeating the list.
+const THERMAL_SET_IDS = new Set(
+  BUNDLES.find(b => b.id === 'hydrasphere-mineralift-thermal-set').components
+);
 
 function isThermalProduct(p) {
   return THERMAL_SET_IDS.has(p.id);
@@ -822,12 +893,8 @@ const TIPS_BANK = [
 // Shared by the /generate route and the POS welcome-email endpoint.
 // Throws an Error (with a user-friendly message) on invalid input.
 function generateWelcomeEmailBody({ customerEmail, customerName, selectedProductIds: rawProductIds, includeSuggestions, userId }) {
-  // Expand the thermal set into its individual product IDs
-  const selectedProductIds = (rawProductIds || []).flatMap(id =>
-    id === 'hydrasphere-mineralift-thermal-set'
-      ? ['hydrasphere-mineralift-thermal-mask', 'hydrasphere-mineralift-thermal-serum', 'hydrasphere-mineralift-thermal-cream']
-      : [id]
-  );
+  // A bundle isn't a real product — swap it for the items it stands for.
+  const selectedProductIds = expandBundles(rawProductIds);
 
   if (!customerEmail || typeof customerEmail !== 'string') {
     throw new Error('customerEmail is required');
@@ -1580,4 +1647,4 @@ router.get('/debug', (req, res) => {
   });
 });
 
-module.exports = { router, PRODUCTS, generateWelcomeEmailBody };
+module.exports = { router, PRODUCTS, BUNDLES, generateWelcomeEmailBody };

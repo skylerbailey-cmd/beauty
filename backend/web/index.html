@@ -2516,16 +2516,11 @@
     }
     renderWebsites(currentUser?.websites || []);
     renderBrandCheckboxes(currentUser?.brands || ['avologi', 'avinichi', 'hydrasphere', 'spacetouch']);
-    // Re-render the welcome-email product picker once we know which products
-    // this store currently has visible (per POS Settings), so a hidden
-    // product can't be selected here even though the initial render (before
-    // login finishes) shows the full catalog.
-    loadProductVisibility().then(() => {
-      renderGrid('hydrasphere');
-      renderGrid('avinichi');
-      renderGrid('avologi');
-      renderGrid('spacetouch');
-      renderGrid('lumieres');
+    // The picker is empty until this resolves — the catalog is per-store (it
+    // reflects the visibility toggles in POS Settings) so there's nothing to
+    // show before login finishes.
+    loadCatalog().then(() => {
+      renderAllGrids();
       // Grids must exist before their checkboxes can be ticked.
       applyPrefillFromUrl();
     });
@@ -3035,90 +3030,72 @@
     });
     checkAuth();
   });
-  // ── Product catalog (mirrors the backend; kept in sync manually) ────────────
+  // ── Product catalog ─────────────────────────────────────────────────────────
 
-  const PRODUCTS = {
-    avologi: [
-      { id: 'avologi-lumnen', name: 'LUMNEN', description: 'World\'s first FDA-certified home-use bio-stimulator laser — Nobel Prize-winning technology that stimulates collagen and hyaluronic acid for increased facial volume, firmness, and wrinkle reduction.', image: 'https://avologi.com/wp-content/uploads/2024/03/Avologi-lumen-548x731-BG-1.jpg' },
-      { id: 'avologi-eneo-totale', name: 'Eneo Totalé', description: 'FDA-certified 510K anti-aging medical device — Nobel prize-winning technology for smoother, more radiant skin with visible wrinkle reduction through personalized rejuvenation sessions.', image: 'https://avologi.com/wp-content/uploads/2018/07/Eneo-Total-AV19-1.jpg' },
-      { id: 'avologi-eneo-totale-blu', name: 'Eneo Totalé Blu', description: 'FDA certified blue light (415 nm) medical device — targets acne and skin imperfections with pain-free 4–6 min sessions, zero side effects, no chemicals, suitable for all skin types.', image: 'https://avologi.com/wp-content/uploads/2022/12/Eneo-Total-Blu-AV20-3-2.jpg' },
-      { id: 'avologi-eneo-blu', name: 'Eneo Blu', description: 'Advanced handheld FDA-approved blue light (415 nm) device — targets acne-causing bacteria with zero side effects, no chemicals, and 4–6 minute sessions. Effective for face, back, and body acne on all skin types.', image: 'https://avologi.com/wp-content/uploads/2018/08/Eneo-Blu-AV182.jpg' },
-    ],
-    avinichi: [
-      { id: 'avinichi-phyto-thermal-collection', name: 'Phyto Thermal Collection', description: 'Luxurious 3-piece collection: self-heating thermal mask, hydrating antioxidant serum, and firming moisture infusion cream with jade roller.', image: 'https://www.avinichi.com/wp-content/uploads/Phyto-Thermal-Collection-1.png' },
-      { id: 'avinichi-liquid-lift-overnight-melting-mask', name: 'Liquid Lift Overnight Melting Mask', description: 'Overnight moisture mask with superfruit extracts, vitamins, and peptides for deeply restored, rehydrated skin by morning.', image: 'https://www.avinichi.com/wp-content/uploads/Liquid-Lift-Overnight-Melting-Mask-1.png' },
-      { id: 'avinichi-hydrating-multifruit-c-serum', name: 'Hydrating Multifruit C-Serum', description: 'Dual vitamin C serum with mulberry extract — brightens, tightens, and targets wrinkles for a glowing complexion.', image: 'https://www.avinichi.com/wp-content/uploads/Hydrating-Multifruit-C-Serum-1.png' },
-      { id: 'avinichi-noni-morning-glow', name: 'Noni Morning Glow', description: 'Lightweight daytime moisturizer with Noni, vitamins, and antioxidants. Fast-absorbing, non-greasy, great makeup base.', image: 'https://www.avinichi.com/wp-content/uploads/Noni-Morning-Glow-1.png' },
-      { id: 'avinichi-noni-mousse-cleanser', name: 'Noni Mousse Cleanser', description: 'Gentle daily cleanser with coconut-derived agents and Noni for a fresh, radiant finish.', image: 'https://www.avinichi.com/wp-content/uploads/Noni-Mousse-Cleanser-1.png' },
-      { id: 'avinichi-noni-pore-purifying-toner', name: 'Noni Pore Purifying Toner', description: 'Alcohol-free toner with Noni and plant extracts that preps skin after cleansing.', image: 'https://www.avinichi.com/wp-content/uploads/Noni-Pore-Purifying-Toner-1.png' },
-      { id: 'avinichi-eye-rescue-phyto-serum', name: 'Eye Rescue Phyto-Serum', description: 'Antioxidant-rich botanical eye serum for plumper, firmer, more lifted skin around the eyes.', image: 'https://www.avinichi.com/wp-content/uploads/Eye-Rescue-Phyto-Serum-1.png' },
-      { id: 'avinichi-noni-polishing-peel', name: 'Noni Polishing Peel', description: 'Gentle exfoliator with Noni, botanical oils, vitamin C, and mandelic acid for brighter, smoother skin.', image: 'https://www.avinichi.com/wp-content/uploads/Noni-Polishing-Peel-1.png' },
-      { id: 'avinichi-wrinkle-reversal-solution', name: 'Wrinkle Reversal Solution', description: 'Quick-acting syringe formula that instantly smooths fine lines and wrinkles for a taut, firm appearance.', image: 'https://www.avinichi.com/wp-content/uploads/Wrinkle-Reversal-Solution-1.png' },
-      { id: 'avinichi-noni-night-repair-cream', name: 'Noni Night Repair Cream', description: 'Overnight cream with vitamins, plant butters, and Noni to support skin cell repair while you sleep.', image: 'https://www.avinichi.com/wp-content/uploads/Noni-Night-Repair-Cream-1.png' },
-      { id: 'avinichi-dark-circle-eye-perfecting-cream', name: 'Dark Circle Eye Perfecting Cream', description: 'Silky eye cream that minimizes dark circles and crow\'s feet while brightening and de-puffing.', image: 'https://www.avinichi.com/wp-content/uploads/Dark-Circle-Eye-Perfecting-Cream-1.png' },
-      { id: 'avinichi-noni-clarifying-lather-purifier', name: 'Noni Clarifying Lather Purifier', description: 'Gentle foaming cleanser with Nettle Leaf, Aloe, Chamomile, and Noni that balances pH and purifies.', image: 'https://www.avinichi.com/wp-content/uploads/Noni-Clarifying-Lather-Purifier-1.png' },
-      { id: 'avinichi-mulberry-hydrating-regimen', name: 'Mulberry Hydrating Regimen', description: '3-piece mulberry-infused collection: overnight melting mask, super-dewy bead serum, and velvet silk crème with derma roller for deep hydration and velvety smooth skin.', image: 'https://www.avinichi.com/wp-content/uploads/Mulberry-Hydrating-Regimen-1.png' },
-    ],
-    hydrasphere: [
-      { id: 'hydrasphere-advanced-foaming-cleanser', name: 'Advanced Foaming Cleanser', description: 'Alcohol-free luxury foaming cleanser that retextures, lightly exfoliates, and preps skin for moisturizing — powered by hemp extract for a radiant, conditioned complexion.', image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260723_145600_2a2f4030-e3e4-4efc-87e8-66d46222a135.png?v=1785176027' },
-      { id: 'hydrasphere-hydra-toning-solution', name: 'Hydra Toning Solution', description: 'Revitalizing toner that refreshes and balances skin\'s natural pH, preparing it to absorb the full benefits of subsequent skincare products.', image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260724_125732_54de942a-3075-4da4-9da5-5266cb97f532.png?v=1785176860' },
-      { id: 'hydrasphere-vitamin-c-serum', name: 'Vitamin C Serum', description: 'Concentrated anti-aging serum packed with Vitamin C to diminish fine lines, promote collagen production, brighten, and even skin tone.', image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/IMG_6354.webp?v=1785181432' },
-      { id: 'hydrasphere-mineralift-thermal-set', name: 'MineralLift Thermal Set', description: 'Complete 3-piece monthly treatment: Thermal Mask, Thermal Serum, and Thermal Cream. Apply mask, massage serum into mask until warming sensation, leave 10 min, rinse, then moisturize with cream.', image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/IMG_6326.webp?v=1785181083', isSet: true },
-      { id: 'hydrasphere-deep-moisturizing-cream', name: 'Deep Moisturizing Cream', description: 'A firming elixir blending botanical wonders and cutting-edge science — deeply nourishes the face, neck, and under-eye area beyond basic hydration.', image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260723_174746_29bfb4eb-2c7c-4044-a621-1df7fd65b0fe.jpg?v=1785176674' },
-      { id: 'hydrasphere-anti-wrinkle-30g', name: 'Anti Wrinkle Correction & Prevention 30g', description: 'Clinically advanced cream powered by Hyaluronic Acid, Retinol, Stem Cells, and Peptides to visibly reduce deep lines, puffiness, and dark circles for firmer, smoother skin.', image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260723_170404_0951518a-4e98-4249-b0de-cc9c15ce4b34.jpg?v=1785176552' },
-      { id: 'hydrasphere-anti-wrinkle-15g', name: 'Anti Wrinkle Correction & Prevention 15g', description: 'Travel-size version of the Anti Wrinkle Correction & Prevention cream — same clinically advanced formula with Retinol, Stem Cells, and Peptides in a convenient smaller size.', image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260723_163859_6855dac9-c205-4c78-96c4-c82e7159aa43.jpg?v=1785176495' },
-      { id: 'hydrasphere-oxygen-brightening-cream', name: 'Oxygen Brightening Cream', description: 'Oxygen-infused moisturizing and texturizing treatment that deeply hydrates, brightens, and improves skin texture for a radiant, youthful glow.', image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/65.png' },
-      { id: 'hydrasphere-spf50-shield-cream', name: 'SPF 50 Shield Cream', description: 'Lightweight mineral SPF 50 with non-nano Zinc Oxide and Titanium Dioxide — broad-spectrum UVA/UVB defense with Niacinamide, Hyaluronic Acid, and antioxidants. No white cast.', image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/IMG_6344.webp?v=1785181385' },
-      { id: 'hydrasphere-facial-peeling-gel', name: 'Facial Peeling Gel', description: 'Revolutionary exfoliating gel powered by mandelic acid that gently eliminates dead skin cells while addressing sunspots, pigmentation, acne, redness, and rosacea.', image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260723_175336_9b666839-e2d6-4060-a1d7-f5495916e799.jpg?v=1785176729' },
-      { id: 'hydrasphere-hydrocharcoal-silk-mask', name: 'HydroCharcoal Silk Mask', description: 'Leave-on luxury mask with bioengineered delivery systems — activated charcoal, hyaluronic acid, and signal peptides detoxify, refine pores, and smooth texture for a radiant glow.', image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260727_181303_60749e12-5393-401f-aced-1a90e9fc39ab.png?v=1785178014' },
-      { id: 'hydrasphere-hydrocharcoal-collagen-neck-mask', name: 'HydroCharcoal Collagen Neck & Décolleté Mask', description: 'Targeted mask for neck and chest combining activated charcoal and soluble collagen — lifts, firms, and deeply hydrates while reducing neck lines, breast wrinkles, and pigmentation.', image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260727_174227_9eb89372-01dc-4b06-b816-afb8fda6e60e.png?v=1785177773' },
-      { id: 'hydrasphere-advanced-night-repair', name: 'Advanced Night Repair', description: 'Intensive overnight cream with Collagen, Hyaluronic Acid, Peptides, and nourishing oils — repairs and deeply hydrates while you sleep for a smoother, firmer complexion by morning.', image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260723_155102_5e7dcfa7-0943-47d3-b7e7-0d19dc419259.png?v=1785176338' },
-      { id: 'hydrasphere-advanced-eye-lifting-serum', name: 'Advanced Eye Lifting Serum', description: 'Lightweight serum for the delicate eye area with Collagen, Caviar Extract, and Peptides — reduces fine lines, puffiness, dark circles, and improves elasticity around the eyes.', image: 'https://cdn.shopify.com/s/files/1/0742/9554/1952/files/hf_20260723_152836_82eb9892-326f-497a-9c08-3b5cf8bee2d8.jpg?v=1785175888' },
-    ],
-    spacetouch: [
-      { id: 'spacetouch-cosmo', name: 'Cosmo', description: 'Portable, foldable full-body LED skin care device — 360 LED and infrared points across a 23-inch panel with six therapeutic wavelengths and AI-enhanced Flash Mode. Targets body pain, wrinkles, pigmentation, cellulite, scarring, tightening, and acne. FDA approved with a lifetime warranty.', image: 'https://spacetouch.com/cdn/shop/files/SpacetouchCosmostomachtightenting.png?v=1710228368' },
-    ],
-    lumieres: [
-      { id: 'lumieres-medlight', name: 'MedLight', description: 'Multi-spectrum light therapy device for pain relief and skin care, with seven pre-set modes plus a fully customizable mode on a touchscreen controller.', image: 'https://lumiereslights.com/wp-content/uploads/2024/08/Lumieres-White-Devices-2-1-600x600.png' },
-      { id: 'lumieres-max', name: 'Smart Medical Device Max', description: 'Full-body FDA-certified red/near-infrared/blue light therapy panel — 304 LEDs across six bands with voice-guided Voice Mentor sessions and floor, wall or door mounting.', image: 'https://lumiereslights.com/wp-content/uploads/2024/08/9-1-scaled.jpg' },
-      { id: 'lumieres-medium', name: 'Smart Device Medium', description: 'Half-body red/near-infrared/blue light therapy panel — 152 LEDs across six bands with Voice Mentor guided sessions, for targeted relief across larger muscle groups.', image: 'https://lumiereslights.com/wp-content/uploads/2024/08/Lumieres-Smart-Device-Medium-1-600x600.jpg' },
-      { id: 'lumieres-small', name: 'Smart Device Small', description: 'The most compact panel in the line — 64 LEDs across six bands in an aluminium housing, for targeted localized pain relief and skin care.', image: 'https://lumiereslights.com/wp-content/uploads/2024/08/Lumieres-6-600x600.png' },
-    ],
-  };
+  // Loaded from the server rather than hardcoded here. This file used to keep
+  // its own copy of the catalog, which silently drifted out of sync with the
+  // real one — products that were sellable in the POS had no card in this
+  // picker, so they could never be included in a welcome email.
+  //
+  // Shape: { brandKey: [{ id, name, description, image, isSet, components }] }.
+  // Empty until loadCatalog() resolves; renderGrid tolerates that.
+  let PRODUCTS = {};
+  let catalogLoaded = false;
 
   // ── Render product grids ────────────────────────────────────────────────────
 
-  // Which catalog product ids the store currently has visible/active, per the
-  // same per-product visibility toggle set in the POS Settings tab. Null until
-  // loaded — renderGrid shows everything while it's null so the picker never
-  // ends up empty if this fetch fails or hasn't resolved yet.
-  let visibleProductIds = null;
-  async function loadProductVisibility() {
+  // The catalog, grouped into the picker's brand grids, built from the same
+  // endpoint the POS register uses — so anything sellable is selectable here.
+  // Per-product visibility (the toggle in POS Settings) is applied while
+  // building, and bundles are appended from the server's own definition.
+  //
+  // Custom products are deliberately skipped: they have no usage instructions
+  // in the catalog, so the email would name them with nothing to say about them.
+  async function loadCatalog() {
     try {
       const resp = await fetch('/api/pos/products', { credentials: 'include' });
       if (!resp.ok) return;
       const data = await resp.json();
-      visibleProductIds = new Set((data.products || []).filter(p => p.visible !== false && !p.isCustom).map(p => p.id));
-    } catch (_) { /* best effort — keep showing the full catalog */ }
-  }
 
-  // The "set" bundle isn't a real catalog product with its own visibility
-  // toggle in POS Settings — it's just a picker convenience for its 3
-  // individual components (see THERMAL_SET_ID below). Only offer it when all
-  // 3 components are visible, since selecting it sends all 3 regardless.
-  function isProductVisible(product) {
-    if (!visibleProductIds) return true;
-    if (product.isSet) {
-      return ['hydrasphere-mineralift-thermal-serum', 'hydrasphere-mineralift-thermal-cream', 'hydrasphere-mineralift-thermal-mask']
-        .every(id => visibleProductIds.has(id));
-    }
-    return visibleProductIds.has(product.id);
+      const grouped = {};
+      const visibleIds = new Set();
+      for (const p of data.products || []) {
+        if (p.isCustom || p.visible === false) continue;
+        visibleIds.add(p.id);
+        const key = p.brandKey || 'other';
+        (grouped[key] = grouped[key] || []).push({
+          id: p.id,
+          name: p.name,
+          description: p.cardDescription || p.description || '',
+          image: p.image,
+        });
+      }
+
+      // A bundle has no visibility toggle of its own — selecting it sends all
+      // of its components, so only offer it when every component is visible.
+      for (const b of data.bundles || []) {
+        if (!b.components?.every(id => visibleIds.has(id))) continue;
+        const key = b.brandKey || 'other';
+        (grouped[key] = grouped[key] || []).push({
+          id: b.id,
+          name: b.name,
+          description: b.cardDescription || '',
+          image: b.image,
+          isSet: true,
+          components: b.components,
+        });
+      }
+
+      PRODUCTS = grouped;
+      catalogLoaded = true;
+    } catch (_) { /* leave the picker empty rather than showing a stale list */ }
   }
 
   function renderGrid(brand) {
     const grid = document.getElementById('grid-' + brand);
+    if (!grid) return;
     grid.innerHTML = '';
-    PRODUCTS[brand].filter(isProductVisible).forEach(product => {
+    (PRODUCTS[brand] || []).forEach(product => {
       const card = document.createElement('label');
       card.className = 'product-card';
       const imgHtml = product.image
@@ -3136,30 +3113,58 @@
     });
   }
 
-  renderGrid('hydrasphere');
-  renderGrid('avologi');
-  renderGrid('avinichi');
-  renderGrid('spacetouch');
-  renderGrid('lumieres');
+  // Brand keys come from the catalog itself, so a new brand needs no change
+  // here — but keep the established display order for the ones we know.
+  const BRAND_ORDER = ['hydrasphere', 'avologi', 'avinichi', 'spacetouch', 'lumieres'];
+  function renderAllGrids() {
+    // Previously the catalog was baked into this page, so it was always there.
+    // Now it can fail to arrive, and an empty picker with no explanation looks
+    // like the store has no products — say what actually happened.
+    if (!catalogLoaded) {
+      BRAND_ORDER.forEach(brand => {
+        const grid = document.getElementById('grid-' + brand);
+        if (grid) grid.innerHTML = '<div style="grid-column:1/-1;padding:12px;color:#8a7f7f;font-size:.85rem">Couldn\'t load the product list. Refresh the page to try again.</div>';
+      });
+      return;
+    }
+    const keys = Object.keys(PRODUCTS)
+      .sort((a, b) => (BRAND_ORDER.indexOf(a) + 1 || 99) - (BRAND_ORDER.indexOf(b) + 1 || 99));
+    keys.forEach(renderGrid);
+  }
 
-  const THERMAL_SET_ID = 'hydrasphere-mineralift-thermal-set';
-  const THERMAL_INDIVIDUAL_IDS = ['hydrasphere-mineralift-thermal-serum', 'hydrasphere-mineralift-thermal-cream', 'hydrasphere-mineralift-thermal-mask'];
+  // Every product currently in the picker, across all brands.
+  function allCatalogProducts() {
+    return Object.values(PRODUCTS).flat();
+  }
+
+  // A bundle and its own components are mutually exclusive — ticking either
+  // side unticks the other, so the same product can't be sent twice.
+  function bundleComponentsOf(id) {
+    return allCatalogProducts().find(p => p.id === id && p.isSet)?.components || null;
+  }
 
   function syncCardState(checkbox) {
     checkbox.closest('.product-card').classList.toggle('selected', checkbox.checked);
 
-    // When thermal set is checked, uncheck individual thermal products
-    if (checkbox.checked && checkbox.value === THERMAL_SET_ID) {
-      THERMAL_INDIVIDUAL_IDS.forEach(id => {
+    if (!checkbox.checked) return;
+
+    // Ticking a bundle unticks anything it already covers.
+    const components = bundleComponentsOf(checkbox.value);
+    if (components) {
+      components.forEach(id => {
         const cb = document.querySelector(`input[value="${id}"]`);
         if (cb && cb.checked) { cb.checked = false; syncCardState(cb); }
       });
+      return;
     }
-    // When an individual thermal product is checked, uncheck the set
-    if (checkbox.checked && THERMAL_INDIVIDUAL_IDS.includes(checkbox.value)) {
-      const setCb = document.querySelector(`input[value="${THERMAL_SET_ID}"]`);
-      if (setCb && setCb.checked) { setCb.checked = false; syncCardState(setCb); }
-    }
+
+    // Ticking a component unticks any bundle that contains it.
+    allCatalogProducts()
+      .filter(p => p.isSet && p.components?.includes(checkbox.value))
+      .forEach(set => {
+        const cb = document.querySelector(`input[value="${set.id}"]`);
+        if (cb && cb.checked) { cb.checked = false; syncCardState(cb); }
+      });
   }
 
   function selectAll(brand) {
@@ -3344,7 +3349,9 @@
 
     try {
       const selectedIds = getSelectedIds();
-      const allProds = [...PRODUCTS.avologi, ...(PRODUCTS.avinichi || []), ...PRODUCTS.hydrasphere, ...(PRODUCTS.spacetouch || [])];
+      // Every brand, not a hand-listed few — the old list had missed Lumières
+      // entirely, so those products were dropped from the recorded names.
+      const allProds = allCatalogProducts();
       const productNames = selectedIds
         .map(id => allProds.find(p => p.id === id))
         .filter(Boolean)
