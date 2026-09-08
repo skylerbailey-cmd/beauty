@@ -1092,9 +1092,11 @@ async function getDaySummary(userId, dateStr, tz) {
     GROUP BY ap.method
   `, [userId, dateStr, timezone])).rows;
 
-  const tenders = { cash: 0, card: 0, other: 0 };
+  // Keep in step with PAYMENT_METHODS in routes/pos.js — a method missing here
+  // still counts, but silently as "Other" on the printed day summary.
+  const tenders = { cash: 0, card: 0, check: 0, other: 0 };
   for (const r of tenderRows) {
-    const method = ['cash', 'card', 'other'].includes(r.method) ? r.method : 'other';
+    const method = ['cash', 'card', 'check', 'other'].includes(r.method) ? r.method : 'other';
     tenders[method] += Number(r.sales_total || 0) - Number(r.returns_total || 0);
   }
 

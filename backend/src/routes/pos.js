@@ -5,6 +5,11 @@ const router = express.Router();
 const pgDb = require('../db/postgres');
 const { PRODUCTS, BUNDLES, generateWelcomeEmailBody } = require('./welcome');
 
+// Tender methods the register can record. Adding one here is not enough on its
+// own — getDaySummary buckets tenders by the same set for the end-of-day
+// report, and anything it doesn't know lands in "Other".
+const PAYMENT_METHODS = ['card', 'cash', 'check', 'other'];
+
 // Format a money amount with thousands separators (e.g. 15146.25 -> "15,146.25")
 function money(n) { return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
@@ -405,10 +410,11 @@ router.post('/transactions', async (req, res) => {
 
   // Split payment: the register may send one or more tenders — for sales AND
   // refunds. Fall back to the legacy single payment_method/card_last4 when no
-  // `payments` array is given.
+  // `payments` array is given. Anything not in PAYMENT_METHODS falls back to
+  // 'card', so a method has to be listed there or it's silently recorded wrong.
   const tenders = (Array.isArray(payments) && payments.length)
     ? payments.map(p => ({
-        method: ['card', 'cash', 'other'].includes(p.method) ? p.method : 'card',
+        method: PAYMENT_METHODS.includes(p.method) ? p.method : 'card',
         amount: Math.round((Number(p.amount) || 0) * 100) / 100,
         card_last4: String(p.card_last4 || '').trim(),
       }))
@@ -1238,11 +1244,15 @@ router.post('/import-transactions', async (req, res) => {
       const tax = Math.abs(parseNum(row.tax));
       const total = Math.abs(parseNum(row.sale_total)) || (subtotal + tax);
 
-      // Payment method from the tender columns
+      // Payment method from the tender columns. Checks used to be lumped in
+      // with store credit as "other" because there was no check method; now
+      // that there is, they import as their own method. Only affects imports
+      // run from here on — rows already brought in stay as "other".
       let payment = 'card';
       if (Math.abs(parseNum(row.credit)) > 0) payment = 'card';
       else if (Math.abs(parseNum(row.cash)) > 0) payment = 'cash';
-      else if (Math.abs(parseNum(row.check)) > 0 || Math.abs(parseNum(row.store_credit)) > 0) payment = 'other';
+      else if (Math.abs(parseNum(row.check)) > 0) payment = 'check';
+      else if (Math.abs(parseNum(row.store_credit)) > 0) payment = 'other';
 
       // Employees (comma-separated names) — match or create
       const names = String(row.associates || '').split(',').map(s => s.trim()).filter(Boolean);

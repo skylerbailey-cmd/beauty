@@ -1751,6 +1751,7 @@ function renderTenders() {
       <select onchange="setTenderMethod(${i}, this.value)" style="${inp};flex:1">
         <option value="card" ${t.method === 'card' ? 'selected' : ''}>Card</option>
         <option value="cash" ${t.method === 'cash' ? 'selected' : ''}>Cash</option>
+        <option value="check" ${t.method === 'check' ? 'selected' : ''}>Check</option>
         <option value="other" ${t.method === 'other' ? 'selected' : ''}>Other</option>
       </select>
       ${amountField}${last4Field}${removeBtn}
@@ -2147,6 +2148,7 @@ async function printDaySummary() {
     <div class="r-center" style="font-weight:900">SALES SUMMARY</div>
     <div class="r-row"><span>Total Cash:</span><span>$${money(report.tenders.cash)}</span></div>
     <div class="r-row"><span>Total Card:</span><span>$${money(report.tenders.card)}</span></div>
+    <div class="r-row"><span>Total Check:</span><span>$${money(report.tenders.check || 0)}</span></div>
     <div class="r-row"><span>Total Other:</span><span>$${money(report.tenders.other)}</span></div>
     <div class="r-row"><span>Total Refunded:</span><span>$${money(s.refunded_total)}</span></div>
     <div class="r-row"><span>Total Sales:</span><span>$${money(s.net_total)}</span></div>
