@@ -291,6 +291,12 @@
     .date-range { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; font-family: system-ui, sans-serif; font-size: .85rem; }
     .date-range input, .date-range select { padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-family: system-ui, sans-serif; font-size: .85rem; outline: none; background: var(--white); color: var(--dark); }
     .date-range input:focus, .date-range select:focus { border-color: var(--rose); }
+    /* Half-month shortcuts — secondary to the filter's own Update button. */
+    .btn.half-month {
+      background: var(--cream); color: var(--rose-dk); border: 1px solid var(--border);
+      padding: 8px 12px; font-size: .82rem; white-space: nowrap;
+    }
+    .btn.half-month:hover { border-color: var(--rose); background: #fff; }
     .date-range .btn { padding: 8px 16px; }
 
     /* ── Manage employees panel ─── */
@@ -599,6 +605,8 @@
         <label>To:</label>
         <input type="date" id="histEnd">
         <button class="btn btn-confirm" style="padding:8px 16px" onclick="loadTransactions()">Filter</button>
+        <button class="btn half-month" onclick="setHalfMonth('histStart','histEnd','first',loadTransactions)" title="1st to 15th of the month in the From box">1st–15th</button>
+        <button class="btn half-month" onclick="setHalfMonth('histStart','histEnd','second',loadTransactions)" title="16th to the end of the month in the From box">16th–End</button>
         <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="showAllTransactions()">Show All</button>
         <input type="text" id="histSearch" placeholder="Search anything (receipt, customer, employee, card, amount, type…)" oninput="applyTxFilters()" style="min-width:300px;flex:1">
         <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="clearTxFilters()">Clear</button>
@@ -668,6 +676,8 @@
         <label>To:</label>
         <input type="date" id="rptEnd">
         <button class="btn btn-confirm" onclick="loadReports()">Update</button>
+        <button class="btn half-month" onclick="setHalfMonth('rptStart','rptEnd','first',loadReports)" title="1st to 15th of the month in the From box">1st–15th</button>
+        <button class="btn half-month" onclick="setHalfMonth('rptStart','rptEnd','second',loadReports)" title="16th to the end of the month in the From box">16th–End</button>
         <span id="rptCompanyPicker" style="display:none;align-items:center;gap:6px">
           <label>Company:</label>
           <select id="rptCompanyScope" onchange="changeCompanyScope(this.value)"></select>
@@ -745,6 +755,8 @@
         <label>To:</label>
         <input type="date" id="custEnd">
         <button class="btn btn-confirm" onclick="loadCustomers()">Update</button>
+        <button class="btn half-month" onclick="setHalfMonth('custStart','custEnd','first',loadCustomers)" title="1st to 15th of the month in the From box">1st–15th</button>
+        <button class="btn half-month" onclick="setHalfMonth('custStart','custEnd','second',loadCustomers)" title="16th to the end of the month in the From box">16th–End</button>
       </div>
 
       <div class="report-card">
@@ -3075,6 +3087,30 @@ function applyTxFilters() {
 // grants it for companies where the same name and PIN is also a manager.
 let companyScopeMode = 'current'; // 'current' | 'all'
 let viewingCompanyCount = 1;      // how many companies the server actually returned
+
+// ─── Half-month date shortcuts ──────────────────────────────────────────────
+// The two halves of a month, as commission periods are usually run. Taken from
+// the month already in the From box, so setting it to any date in an earlier
+// month and clicking a half gets that month's period; empty falls back to now.
+//
+// The halves are 1st–15th and 16th–end, NOT 15th–end: the 15th sits in one
+// period only, so a sale that day can't be counted (and paid) twice.
+function setHalfMonth(startId, endId, half, apply) {
+  const startEl = document.getElementById(startId);
+  const endEl = document.getElementById(endId);
+  if (!startEl || !endEl) return;
+
+  const current = startEl.value;
+  const base = /^\d{4}-\d{2}-\d{2}$/.test(current) ? current : new Date().toISOString().slice(0, 10);
+  const [y, m] = base.split('-').map(Number);
+  const pad = n => String(n).padStart(2, '0');
+  // Day 0 of the NEXT month is the last day of this one — handles 28/29/30/31.
+  const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+
+  startEl.value = `${y}-${pad(m)}-${pad(half === 'first' ? 1 : 16)}`;
+  endEl.value = `${y}-${pad(m)}-${pad(half === 'first' ? 15 : lastDay)}`;
+  if (typeof apply === 'function') apply();
+}
 
 function renderCompanyPickers() {
   const others = getLinkedAccounts().filter(a => a.email !== currentUser?.email);
