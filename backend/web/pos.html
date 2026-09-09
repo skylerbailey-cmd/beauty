@@ -3079,13 +3079,19 @@ let viewingCompanyCount = 1;      // how many companies the server actually retu
 function renderCompanyPickers() {
   const others = getLinkedAccounts().filter(a => a.email !== currentUser?.email);
   const isManager = txAccess?.role === 'manager' || managerReportsUnlocked;
-  const show = others.length > 0 && isManager;
+  // A sales employee who has unlocked their own report gets the picker on
+  // Reports too — combining there only spans companies where their own PIN
+  // works, and still shows nobody's figures but their own.
+  const personalUnlocked = !!personalCreds && !managerReportsUnlocked;
   const opts = `<option value="current">${escapeHtml(currentUser?.companyName || 'This company')} only</option>`
     + `<option value="all">All companies (${others.length + 1})</option>`;
   for (const [wrapId, selId] of [['txCompanyPicker', 'txCompanyScope'], ['rptCompanyPicker', 'rptCompanyScope']]) {
     const wrap = document.getElementById(wrapId);
     const sel = document.getElementById(selId);
     if (!wrap || !sel) continue;
+    // Transactions stays manager-only; Reports also opens up to an employee
+    // looking at their own sales.
+    const show = others.length > 0 && (isManager || (selId === 'rptCompanyScope' && personalUnlocked));
     wrap.style.display = show ? 'inline-flex' : 'none';
     if (show) { sel.innerHTML = opts; sel.value = companyScopeMode; }
   }
@@ -3094,6 +3100,16 @@ function renderCompanyPickers() {
 async function changeCompanyScope(mode) {
   const previous = companyScopeMode;
   companyScopeMode = mode;
+
+  // A sales employee looking at their own report doesn't go through the
+  // manager-gated session scope at all — their report re-verifies their own
+  // PIN per company and returns only their own rows, so just re-run it.
+  if (!managerReportsUnlocked && txAccess?.role !== 'manager' && personalCreds) {
+    renderCompanyPickers();
+    await unlockPersonalReport(true);
+    return;
+  }
+
   // Widening needs a manager PIN verified against each extra company. Reuse the
   // credentials already given to unlock Transactions when we have them.
   const creds = txCreds || null;
@@ -4897,7 +4913,14 @@ async function unlockPersonalReport(silent) {
   try {
     const resp = await fetch(`${API}/api/pos/reports/employee-personal`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ name, pin, start: `${start}T00:00:00`, end: `${end}T23:59:59` }),
+      // When "All companies" is picked, the server re-checks this same name and
+      // PIN at each one and returns only the rows it matches there.
+      body: JSON.stringify({
+        name, pin, start: `${start}T00:00:00`, end: `${end}T23:59:59`,
+        companies: companyScopeMode === 'all'
+          ? getLinkedAccounts().filter(a => a.email !== currentUser?.email).map(a => a.email)
+          : [],
+      }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error);
@@ -4933,10 +4956,22 @@ async function unlockPersonalReport(silent) {
       // Sales employees see only their own personal sales
       managerReportsUnlocked = false;
       document.getElementById('managerCommissionsSection').style.display = 'none';
-      document.getElementById('empPersonalName').textContent = `${data.employee.name} — Personal Sales & Commission`;
+      renderCompanyPickers(); // they can now combine the companies they work at
+      const spans = (data.companies_included || []).length > 1;
+      document.getElementById('empPersonalName').textContent =
+        `${data.employee.name} — Personal Sales & Commission`
+        + (spans ? ` · ${data.companies_included.join(' + ')}` : '');
       document.getElementById('empPersonalBody').innerHTML =
-        (data.report || []).map(commissionRow).join('') ||
+        // Across companies, label each row so two figures under the same name
+        // aren't mistaken for a duplicate.
+        (data.report || []).map(r => commissionRow(spans ? { ...r, employee_name: `${r.employee_name} — ${r.company_name}` } : r)).join('') ||
         '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No data</td></tr>';
+      // Say plainly when a company was asked for but couldn't be included,
+      // rather than quietly returning fewer companies than were requested.
+      const rejected = data.companies_rejected || [];
+      errorEl.textContent = rejected.length
+        ? `Not included: ${rejected.map(r => `${r.company} (${r.reason})`).join('; ')}`
+        : '';
       document.getElementById('empPersonalReport').style.display = 'block';
     }
   } catch (err) {

@@ -1160,11 +1160,44 @@ router.post('/reports/employee-personal', async (req, res) => {
     const report = await pgDb.getEmployeeSalesReport(scopeIds(req), startDate, endDate);
     res.json({ employee, role: 'manager', report });
   } else {
-    // A sales employee belongs to one company, so their personal figures stay
-    // scoped to it regardless of any wider scope a manager set.
-    const report = await pgDb.getEmployeeSalesReport(req.session.userId, startDate, endDate);
-    const personal = report.filter(r => r.employee_id === employee.id);
-    res.json({ employee, role: 'sales', report: personal });
+    // A sales employee only ever sees their OWN figures, but they may work at
+    // more than one company. Their own name+PIN is re-verified against each
+    // company asked for, and only the rows belonging to the employee it
+    // matches there are returned — so this widens whose sales they can see by
+    // exactly nothing, it just stops their other company's sales being
+    // invisible. Deliberately does NOT touch req.session.companyScope, which
+    // widens the manager-level aggregate endpoints.
+    const rows = [];
+    const included = [];
+    const rejected = [];
+
+    const own = await pgDb.getEmployeeSalesReport(req.session.userId, startDate, endDate);
+    const ownName = (await pgDb.getSettings(req.session.userId))?.store_name || '';
+    for (const r of own.filter(r => r.employee_id === employee.id)) {
+      rows.push({ ...r, company_name: ownName });
+    }
+    included.push(ownName || 'This company');
+
+    const { getUserByEmail } = require('../db');
+    for (const raw of (Array.isArray(req.body.companies) ? req.body.companies : [])) {
+      const email = String(raw || '').trim().toLowerCase();
+      if (!email) continue;
+      const u = getUserByEmail(email);
+      if (!u || u.id === req.session.userId) continue;
+      const there = await pgDb.verifyEmployeePin(pin, u.id, name);
+      if (!there) {
+        rejected.push({ company: u.company_name || email, reason: 'that name and PIN is not an active employee there' });
+        continue;
+      }
+      const theirs = await pgDb.getEmployeeSalesReport(u.id, startDate, endDate);
+      const storeName = (await pgDb.getSettings(u.id))?.store_name || u.company_name || email;
+      for (const r of theirs.filter(r => r.employee_id === there.id)) {
+        rows.push({ ...r, company_name: storeName });
+      }
+      included.push(storeName);
+    }
+
+    res.json({ employee, role: 'sales', report: rows, companies_included: included, companies_rejected: rejected });
   }
 });
 
