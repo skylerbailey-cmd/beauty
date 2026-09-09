@@ -514,6 +514,7 @@
                 </div>
               </div>
               <div style="margin-top:12px;text-align:right">
+                <button class="btn" style="margin-right:8px" onclick="addRefundAmount()" title="Give money back without a product coming back — a partial refund, goodwill credit or price adjustment">Refund an Amount</button>
                 <button class="btn btn-confirm" style="background:var(--danger)" onclick="addReturnItemsToCart()">Select All for Return</button>
               </div>
             </div>
@@ -1515,9 +1516,12 @@ function editCartPrice(idx) {
   if (newPrice === null) return;
   const parsed = parseFloat(newPrice);
   if (isNaN(parsed) || parsed < 0) return;
-  // Enforce min price
+  // The minimum price is a floor on what a product may be SOLD for. It has no
+  // meaning on a refund — giving someone $200 back on a $10,000 device isn't
+  // selling it under its floor — and enforcing it there blocked refunding any
+  // amount other than the full price.
   const product = products.find(p => p.id === item.product_id);
-  const minPrice = product?.minPrice || 0;
+  const minPrice = currentMode === 'return' ? 0 : (product?.minPrice || 0);
   if (minPrice > 0 && parsed > 0 && parsed < minPrice) {
     alert(`Cannot honor this pricing. The minimum allowed price for "${item.product_name}" is $${money(minPrice)}.`);
     return;
@@ -1544,6 +1548,12 @@ function renderCart() {
   if (cart.length === 0) {
     container.innerHTML = '<div class="cart-empty">No items added yet</div>';
   } else {
+    // The amount is click-to-edit in both modes, but on a return it's how much
+    // money goes back, not a price — say so, since that's the whole way to
+    // refund less than what was paid.
+    const priceTitle = currentMode === 'return'
+      ? 'Click to change how much is refunded for this line'
+      : 'Click to edit price';
     container.innerHTML = cart.map((item, i) => {
       const discounted = (item.discount_per_unit || 0) > 0;
       const priceHtml = discounted
@@ -1560,7 +1570,7 @@ function renderCart() {
           <span>${item.quantity}</span>
           <button onclick="changeQty(${i}, 1)">+</button>
         </div>
-        <div class="ci-price" onclick="editCartPrice(${i})" style="cursor:pointer" title="Click to edit price">${priceHtml}</div>
+        <div class="ci-price" onclick="editCartPrice(${i})" style="cursor:pointer" title="${priceTitle}">${priceHtml}</div>
         <button class="ci-remove" onclick="removeFromCart(${i})">&times;</button>
       </div>
     `;
@@ -1694,8 +1704,14 @@ async function lookupReceipt() {
   }
 }
 
+// Marks a refund line that isn't a product coming back — see addRefundAmount.
+const REFUND_ADJUSTMENT_ID = 'refund-adjustment';
+
 function addReturnItemsToCart() {
   if (!returnOriginalTx) return;
+  // Rebuilding from the checkboxes would otherwise wipe any amount-only lines
+  // added by hand, so carry those over.
+  const manual = cart.filter(i => i.product_id === REFUND_ADJUSTMENT_ID);
   cart = [];
   const checkboxes = document.querySelectorAll('.return-item-cb');
   checkboxes.forEach(cb => {
@@ -1710,6 +1726,36 @@ function addReturnItemsToCart() {
         discount_per_unit: item.quantity ? (item.discount || 0) / item.quantity : 0,
       });
     }
+  });
+  cart.push(...manual);
+  renderCart();
+}
+
+// Refund a plain dollar amount rather than a product: money back on something
+// the customer keeps, a goodwill credit, or a price adjustment. It becomes an
+// ordinary cart line, so it flows through the totals, the receipt and the
+// reports exactly like a returned item does.
+function addRefundAmount() {
+  if (currentMode !== 'return') return;
+  if (!returnOriginalTx) {
+    alert('Look up the original receipt first — every refund has to be recorded against a sale.');
+    return;
+  }
+  const raw = prompt('Refund amount, before tax:\n\nUse this to give money back without a product coming back. Tax is added on top, and the cart shows the final amount the customer receives.', '');
+  if (raw === null) return;
+  const amount = round2(parseFloat(raw));
+  if (!isFinite(amount) || amount <= 0) {
+    alert('Enter a refund amount greater than zero.');
+    return;
+  }
+  const reason = (prompt('What is this refund for? This shows on the receipt.', 'Price adjustment') || '').trim();
+  cart.push({
+    product_id: REFUND_ADJUSTMENT_ID,
+    product_name: reason || 'Refund adjustment',
+    brand: '',
+    unit_price: amount,
+    quantity: 1,
+    discount_per_unit: 0,
   });
   renderCart();
 }
