@@ -1183,7 +1183,17 @@ router.post('/reports/employee-personal', async (req, res) => {
       const email = String(raw || '').trim().toLowerCase();
       if (!email) continue;
       const u = getUserByEmail(email);
-      if (!u || u.id === req.session.userId) continue;
+      // Same company as the one signed in — already covered above, not a
+      // failure worth reporting.
+      if (u && u.id === req.session.userId) continue;
+      // Anything else that can't be used has to be REPORTED, not skipped. A
+      // silent continue here made an unresolvable company look exactly like
+      // one that had been included: the report listed a single company with
+      // nothing said about the other.
+      if (!u) {
+        rejected.push({ company: email, reason: 'not signed in on this device yet — open it once from the account menu' });
+        continue;
+      }
       const there = await pgDb.verifyEmployeePin(pin, u.id, name);
       if (!there) {
         rejected.push({ company: u.company_name || email, reason: 'that name and PIN is not an active employee there' });

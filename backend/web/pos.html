@@ -4951,6 +4951,11 @@ async function unlockPersonalReport(silent) {
   const start = document.getElementById('rptStart').value;
   const end = document.getElementById('rptEnd').value;
 
+  // Kept so the result can be compared against what was actually asked for.
+  const requestedCompanies = companyScopeMode === 'all'
+    ? getLinkedAccounts().filter(a => a.email !== currentUser?.email).map(a => a.email)
+    : [];
+
   try {
     const resp = await fetch(`${API}/api/pos/reports/employee-personal`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
@@ -4958,9 +4963,7 @@ async function unlockPersonalReport(silent) {
       // PIN at each one and returns only the rows it matches there.
       body: JSON.stringify({
         name, pin, start: `${start}T00:00:00`, end: `${end}T23:59:59`,
-        companies: companyScopeMode === 'all'
-          ? getLinkedAccounts().filter(a => a.email !== currentUser?.email).map(a => a.email)
-          : [],
+        companies: requestedCompanies,
       }),
     });
     const data = await resp.json();
@@ -5015,9 +5018,15 @@ async function unlockPersonalReport(silent) {
       // Say plainly when a company was asked for but couldn't be included,
       // rather than quietly returning fewer companies than were requested.
       const rejected = data.companies_rejected || [];
-      errorEl.textContent = rejected.length
-        ? `Not included: ${rejected.map(r => `${r.company} (${r.reason})`).join('; ')}`
-        : '';
+      if (rejected.length) {
+        errorEl.textContent = `Not included: ${rejected.map(r => `${r.company} (${r.reason})`).join('; ')}`;
+      } else if (companyScopeMode === 'all' && !requestedCompanies.length) {
+        // "All companies" with nothing to combine — the other company has
+        // never been signed into in this browser, so it isn't known here.
+        errorEl.textContent = 'No other company is signed in on this device — open it once from the account menu at the top right, then pick All companies again.';
+      } else {
+        errorEl.textContent = '';
+      }
       document.getElementById('empPersonalReport').style.display = 'block';
     }
   } catch (err) {
