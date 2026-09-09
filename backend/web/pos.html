@@ -940,6 +940,26 @@
         <div id="maverickDbaList" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
         <div id="maverickSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
       </div>
+
+      <!-- Payarc connection (the processor for companies not on Maverick) -->
+      <div class="report-card" id="payarcConfigCard" style="margin-top:16px">
+        <h3>Payarc Connection</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
+          Connect this company's Payarc account. In the Payarc dashboard go to <b>API</b>, click the <b>eye icon</b> on your token's row, and copy the <b>API Bearer Token</b> from the pop-up — not the ID shown in the table, which won't authenticate. Stored on the server and never shown again.
+          <span id="payarcConnStatus" style="font-weight:600"></span>
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="password" id="payarcToken" placeholder="API Bearer Token (leave blank to keep current)" autocomplete="off" style="flex:1;min-width:240px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+          <input type="text" id="payarcMerchantId" placeholder="Merchant Account Number (optional)" style="width:230px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+          <select id="payarcEnv" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;background:var(--white)">
+            <option value="live">Live</option>
+            <option value="sandbox">Sandbox</option>
+          </select>
+          <button class="btn btn-confirm" onclick="savePayarc()">Save</button>
+          <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border)" onclick="testPayarc()">Test Connection</button>
+        </div>
+        <div id="payarcSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
+      </div>
       </div>
       <!-- /settingsManagerOnly -->
 
@@ -4200,6 +4220,70 @@ async function sendMassEmail() {
   }
 }
 
+// ─── Payarc connection ──────────────────────────────────────────────────────
+function refreshPayarcConnState() {
+  const tokenEl = document.getElementById('payarcToken');
+  if (!tokenEl) return;
+  document.getElementById('payarcMerchantId').value = storeSettings.payarc_merchant_id || '';
+  document.getElementById('payarcEnv').value = storeSettings.payarc_env || 'live';
+  const connected = !!storeSettings.payarc_connected;
+  const statusEl = document.getElementById('payarcConnStatus');
+  statusEl.textContent = connected ? '✓ Connected' : '· Not connected';
+  statusEl.style.color = connected ? 'var(--success)' : 'var(--mid)';
+}
+
+async function savePayarc() {
+  const token = document.getElementById('payarcToken').value.trim();
+  const merchantId = document.getElementById('payarcMerchantId').value.trim();
+  const env = document.getElementById('payarcEnv').value;
+  const statusEl = document.getElementById('payarcSaveStatus');
+  const body = { payarc_merchant_id: merchantId, payarc_env: env };
+  if (token) body.payarc_token = token; // blank leaves the stored one alone
+  statusEl.style.color = 'var(--mid)';
+  statusEl.textContent = 'Saving…';
+  try {
+    const resp = await fetch(`${API}/api/pos/settings`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Save failed');
+    storeSettings = data.settings || storeSettings;
+    document.getElementById('payarcToken').value = '';
+    refreshPayarcConnState();
+    statusEl.style.color = 'var(--success)';
+    statusEl.textContent = 'Saved. Use Test Connection to check it authenticates.';
+  } catch (err) {
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = err.message;
+  }
+}
+
+async function testPayarc() {
+  const statusEl = document.getElementById('payarcSaveStatus');
+  statusEl.style.color = 'var(--mid)';
+  statusEl.textContent = 'Checking with Payarc…';
+  try {
+    const resp = await fetch(`${API}/api/pos/payarc/test`, { credentials: 'include' });
+    const data = await resp.json();
+    if (!data.configured) {
+      statusEl.style.color = 'var(--danger)';
+      statusEl.textContent = 'No token saved for this company yet.';
+      return;
+    }
+    if (!data.ok) {
+      statusEl.style.color = 'var(--danger)';
+      statusEl.textContent = `Payarc rejected it (${data.status}): ${data.error}`;
+      return;
+    }
+    statusEl.style.color = 'var(--success)';
+    statusEl.textContent = `✓ Connected to Payarc (${data.env}). Test call returned ${data.charge_count_returned} charge record(s).`;
+  } catch (err) {
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = err.message;
+  }
+}
+
 // ─── Batch Reconciliation (Maverick) — lives in the Transactions tab ────────
 function refreshMaverickConnState() {
   const dbaEl = document.getElementById('maverickDbaId');
@@ -4231,6 +4315,7 @@ async function saveMaverick() {
     statusEl.style.color = 'var(--success)';
     statusEl.textContent = 'Saved.';
     refreshMaverickConnState();
+    refreshPayarcConnState();
   } catch (err) {
     statusEl.style.color = 'var(--danger)';
     statusEl.textContent = 'Failed: ' + err.message;
@@ -5107,6 +5192,7 @@ async function loadStoreSettings() {
     renderProducts();
     updateCartTotals();
     refreshMaverickConnState();
+    refreshPayarcConnState();
   } catch (_) {}
 }
 
@@ -5312,7 +5398,8 @@ async function switchAccount(email) {
 
     await loadStoreSettings();   // pulls this company's store settings + brands + theme from Postgres
     renderBrandCheckboxes();     // sync the Settings-tab brand checkboxes
-    refreshMaverickConnState();  // reflect this company's Maverick connection
+    refreshMaverickConnState();  // reflect this company's processor connections
+    refreshPayarcConnState();
     loadProducts();
     loadEmployees();
     // Reset the embedded Emails tab so it reloads for the newly selected company

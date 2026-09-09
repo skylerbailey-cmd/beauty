@@ -310,6 +310,13 @@ async function initSchema() {
   // Maverick Payments reporting credentials (per company, server-side only)
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS maverick_dba_id TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS maverick_token TEXT DEFAULT ''");
+  // Payarc, the processor for companies not on Maverick. Same shape: the
+  // bearer token is server-side only and never returned to the browser.
+  // payarc_merchant_id is the Merchant Account Number used by the batch
+  // reporting endpoints; payarc_env picks the live or sandbox host.
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS payarc_token TEXT DEFAULT ''");
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS payarc_merchant_id TEXT DEFAULT ''");
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS payarc_env TEXT DEFAULT 'live'");
 
   // One-time data migrations, tracked so they run exactly once.
   await migrate('CREATE TABLE IF NOT EXISTS pos_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW())');
@@ -1313,7 +1320,7 @@ async function getSettings(userId) {
 }
 
 async function updateSettings(userId, fields) {
-  const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token'];
+  const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'payarc_token', 'payarc_merchant_id', 'payarc_env'];
   const sets = [];
   const params = [];
   let idx = 1;

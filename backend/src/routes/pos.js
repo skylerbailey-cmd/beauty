@@ -1213,11 +1213,15 @@ router.post('/reports/employee-personal', async (req, res) => {
 
 // ─── Settings ──────────────────────────────────────────────────────────────
 
-// Never expose the Maverick token to the browser; report only whether it's set.
+// Never expose a processor token to the browser; report only whether it's set.
 function sanitizeSettings(s) {
   if (!s) return s;
-  const { maverick_token, ...rest } = s;
-  return { ...rest, maverick_connected: !!(maverick_token && String(maverick_token).trim()) };
+  const { maverick_token, payarc_token, ...rest } = s;
+  return {
+    ...rest,
+    maverick_connected: !!(maverick_token && String(maverick_token).trim()),
+    payarc_connected: !!(payarc_token && String(payarc_token).trim()),
+  };
 }
 
 router.get('/settings', async (req, res) => {
@@ -1225,10 +1229,11 @@ router.get('/settings', async (req, res) => {
 });
 
 router.post('/settings', async (req, res) => {
-  // Ignore an empty maverick_token so saving other settings doesn't wipe it
+  // A blank token field means "leave it alone" — the browser is never sent the
+  // stored value, so saving anything else would otherwise wipe it.
   const body = { ...req.body };
-  if (body.maverick_token !== undefined && !String(body.maverick_token).trim()) {
-    delete body.maverick_token;
+  for (const field of ['maverick_token', 'payarc_token']) {
+    if (body[field] !== undefined && !String(body[field]).trim()) delete body[field];
   }
   await pgDb.updateSettings(req.session.userId, body);
   res.json({ settings: sanitizeSettings(await pgDb.getSettings(req.session.userId)) });
@@ -1353,6 +1358,68 @@ router.post('/import-transactions', async (req, res) => {
   }
 
   res.json({ ok: true, imported, skipped_other_company: skippedOther, skipped_duplicate: skippedDupe, failed, created_employees: [...createdEmployees] });
+});
+
+// ─── Payarc ─────────────────────────────────────────────────────────────────
+
+// Live and sandbox hosts, per docs.payarc.net. Both take the same bearer token
+// shape; the sandbox one is issued separately from the sandbox dashboard.
+const PAYARC_BASES = { live: 'https://api.payarc.net', sandbox: 'https://testapi.payarc.net' };
+
+function payarcBase(settings) {
+  return PAYARC_BASES[(settings.payarc_env || 'live') === 'sandbox' ? 'sandbox' : 'live'];
+}
+
+async function payarcGet(settings, path) {
+  const token = (settings.payarc_token || '').trim();
+  if (!token) return { ok: false, status: 0, error: 'No Payarc token saved for this company.' };
+  let resp;
+  try {
+    resp = await fetch(`${payarcBase(settings)}${path}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    });
+  } catch (e) {
+    return { ok: false, status: 0, error: `Could not reach Payarc: ${e.message}` };
+  }
+  const text = await resp.text();
+  let data = null;
+  try { data = JSON.parse(text); } catch (_) { /* keep the raw body for the message */ }
+  if (!resp.ok) {
+    // Payarc puts the useful part in `exception` (e.g. "Invalid header" when
+    // the value isn't a bearer token), so surface both rather than just a code.
+    const detail = data ? [data.error, data.exception, data.message].filter(Boolean).join(' — ') : text.slice(0, 200);
+    return { ok: false, status: resp.status, error: detail || `Payarc returned ${resp.status}`, data };
+  }
+  return { ok: true, status: resp.status, data };
+}
+
+// Checks the saved token by asking for a single charge — the smallest call that
+// proves the credential works. Reports Payarc's own wording on failure, since
+// the common mistakes (pasting the token ID from the API table rather than the
+// bearer token behind the eye icon, or a sandbox token against live) are only
+// distinguishable from it.
+router.get('/payarc/test', async (req, res) => {
+  const settings = await pgDb.getSettings(req.session.userId);
+  if (!(settings.payarc_token || '').trim()) {
+    return res.json({ configured: false });
+  }
+  const r = await payarcGet(settings, '/v1/charges?limit=1');
+  if (!r.ok) {
+    let hint = '';
+    if (/invalid header/i.test(r.error)) {
+      hint = ' — that looks like the ID from the API table rather than the token. In the Payarc dashboard open API, click the eye icon on the row, and copy the "API Bearer Token" from the pop-up.';
+    } else if (r.status === 401 || r.status === 403) {
+      hint = ' — check the token is active, and that Environment matches where it was issued (live vs sandbox).';
+    }
+    return res.json({ configured: true, ok: false, status: r.status, error: r.error + hint });
+  }
+  const list = Array.isArray(r.data?.data) ? r.data.data : [];
+  res.json({
+    configured: true, ok: true,
+    env: (settings.payarc_env || 'live'),
+    charge_count_returned: list.length,
+    sample_keys: list[0] ? Object.keys(list[0]).slice(0, 12) : [],
+  });
 });
 
 // ─── Maverick Batch Reconciliation ──────────────────────────────────────────
