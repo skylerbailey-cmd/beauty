@@ -890,6 +890,7 @@ router.post('/transactions/:id/email', async (req, res) => {
         <p style="font-size:.85rem;color:#6b5057;margin:0 0 4px">Date: ${dateStr}</p>
         ${employeeNames ? `<p style="font-size:.85rem;color:#6b5057;margin:0 0 4px">Employee${tx.employees.length > 1 ? 's' : ''}: <strong>${employeeNames}</strong></p>` : ''}
         ${tx.customer_name ? `<p style="font-size:.85rem;color:#6b5057;margin:0 0 4px">Customer: <strong>${tx.customer_name}</strong></p>` : ''}
+        ${tx.customer_email ? `<p style="font-size:.85rem;color:#6b5057;margin:0 0 4px;word-break:break-all">Email: ${tx.customer_email}</p>` : ''}
         <div style="margin-top:12px">
         <table style="width:100%;border-collapse:collapse;font-size:.88rem">
           <thead><tr style="background:#f2dde2">
