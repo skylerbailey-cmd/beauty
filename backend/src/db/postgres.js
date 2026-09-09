@@ -275,6 +275,28 @@ async function initSchema() {
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS charged_back INTEGER DEFAULT 0');
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS charged_back_at TIMESTAMPTZ');
   await migrate("ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS charged_back_note TEXT DEFAULT ''");
+
+  // Batch reconciliation: which days have been reviewed, and audit date ranges
+  // saved to come back to. Only the range is stored for a saved audit — it's
+  // re-run against live data on open, so it reflects later edits to the
+  // transactions rather than being a stale snapshot.
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_audit_reviews (
+    user_id TEXT NOT NULL,
+    audit_date DATE NOT NULL,
+    reviewed INTEGER NOT NULL DEFAULT 0,
+    reviewed_by TEXT DEFAULT '',
+    reviewed_at TIMESTAMPTZ,
+    PRIMARY KEY (user_id, audit_date)
+  )`);
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_saved_audits (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    label TEXT DEFAULT '',
+    date_from DATE NOT NULL,
+    date_to DATE NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  await migrate('CREATE INDEX IF NOT EXISTS idx_pg_saved_audits_user ON pos_saved_audits(user_id)');
   await migrate('ALTER TABLE customers ADD COLUMN IF NOT EXISTS birthday DATE');
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_address TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_city TEXT DEFAULT ''");
@@ -715,6 +737,71 @@ async function deleteTransaction(id, userId) {
   await query('DELETE FROM pos_transaction_payments WHERE transaction_id = $1', [id]);
   await query('DELETE FROM pos_transactions WHERE id = $1 AND user_id = $2', [id, userId]);
   return true;
+}
+
+// ─── Batch audit: reviewed days + saved ranges ──────────────────────────────
+
+// Which days in a range have been ticked off as reviewed, as { 'YYYY-MM-DD': {...} }.
+async function getAuditReviews(userId, from, to) {
+  const rows = (await query(
+    `SELECT audit_date, reviewed, reviewed_by, reviewed_at
+     FROM pos_audit_reviews
+     WHERE user_id = $1 AND audit_date >= $2 AND audit_date <= $3`,
+    [userId, from, to])).rows;
+  const byDate = {};
+  // audit_date is a DATE and the type parser hands DATEs back as plain strings
+  // (see setTypeParser above), so it's already the 'YYYY-MM-DD' key we want.
+  for (const r of rows) {
+    byDate[r.audit_date] = { reviewed: !!r.reviewed, reviewed_by: r.reviewed_by || '', reviewed_at: r.reviewed_at };
+  }
+  return byDate;
+}
+
+async function setAuditReview(userId, date, reviewed, reviewedBy) {
+  await query(
+    `INSERT INTO pos_audit_reviews (user_id, audit_date, reviewed, reviewed_by, reviewed_at)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (user_id, audit_date) DO UPDATE
+       SET reviewed = EXCLUDED.reviewed,
+           reviewed_by = EXCLUDED.reviewed_by,
+           reviewed_at = EXCLUDED.reviewed_at`,
+    [userId, date, reviewed ? 1 : 0, reviewed ? (reviewedBy || '') : '', reviewed ? new Date() : null]
+  );
+  return { ok: true };
+}
+
+// Saved audits, each with how many of its days have been reviewed so the list
+// can show progress without opening every one.
+async function getSavedAudits(userId) {
+  return (await query(
+    `SELECT s.id, s.label, s.date_from, s.date_to, s.created_at,
+       (SELECT COUNT(*) FROM pos_audit_reviews r
+         WHERE r.user_id = s.user_id AND r.reviewed = 1
+           AND r.audit_date >= s.date_from AND r.audit_date <= s.date_to) AS reviewed_days
+     FROM pos_saved_audits s
+     WHERE s.user_id = $1
+     ORDER BY s.created_at DESC`,
+    [userId])).rows;
+}
+
+async function saveAudit(userId, label, from, to) {
+  // Saving the same range twice is a mistake, not a second audit — keep one.
+  const existing = (await query(
+    'SELECT id FROM pos_saved_audits WHERE user_id = $1 AND date_from = $2 AND date_to = $3',
+    [userId, from, to])).rows[0];
+  if (existing) {
+    await query('UPDATE pos_saved_audits SET label = $1 WHERE id = $2', [label || '', existing.id]);
+    return { id: existing.id, existing: true };
+  }
+  const row = (await query(
+    'INSERT INTO pos_saved_audits (user_id, label, date_from, date_to) VALUES ($1,$2,$3,$4) RETURNING id',
+    [userId, label || '', from, to])).rows[0];
+  return { id: row.id, existing: false };
+}
+
+async function deleteSavedAudit(id, userId) {
+  const r = await query('DELETE FROM pos_saved_audits WHERE id = $1 AND user_id = $2', [id, userId]);
+  return r.rowCount > 0;
 }
 
 // Flag (or clear) a sale as charged back. Scoped by user_id like every other
@@ -1629,6 +1716,11 @@ module.exports = {
   updateTransaction,
   deleteTransaction,
   setTransactionChargeback,
+  getAuditReviews,
+  setAuditReview,
+  getSavedAudits,
+  saveAudit,
+  deleteSavedAudit,
   moveTransactionToCompany,
   receiptExists,
   importTransaction,

@@ -1612,6 +1612,38 @@ async function resolveDbaByName(token, storeName) {
   }
 }
 
+// ─── Batch audit: reviewed days + saved ranges ──────────────────────────────
+
+// Which days in a range have already been ticked off.
+router.get('/audit-reviews', async (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to) return res.status(400).json({ error: 'from and to are required' });
+  res.json({ reviews: await pgDb.getAuditReviews(req.session.userId, from, to) });
+});
+
+router.post('/audit-reviews', async (req, res) => {
+  const { date, reviewed, reviewed_by } = req.body;
+  if (!date) return res.status(400).json({ error: 'date is required' });
+  await pgDb.setAuditReview(req.session.userId, date, !!reviewed, String(reviewed_by || '').trim());
+  res.json({ ok: true, date, reviewed: !!reviewed });
+});
+
+router.get('/saved-audits', async (req, res) => {
+  res.json({ audits: await pgDb.getSavedAudits(req.session.userId) });
+});
+
+router.post('/saved-audits', async (req, res) => {
+  const { label, from, to } = req.body;
+  if (!from || !to) return res.status(400).json({ error: 'Pick a date range before saving an audit.' });
+  res.json(await pgDb.saveAudit(req.session.userId, String(label || '').trim(), from, to));
+});
+
+router.delete('/saved-audits/:id', async (req, res) => {
+  const ok = await pgDb.deleteSavedAudit(parseInt(req.params.id), req.session.userId);
+  if (!ok) return res.status(404).json({ error: 'Saved audit not found' });
+  res.json({ ok: true });
+});
+
 router.get('/reconciliation-audit', async (req, res) => {
   const userId = req.session.userId;
   const settings = await pgDb.getSettings(userId);

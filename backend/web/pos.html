@@ -605,14 +605,25 @@
         <span id="batchStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)"></span>
       </div>
 
+      <!-- Saved audits — ranges kept to come back to. Re-run against live data
+           on open, so they reflect later edits to the transactions. -->
+      <div class="report-card" id="savedAuditsCard" style="display:none">
+        <h3 style="margin:0 0 4px">Saved Audits</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:10px">Open one to re-run it against the current transactions — figures always reflect any edits since you saved it.</p>
+        <div id="savedAuditsList"></div>
+      </div>
+
       <!-- Batch reconciliation audit (pops up above the history when you run it) -->
       <div id="batchResult" style="display:none">
         <div class="stat-grid" id="batchSummary"></div>
         <div class="report-card">
-          <h3>Batch Reconciliation Audit <span id="batchResultRange" style="font-weight:400;color:var(--mid);font-size:.85rem"></span></h3>
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <h3 style="margin:0">Batch Reconciliation Audit <span id="batchResultRange" style="font-weight:400;color:var(--mid);font-size:.85rem"></span></h3>
+            <button class="btn" id="saveAuditBtn" style="background:var(--gold);color:#fff;padding:7px 14px;font-size:.82rem" onclick="saveCurrentAudit()">Save This Audit</button>
+          </div>
           <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Each day compares the merchant's settled card batches to the POS's recorded card sales (net of returns) over the selected date range. Click any day to see the sales/credits breakdown and every individual transaction.</p>
           <table class="report-table">
-            <thead><tr><th>Date</th><th>Merchant Settled</th><th>POS Card (net)</th><th>Difference</th><th>Status</th><th>Explanation</th></tr></thead>
+            <thead><tr><th style="width:70px">Reviewed</th><th>Date</th><th>Merchant Settled</th><th>POS Card (net)</th><th>Difference</th><th>Status</th><th>Explanation</th></tr></thead>
             <tbody id="batchBody"></tbody>
           </table>
           <div id="batchDebug" style="display:none;margin-top:14px;padding:12px;background:#fff6e0;border:1px solid #f0d48a;border-radius:8px;font-family:system-ui,sans-serif;font-size:.8rem;color:#6b5518"></div>
@@ -2789,6 +2800,7 @@ let txCreds = null; // { name, pin } — re-sent on every load so the server re-
 
 async function loadTransactions() {
   if (!txCreds) return; // Transactions tab requires PIN verification first (see switchTab)
+  loadSavedAudits(); // the saved-audit list lives on this tab
   const start = document.getElementById('histStart').value;
   const end = document.getElementById('histEnd').value;
   const resp = await fetch(`${API}/api/pos/transactions/mine`, {
@@ -3119,6 +3131,14 @@ function relockTransactions() {
   if (body) body.innerHTML = '';
   const summary = document.getElementById('txSummary');
   if (summary) summary.innerHTML = '';
+  // The audit and its saved list belong to whoever was signed in — clear them
+  // with everything else rather than leaving them on screen behind the lock.
+  auditReviews = {};
+  lastAuditRange = null;
+  const batch = document.getElementById('batchResult');
+  if (batch) batch.style.display = 'none';
+  const savedCard = document.getElementById('savedAuditsCard');
+  if (savedCard) savedCard.style.display = 'none';
   pendingTabSwitch = 'history';
   openTxAuth();
 }
@@ -4176,6 +4196,112 @@ async function lookupDbas() {
   }
 }
 
+// Per-day review ticks for the audit currently on screen, keyed 'YYYY-MM-DD'.
+let auditReviews = {};
+let lastAuditRange = null;
+
+async function loadAuditReviews(from, to) {
+  try {
+    const resp = await fetch(`${API}/api/pos/audit-reviews?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { credentials: 'include' });
+    auditReviews = resp.ok ? ((await resp.json()).reviews || {}) : {};
+  } catch (_) { auditReviews = {}; }
+}
+
+// Ticking a day is a note to yourself that it's been checked — it doesn't
+// change any figures, so it saves immediately with no confirmation.
+async function setDayReviewed(date, reviewed) {
+  const previous = auditReviews[date];
+  auditReviews[date] = { ...(previous || {}), reviewed, reviewed_by: txCreds?.name || '', reviewed_at: new Date().toISOString() };
+  try {
+    const resp = await fetch(`${API}/api/pos/audit-reviews`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ date, reviewed, reviewed_by: txCreds?.name || '' }),
+    });
+    if (!resp.ok) throw new Error((await resp.json()).error || 'Could not save');
+    loadSavedAudits(); // keep the "n of m reviewed" counts honest
+  } catch (err) {
+    // Put the tick back where it was rather than leaving the screen claiming
+    // something was saved when it wasn't.
+    if (previous === undefined) delete auditReviews[date]; else auditReviews[date] = previous;
+    const box = document.querySelector(`#batchBody input[onchange*="'${date}'"]`);
+    if (box) box.checked = !!previous?.reviewed;
+    alert('Could not save that: ' + err.message);
+  }
+}
+
+async function saveCurrentAudit() {
+  if (!lastAuditRange) return;
+  const { from, to } = lastAuditRange;
+  const label = (prompt(`Name this audit so you can find it again:`, `${from} → ${to}`) || '').trim();
+  if (label === '') return; // cancelled or cleared
+  try {
+    const resp = await fetch(`${API}/api/pos/saved-audits`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ label, from, to }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Could not save this audit');
+    await loadSavedAudits();
+    document.getElementById('batchStatus').style.color = 'var(--success)';
+    document.getElementById('batchStatus').textContent = data.existing
+      ? 'That range was already saved — renamed it.' : 'Saved.';
+  } catch (err) { alert(err.message); }
+}
+
+async function loadSavedAudits() {
+  const card = document.getElementById('savedAuditsCard');
+  const list = document.getElementById('savedAuditsList');
+  if (!card || !list) return;
+  let audits = [];
+  try {
+    const resp = await fetch(`${API}/api/pos/saved-audits`, { credentials: 'include' });
+    if (resp.ok) audits = (await resp.json()).audits || [];
+  } catch (_) { /* leave the section hidden */ }
+
+  card.style.display = audits.length ? '' : 'none';
+  list.innerHTML = audits.map(a => {
+    const days = daysBetween(a.date_from, a.date_to);
+    const done = Number(a.reviewed_days) || 0;
+    const complete = days > 0 && done >= days;
+    return `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.85rem">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600">${escapeHtml(a.label || `${a.date_from} → ${a.date_to}`)}</div>
+        <div style="color:var(--mid);font-size:.78rem">${a.date_from} → ${a.date_to} · ${days} day${days === 1 ? '' : 's'}</div>
+      </div>
+      <span style="color:${complete ? 'var(--success)' : 'var(--mid)'};font-weight:600;white-space:nowrap">${done} of ${days} reviewed${complete ? ' ✓' : ''}</span>
+      <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:5px 12px;font-size:.78rem" onclick="openSavedAudit('${a.date_from}','${a.date_to}')">Open</button>
+      <button onclick="deleteSavedAudit(${a.id})" title="Remove this saved audit" style="border:none;background:none;cursor:pointer;color:var(--danger);font-size:1rem;line-height:1;padding:0 2px">&times;</button>
+    </div>`;
+  }).join('');
+}
+
+// Whole days inclusive, from two 'YYYY-MM-DD' strings. Parsed as UTC so a
+// local timezone can't shift the count by one.
+function daysBetween(from, to) {
+  const a = Date.parse(from + 'T00:00:00Z');
+  const b = Date.parse(to + 'T00:00:00Z');
+  if (isNaN(a) || isNaN(b)) return 0;
+  return Math.max(0, Math.round((b - a) / 86400000) + 1);
+}
+
+// Re-runs the audit for the saved range against current data — that's what
+// makes a saved audit reflect edits made to the transactions since.
+async function openSavedAudit(from, to) {
+  document.getElementById('histStart').value = from;
+  document.getElementById('histEnd').value = to;
+  await runAudit();
+}
+
+async function deleteSavedAudit(id) {
+  if (!confirm('Remove this saved audit?\n\nThe reviewed ticks on its days are kept.')) return;
+  try {
+    const resp = await fetch(`${API}/api/pos/saved-audits/${id}`, { method: 'DELETE', credentials: 'include' });
+    if (!resp.ok) throw new Error((await resp.json()).error || 'Could not remove it');
+    loadSavedAudits();
+  } catch (err) { alert(err.message); }
+}
+
 async function runAudit() {
   // Uses the same date range selected for the transaction history
   const from = document.getElementById('histStart').value;
@@ -4201,6 +4327,10 @@ async function runAudit() {
       return;
     }
     statusEl.textContent = '';
+    // Which days are already ticked off. Fetched before rendering so the
+    // checkboxes are right on first paint rather than flicking on after.
+    await loadAuditReviews(data.from, data.to);
+    lastAuditRange = { from: data.from, to: data.to };
     renderAudit(data);
     resultEl.style.display = 'block';
     resultEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -4234,8 +4364,17 @@ function renderAudit(data) {
   `;
 
   const rows = data.days || [];
-  document.getElementById('batchBody').innerHTML = rows.map(d => `
+  document.getElementById('batchBody').innerHTML = rows.map(d => {
+    const rev = auditReviews[d.date] || {};
+    const revTitle = rev.reviewed
+      ? `Reviewed${rev.reviewed_by ? ' by ' + rev.reviewed_by : ''}${rev.reviewed_at ? ' on ' + new Date(rev.reviewed_at).toLocaleDateString() : ''} — click to un-review`
+      : 'Tick once you have checked this day';
+    return `
     <tr style="cursor:pointer;${d.matched ? (d.merchant_over_limit ? 'background:#fff7e6' : '') : 'background:#fff6f8'}" onclick="openDayDrilldown('${d.date}')" title="Click to see every individual transaction for this day">
+      <td onclick="event.stopPropagation()" style="text-align:center">
+        <input type="checkbox" ${rev.reviewed ? 'checked' : ''} onchange="setDayReviewed('${d.date}', this.checked)"
+               title="${escapeHtml(revTitle)}" style="width:16px;height:16px;accent-color:var(--success);cursor:pointer">
+      </td>
       <td>${d.date}</td>
       <td>$${money(d.merchant_total)}<br><span style="font-size:.7rem;color:var(--mid)">${d.merchant_batches} batch${d.merchant_batches === 1 ? '' : 'es'}</span></td>
       <td>$${money(d.pos_total)}<br><span style="font-size:.7rem;color:var(--mid)">${d.pos_sale_count} sale${d.pos_sale_count === 1 ? '' : 's'}${d.pos_return_count ? ', ' + d.pos_return_count + ' return' + (d.pos_return_count === 1 ? '' : 's') : ''}</span></td>
@@ -4245,7 +4384,8 @@ function renderAudit(data) {
         : '<span style="color:var(--danger);font-weight:600">⚠ Mismatch — investigate</span>'}</td>
       <td style="font-size:.8rem;color:var(--mid)">${d.explanation || ''}</td>
     </tr>
-  `).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No batches or card sales in this range</td></tr>';
+  `;
+  }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No batches or card sales in this range</td></tr>';
 
   // Diagnostic: if the merchant total is $0, show what Maverick actually returned
   const dbg = data._debug || {};
@@ -5045,6 +5185,11 @@ async function switchAccount(email) {
     filteredTransactions = [];
     custReportData = [];
     custFiltered = [];
+    // Saved audits and reviewed days are per company.
+    auditReviews = {};
+    lastAuditRange = null;
+    if (document.getElementById('batchResult')) document.getElementById('batchResult').style.display = 'none';
+    if (document.getElementById('savedAuditsCard')) document.getElementById('savedAuditsCard').style.display = 'none';
     lastEmployeesReport = [];
     lastSalesSummaryHtml = '';
     lastProductsHtml = '';
