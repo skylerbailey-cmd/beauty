@@ -839,6 +839,22 @@ async function getTransactionByReceipt(receiptNumber, userId) {
 // existing caller that passes a plain string keeps working unchanged.
 const asCompanyIds = (u) => (Array.isArray(u) ? u : [u]).filter(Boolean);
 
+// An employee's credited share of a transaction — what the leaderboard and the
+// sales columns report, so a sale split between people counts once each at
+// their own percentage rather than in full for everybody.
+//
+// commission_amount is that share stored at sale time, but it is 0 on rows
+// where only the percentage was recorded (older and imported transactions).
+// Summing it directly dropped those sales to $0 while still counting them, so
+// fall back to working the share out from the percentage and the subtotal.
+// Requires `t` (pos_transactions) and `te` (pos_transaction_employees).
+const EMP_SHARE = `
+  CASE
+    WHEN te.commission_amount IS NOT NULL AND te.commission_amount <> 0 THEN te.commission_amount
+    WHEN te.commission_type = 'dollar' THEN COALESCE(te.commission_value, 0)
+    ELSE t.subtotal * COALESCE(te.commission_value, 100) / 100.0
+  END`;
+
 async function getTransactions(userId, opts = {}) {
   const { type, startDate, endDate, employeeId, limit = 100 } = opts;
   let where = 'WHERE t.user_id = ANY($1::text[])';
@@ -933,16 +949,16 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
       e.id as employee_id, e.name as employee_name, e.commission_rate, e.active,
       COUNT(DISTINCT CASE WHEN t.type = 'sale' THEN t.id END) as sale_count,
       COUNT(DISTINCT CASE WHEN t.type = 'return' THEN t.id END) as return_count,
-      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN te.commission_amount ELSE 0 END), 0) as sales_total,
-      COALESCE(SUM(CASE WHEN t.type = 'return' THEN te.commission_amount ELSE 0 END), 0) as returns_total,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN ${EMP_SHARE} ELSE 0 END), 0) as sales_total,
+      COALESCE(SUM(CASE WHEN t.type = 'return' THEN ${EMP_SHARE} ELSE 0 END), 0) as returns_total,
       -- net = sales - returns; rows outside the date range (t IS NULL) must NOT
       -- be subtracted, so use an explicit WHEN for returns and ELSE 0
-      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN te.commission_amount WHEN t.type = 'return' THEN -te.commission_amount ELSE 0 END), 0) as net_total,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN ${EMP_SHARE} WHEN t.type = 'return' THEN -(${EMP_SHARE}) ELSE 0 END), 0) as net_total,
       -- This employee's credited share of any sale that was later charged
       -- back. Not deducted from sales_total above — shown beside it, so it's
       -- visible without quietly rewriting what they sold.
       COUNT(DISTINCT CASE WHEN t.type = 'sale' AND t.charged_back = 1 THEN t.id END) as chargeback_count,
-      COALESCE(SUM(CASE WHEN t.type = 'sale' AND t.charged_back = 1 THEN te.commission_amount ELSE 0 END), 0) as chargeback_total
+      COALESCE(SUM(CASE WHEN t.type = 'sale' AND t.charged_back = 1 THEN ${EMP_SHARE} ELSE 0 END), 0) as chargeback_total
     FROM pos_employees e
     LEFT JOIN pos_transaction_employees te ON e.id = te.employee_id
     LEFT JOIN pos_transactions t ON te.transaction_id = t.id
@@ -1249,9 +1265,9 @@ async function getDaySummary(userId, dateStr, tz) {
   const associates = (await query(`
     SELECT e.name as employee_name,
       COALESCE(SUM(CASE WHEN t.type = 'sale' THEN tiq.qty ELSE -tiq.qty END), 0) as total_products,
-      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN te.commission_amount ELSE -te.commission_amount END), 0) as net_sales,
-      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN te.commission_amount / NULLIF(t.subtotal, 0) * t.total
-                        ELSE -(te.commission_amount / NULLIF(t.subtotal, 0) * t.total) END), 0) as gross_sales
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN ${EMP_SHARE} ELSE -(${EMP_SHARE}) END), 0) as net_sales,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN (${EMP_SHARE}) / NULLIF(t.subtotal, 0) * t.total
+                        ELSE -((${EMP_SHARE}) / NULLIF(t.subtotal, 0) * t.total) END), 0) as gross_sales
     FROM pos_transaction_employees te
     JOIN pos_employees e ON te.employee_id = e.id
     JOIN pos_transactions t ON te.transaction_id = t.id
@@ -1259,7 +1275,7 @@ async function getDaySummary(userId, dateStr, tz) {
       ON tiq.transaction_id = t.id
     WHERE t.user_id = $1 AND ${dayFilter}
     GROUP BY e.id, e.name
-    HAVING COALESCE(SUM(CASE WHEN t.type = 'sale' THEN te.commission_amount ELSE -te.commission_amount END), 0) != 0
+    HAVING COALESCE(SUM(CASE WHEN t.type = 'sale' THEN ${EMP_SHARE} ELSE -(${EMP_SHARE}) END), 0) != 0
         OR COALESCE(SUM(CASE WHEN t.type = 'sale' THEN tiq.qty ELSE -tiq.qty END), 0) != 0
     ORDER BY net_sales DESC
   `, [userId, dateStr, timezone])).rows;
@@ -1362,7 +1378,7 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
   // node-pg renders the array as the literal '{company-a}', which never equals
   // a company id — zeroing the sales of every employee on a commission plan.
   const txResult = await query(`
-    SELECT t.id, t.type, t.created_at, te.commission_value, te.commission_amount
+    SELECT t.id, t.type, t.created_at, te.commission_value, ${EMP_SHARE} AS commission_amount
     FROM pos_transactions t
     JOIN pos_transaction_employees te ON t.id = te.transaction_id
     WHERE te.employee_id = $1 AND t.user_id = ANY($2::text[])
