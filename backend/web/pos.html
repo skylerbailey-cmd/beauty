@@ -666,6 +666,12 @@
   <!-- ─── REPORTS TAB ─── -->
   <div class="tab-content" id="tab-reports">
     <div style="max-width:1000px;margin:0 auto;padding:20px">
+      <!-- Always visible, no PIN needed: today's sales per employee. -->
+      <div class="report-card">
+        <h3>Today's Sales Leaderboard</h3>
+        <div id="todayLeaderboard" style="display:flex;flex-direction:column;gap:8px"></div>
+      </div>
+
       <!-- Date filter only applies to the locked report below (personal sales,
            or the manager KPIs/leaderboard/commissions/top products) — it stays
            hidden until someone unlocks with their name + PIN, and never
@@ -682,12 +688,6 @@
           <label>Company:</label>
           <select id="rptCompanyScope" onchange="changeCompanyScope(this.value)"></select>
         </span>
-      </div>
-
-      <!-- Always visible, no PIN needed: today's sales per employee. -->
-      <div class="report-card">
-        <h3>Today's Sales Leaderboard</h3>
-        <div id="todayLeaderboard" style="display:flex;flex-direction:column;gap:8px"></div>
       </div>
 
       <!-- Employee Sales & Commissions (Manager/Employee view — locked) -->
@@ -3137,10 +3137,15 @@ async function changeCompanyScope(mode) {
   const previous = companyScopeMode;
   companyScopeMode = mode;
 
-  // A sales employee looking at their own report doesn't go through the
-  // manager-gated session scope at all — their report re-verifies their own
-  // PIN per company and returns only their own rows, so just re-run it.
-  if (!managerReportsUnlocked && txAccess?.role !== 'manager' && personalCreds) {
+  // When a personal report is what's on screen, it's the thing that has to be
+  // re-run — it re-verifies the employee's own PIN per company and returns
+  // only their own rows, without the manager-gated session scope.
+  //
+  // Keyed on the personal report being open, NOT on this person's Transactions
+  // role: someone who had also unlocked Transactions as a manager fell through
+  // to the manager path below, which changed the session scope but never
+  // refreshed the personal table, so it silently kept showing one company.
+  if (!managerReportsUnlocked && personalCreds) {
     renderCompanyPickers();
     await unlockPersonalReport(true);
     return;
@@ -4993,10 +4998,15 @@ async function unlockPersonalReport(silent) {
       managerReportsUnlocked = false;
       document.getElementById('managerCommissionsSection').style.display = 'none';
       renderCompanyPickers(); // they can now combine the companies they work at
-      const spans = (data.companies_included || []).length > 1;
+      // Always name the companies covered, not only when there's more than
+      // one — "All companies" selected but a single company listed is the
+      // signal that the other one didn't come back, and silence there reads
+      // as though it had been included.
+      const included = data.companies_included || [];
+      const spans = included.length > 1;
       document.getElementById('empPersonalName').textContent =
         `${data.employee.name} — Personal Sales & Commission`
-        + (spans ? ` · ${data.companies_included.join(' + ')}` : '');
+        + (included.length ? ` · ${included.join(' + ')}` : '');
       document.getElementById('empPersonalBody').innerHTML =
         // Across companies, label each row so two figures under the same name
         // aren't mistaken for a duplicate.
