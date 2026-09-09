@@ -696,7 +696,7 @@
           <div id="rptRangeNote" style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-bottom:8px"></div>
           <div style="font-family:system-ui,sans-serif;font-size:.75rem;color:var(--mid);margin-bottom:8px">A return is counted against the day the item was originally sold, not the day it came back.</div>
           <table class="report-table">
-            <thead><tr><th>Employee</th><th>Sales</th><th>Sales $</th><th>Returns $</th><th>Net Sales $</th><th>Commission</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Sales</th><th>Sales $</th><th>Returns $</th><th>Net Sales $</th><th>Charged Back</th><th>Commission</th></tr></thead>
             <tbody id="empPersonalBody"></tbody>
           </table>
         </div>
@@ -712,7 +712,7 @@
         <div class="report-card">
           <h3>Employee Commissions &amp; Sales</h3>
           <table class="report-table">
-            <thead><tr><th>Employee</th><th>Sales</th><th>Sales $</th><th>Returns $</th><th>Net Sales $</th><th>Commission</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Sales</th><th>Sales $</th><th>Returns $</th><th>Net Sales $</th><th>Charged Back</th><th>Commission</th></tr></thead>
             <tbody id="empReportBody"></tbody>
           </table>
         </div>
@@ -3851,6 +3851,11 @@ async function loadReports() {
     <div class="stat-box"><div class="stat-val">$${money((sales.returns_total || 0))}</div><div class="stat-lbl">Returns Total</div></div>
     <div class="stat-box"><div class="stat-val">$${money((sales.net_revenue || 0))}</div><div class="stat-lbl">Net Revenue</div></div>
     <div class="stat-box"><div class="stat-val">$${money((sales.net_tax || 0))}</div><div class="stat-lbl">Tax Collected</div></div>
+    ${Number(sales.chargeback_count || 0) > 0 ? `
+    <div class="stat-box" style="background:#fce4ec">
+      <div class="stat-val" style="color:var(--danger)">$${money((sales.chargeback_total || 0))}</div>
+      <div class="stat-lbl">Charged Back (${sales.chargeback_count})</div>
+    </div>` : ''}
   `;
   lastEmployeesReport = employees;
   lastProductsHtml = prods.map(p => `
@@ -4861,6 +4866,9 @@ function commissionRow(e) {
       <td>$${money(Number(e.sales_total))}</td>
       <td>$${money(Number(e.returns_total))}</td>
       <td>$${money(Number(e.net_total))}</td>
+      <td>${Number(e.chargeback_count || 0) > 0
+        ? `<span style="color:var(--danger);font-weight:600" title="${e.chargeback_count} sale${Number(e.chargeback_count) === 1 ? '' : 's'} disputed and taken back — this is their credited share, and it is not deducted from the figures to the left">$${money(Number(e.chargeback_total || 0))}</span>`
+        : '<span style="color:var(--mid)">—</span>'}</td>
       <td style="font-weight:600">$${money(commissionAmt(e, e.net_total))}</td>
     </tr>`;
 }
@@ -4868,7 +4876,7 @@ function commissionRow(e) {
 function renderManagerCommissions() {
   document.getElementById('empReportBody').innerHTML =
     lastEmployeesReport.map(commissionRow).join('') ||
-    '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No data</td></tr>';
+    '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No data</td></tr>';
 }
 
 // ─── Employee Personal Report / Manager unlock ──────────────────────────────
@@ -4928,7 +4936,7 @@ async function unlockPersonalReport(silent) {
       document.getElementById('empPersonalName').textContent = `${data.employee.name} — Personal Sales & Commission`;
       document.getElementById('empPersonalBody').innerHTML =
         (data.report || []).map(commissionRow).join('') ||
-        '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No data</td></tr>';
+        '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No data</td></tr>';
       document.getElementById('empPersonalReport').style.display = 'block';
     }
   } catch (err) {

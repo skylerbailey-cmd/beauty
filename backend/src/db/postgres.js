@@ -912,7 +912,12 @@ async function getSalesReport(userId, startDate, endDate) {
       COALESCE(SUM(CASE WHEN type = 'sale' THEN subtotal ELSE 0 END), 0) as sales_revenue,
       COALESCE(SUM(CASE WHEN type = 'return' THEN subtotal ELSE 0 END), 0) as returns_total,
       COALESCE(SUM(CASE WHEN type = 'sale' THEN subtotal ELSE -subtotal END), 0) as net_revenue,
-      COALESCE(SUM(CASE WHEN type = 'sale' THEN tax_amount ELSE -tax_amount END), 0) as net_tax
+      COALESCE(SUM(CASE WHEN type = 'sale' THEN tax_amount ELSE -tax_amount END), 0) as net_tax,
+      -- Disputed sales the bank pulled the money back on. Reported alongside
+      -- the revenue above rather than deducted from it — the sale did happen
+      -- and the commission was earned; this is the part that wasn't kept.
+      COUNT(CASE WHEN type = 'sale' AND charged_back = 1 THEN 1 END) as chargeback_count,
+      COALESCE(SUM(CASE WHEN type = 'sale' AND charged_back = 1 THEN subtotal ELSE 0 END), 0) as chargeback_total
     FROM pos_transactions
     WHERE user_id = ANY($1::text[])
       AND COALESCE(original_sale_date, created_at) >= $2
@@ -932,7 +937,12 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
       COALESCE(SUM(CASE WHEN t.type = 'return' THEN te.commission_amount ELSE 0 END), 0) as returns_total,
       -- net = sales - returns; rows outside the date range (t IS NULL) must NOT
       -- be subtracted, so use an explicit WHEN for returns and ELSE 0
-      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN te.commission_amount WHEN t.type = 'return' THEN -te.commission_amount ELSE 0 END), 0) as net_total
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN te.commission_amount WHEN t.type = 'return' THEN -te.commission_amount ELSE 0 END), 0) as net_total,
+      -- This employee's credited share of any sale that was later charged
+      -- back. Not deducted from sales_total above — shown beside it, so it's
+      -- visible without quietly rewriting what they sold.
+      COUNT(DISTINCT CASE WHEN t.type = 'sale' AND t.charged_back = 1 THEN t.id END) as chargeback_count,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' AND t.charged_back = 1 THEN te.commission_amount ELSE 0 END), 0) as chargeback_total
     FROM pos_employees e
     LEFT JOIN pos_transaction_employees te ON e.id = te.employee_id
     LEFT JOIN pos_transactions t ON te.transaction_id = t.id
