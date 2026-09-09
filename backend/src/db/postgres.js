@@ -269,6 +269,12 @@ async function initSchema() {
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS card_last4 TEXT DEFAULT \'\'');
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS employees_changed INTEGER DEFAULT 0');
   await migrate("ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS customer_phone TEXT DEFAULT ''");
+  // A sale the customer disputed and the bank pulled back. Kept as a flag on
+  // the original sale rather than a new transaction: the money never came in,
+  // so it isn't a refund the store chose to give.
+  await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS charged_back INTEGER DEFAULT 0');
+  await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS charged_back_at TIMESTAMPTZ');
+  await migrate("ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS charged_back_note TEXT DEFAULT ''");
   await migrate('ALTER TABLE customers ADD COLUMN IF NOT EXISTS birthday DATE');
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_address TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_city TEXT DEFAULT ''");
@@ -709,6 +715,23 @@ async function deleteTransaction(id, userId) {
   await query('DELETE FROM pos_transaction_payments WHERE transaction_id = $1', [id]);
   await query('DELETE FROM pos_transactions WHERE id = $1 AND user_id = $2', [id, userId]);
   return true;
+}
+
+// Flag (or clear) a sale as charged back. Scoped by user_id like every other
+// single-transaction operation, so one company can't touch another's rows.
+async function setTransactionChargeback(id, userId, chargedBack, note) {
+  const existing = (await query(
+    'SELECT id, type FROM pos_transactions WHERE id = $1 AND user_id = $2', [id, userId])).rows[0];
+  if (!existing) return null;
+  // Only a sale can be disputed — a return is money already going back out.
+  if (existing.type !== 'sale') return { error: 'Only a sale can be marked as a chargeback.' };
+  await query(
+    `UPDATE pos_transactions
+     SET charged_back = $1, charged_back_at = $2, charged_back_note = $3
+     WHERE id = $4 AND user_id = $5`,
+    [chargedBack ? 1 : 0, chargedBack ? new Date() : null, chargedBack ? (note || '') : '', id, userId]
+  );
+  return { ok: true };
 }
 
 async function getTransactionByReceipt(receiptNumber, userId) {
@@ -1605,6 +1628,7 @@ module.exports = {
   getEmployeeTransactions,
   updateTransaction,
   deleteTransaction,
+  setTransactionChargeback,
   moveTransactionToCompany,
   receiptExists,
   importTransaction,

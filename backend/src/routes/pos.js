@@ -710,6 +710,22 @@ router.delete('/transactions/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Mark a sale as charged back (the customer disputed it and the bank took the
+// money) or clear that flag if the dispute is won. Same manager check as
+// editing, since it changes what the books say was collected.
+router.post('/transactions/:id/chargeback', async (req, res) => {
+  const userId = req.session.userId;
+  const { manager_name, manager_pin, charged_back, note } = req.body;
+  const manager = await verifyManager(userId, manager_name, manager_pin);
+  if (!manager) return res.status(403).json({ error: 'Only a manager can mark a chargeback. Manager name and code did not match.' });
+
+  const result = await pgDb.setTransactionChargeback(
+    parseInt(req.params.id), userId, !!charged_back, String(note || '').trim());
+  if (!result) return res.status(404).json({ error: 'Transaction not found' });
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json({ ok: true, charged_back: !!charged_back });
+});
+
 // Move a sale that was rung up on the wrong company over to the right one,
 // keeping its receipt number, date, items and totals intact.
 router.post('/transactions/:id/move', async (req, res) => {

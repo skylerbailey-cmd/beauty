@@ -318,6 +318,13 @@
     /* ── Transaction history table ─── */
     .tx-type-sale { color: var(--success); font-weight: 600; }
     .tx-type-return { color: var(--danger); font-weight: 600; }
+    /* A sale the customer disputed and the bank pulled back. Deliberately loud
+       — it's still a sale on the books, but money the store never kept. */
+    .tx-chargeback {
+      display: inline-block; margin-top: 2px; padding: 1px 6px; border-radius: 4px;
+      background: var(--danger); color: #fff; font-size: .62rem; font-weight: 700;
+      letter-spacing: .04em; white-space: nowrap;
+    }
 
     /* ── Print styles ─── */
     /* Thermal paper: no page margins, size to the 80mm roll (height auto). */
@@ -2967,6 +2974,8 @@ function applyTxFilters() {
     const hay = [
       tx.receipt_number, tx.type, tx.customer_name, tx.customer_email,
       tx.card_last4, tx.payment_method, tenderInfo, emps, items,
+      // So searching "chargeback" pulls up every disputed sale.
+      tx.charged_back ? `chargeback charged back ${tx.charged_back_note || ''}` : '',
       new Date(tx.created_at).toLocaleString(),
       (tx.subtotal || 0).toFixed(2), (tx.total || 0).toFixed(2),
     ].join(' ').toLowerCase();
@@ -2992,7 +3001,7 @@ function applyTxFilters() {
       ${canManage ? `<td><input type="checkbox" class="tx-select" onchange="toggleTxSelect(${tx.id}, this.checked)" ${selectedTxIds.has(tx.id) ? 'checked' : ''}></td>` : ''}
       <td style="font-family:monospace">${tx.receipt_number}</td>
       <td>${new Date(tx.created_at).toLocaleString()}</td>
-      <td><span class="tx-type-${tx.type}">${tx.type.toUpperCase()}</span></td>
+      <td><span class="tx-type-${tx.type}">${tx.type.toUpperCase()}</span>${tx.charged_back ? `<br><span class="tx-chargeback" title="${escapeHtml(tx.charged_back_note || 'Disputed by the customer — the money was taken back')}">CHARGED BACK</span>` : ''}</td>
       <td>${tx.employees && tx.employees.length > 0 ? tx.employees.map(e => e.employee_name).join(', ') : '-'}</td>
       <td>${tx.customer_name || '-'}</td>
       <td>${tx.items.length}</td>
@@ -3004,7 +3013,8 @@ function applyTxFilters() {
         <button onclick="viewReceipt(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--rose);text-decoration:underline;font-size:.82rem">View</button>
         ${canManage ? `
         <button onclick="startEditTransaction(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--gold-dk,#b8860b);text-decoration:underline;font-size:.82rem">Edit</button>
-        <button onclick="startDeleteTransaction(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--danger);text-decoration:underline;font-size:.82rem">Delete</button>` : ''}
+        <button onclick="startDeleteTransaction(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--danger);text-decoration:underline;font-size:.82rem">Delete</button>
+        ${tx.type === 'sale' ? `<button onclick="toggleChargeback(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--mid);text-decoration:underline;font-size:.82rem" title="${tx.charged_back ? 'Dispute won — clear this flag' : 'Customer disputed this sale and the money was taken back'}">${tx.charged_back ? 'Undo CB' : 'Chargeback'}</button>` : ''}` : ''}
       </td>
     </tr>
   `).join('') || `<tr><td colspan="${(canManage ? 11 : 10) + (multiCompany ? 1 : 0)}" style="text-align:center;color:var(--mid)">No transactions in this date range. Click <b>Show All</b> above to see historical/imported transactions.</td></tr>`;
@@ -3016,8 +3026,14 @@ function applyTxFilters() {
   const returnTotal = rows.filter(t => t.type === 'return').reduce((s, t) => s + (t.subtotal || 0), 0);
   const summary = document.getElementById('txSummary');
   if (summary) {
+    // Charged-back sales are still counted in Sales above — they were rung up
+    // and the commission was earned on them. Called out separately so the
+    // money the store didn't keep is visible without reading every row.
+    const cbRows = rows.filter(t => t.type === 'sale' && t.charged_back);
+    const cbTotal = cbRows.reduce((s, t) => s + (t.subtotal || 0), 0);
     const counts = `${rows.length} transaction${rows.length !== 1 ? 's' : ''} · Sales $${money(saleTotal)} (pre-tax)`
-      + (returnTotal ? ` · Returns $${money(returnTotal)} · Net $${money((saleTotal - returnTotal))}` : '');
+      + (returnTotal ? ` · Returns $${money(returnTotal)} · Net $${money((saleTotal - returnTotal))}` : '')
+      + (cbTotal ? ` · <span style="color:var(--danger);font-weight:600">Charged back $${money(cbTotal)} (${cbRows.length})</span>` : '');
     // Say whose view this is. A non-manager only ever sees transactions they
     // were personally on, so without this an unexpectedly short list looks
     // like missing data rather than a filtered view.
@@ -3107,6 +3123,43 @@ function relockTransactions() {
   openTxAuth();
 }
 
+// Mark a sale as charged back, or clear it if the dispute was won. Reuses the
+// manager credentials already given to unlock this tab, like Edit does.
+async function toggleChargeback(txId) {
+  const tx = histTransactions.find(t => t.id === txId);
+  if (!tx) return;
+  if (!txCreds?.name || !txCreds?.pin) {
+    alert('Unlock the Transactions tab with a manager name and PIN first.');
+    return;
+  }
+  const marking = !tx.charged_back;
+
+  let note = '';
+  if (marking) {
+    if (!confirm(`Mark ${tx.receipt_number} as a chargeback?\n\n`
+      + `$${money(tx.total)} from ${tx.customer_name || 'this customer'} was disputed and taken back.\n\n`
+      + `The sale stays on the books with its receipt and items intact — it's flagged as money the store did not keep.`)) return;
+    note = (prompt('Anything to record about the dispute? (optional)', '') || '').trim();
+  } else {
+    if (!confirm(`Clear the chargeback on ${tx.receipt_number}?\n\nUse this if the dispute was won and the money was kept.`)) return;
+  }
+
+  try {
+    const resp = await fetch(`${API}/api/pos/transactions/${txId}/chargeback`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ manager_name: txCreds.name, manager_pin: txCreds.pin, charged_back: marking, note }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Could not update the chargeback');
+    // Update in place so the list doesn't have to be refetched and re-scoped.
+    tx.charged_back = marking ? 1 : 0;
+    tx.charged_back_note = marking ? note : '';
+    applyTxFilters();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
 function viewReceipt(txId) {
   // Look up from the already PIN-scoped list rather than re-fetching by id —
   // the by-id endpoint is company-scoped only, not employee-scoped, so
@@ -3134,7 +3187,7 @@ function downloadCSV(filename, rows) {
 }
 
 function exportTransactionsCSV() {
-  const rows = [['Receipt', 'Date', 'Type', 'Employees', 'Customer', 'Email', 'Card Last 4', 'Payment', 'Items', 'Subtotal', 'Tax', 'Total']];
+  const rows = [['Receipt', 'Date', 'Type', 'Employees', 'Customer', 'Email', 'Card Last 4', 'Payment', 'Items', 'Subtotal', 'Tax', 'Total', 'Charged Back', 'Chargeback Note']];
   (filteredTransactions || []).forEach(tx => {
     rows.push([
       tx.receipt_number,
@@ -3149,6 +3202,8 @@ function exportTransactionsCSV() {
       (tx.subtotal || 0).toFixed(2),
       (tx.tax_amount || 0).toFixed(2),
       (tx.total || 0).toFixed(2),
+      tx.charged_back ? 'YES' : '',
+      tx.charged_back_note || '',
     ]);
   });
   if (rows.length === 1) { alert('No transactions to export. Adjust the date range/filters first.'); return; }
