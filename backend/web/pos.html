@@ -993,6 +993,37 @@
   </div>
 </div>
 
+<!-- ─── Refund an Amount (return mode) ─── -->
+<div class="modal-overlay" id="refundAmountModal">
+  <div class="modal" style="max-width:400px">
+    <h2>Refund an Amount</h2>
+    <p class="sub">Money back without a product coming back — a partial refund, goodwill credit or price adjustment.</p>
+    <div class="field">
+      <label>Amount</label>
+      <div style="display:flex;align-items:center;gap:4px">
+        <span style="font-size:1.1rem;font-weight:600">$</span>
+        <input type="number" id="refundAmountInput" step="0.01" min="0" placeholder="0.00"
+               oninput="updateRefundAmountPreview()" style="font-size:1.2rem;font-weight:600;padding:12px 14px">
+      </div>
+    </div>
+    <label style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.88rem;color:var(--dark);cursor:pointer;margin-bottom:14px">
+      <input type="checkbox" id="refundIncludesTax" checked onchange="updateRefundAmountPreview()"
+             style="width:16px;height:16px;accent-color:var(--rose)">
+      This amount already includes tax
+    </label>
+    <div class="field">
+      <label>What is this refund for?</label>
+      <input type="text" id="refundAmountReason" placeholder="Price adjustment" value="Price adjustment">
+    </div>
+    <div id="refundAmountPreview" style="font-family:system-ui,sans-serif;font-size:.84rem;color:var(--mid);background:var(--cream);border-radius:8px;padding:10px 12px;min-height:1em"></div>
+    <div id="refundAmountError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger);margin-top:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeRefundAmount()">Cancel</button>
+      <button class="btn btn-confirm" style="background:var(--danger)" onclick="confirmRefundAmount()">Add to Return</button>
+    </div>
+  </div>
+</div>
+
 <!-- ─── Receipt Modal ─── -->
 <div class="modal-overlay receipt-modal" id="receiptModal">
   <div class="modal">
@@ -1741,22 +1772,101 @@ function addRefundAmount() {
     alert('Look up the original receipt first — every refund has to be recorded against a sale.');
     return;
   }
-  const raw = prompt('Refund amount, before tax:\n\nUse this to give money back without a product coming back. Tax is added on top, and the cart shows the final amount the customer receives.', '');
-  if (raw === null) return;
-  const amount = round2(parseFloat(raw));
-  if (!isFinite(amount) || amount <= 0) {
-    alert('Enter a refund amount greater than zero.');
-    return;
+  document.getElementById('refundAmountInput').value = '';
+  document.getElementById('refundAmountReason').value = 'Price adjustment';
+  // Defaults to the amount handed back, tax included — that's the figure
+  // being agreed with the customer ("we'll give you $750 back").
+  document.getElementById('refundIncludesTax').checked = true;
+  document.getElementById('refundAmountError').textContent = '';
+  updateRefundAmountPreview();
+  document.getElementById('refundAmountModal').classList.add('show');
+  document.getElementById('refundAmountInput').focus();
+}
+
+function closeRefundAmount() {
+  document.getElementById('refundAmountModal').classList.remove('show');
+}
+
+const refundTaxRate = () => storeSettings.tax_rate ?? 0.0875;
+
+// The pre-tax value of the line to add. Cart lines are always pre-tax (tax is
+// applied to the whole subtotal), so a tax-inclusive figure is divided back out.
+function refundLineValue() {
+  const raw = parseFloat(document.getElementById('refundAmountInput').value);
+  if (!isFinite(raw) || raw <= 0) return null;
+  if (!document.getElementById('refundIncludesTax').checked) return round2(raw);
+
+  // Simply dividing by (1 + rate) and rounding loses a cent — $750 came back
+  // as $749.99. Tax is rounded once over the whole subtotal, so which cent
+  // lands exactly depends on what else is in the cart. Try the nearest few and
+  // keep whichever makes the refund grow by precisely what was typed.
+  const target = round2(raw);
+  const base = cartTotalsWith(null).total;
+  const seed = round2(target / (1 + refundTaxRate()));
+  let best = null;
+  for (let cents = -2; cents <= 2; cents++) {
+    const candidate = round2(seed + cents / 100);
+    if (candidate <= 0) continue;
+    const grew = round2(cartTotalsWith(refundLineFrom(candidate, '')).total - base);
+    const err = Math.round(Math.abs(grew - target) * 100);
+    if (!best || err < best.err) best = { candidate, err };
+    if (err === 0) break;
   }
-  const reason = (prompt('What is this refund for? This shows on the receipt.', 'Price adjustment') || '').trim();
-  cart.push({
+  return best ? best.candidate : seed;
+}
+
+// Totals for the current cart, optionally with one more line — the same maths
+// updateCartTotals uses, so the preview can't promise a figure the cart won't
+// then show.
+function cartTotalsWith(extraLine) {
+  const lines = extraLine ? cart.concat([extraLine]) : cart;
+  const sub = round2(lines.reduce((s, i) => s + lineCharged(i), 0));
+  const tax = round2(sub * refundTaxRate());
+  return { sub, tax, total: round2(sub + tax) };
+}
+
+function refundLineFrom(value, reason) {
+  return {
     product_id: REFUND_ADJUSTMENT_ID,
     product_name: reason || 'Refund adjustment',
     brand: '',
-    unit_price: amount,
+    unit_price: value,
     quantity: 1,
     discount_per_unit: 0,
-  });
+  };
+}
+
+function updateRefundAmountPreview() {
+  const el = document.getElementById('refundAmountPreview');
+  const value = refundLineValue();
+  if (value === null) { el.textContent = 'Enter an amount to see what the customer gets back.'; return; }
+
+  // Tax is charged on the whole cart, so the only honest way to state what this
+  // line adds is to difference the totals with and without it — that also
+  // absorbs any rounding rather than hiding it.
+  const before = cartTotalsWith(null).total;
+  const after = cartTotalsWith(refundLineFrom(value, '')).total;
+  const added = round2(after - before);
+
+  el.innerHTML = `Adds <b>$${money(added)}</b> to the refund — $${money(value)} plus $${money(round2(added - value))} tax.`
+    + `<br>Total going back to the customer: <b>$${money(after)}</b>`;
+
+  // At a few cents, rounding tax to whole cents can make an exact figure
+  // unreachable. Say so rather than quietly refunding a cent more or less.
+  const typed = round2(parseFloat(document.getElementById('refundAmountInput').value));
+  if (document.getElementById('refundIncludesTax').checked && Math.abs(added - typed) >= 0.005) {
+    el.innerHTML += `<br><span style="color:var(--danger)">$${money(typed)} exactly isn't reachable at ${taxPctStr(refundTaxRate())}% tax — this is the closest.</span>`;
+  }
+}
+
+function confirmRefundAmount() {
+  const errEl = document.getElementById('refundAmountError');
+  errEl.textContent = '';
+  const value = refundLineValue();
+  if (value === null) { errEl.textContent = 'Enter a refund amount greater than zero.'; return; }
+  const reason = document.getElementById('refundAmountReason').value.trim();
+  cart.push(refundLineFrom(value, reason));
+  closeRefundAmount();
   renderCart();
 }
 
