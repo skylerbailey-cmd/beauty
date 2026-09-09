@@ -811,6 +811,32 @@ async function deleteSavedAudit(id, userId) {
   return r.rowCount > 0;
 }
 
+// A transaction of the same kind, for the same customer, for the same money,
+// rung up in this company within the last few minutes — i.e. what an
+// accidentally repeated sale looks like. Used to ask "are you sure" before
+// writing a second one; never to block it outright, since a customer really
+// can buy the same thing twice.
+async function findRecentDuplicate(userId, { type, customer_name, customer_email, total, withinMinutes = 15 }) {
+  const cents = Math.round((Number(total) || 0) * 100);
+  const rows = (await query(
+    `SELECT id, receipt_number, created_at, total, customer_name
+     FROM pos_transactions
+     WHERE user_id = $1
+       AND type = $2
+       AND created_at >= NOW() - ($3 || ' minutes')::interval
+       -- Match on the money to the cent; REAL can't be compared with =.
+       AND ROUND(total::numeric * 100) = $4
+       AND (
+         (COALESCE($5, '') <> '' AND LOWER(TRIM(customer_email)) = LOWER(TRIM($5)))
+         OR (COALESCE($5, '') = '' AND LOWER(TRIM(customer_name)) = LOWER(TRIM(COALESCE($6, ''))))
+       )
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [userId, type || 'sale', String(withinMinutes), cents, customer_email || '', customer_name || '']
+  )).rows;
+  return rows[0] || null;
+}
+
 // Flag (or clear) a sale as charged back. Scoped by user_id like every other
 // single-transaction operation, so one company can't touch another's rows.
 async function setTransactionChargeback(id, userId, chargedBack, note) {
@@ -1748,6 +1774,7 @@ module.exports = {
   getEmployeeTransactions,
   updateTransaction,
   deleteTransaction,
+  findRecentDuplicate,
   setTransactionChargeback,
   getAuditReviews,
   setAuditReview,

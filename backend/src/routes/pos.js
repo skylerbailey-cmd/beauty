@@ -532,6 +532,29 @@ router.post('/transactions', async (req, res) => {
     employeesChanged = origIds.size !== retIds.size || [...retIds].some(id => !origIds.has(id));
   }
 
+  // Guard against the same sale being rung twice — a double-clicked button, a
+  // second tab, or someone re-ringing one already put through. Checked here
+  // rather than only in the browser so a stale page can't get around it. Never
+  // blocks: it asks, and a repeat comes back with confirm_duplicate set.
+  if (!req.body.confirm_duplicate) {
+    const dupe = await pgDb.findRecentDuplicate(userId, {
+      type: type || 'sale',
+      customer_name, customer_email, total,
+    });
+    if (dupe) {
+      const when = new Date(dupe.created_at);
+      const mins = Math.max(1, Math.round((Date.now() - when.getTime()) / 60000));
+      return res.status(409).json({
+        needsDuplicateConfirm: true,
+        error: `${(type || 'sale') === 'return' ? 'A return' : 'A sale'} for ${dupe.customer_name || 'this customer'} of $${money(dupe.total)} was already put through ${mins} minute${mins === 1 ? '' : 's'} ago as receipt #${dupe.receipt_number}.`,
+        duplicate: {
+          id: dupe.id, receipt_number: dupe.receipt_number,
+          created_at: dupe.created_at, total: dupe.total, minutes_ago: mins,
+        },
+      });
+    }
+  }
+
   const { id, receipt_number } = await pgDb.createTransaction({
     type: type || 'sale',
     employee_id,

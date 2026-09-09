@@ -2240,7 +2240,17 @@ function showSuccessToast(message) {
   successToastTimer = setTimeout(() => el.classList.remove('show'), 3500);
 }
 
+// True while a transaction is being written. A second click during that window
+// used to send a second POST and create a second sale, which is the easiest way
+// to end up with a duplicate.
+let txInFlight = false;
+
 async function submitTransaction(body) {
+  if (txInFlight) return;
+  txInFlight = true;
+  const btn = document.getElementById('checkoutBtn');
+  const label = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Working…'; }
   try {
     const resp = await fetch(`${API}/api/pos/transactions`, {
       method: 'POST',
@@ -2253,6 +2263,22 @@ async function submitTransaction(body) {
       pendingTxBody = body;
       openManagerAuth('return-override', null, data.error);
       return;
+    }
+    // The server found a matching transaction from the last few minutes. Show
+    // what it found and let them decide, rather than silently writing another.
+    if (resp.status === 409 && data.needsDuplicateConfirm) {
+      const again = confirm(
+        `${data.error}\n\n`
+        + `If the customer is buying again, click OK to put this one through as well.\n`
+        + `Otherwise click Cancel — the first one is already recorded.`
+      );
+      if (!again) {
+        showSuccessToast(`Kept receipt #${data.duplicate.receipt_number} — nothing was added.`);
+        return;
+      }
+      txInFlight = false;
+      if (btn) { btn.disabled = false; btn.textContent = label; }
+      return submitTransaction({ ...body, confirm_duplicate: true });
     }
     if (!resp.ok) throw new Error(data.error);
     lastTransaction = data.transaction;
@@ -2278,6 +2304,12 @@ async function submitTransaction(body) {
     }
   } catch (err) {
     alert('Transaction failed: ' + err.message);
+  } finally {
+    // Always release, including on the error paths above — otherwise a failed
+    // attempt would leave checkout stuck disabled.
+    txInFlight = false;
+    if (btn) { btn.textContent = label; btn.disabled = false; }
+    updateCheckoutEnabled();
   }
 }
 
