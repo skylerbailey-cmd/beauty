@@ -49,6 +49,7 @@ function parseArgs(argv) {
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--apply') out.apply = true;
+    else if (a === '--route-by-transactions') out.route = true;
     else if (a === '--file') out.file = argv[++i];
     else if (a === '--user-id') out.userId = argv[++i];
     else if (a === '--limit') out.limit = parseInt(argv[++i], 10);
@@ -56,10 +57,34 @@ function parseArgs(argv) {
   return out;
 }
 
+// A single export can cover several stores. Rather than dumping all of it into
+// one company, send each customer to the store they actually bought from,
+// matched on name against that store's transaction history. Someone who shows
+// up at two stores is a customer of both and gets a record in each, since
+// customers are per-company.
+async function routeByTransactions(pool, records) {
+  const companies = (await pool.query(
+    `SELECT user_id, store_name FROM pos_settings WHERE TRIM(COALESCE(store_name,'')) <> '' ORDER BY store_name`)).rows;
+  for (const c of companies) {
+    c.names = new Set((await pool.query(
+      `SELECT DISTINCT LOWER(TRIM(customer_name)) AS n FROM pos_transactions
+       WHERE user_id = $1 AND TRIM(COALESCE(customer_name,'')) <> ''`, [c.user_id])).rows.map(r => r.n));
+  }
+  const targets = [];
+  const unmatched = [];
+  for (const rec of records) {
+    const key = rec.name.toLowerCase().replace(/\s+/g, ' ');
+    const hits = companies.filter(c => c.names.has(key));
+    if (!hits.length) { unmatched.push(rec); continue; }
+    for (const c of hits) targets.push({ rec, userId: c.user_id, store: c.store_name });
+  }
+  return { companies, targets, unmatched };
+}
+
 async function main() {
   const args = parseArgs(process.argv);
-  if (!args.file || !args.userId) {
-    console.error('Usage: node scripts/import-customers.js --file <csv> --user-id <id> [--apply] [--limit N]');
+  if (!args.file || (!args.userId && !args.route)) {
+    console.error('Usage: node scripts/import-customers.js --file <csv> (--user-id <id> | --route-by-transactions) [--apply] [--limit N]');
     process.exit(1);
   }
   if (!process.env.DATABASE_URL) {
@@ -141,23 +166,45 @@ async function main() {
     ssl: /proxy\.rlwy\.net|amazonaws|render|supabase/.test(process.env.DATABASE_URL) ? { rejectUnauthorized: false } : false,
   });
 
-  // What's already there, so the report separates new from existing.
-  const existing = (await pool.query(
-    `SELECT LOWER(TRIM(email)) AS email,
-            RIGHT(REGEXP_REPLACE(COALESCE(phone,''),'\\D','','g'), 10) AS phone
-     FROM customers WHERE user_id = $1`, [args.userId])).rows;
-  const haveEmail = new Set(existing.map(r => r.email).filter(Boolean));
-  const havePhone = new Set(existing.map(r => r.phone).filter(p => p && p.length === 10));
+  // Decide which company (or companies) each record belongs to.
+  let targets, unmatched = [];
+  if (args.route) {
+    const routed = await routeByTransactions(pool, list);
+    targets = routed.targets;
+    unmatched = routed.unmatched;
+    console.log('\n─── Routed by transaction history');
+    for (const c of routed.companies) {
+      const mine = targets.filter(t => t.userId === c.user_id);
+      console.log(`  ${c.store_name.padEnd(18)} ${String(mine.length).padStart(4)} customer(s)`);
+    }
+    const inBoth = targets.reduce((m, t) => m.set(t.rec, (m.get(t.rec) || 0) + 1), new Map());
+    console.log('  customers at more than one store:', [...inBoth.values()].filter(n => n > 1).length);
+    console.log('  no transactions at any store    :', unmatched.length,
+      unmatched.slice(0, 5).map(r => r.name));
+  } else {
+    targets = list.map(rec => ({ rec, userId: args.userId, store: args.userId }));
+  }
 
-  const isNew = r => r.email ? !haveEmail.has(r.email) : !havePhone.has(digitsOf(r.phone).slice(-10));
-  console.log('\n─── Against company', args.userId);
-  console.log('  customers already in the DB :', existing.length);
-  console.log('  would INSERT (new)          :', list.filter(isNew).length);
-  console.log('  would UPDATE (already there):', list.filter(r => !isNew(r)).length);
+  // What's already there, per company, so the report separates new from existing.
+  const byCompany = {};
+  for (const t of targets) (byCompany[t.userId] = byCompany[t.userId] || []).push(t.rec);
+  console.log('\n─── Against what is already in the database');
+  for (const [uid, recs] of Object.entries(byCompany)) {
+    const existing = (await pool.query(
+      `SELECT LOWER(TRIM(email)) AS email,
+              RIGHT(REGEXP_REPLACE(COALESCE(phone,''),'\\D','','g'), 10) AS phone
+       FROM customers WHERE user_id = $1`, [uid])).rows;
+    const haveEmail = new Set(existing.map(r => r.email).filter(Boolean));
+    const havePhone = new Set(existing.map(r => r.phone).filter(p => p && p.length === 10));
+    const isNew = r => r.email ? !haveEmail.has(r.email) : !havePhone.has(digitsOf(r.phone).slice(-10));
+    const store = targets.find(t => t.userId === uid)?.store || uid;
+    console.log(`  ${String(store).padEnd(18)} already ${String(existing.length).padStart(4)} | would INSERT ${String(recs.filter(isNew).length).padStart(4)} | would UPDATE ${String(recs.filter(r => !isNew(r)).length).padStart(4)}`);
+  }
 
   console.log('\n─── Sample of the first 5 to be written');
-  for (const r of list.slice(0, 5)) {
-    console.log(`  ${r.name} | ${r.email || '(no email)'} | ${r.phone || '(no phone)'}${r.notes ? ' | notes: ' + r.notes.slice(0, 40) : ''}`);
+  for (const t of targets.slice(0, 5)) {
+    const r = t.rec;
+    console.log(`  [${t.store}] ${r.name} | ${r.email || '(no email)'} | ${r.phone || '(no phone)'}`);
   }
 
   if (!args.apply) {
@@ -170,16 +217,18 @@ async function main() {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    for (const r of list) {
+    for (const t of targets) {
+      const r = t.rec;
+      const uid = t.userId;
       // Same matching rule the app uses: email when there is one, else phone.
       const found = r.email
         ? (await client.query(
             `SELECT id FROM customers WHERE user_id = $1 AND LOWER(TRIM(email)) = $2 LIMIT 1`,
-            [args.userId, r.email])).rows[0]
+            [uid, r.email])).rows[0]
         : (await client.query(
             `SELECT id FROM customers WHERE user_id = $1 AND TRIM(COALESCE(email,'')) = ''
                AND RIGHT(REGEXP_REPLACE(COALESCE(phone,''),'\\D','','g'), 10) = $2 LIMIT 1`,
-            [args.userId, digitsOf(r.phone).slice(-10)])).rows[0];
+            [uid, digitsOf(r.phone).slice(-10)])).rows[0];
       try {
         if (found) {
           // Only fill gaps — never overwrite details already in the system,
@@ -198,12 +247,12 @@ async function main() {
           await client.query(
             `INSERT INTO customers (name, email, phone, birthday, address, notes, user_id)
              VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-            [r.name, r.email, r.phone, r.birthday, r.address, r.notes, args.userId]);
+            [r.name, r.email, r.phone, r.birthday, r.address, r.notes, uid]);
           inserted++;
         }
       } catch (e) {
         failed++;
-        console.error('  failed:', r.name, r.email || r.phone, '→', e.message);
+        console.error('  failed:', t.store, r.name, r.email || r.phone, '→', e.message);
       }
     }
     await client.query('COMMIT');
