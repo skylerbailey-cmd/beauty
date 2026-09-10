@@ -1533,6 +1533,42 @@ async function chargebacksForRange(userId, startDate, endDate) {
   }));
 }
 
+// Every sale and return behind one row of the commission report. Dated the way
+// the report counts them — a return sits under the day the item was sold — so
+// these add up to exactly the figures in that row and can be checked one line
+// at a time. `store` narrows to a single company's row; omit it for a person's
+// combined figures.
+async function employeeActivityForRange(userId, employeeName, startDate, endDate, store) {
+  const rows = (await query(`
+    SELECT t.id AS transaction_id, t.receipt_number, t.type,
+      COALESCE(t.original_sale_date, t.created_at)::date::text AS counts_on,
+      t.created_at::date::text AS rung_up,
+      t.customer_name, t.subtotal, t.total, t.payment_method, t.card_last4,
+      s.store_name, e.name AS employee_name,
+      te.commission_value, te.commission_type,
+      COALESCE(e.commission_rate, 0) AS commission_rate,
+      ${EMP_SHARE} AS share,
+      (SELECT COUNT(*) FROM pos_transaction_employees x WHERE x.transaction_id = t.id) AS credited_count
+    FROM pos_transactions t
+    JOIN pos_settings s ON s.user_id = t.user_id
+    JOIN pos_transaction_employees te ON te.transaction_id = t.id
+    JOIN pos_employees e ON e.id = te.employee_id
+    WHERE t.user_id = ANY($1::text[])
+      AND LOWER(TRIM(e.name)) = LOWER(TRIM($2))
+      AND COALESCE(t.original_sale_date, t.created_at) >= $3
+      AND COALESCE(t.original_sale_date, t.created_at) <= $4
+      AND ($5::text IS NULL OR s.store_name = $5)
+    ORDER BY COALESCE(t.original_sale_date, t.created_at) DESC, t.receipt_number
+  `, [asCompanyIds(userId), employeeName, startDate, endDate, store || null])).rows;
+
+  return rows.map(r => ({
+    ...r,
+    share: round2(Number(r.share)),
+    credited_count: Number(r.credited_count),
+    commission: round2(Number(r.share) * Number(r.commission_rate) / 100),
+  }));
+}
+
 // Record that a dispute was (or wasn't) taken off a paycheck. Until this is
 // set the amount keeps coming off whichever cheque is open.
 async function setChargebackWithheld(id, userId, payday, by) {
@@ -2588,6 +2624,7 @@ module.exports = {
   deleteTransaction,
   listChargebacks,
   chargebacksForRange,
+  employeeActivityForRange,
   setChargebackWithheld,
   setChargebackStatus,
   saveChargeback,

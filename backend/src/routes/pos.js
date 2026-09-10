@@ -1378,6 +1378,38 @@ router.post('/reports/chargebacks', async (req, res) => {
   res.json({ chargebacks: rows, role: employee.role });
 });
 
+// Everything behind one row of the commission report: the sales, the returns,
+// and the disputes, each with the share credited to that person. An employee
+// can only ask for their own row; a manager can ask for anyone's.
+router.post('/reports/employee-detail', async (req, res) => {
+  const { name, pin, employee, store, start, end } = req.body;
+  const me = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
+  if (!me) return res.status(401).json({ error: 'Invalid name or PIN' });
+
+  const who = String(employee || me.name).trim();
+  if (me.role !== 'manager' && who.toLowerCase() !== String(me.name).trim().toLowerCase()) {
+    return res.status(403).json({ error: 'You can only open your own figures.' });
+  }
+
+  const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+  const endDate = end || new Date().toISOString();
+  const scope = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
+
+  const activity = await pgDb.employeeActivityForRange(scope, who, startDate, endDate, store || null);
+  const disputes = (await pgDb.chargebacksForRange(scope, startDate, endDate))
+    .filter(c => String(c.employee_name).trim().toLowerCase() === who.toLowerCase())
+    .filter(c => !store || c.store_name === store);
+
+  res.json({
+    employee: who,
+    store: store || null,
+    role: me.role,
+    sales: activity.filter(r => r.type === 'sale'),
+    returns: activity.filter(r => r.type === 'return'),
+    chargebacks: disputes,
+  });
+});
+
 // Change a dispute's status, or record which paycheck it came off. Both move
 // money, so both are manager-only.
 router.post('/reports/chargebacks/:id', async (req, res) => {

@@ -1532,6 +1532,18 @@
   </div>
 </div>
 
+<!-- Everything behind one row of the commission report, so each figure in it
+     can be checked line by line against the sales it came from. -->
+<div class="modal-overlay" id="empDetailModal">
+  <div class="modal" style="max-width:960px">
+    <h2>Detail <span id="empDetailWho" style="font-size:.85rem;color:var(--mid);font-weight:400"></span></h2>
+    <div id="empDetailBody" style="max-height:70vh;overflow:auto"></div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="document.getElementById('empDetailModal').classList.remove('show')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Hidden receipt for printing -->
 <div id="printReceipt" class="receipt-print" style="display:none"></div>
 
@@ -5809,15 +5821,21 @@ function commissionRow(e) {
   // it's clear why a name that's off the roster is listed.
   const inactive = e.active === 0 || e.active === false
     ? ' <span style="font-size:.72rem;color:var(--mid);font-weight:400">(deactivated)</span>' : '';
+  // The whole row opens the sales, returns and disputes behind it. `_person`
+  // and `_store` are the untouched values — employee_name may have had the
+  // store appended for display, which wouldn't match anything on the server.
+  const person = String(e._person || e.employee_name || '').replace(/'/g, "\\'");
+  const store = String(e._store || e.company_name || '').replace(/'/g, "\\'");
   return `
-    <tr>
+    <tr onclick="openEmployeeDetail('${escapeHtml(person)}', '${escapeHtml(store)}')"
+        style="cursor:pointer" title="See every sale, return and dispute behind this row">
       <td style="font-weight:600">${e.employee_name}${inactive}</td>
       <td>${e.sale_count}</td>
       <td>$${money(Number(e.sales_total))}</td>
       <td>$${money(Number(e.returns_total))}</td>
       <td>$${money(Number(e.net_total))}</td>
       <td>${Number(e.chargeback_total || 0) > 0
-        ? `<button onclick="openChargebackDrilldown('${escapeHtml(String(e.employee_name)).replace(/'/g, "\\'")}')"
+        ? `<button onclick="event.stopPropagation();openChargebackDrilldown('${escapeHtml(person)}')"
              title="See which sales these disputes are on"
              style="border:none;background:none;padding:0;font:inherit;color:var(--danger);font-weight:600;cursor:pointer;text-decoration:underline">−$${money(Number(e.chargeback_total || 0))}</button>`
         : '<span style="color:var(--mid)">—</span>'}</td>
@@ -5843,12 +5861,125 @@ function commissionTotalsRow(rows, label) {
       <td>$${money(sum('returns_total'))}</td>
       <td>$${money(sum('net_total'))}</td>
       <td>${chargeback > 0
-        ? `<button onclick="openChargebackDrilldown('')" title="See every disputed sale in this period"
+        ? `<button onclick="event.stopPropagation();openChargebackDrilldown('')" title="See every disputed sale in this period"
              style="border:none;background:none;padding:0;font:inherit;color:var(--danger);font-weight:700;cursor:pointer;text-decoration:underline">−$${money(chargeback)}</button>`
         : '<span style="color:var(--mid);font-weight:400">—</span>'}</td>
       <td>$${money(rows.reduce((s, e) => s + commissionBase(e), 0))}</td>
       <td>$${money(commission)}</td>
     </tr>`;
+}
+
+// ─── What's behind a row of the commission report ───────────────────────────
+// The table gives eight totals and no way to check any of them. This opens the
+// sales, returns and disputes they're made of, dated the way the report counts
+// them, so each column can be traced to the receipts that produced it.
+async function openEmployeeDetail(person, store) {
+  if (!personalCreds || !person) return;
+  const modal = document.getElementById('empDetailModal');
+  const body = document.getElementById('empDetailBody');
+  const start = document.getElementById('rptStart').value;
+  const end = document.getElementById('rptEnd').value;
+  document.getElementById('empDetailWho').textContent =
+    `· ${person}${store ? ' — ' + store : ''} · ${start} to ${end}`;
+  body.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid)">Loading…</div>';
+  modal.classList.add('show');
+  try {
+    const resp = await fetch(`${API}/api/pos/reports/employee-detail`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({
+        name: personalCreds.name, pin: personalCreds.pin,
+        employee: person, store: store || null,
+        start: `${start}T00:00:00`, end: `${end}T23:59:59`,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Could not load the detail');
+    body.innerHTML = renderEmployeeDetail(data);
+  } catch (err) {
+    body.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--danger)">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderEmployeeDetail(data) {
+  const sum = (arr, f) => arr.reduce((s, r) => s + (Number(r[f]) || 0), 0);
+  const salesTotal = sum(data.sales, 'share');
+  const returnsTotal = sum(data.returns, 'share');
+  const cbTotal = sum(data.chargebacks, 'disputed_share');
+
+  // A sale credited to more than one person only counts for this person's
+  // slice, so say what that slice was — otherwise the receipt total and the
+  // figure in the row look like they disagree.
+  const splitNote = (r) => Number(r.credited_count) > 1
+    ? ` <span style="color:var(--mid);font-size:.75rem">${r.commission_value}% of $${money(Number(r.subtotal))}</span>` : '';
+
+  const txTable = (rows, kind) => rows.length ? `
+    <table class="report-table" style="font-size:.82rem;margin-bottom:4px">
+      <thead><tr>
+        <th>Receipt</th><th>Counts on</th>${kind === 'return' ? '<th>Rung up</th>' : ''}
+        <th>Customer</th><th>Store</th><th>Sale $</th><th>Their share</th><th>Commission</th>
+      </tr></thead>
+      <tbody>${rows.map(r => `
+        <tr>
+          <td style="font-family:monospace">
+            <button onclick="findDisputedSale('${escapeHtml(r.receipt_number)}', '${escapeHtml(r.counts_on)}')"
+              title="Open this in Transactions"
+              style="border:none;background:none;padding:0;font:inherit;color:var(--rose);cursor:pointer;text-decoration:underline">${escapeHtml(r.receipt_number)}</button>
+          </td>
+          <td>${escapeHtml(r.counts_on)}</td>
+          ${kind === 'return' ? `<td${r.rung_up !== r.counts_on ? ' style="color:var(--mid)"' : ''}>${escapeHtml(r.rung_up)}</td>` : ''}
+          <td>${escapeHtml(r.customer_name || '-')}</td>
+          <td>${escapeHtml(r.store_name || '-')}</td>
+          <td>$${money(Number(r.subtotal))}</td>
+          <td>$${money(Number(r.share))}${splitNote(r)}</td>
+          <td style="font-weight:600">$${money(Number(r.commission))}</td>
+        </tr>`).join('')}</tbody>
+    </table>`
+    : `<div style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:10px">None in this period.</div>`;
+
+  const head = (title, count, amount, colour) => `
+    <h3 style="margin:14px 0 6px;font-size:.95rem">${title}
+      <span style="font-weight:400;color:var(--mid);font-size:.82rem">· ${count} · </span>
+      <span style="color:${colour};font-weight:700">$${money(amount)}</span></h3>`;
+
+  const cbTable = data.chargebacks.length ? `
+    <table class="report-table" style="font-size:.82rem">
+      <thead><tr><th>Receipt</th><th>Sold</th><th>Customer</th><th>Card</th><th>Store</th>
+        <th>Disputed $</th><th>Commission</th><th>Status</th><th>Held back</th></tr></thead>
+      <tbody>${data.chargebacks.map(c => `
+        <tr>
+          <td style="font-family:monospace">
+            <button onclick="findDisputedSale('${escapeHtml(c.receipt_number)}', '${escapeHtml(c.sale_date)}')"
+              style="border:none;background:none;padding:0;font:inherit;color:var(--rose);cursor:pointer;text-decoration:underline">${escapeHtml(c.receipt_number)}</button>
+          </td>
+          <td>${escapeHtml(c.sale_date)}</td>
+          <td>${escapeHtml(c.customer_name || '-')}</td>
+          <td>${c.card_last4 ? '****' + escapeHtml(c.card_last4) : '-'}</td>
+          <td>${escapeHtml(c.store_name || '-')}</td>
+          <td>$${money(Number(c.disputed_share))}</td>
+          <td style="color:var(--danger);font-weight:600">−$${money(Number(c.commission_at_risk))}</td>
+          <td style="text-transform:capitalize">${escapeHtml(c.status)}</td>
+          <td>${c.withheld_payday ? escapeHtml(c.withheld_payday) : '<span style="color:var(--mid)">not yet</span>'}</td>
+        </tr>`).join('')}</tbody>
+    </table>
+    <div style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:6px">
+      To change a status or mark one as withheld, click the Charged Back figure in the report.
+    </div>`
+    : '<div style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)">None in this period.</div>';
+
+  return `
+    <div style="font-family:system-ui,sans-serif;font-size:.85rem;background:var(--cream);padding:10px 12px;border-radius:8px">
+      <b>$${money(salesTotal)}</b> sales
+      − <b>$${money(returnsTotal)}</b> returns
+      = <b>$${money(salesTotal - returnsTotal)}</b> net
+      ${cbTotal ? `· <span style="color:var(--danger)">−$${money(cbTotal)} disputed</span>
+        → <b>$${money(salesTotal - returnsTotal - cbTotal)}</b> counts toward commission` : ''}
+    </div>
+    ${head('Sales', `${data.sales.length} sale${data.sales.length === 1 ? '' : 's'}`, salesTotal, 'var(--dark)')}
+    ${txTable(data.sales, 'sale')}
+    ${head('Returns', `${data.returns.length} return${data.returns.length === 1 ? '' : 's'}`, returnsTotal, 'var(--dark)')}
+    ${txTable(data.returns, 'return')}
+    ${head('Chargebacks', `${data.chargebacks.length} dispute${data.chargebacks.length === 1 ? '' : 's'}`, cbTotal, 'var(--danger)')}
+    ${cbTable}`;
 }
 
 // ─── Chargeback drill-down from the commission report ───────────────────────
@@ -6232,7 +6363,9 @@ function renderManagerCommissions() {
   const spans = stores.length > 1;
   document.getElementById('empReportBody').innerHTML =
     (rows.map(r => commissionRow(spans && r.company_name
-        ? { ...r, employee_name: `${r.employee_name} — ${r.company_name}` } : r)).join('')
+        ? { ...r, employee_name: `${r.employee_name} — ${r.company_name}`,
+            _person: r.employee_name, _store: r.company_name }
+        : r)).join('')
       + (rows.length > 1 ? commissionTotalsRow(rows, spans ? `All employees — ${stores.join(' + ')}` : 'All employees') : '')) ||
     '<tr><td colspan="8" style="text-align:center;color:var(--mid)">No data</td></tr>';
 }
