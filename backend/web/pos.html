@@ -5853,8 +5853,15 @@ function commissionTotalsRow(rows, label) {
   const sum = (f) => rows.reduce((s, e) => s + (Number(e[f]) || 0), 0);
   const commission = rows.reduce((s, e) => s + commissionAmt(e, commissionBase(e)), 0);
   const chargeback = sum('chargeback_total');
+  // When every row is the same person, this line is their combined figure and
+  // opens the same way — across both stores rather than one. A mixed table
+  // ("All employees") has nobody to open, so it stays inert.
+  const names = [...new Set(rows.map(r => r.employee_name))];
+  const openable = names.length === 1
+    ? ` onclick="openEmployeeDetail('${escapeHtml(String(names[0])).replace(/'/g, "\\'")}', '')"`
+    : '';
   return `
-    <tr style="border-top:2px solid var(--border);font-weight:700;background:var(--cream)">
+    <tr${openable} style="border-top:2px solid var(--border);font-weight:700;background:var(--cream)${openable ? ';cursor:pointer' : ''}">
       <td>${escapeHtml(label || 'Total')}</td>
       <td>${sum('sale_count')}</td>
       <td>$${money(sum('sales_total'))}</td>
@@ -6406,6 +6413,21 @@ async function unlockPersonalReport(silent) {
   if (!name) { if (!silent) errorEl.textContent = 'Enter your name'; return; }
   if (!pin) { if (!silent) errorEl.textContent = 'Enter your PIN'; return; }
 
+  // Opening a report lands on the paycheck being worked towards, not on today.
+  // Today is almost never the question — "what is my next cheque" is — and a
+  // range of today alone reads as zero sales, which looks like a fault.
+  // Only on the first unlock: after that the dates are whatever was picked.
+  if (!silent) {
+    await loadPaycheckFilters();
+    const next = rptPaydays.find(p => p.upcoming) || rptPaydays[0];
+    if (next) {
+      document.getElementById('rptStart').value = next.period.start;
+      document.getElementById('rptEnd').value = next.period.end;
+      rptSelectedPayday = next.payday;
+      renderPaycheckChips();
+    }
+  }
+
   const start = document.getElementById('rptStart').value;
   const end = document.getElementById('rptEnd').value;
 
@@ -6478,7 +6500,13 @@ async function unlockPersonalReport(silent) {
         // Across companies, label each row so two figures under the same name
         // aren't mistaken for a duplicate, and total them — the combined figure
         // is what someone working at both stores is actually owed.
-        (personalRows.map(r => commissionRow(spans ? { ...r, employee_name: `${r.employee_name} — ${r.company_name}` } : r)).join('')
+        // _person / _store keep the untouched values for the row drill-down —
+        // employee_name here has the store appended for display and wouldn't
+        // match anyone on the server.
+        (personalRows.map(r => commissionRow(spans
+            ? { ...r, employee_name: `${r.employee_name} — ${r.company_name}`,
+                _person: r.employee_name, _store: r.company_name }
+            : r)).join('')
           + (spans ? commissionTotalsRow(personalRows, `${data.employee.name} — both companies`) : '')) ||
         '<tr><td colspan="8" style="text-align:center;color:var(--mid)">No data</td></tr>';
       // Say plainly when a company was asked for but couldn't be included,
