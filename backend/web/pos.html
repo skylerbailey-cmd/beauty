@@ -3275,6 +3275,19 @@ function paymentSummary(tx) {
 }
 
 // One free-text search across every value in the loaded transactions.
+// A return is rung up on one day but counted against the day the item was
+// sold, so those two dates can sit in different pay periods. Saying so on the
+// row is what lets someone check a Returns figure in Reports against the
+// transaction behind it, instead of looking in the period on screen and
+// finding nothing there.
+function countsOnNote(tx) {
+  if (tx.type !== 'return' || !tx.original_sale_date) return '';
+  const rung = new Date(tx.created_at).toDateString();
+  const sold = new Date(tx.original_sale_date).toDateString();
+  if (rung === sold) return '';
+  return `<div style="font-size:.75rem;color:var(--mid)">counts on ${new Date(tx.original_sale_date).toLocaleDateString()}</div>`;
+}
+
 function applyTxFilters() {
   const q = document.getElementById('histSearch').value.trim().toLowerCase();
 
@@ -3322,7 +3335,7 @@ function applyTxFilters() {
     <tr>
       ${canManage ? `<td><input type="checkbox" class="tx-select" onchange="toggleTxSelect(${tx.id}, this.checked)" ${selectedTxIds.has(tx.id) ? 'checked' : ''}></td>` : ''}
       <td style="font-family:monospace">${tx.receipt_number}</td>
-      <td>${new Date(tx.created_at).toLocaleString()}</td>
+      <td>${new Date(tx.created_at).toLocaleString()}${countsOnNote(tx)}</td>
       <td><span class="tx-type-${tx.type}">${tx.type.toUpperCase()}</span>${cbBadges(tx)}</td>
       <td>${tx.employees && tx.employees.length > 0 ? tx.employees.map(e => e.employee_name).join(', ') : '-'}</td>
       <td>${tx.customer_name || '-'}</td>
@@ -3346,8 +3359,22 @@ function applyTxFilters() {
 
   // Summary line — pre-tax subtotals, so this reconciles with the Reports tab
   // (which reports revenue excluding tax) instead of reading higher here.
+  //
+  // A return is listed in both the range it was rung up in and the range it
+  // counts against, so it can show in two. The summary adds it up only in the
+  // period it counts on — otherwise two consecutive periods would each claim
+  // the same refund and neither would match Reports.
+  const rangeStart = document.getElementById('histStart').value;
+  const rangeEnd = document.getElementById('histEnd').value;
+  const countsInRange = (tx) => {
+    if (tx.type !== 'return' || !tx.original_sale_date || !rangeStart || !rangeEnd) return true;
+    const d = new Date(tx.original_sale_date).toLocaleDateString('en-CA');
+    return d >= rangeStart && d <= rangeEnd;
+  };
   const saleTotal = rows.filter(t => t.type === 'sale').reduce((s, t) => s + (t.subtotal || 0), 0);
-  const returnTotal = rows.filter(t => t.type === 'return').reduce((s, t) => s + (t.subtotal || 0), 0);
+  const countedReturns = rows.filter(t => t.type === 'return' && countsInRange(t));
+  const otherPeriodReturns = rows.filter(t => t.type === 'return' && !countsInRange(t));
+  const returnTotal = countedReturns.reduce((s, t) => s + (t.subtotal || 0), 0);
   const summary = document.getElementById('txSummary');
   if (summary) {
     // Charged-back sales are still counted in Sales above — they were rung up
@@ -3357,7 +3384,10 @@ function applyTxFilters() {
     const cbTotal = cbRows.reduce((s, t) => s + (t.subtotal || 0), 0);
     const counts = `${rows.length} transaction${rows.length !== 1 ? 's' : ''} · Sales $${money(saleTotal)} (pre-tax)`
       + (returnTotal ? ` · Returns $${money(returnTotal)} · Net $${money((saleTotal - returnTotal))}` : '')
-      + (cbTotal ? ` · <span style="color:var(--danger);font-weight:600">Charged back $${money(cbTotal)} (${cbRows.length})</span>` : '');
+      + (cbTotal ? ` · <span style="color:var(--danger);font-weight:600">Charged back $${money(cbTotal)} (${cbRows.length})</span>` : '')
+      + (otherPeriodReturns.length
+        ? ` · <span style="color:var(--mid)">${otherPeriodReturns.length} return${otherPeriodReturns.length === 1 ? '' : 's'} shown but counted in another period</span>`
+        : '');
     // Say whose view this is. A non-manager only ever sees transactions they
     // were personally on, so without this an unexpectedly short list looks
     // like missing data rather than a filtered view.

@@ -1561,8 +1561,22 @@ async function getTransactions(userId, opts = {}) {
   let idx = 2;
 
   if (type) { where += ` AND t.type = $${idx}`; params.push(type); idx++; }
-  if (startDate) { where += ` AND t.created_at >= $${idx}`; params.push(startDate); idx++; }
-  if (endDate) { where += ` AND t.created_at <= $${idx}`; params.push(endDate); idx++; }
+  // A return is caught by EITHER the day it was rung up or the day the item was
+  // sold, because commission counts it on the latter. Filtering on the rung-up
+  // date alone meant a return could raise an employee's Returns figure for a
+  // fortnight while being invisible in that same fortnight's transactions —
+  // there was no way to look up the number you were being shown.
+  // original_sale_date is only ever set on returns, so nothing else widens.
+  if (startDate && endDate) {
+    where += ` AND ((t.created_at >= $${idx} AND t.created_at <= $${idx + 1})
+                 OR (COALESCE(t.original_sale_date, t.created_at) >= $${idx}
+                 AND COALESCE(t.original_sale_date, t.created_at) <= $${idx + 1}))`;
+    params.push(startDate, endDate); idx += 2;
+  } else if (startDate) {
+    where += ` AND COALESCE(t.original_sale_date, t.created_at) >= $${idx}`; params.push(startDate); idx++;
+  } else if (endDate) {
+    where += ` AND t.created_at <= $${idx}`; params.push(endDate); idx++;
+  }
   if (employeeId) { where += ` AND t.employee_id = $${idx}`; params.push(employeeId); idx++; }
   params.push(limit);
 
