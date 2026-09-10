@@ -633,6 +633,9 @@ router.post('/transactions', async (req, res) => {
   }
 
   const tx = await pgDb.getTransaction(id, userId);
+  // Text alert, if this company has one set up. Deliberately not awaited: the
+  // sale is already recorded and must not wait on, or fail with, an email.
+  sendSaleAlert(userId, tx);
   res.json({ transaction: tx });
 });
 
@@ -864,7 +867,9 @@ async function getSendingUser(userId) {
   return user;
 }
 
-async function sendGmail(user, toEmail, subject, htmlBody) {
+// contentType is 'text/plain' for the SMS gateway alerts — a carrier gateway
+// strips or mangles HTML, so a text alert must not be sent as one.
+async function sendGmail(user, toEmail, subject, htmlBody, contentType) {
   const { google } = require('googleapis');
   const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -879,7 +884,7 @@ async function sendGmail(user, toEmail, subject, htmlBody) {
     `From: "${fromName}" <${user.email}>`,
     `To: ${toEmail}`,
     `Subject: ${subject}`,
-    'Content-Type: text/html; charset=utf-8',
+    `Content-Type: ${contentType || 'text/html'}; charset=utf-8`,
     'MIME-Version: 1.0',
     '',
     htmlBody,
@@ -896,6 +901,87 @@ async function sendGmail(user, toEmail, subject, htmlBody) {
     requestBody: { raw: encoded },
   });
 }
+
+// ─── Sale text alerts (via the carrier's email-to-SMS gateway) ─────────────
+
+// US carrier gateways. Sending to <10 digits>@<gateway> arrives as a normal
+// text. Free, but carrier-dependent: some drop or delay them, and a carrier
+// can change or retire a gateway without notice.
+const SMS_GATEWAYS = {
+  verizon: 'vtext.com',
+  att: 'txt.att.net',
+  tmobile: 'tmomail.net',
+  sprint: 'messaging.sprintpcs.com',
+  uscellular: 'email.uscc.net',
+  googlefi: 'msg.fi.google.com',
+  boost: 'sms.myboostmobile.com',
+  cricket: 'sms.cricketwireless.net',
+  metropcs: 'mymetropcs.com',
+  xfinity: 'vtext.com',
+  visible: 'vtext.com',
+  mint: 'tmomail.net',
+};
+
+function smsAddressFor(settings) {
+  const digits = String(settings?.sale_alert_phone || '').replace(/\D/g, '');
+  const ten = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits;
+  const gateway = SMS_GATEWAYS[String(settings?.sale_alert_carrier || '').toLowerCase()];
+  if (ten.length !== 10 || !gateway) return null;
+  return `${ten}@${gateway}`;
+}
+
+// One line, kept short: a gateway splits anything much over 160 characters
+// into several texts, and some truncate instead.
+function saleAlertText(tx, storeName) {
+  const who = (tx.employees || []).map(e => e.employee_name).join(', ');
+  const what = tx.type === 'return' ? 'Refund' : 'Sale';
+  return [
+    `${what} $${money(tx.total)}`,
+    storeName || '',
+    tx.customer_name || '',
+    who ? `by ${who}` : '',
+    `#${tx.receipt_number}`,
+  ].filter(Boolean).join(' · ');
+}
+
+// Fire-and-forget: a sale must never fail because a text couldn't be sent, so
+// this never throws and is deliberately not awaited by the caller.
+async function sendSaleAlert(userId, tx) {
+  try {
+    const settings = await pgDb.getSettings(userId);
+    if (!settings?.sale_alert_enabled) return;
+    const to = smsAddressFor(settings);
+    if (!to) return;
+    const user = await getSendingUser(userId);
+    if (!user?.refresh_token) return;   // Gmail not connected for this company
+    // Gateways prepend the subject to the message, so leave it empty and put
+    // everything in the body — otherwise the text arrives saying it twice.
+    await sendGmail(user, to, '', saleAlertText(tx, settings.store_name), 'text/plain');
+  } catch (err) {
+    console.error('[pos] Sale alert failed (sale itself was fine):', err.message);
+  }
+}
+
+// Send a test message so the phone and carrier can be checked without
+// waiting for a real sale.
+router.post('/settings/test-sale-alert', async (req, res) => {
+  const userId = req.session.userId;
+  const settings = await pgDb.getSettings(userId);
+  const to = smsAddressFor(settings);
+  if (!to) {
+    return res.status(400).json({ error: 'Enter a 10-digit mobile number and pick a carrier first.' });
+  }
+  const user = await getSendingUser(userId);
+  if (!user?.refresh_token) {
+    return res.status(403).json({ error: 'Gmail is not connected for this company. Connect it on the Welcome Emails page first.' });
+  }
+  try {
+    await sendGmail(user, to, '', `Test from ${settings.store_name || 'SkySale'} — sale alerts are working.`, 'text/plain');
+    res.json({ ok: true, sent_to: to });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not send: ' + err.message });
+  }
+});
 
 // ─── Email Receipt ─────────────────────────────────────────────────────────
 

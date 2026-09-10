@@ -324,6 +324,12 @@ async function initSchema() {
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS payroll_paydays TEXT DEFAULT '1,15'");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS payroll_lag TEXT DEFAULT 'previous'");
 
+  // Text alert on each sale, sent through the carrier's email-to-SMS gateway
+  // using the Gmail connection this company already has — no SMS account.
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS sale_alert_phone TEXT DEFAULT ''");
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS sale_alert_carrier TEXT DEFAULT ''");
+  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS sale_alert_enabled INTEGER DEFAULT 0');
+
   // A payday that's been paid out. Its figures stop moving: a dispute closing
   // afterwards lands on the next paycheck that hasn't gone out yet.
   await migrate(`CREATE TABLE IF NOT EXISTS pos_payroll_runs (
@@ -1937,7 +1943,7 @@ async function getSettings(userId) {
 }
 
 async function updateSettings(userId, fields) {
-  const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'payarc_token', 'payarc_merchant_id', 'payarc_env', 'payroll_paydays', 'payroll_lag'];
+  const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'payarc_token', 'payarc_merchant_id', 'payarc_env', 'payroll_paydays', 'payroll_lag', 'sale_alert_phone', 'sale_alert_carrier', 'sale_alert_enabled'];
   const sets = [];
   const params = [];
   let idx = 1;
