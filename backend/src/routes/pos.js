@@ -1327,7 +1327,28 @@ router.post('/reports/payroll/paid', async (req, res) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.status(400).json({ error: 'Pick a payday.' });
   // Scoped to every company, not the signed-in one: a payday covers both
   // stores, so closing it from one account has to be reopenable from the other.
-  res.json(await pgDb.setPayrollPaid(await payrollScope(), payday, !!paid, employee.name));
+  const scope = await payrollScope();
+
+  if (paid) {
+    // Read the cheque before closing it, and pin every dispute it is holding
+    // back to this payday. Otherwise closing it would send them chasing the
+    // next open cheque and this one would report a total it never paid.
+    const settings = await pgDb.getSettings(req.session.userId);
+    const run = await pgDb.payrollForPayday(scope, payday, settings);
+    const ids = [...new Set(run.employees
+      .flatMap(e => e.adjustments)
+      .filter(a => (a.kind === 'withheld' || a.kind === 'lost') && a.chargeback_id)
+      .map(a => a.chargeback_id))];
+    const result = await pgDb.setPayrollPaid(scope, payday, true, employee.name);
+    const held = await pgDb.stampChargebacksWithheld(ids, scope, payday, employee.name);
+    return res.json({ ...result, chargebacks_held: held });
+  }
+
+  // Reopening: the cheque never went out, so release what it was holding and
+  // let those disputes go back to following the open paycheck.
+  const released = await pgDb.clearChargebacksWithheld(scope, payday);
+  const result = await pgDb.setPayrollPaid(scope, payday, false, employee.name);
+  res.json({ ...result, chargebacks_released: released });
 });
 
 router.post('/reports/payroll/adjustment', async (req, res) => {

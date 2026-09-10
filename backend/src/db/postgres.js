@@ -1191,20 +1191,19 @@ async function payrollForPayday(userId, payday, settings) {
   // the day a refund was rung up, or a dispute raised).
   //
   //   paycheck still open        -> it goes on that one
-  //   closed AFTER it happened   -> it was on that cheque already; nothing owed
+  //   closed AFTER it happened   -> that cheque carried it; it stays there
   //   closed BEFORE it happened  -> too late for that cheque, take it off the
   //                                 next one still open
   //
-  // That middle case is the one that matters: without it, closing a payday
-  // moved every deduction already sitting on it onto the next cheque, charging
-  // people a second time for a return the closed cheque had accounted for.
-  // Returns null when there is nothing left to collect.
+  // The middle case is what stops a deduction being taken twice: it keeps
+  // sitting on the closed cheque that already accounted for it, so that cheque
+  // still explains the figure it paid, and no later one picks it up again.
   const landsOn = (date, on) => {
     let p = paydayForDate(date, sched);
     for (let i = 0; i < 24 && p; i++) {
       const closed = closedOn.get(p);
       if (!closed) return p;
-      if (on && on <= closed) return null;
+      if (on && on <= closed) return p;
       p = nextPayday(p, sched);
     }
     return p;
@@ -1567,6 +1566,30 @@ async function employeeActivityForRange(userId, employeeName, startDate, endDate
     credited_count: Number(r.credited_count),
     commission: round2(Number(r.share) * Number(r.commission_rate) / 100),
   }));
+}
+
+// Pin disputes to the paycheck they came off, when that paycheck is closed.
+// A cheque that has gone out has to keep showing what it held back — and the
+// money is now in hand, so those disputes stop following the open paycheck.
+// Ones already pinned elsewhere are left alone.
+async function stampChargebacksWithheld(ids, userId, payday, by) {
+  if (!ids || !ids.length) return 0;
+  const r = await query(
+    `UPDATE pos_transaction_chargebacks
+     SET withheld_payday = $1::date, withheld_at = NOW(), withheld_by = $2
+     WHERE id = ANY($3::int[]) AND user_id = ANY($4::text[]) AND withheld_payday IS NULL`,
+    [payday, by || '', ids, asCompanyIds(userId)]);
+  return r.rowCount;
+}
+
+// Reopening a paycheck undoes that: it never went out, so nothing was held.
+async function clearChargebacksWithheld(userId, payday) {
+  const r = await query(
+    `UPDATE pos_transaction_chargebacks
+     SET withheld_payday = NULL, withheld_at = NULL, withheld_by = ''
+     WHERE withheld_payday = $1::date AND user_id = ANY($2::text[])`,
+    [payday, asCompanyIds(userId)]);
+  return r.rowCount;
 }
 
 // Record that a dispute was (or wasn't) taken off a paycheck. Until this is
@@ -2626,6 +2649,8 @@ module.exports = {
   chargebacksForRange,
   employeeActivityForRange,
   setChargebackWithheld,
+  stampChargebacksWithheld,
+  clearChargebacksWithheld,
   setChargebackStatus,
   saveChargeback,
   deleteChargeback,
