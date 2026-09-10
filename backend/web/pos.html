@@ -5966,6 +5966,29 @@ function renderEmployeeDetail(data) {
     </div>`
     : '<div style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)">None in this period.</div>';
 
+  // Disputes on sales outside the dates on screen. They don't belong in this
+  // period's figures — they'd stop the columns adding up — but the money is
+  // being kept back right now, so it's listed separately rather than nowhere.
+  const elsewhere = data.held_elsewhere || [];
+  const elsewhereTotal = sum(elsewhere, 'commission_at_risk');
+  const elsewhereBlock = elsewhere.length ? `
+    <div style="font-family:system-ui,sans-serif;font-size:.82rem;border:1.5px solid var(--danger);border-radius:8px;padding:10px 12px;margin-top:14px">
+      <b style="color:var(--danger)">Also being held from pay — $${money(elsewhereTotal)}</b>
+      <div style="color:var(--mid);margin:3px 0 7px">
+        On ${elsewhere.length} sale${elsewhere.length === 1 ? '' : 's'} outside these dates. Open disputes come off the next paycheck
+        whenever the sale happened, so this is not in the figures above.
+      </div>
+      ${elsewhere.map(c => `
+        <div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-top:1px dashed var(--border)">
+          <span>
+            <button onclick="findDisputedSale('${escapeHtml(c.receipt_number)}', '${escapeHtml(c.sale_date)}')"
+              style="border:none;background:none;padding:0;font:inherit;font-family:monospace;color:var(--rose);cursor:pointer;text-decoration:underline">${escapeHtml(c.receipt_number)}</button>
+            <span style="color:var(--mid)"> · sold ${escapeHtml(c.sale_date)} · ${escapeHtml(c.store_name || '')} · ${escapeHtml(c.status)}</span>
+          </span>
+          <span style="color:var(--danger);font-weight:600">−$${money(Number(c.commission_at_risk))}</span>
+        </div>`).join('')}
+    </div>` : '';
+
   return `
     <div style="font-family:system-ui,sans-serif;font-size:.85rem;background:var(--cream);padding:10px 12px;border-radius:8px">
       <b>$${money(salesTotal)}</b> sales
@@ -5974,6 +5997,7 @@ function renderEmployeeDetail(data) {
       ${cbTotal ? `· <span style="color:var(--danger)">−$${money(cbTotal)} disputed</span>
         → <b>$${money(salesTotal - returnsTotal - cbTotal)}</b> counts toward commission` : ''}
     </div>
+    ${elsewhereBlock}
     ${head('Sales', `${data.sales.length} sale${data.sales.length === 1 ? '' : 's'}`, salesTotal, 'var(--dark)')}
     ${txTable(data.sales, 'sale')}
     ${head('Returns', `${data.returns.length} return${data.returns.length === 1 ? '' : 's'}`, returnsTotal, 'var(--dark)')}

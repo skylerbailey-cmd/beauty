@@ -1396,9 +1396,17 @@ router.post('/reports/employee-detail', async (req, res) => {
   const scope = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
 
   const activity = await pgDb.employeeActivityForRange(scope, who, startDate, endDate, store || null);
-  const disputes = (await pgDb.chargebacksForRange(scope, startDate, endDate))
+
+  // Every dispute this person is on, not just the ones in the range. An open
+  // dispute is held from pay whenever the sale happened, so someone looking at
+  // this fortnight still needs to see money being kept back over a sale from
+  // two months ago — otherwise the deduction on their payslip has no
+  // explanation anywhere on this screen.
+  const mine = (await pgDb.chargebacksForRange(scope, '1970-01-01', '2999-12-31'))
     .filter(c => String(c.employee_name).trim().toLowerCase() === who.toLowerCase())
     .filter(c => !store || c.store_name === store);
+  const inRange = (c) => c.sale_date >= String(startDate).slice(0, 10)
+    && c.sale_date <= String(endDate).slice(0, 10);
 
   res.json({
     employee: who,
@@ -1406,7 +1414,9 @@ router.post('/reports/employee-detail', async (req, res) => {
     role: me.role,
     sales: activity.filter(r => r.type === 'sale'),
     returns: activity.filter(r => r.type === 'return'),
-    chargebacks: disputes,
+    chargebacks: mine.filter(inRange),
+    // Still being held from pay, but on a sale outside what's on screen.
+    held_elsewhere: mine.filter(c => !inRange(c) && !c.withheld_payday && c.status !== 'won'),
   });
 });
 
