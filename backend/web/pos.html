@@ -647,7 +647,10 @@
         <div class="report-card">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
             <h3 style="margin:0">Batch Reconciliation Audit <span id="batchResultRange" style="font-weight:400;color:var(--mid);font-size:.85rem"></span></h3>
-            <button class="btn" id="saveAuditBtn" style="background:var(--gold);color:#fff;padding:7px 14px;font-size:.82rem" onclick="saveCurrentAudit()">Save This Audit</button>
+            <div style="display:flex;gap:8px;align-items:center">
+              <button class="btn" id="saveAuditBtn" style="background:var(--gold);color:#fff;padding:7px 14px;font-size:.82rem" onclick="saveCurrentAudit()">Save This Audit</button>
+              <button class="btn" id="closeAuditBtn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:7px 14px;font-size:.82rem" onclick="closeAudit()" title="Hide this report — Run Batch Audit brings it back">Close</button>
+            </div>
           </div>
           <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Each day compares the merchant's settled card batches to the POS's recorded card sales (net of returns) over the selected date range. Click any day to see the sales/credits breakdown and every individual transaction.</p>
           <table class="report-table">
@@ -4725,6 +4728,18 @@ async function setDayReviewed(date, reviewed) {
     if (box) box.checked = !!previous?.reviewed;
     alert('Could not save that: ' + err.message);
   }
+}
+
+// Put the report away once you're done with it. Nothing is lost — Run Batch
+// Audit rebuilds it, and a saved audit reopens from the list above.
+function closeAudit() {
+  const el = document.getElementById('batchResult');
+  if (el) el.style.display = 'none';
+  // The status line sits outside the report, so clear it too or a stale
+  // "Saved." or error message is left behind with nothing to explain it.
+  const status = document.getElementById('batchStatus');
+  if (status) status.textContent = '';
+  lastAuditRange = null;
 }
 
 async function saveCurrentAudit() {
