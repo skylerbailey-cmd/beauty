@@ -1457,12 +1457,21 @@ async function init() {
     loadEmployees(); // renders the sale-employee picker once the roster loads
     renderTenders(); // draw the initial single-tender Payment row
 
-    const today = new Date().toISOString().slice(0, 10);
-    document.getElementById('histStart').value = today;
+    // The store's own date, not UTC: at 6pm in Denver it's already tomorrow in
+    // UTC, which on the 1st would open these filters on the wrong month.
+    const today = new Date().toLocaleDateString('en-CA', {
+      timeZone: storeSettings.timezone || 'America/Los_Angeles',
+    });
+    // Transactions and Customers open on the month so far — you're nearly
+    // always looking at more than one day there, and a single-day default made
+    // the list look empty. Reports stays on today, since the leaderboard and
+    // the KPIs behind the unlock are read as "today's numbers".
+    const monthStart = today.slice(0, 8) + '01';
+    document.getElementById('histStart').value = monthStart;
     document.getElementById('histEnd').value = today;
     document.getElementById('rptStart').value = today;
     document.getElementById('rptEnd').value = today;
-    document.getElementById('custStart').value = today;
+    document.getElementById('custStart').value = monthStart;
     document.getElementById('custEnd').value = today;
   } catch (err) {
     console.error('[pos] Auth check failed:', err);
