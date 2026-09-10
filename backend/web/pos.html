@@ -554,9 +554,10 @@
               <input type="text" id="custFirstName" placeholder="First name" style="flex:1;min-width:0" oninput="updateCheckoutEnabled()">
               <input type="text" id="custLastName" placeholder="Last name" style="flex:1;min-width:0" oninput="updateCheckoutEnabled()">
             </div>
-            <input type="email" id="custEmail" placeholder="Customer email" oninput="updateCheckoutEnabled()">
-            <input type="tel" id="custPhone" placeholder="Customer phone" oninput="updateCheckoutEnabled()">
+            <input type="email" id="custEmail" placeholder="Customer email" oninput="updateCheckoutEnabled()" onchange="lookupCustomerFromContact()" onblur="lookupCustomerFromContact()">
+            <input type="tel" id="custPhone" placeholder="Customer phone" oninput="updateCheckoutEnabled()" onchange="lookupCustomerFromContact()" onblur="lookupCustomerFromContact()">
             <div style="font-family:system-ui,sans-serif;font-size:.72rem;color:var(--mid);margin-top:-4px">Email or phone required — either one is fine.</div>
+            <div id="custLookupNote" style="font-family:system-ui,sans-serif;font-size:.72rem;color:var(--success);margin-top:-2px"></div>
           </div>
           <!-- Employee assignment -->
           <div class="employee-assign" style="margin-bottom:12px">
@@ -2131,6 +2132,61 @@ function setCustomerNameFields(fullName) {
   document.getElementById('custLastName').value = parts.join(' ');
 }
 
+// Fill in a returning customer from whichever contact detail was typed. Only
+// ever fills fields that are EMPTY — whatever the cashier typed for this sale
+// wins, since they're looking at the customer and the record may be out of
+// date. Nothing is blocked if the lookup fails; it's a convenience.
+let lastCustomerLookup = '';
+async function lookupCustomerFromContact() {
+  const emailEl = document.getElementById('custEmail');
+  const phoneEl = document.getElementById('custPhone');
+  const noteEl = document.getElementById('custLookupNote');
+  if (!emailEl || !phoneEl) return;
+  if (currentMode !== 'sale') return; // a return already fills from the receipt
+
+  const email = emailEl.value.trim();
+  const phone = phoneEl.value.trim();
+  // Only look up something that could actually match, so a half-typed address
+  // doesn't fire a request on every blur.
+  const usableEmail = isValidEmail(email) ? email : '';
+  const usablePhone = phone.replace(/\D/g, '').length >= 10 ? phone : '';
+  if (!usableEmail && !usablePhone) { noteEl.textContent = ''; return; }
+
+  const key = `${usableEmail}|${usablePhone}`;
+  if (key === lastCustomerLookup) return; // same details, already looked up
+  lastCustomerLookup = key;
+
+  try {
+    const qs = new URLSearchParams();
+    if (usableEmail) qs.set('email', usableEmail);
+    if (usablePhone) qs.set('phone', usablePhone);
+    const resp = await fetch(`${API}/api/pos/customers/lookup?${qs}`, { credentials: 'include' });
+    if (!resp.ok) return;
+    const c = (await resp.json()).customer;
+    if (!c) { noteEl.textContent = ''; return; }
+
+    const filled = [];
+    if (!document.getElementById('custFirstName').value.trim()
+        && !document.getElementById('custLastName').value.trim() && c.name) {
+      setCustomerNameFields(c.name);
+      filled.push('name');
+    }
+    if (!email && c.email) { emailEl.value = c.email; filled.push('email'); }
+    if (!phone && c.phone) { phoneEl.value = c.phone; filled.push('phone'); }
+
+    noteEl.textContent = filled.length
+      ? `Returning customer — filled in their ${filled.join(' and ')}.`
+      : `Returning customer: ${c.name || 'on file'}.`;
+    // Re-key the cache on the fields as they now stand. Filling in the missing
+    // contact detail changes them, which would otherwise look like new input
+    // and fire a second identical lookup on the next blur.
+    const nowEmail = isValidEmail(emailEl.value.trim()) ? emailEl.value.trim() : '';
+    const nowPhone = phoneEl.value.replace(/\D/g, '').length >= 10 ? phoneEl.value.trim() : '';
+    lastCustomerLookup = `${nowEmail}|${nowPhone}`;
+    updateCheckoutEnabled();
+  } catch (_) { /* lookup is a convenience — never block the sale */ }
+}
+
 async function processTransaction() {
   if (cart.length === 0) return;
 
@@ -2296,6 +2352,11 @@ async function submitTransaction(body) {
     document.getElementById('custLastName').value = '';
     document.getElementById('custEmail').value = '';
     document.getElementById('custPhone').value = '';
+    // Clear the "returning customer" note with the fields it referred to, and
+    // forget the cached lookup so the next customer is looked up fresh.
+    const lookupNote = document.getElementById('custLookupNote');
+    if (lookupNote) lookupNote.textContent = '';
+    lastCustomerLookup = '';
     if (body.type === 'return') {
       returnOriginalTx = null;
       document.getElementById('returnReceiptInput').value = '';

@@ -1264,6 +1264,14 @@ router.post('/settings', async (req, res) => {
 
 // ─── Customer Lookup ───────────────────────────────────────────────────────
 
+// Look a customer up from whichever contact detail the register has, so their
+// remaining details can be filled in for the cashier.
+router.get('/customers/lookup', async (req, res) => {
+  const { email, phone } = req.query;
+  const found = await pgDb.findCustomerByContact(req.session.userId, { email, phone });
+  res.json({ customer: found || null });
+});
+
 router.get('/customers/search', async (req, res) => {
   const { q } = req.query;
   if (!q) return res.json({ customers: [] });

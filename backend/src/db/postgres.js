@@ -811,6 +811,48 @@ async function deleteSavedAudit(id, userId) {
   return r.rowCount > 0;
 }
 
+// Find an existing customer from just an email or a phone number, so the
+// register can fill in the rest of their details.
+//
+// Looks in the CRM table first (it has address/birthday/notes), then falls
+// back to their last transaction — the CRM table is keyed by email, so a
+// customer who has only ever given a phone number has no row there and would
+// otherwise never be found.
+//
+// Phone numbers are compared on their last 10 digits, so formatting and a
+// country code don't stop a match.
+async function findCustomerByContact(userId, { email, phone }) {
+  const e = String(email || '').trim().toLowerCase();
+  const digits = String(phone || '').replace(/\D/g, '');
+  const p = digits.length >= 10 ? digits.slice(-10) : '';
+  if (!e && !p) return null;
+
+  const crm = (await query(
+    `SELECT name, email, phone, birthday, address, notes
+     FROM customers
+     WHERE user_id = $1
+       AND ( ($2 <> '' AND LOWER(TRIM(email)) = $2)
+          OR ($3 <> '' AND RIGHT(REGEXP_REPLACE(COALESCE(phone,''), '\\D', '', 'g'), 10) = $3) )
+     ORDER BY updated_at DESC
+     LIMIT 1`,
+    [userId, e, p])).rows[0];
+  if (crm) return { ...crm, source: 'crm' };
+
+  const tx = (await query(
+    `SELECT customer_name AS name, customer_email AS email, customer_phone AS phone
+     FROM pos_transactions
+     WHERE user_id = $1
+       AND COALESCE(customer_name, '') <> ''
+       AND ( ($2 <> '' AND LOWER(TRIM(customer_email)) = $2)
+          OR ($3 <> '' AND RIGHT(REGEXP_REPLACE(COALESCE(customer_phone,''), '\\D', '', 'g'), 10) = $3) )
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [userId, e, p])).rows[0];
+  if (tx) return { ...tx, birthday: null, address: '', notes: '', source: 'transaction' };
+
+  return null;
+}
+
 // A transaction of the same kind, for the same customer, for the same money,
 // rung up in this company within the last few minutes — i.e. what an
 // accidentally repeated sale looks like. Used to ask "are you sure" before
@@ -1774,6 +1816,7 @@ module.exports = {
   getEmployeeTransactions,
   updateTransaction,
   deleteTransaction,
+  findCustomerByContact,
   findRecentDuplicate,
   setTransactionChargeback,
   getAuditReviews,
