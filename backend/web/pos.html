@@ -287,6 +287,15 @@
     .report-table th { text-align: left; padding: 8px; border-bottom: 2px solid var(--border); color: var(--mid); font-size: .72rem; text-transform: uppercase; letter-spacing: .5px; }
     .report-table td { padding: 8px; border-bottom: 1px solid var(--border); }
     .report-table tr:hover td { background: var(--cream); }
+    /* Row actions. There are up to four (View / Edit / Delete / Chargeback),
+       which overflowed the column when the cell was nowrap — they wrap onto a
+       second line instead, and each label stays intact. */
+    .tx-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px 10px; }
+    .tx-actions button {
+      border: none; background: none; padding: 0; cursor: pointer;
+      font: inherit; font-size: .82rem; text-decoration: underline; white-space: nowrap;
+    }
+    .tx-actions button:hover { text-decoration: none; }
 
     .date-range { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; font-family: system-ui, sans-serif; font-size: .85rem; }
     .date-range input, .date-range select { padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-family: system-ui, sans-serif; font-size: .85rem; outline: none; background: var(--white); color: var(--dark); }
@@ -3253,12 +3262,14 @@ function applyTxFilters() {
       <td style="font-weight:600">$${money(tx.total)}</td>
       <td style="font-size:.82rem">${paymentSummary(tx)}</td>
       ${multiCompany ? `<td style="font-size:.82rem;color:var(--mid)">${escapeHtml(tx.company_name || '-')}</td>` : ''}
-      <td style="white-space:nowrap">
-        <button onclick="viewReceipt(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--rose);text-decoration:underline;font-size:.82rem">View</button>
-        ${canManage ? `
-        <button onclick="startEditTransaction(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--gold-dk,#b8860b);text-decoration:underline;font-size:.82rem">Edit</button>
-        <button onclick="startDeleteTransaction(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--danger);text-decoration:underline;font-size:.82rem">Delete</button>
-        ${tx.type === 'sale' ? `<button onclick="toggleChargeback(${tx.id})" style="border:none;background:none;cursor:pointer;color:var(--mid);text-decoration:underline;font-size:.82rem" title="${tx.charged_back ? 'Dispute won — clear this flag' : 'Customer disputed this sale and the money was taken back'}">${tx.charged_back ? 'Undo CB' : 'Chargeback'}</button>` : ''}` : ''}
+      <td>
+        <div class="tx-actions">
+          <button onclick="viewReceipt(${tx.id})" style="color:var(--rose)">View</button>
+          ${canManage ? `
+          <button onclick="startEditTransaction(${tx.id})" style="color:var(--gold-dk,#b8860b)">Edit</button>
+          <button onclick="startDeleteTransaction(${tx.id})" style="color:var(--danger)">Delete</button>
+          ${tx.type === 'sale' ? `<button onclick="toggleChargeback(${tx.id})" style="color:var(--mid)" title="${tx.charged_back ? 'Update or clear this dispute' : 'Customer disputed this sale and the money was taken back'}">Chargeback</button>` : ''}` : ''}
+        </div>
       </td>
     </tr>
   `).join('') || `<tr><td colspan="${(canManage ? 11 : 10) + (multiCompany ? 1 : 0)}" style="text-align:center;color:var(--mid)">No transactions in this date range. Click <b>Show All</b> above to see historical/imported transactions.</td></tr>`;
