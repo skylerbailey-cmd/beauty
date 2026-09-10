@@ -1369,8 +1369,15 @@ router.get('/reports/paydays', async (req, res) => {
   const paid = new Set(await pgDb.paidPaydays(scope));
   const upcoming = pgDb.nextPayday(pgDb.paydaysBetween(from, today, sched)[0] || today, sched);
   res.json({
+    today,
     paydays: [upcoming, ...pgDb.paydaysBetween(from, today, sched)]
-      .map(p => ({ payday: p, period: pgDb.periodForPayday(p, sched), paid: paid.has(p) })),
+      .map(p => ({
+        payday: p, period: pgDb.periodForPayday(p, sched),
+        paid: paid.has(p),
+        // Not yet handed out: the period it covers may still be open, so the
+        // figures under it are a running total rather than a settled one.
+        upcoming: p > today,
+      })),
   });
 });
 

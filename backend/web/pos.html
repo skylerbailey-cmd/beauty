@@ -715,6 +715,15 @@
              KPIs, leaderboard, commissions, payroll, top products — always
              covers both companies, so there is nothing to choose between.
              Transactions still has its picker. -->
+
+        <!-- Paycheck shortcuts. The dates above are what the report actually
+             runs on; these just set them to a pay period, so nobody has to
+             remember that the Sep 15 cheque covers Aug 16-31. Full width so it
+             wraps onto its own line under the date inputs. -->
+        <div id="rptPaycheckBar" style="display:none;width:100%;margin-top:8px">
+          <div style="font-size:.78rem;color:var(--mid);margin-bottom:5px">Jump to a paycheck — the period each one pays for:</div>
+          <div id="rptPaycheckChips" style="display:flex;gap:6px;overflow-x:auto;padding-bottom:4px"></div>
+        </div>
       </div>
 
       <!-- Employee Sales & Commissions (Manager/Employee view — locked) -->
@@ -4504,6 +4513,9 @@ async function loadReports() {
   // while their personal sales/returns still show the period they unlocked on.
   // Re-run the same request with the credentials from that unlock, silently.
   if (personalCreds) await unlockPersonalReport(true);
+  // Dates typed by hand only light up a paycheck chip if they land exactly on
+  // that pay period.
+  syncPaycheckSelection();
 }
 
 // Always-visible leaderboard for TODAY specifically — independent of the
@@ -5895,6 +5907,73 @@ function fmtPayday(d) {
     { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+// ─── Paycheck shortcuts on the Reports tab ──────────────────────────────────
+// Anyone who has unlocked a report gets these, not just managers: an employee
+// checking what their next cheque looks like shouldn't have to work out that
+// it covers the fortnight before last. Selecting one just fills in the date
+// boxes, so the report itself is unchanged and the dates stay editable.
+let rptPaydays = [];
+let rptSelectedPayday = '';
+
+async function loadPaycheckFilters() {
+  const bar = document.getElementById('rptPaycheckBar');
+  if (!bar) return;
+  try {
+    if (!rptPaydays.length) {
+      const resp = await fetch(`${API}/api/pos/reports/paydays`, { credentials: 'include' });
+      if (!resp.ok) return;                       // leave the bar hidden
+      rptPaydays = (await resp.json()).paydays || [];
+    }
+    if (!rptPaydays.length) return;
+    bar.style.display = '';
+    renderPaycheckChips();
+  } catch (_) { /* the date boxes still work on their own */ }
+}
+
+function renderPaycheckChips() {
+  const wrap = document.getElementById('rptPaycheckChips');
+  if (!wrap) return;
+  // Upcoming first, then back through the year. Twelve is half a year of
+  // fortnights — enough to find any recent cheque without an endless row.
+  wrap.innerHTML = rptPaydays.slice(0, 13).map(p => {
+    const on = p.payday === rptSelectedPayday;
+    // "Not marked paid" rather than "not paid": a payday is only flagged here
+    // once someone closes it off in Payroll, and periods settled before that
+    // was ever used were still paid. Saying otherwise on an employee's own
+    // screen would read as a missing cheque.
+    const note = p.upcoming ? 'Upcoming' : (p.paid ? 'Paid' : 'Not marked paid');
+    return `<button class="btn" onclick="selectPaycheck('${p.payday}')" title="Paid ${fmtPayday(p.payday)} for work from ${p.period.start} to ${p.period.end}"
+      style="flex:0 0 auto;text-align:left;line-height:1.25;padding:6px 10px;font-size:.78rem;border:1.5px solid ${on ? 'var(--rose)' : 'var(--border)'};
+             background:${on ? 'var(--rose)' : 'var(--white)'};color:${on ? 'var(--white)' : 'var(--dark)'}">
+      <div style="font-weight:600">${fmtPeriod(p.period)}</div>
+      <div style="font-size:.7rem;opacity:.75">${note} ${fmtPayday(p.payday).replace(/, \d{4}$/, '')}</div>
+    </button>`;
+  }).join('');
+}
+
+// Fill the date boxes with a pay period and re-run whatever is on screen.
+// loadReports() refreshes the manager sections and, at its end, the unlocked
+// employee's own figures — so this covers both kinds of viewer.
+function selectPaycheck(payday) {
+  const p = rptPaydays.find(x => x.payday === payday);
+  if (!p) return;
+  rptSelectedPayday = payday;
+  document.getElementById('rptStart').value = p.period.start;
+  document.getElementById('rptEnd').value = p.period.end;
+  renderPaycheckChips();
+  loadReports();
+}
+
+// Typing a date by hand, or using the half-month buttons, clears the chip
+// highlight unless the range happens to match a pay period exactly.
+function syncPaycheckSelection() {
+  const start = document.getElementById('rptStart')?.value;
+  const end = document.getElementById('rptEnd')?.value;
+  const match = rptPaydays.find(p => p.period.start === start && p.period.end === end);
+  const next = match ? match.payday : '';
+  if (next !== rptSelectedPayday) { rptSelectedPayday = next; renderPaycheckChips(); }
+}
+
 // "Aug 1–15" — the year and the repeated month are noise inside one period.
 function fmtPeriod(p) {
   if (!p) return '';
@@ -6033,8 +6112,10 @@ async function unlockPersonalReport(silent) {
     personalCreds = { name, pin }; // lets Update re-run this without a re-unlock
     document.getElementById('empLockBtn').style.display = '';
     // The date filter only ever applies to what's behind this unlock — reveal
-    // it now, whichever role just unlocked.
+    // it now, whichever role just unlocked, along with the paycheck shortcuts.
     document.getElementById('reportsDateFilter').style.display = '';
+    loadPaycheckFilters();
+    syncPaycheckSelection();
     // Say which dates these figures cover, and that the filter drives them.
     const rangeEl = document.getElementById('rptRangeNote');
     if (rangeEl) {
@@ -6106,6 +6187,9 @@ function lockPersonalReport() {
   personalCreds = null; // Update must not keep refreshing after locking
   document.getElementById('managerCommissionsSection').style.display = 'none';
   document.getElementById('reportsDateFilter').style.display = 'none';
+  const pcBar = document.getElementById('rptPaycheckBar');
+  if (pcBar) pcBar.style.display = 'none';
+  rptSelectedPayday = '';
   document.getElementById('salesSummary').innerHTML = '';
   document.getElementById('prodReportBody').innerHTML = '';
   document.getElementById('empPersonalReport').style.display = 'none';
