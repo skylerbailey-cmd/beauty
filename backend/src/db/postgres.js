@@ -279,6 +279,10 @@ async function initSchema() {
   // commission is withheld, released, or clawed back — see payrollForPayday.
   await migrate("ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS chargeback_status TEXT DEFAULT ''");
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS chargeback_closed_at TIMESTAMPTZ');
+  // How much of the sale was disputed. A customer can charge back part of a
+  // sale, in which case only that share of the commission is affected.
+  // NULL/0 means the whole thing, so existing flags keep their meaning.
+  await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS chargeback_amount REAL');
   // Anything already flagged before statuses existed is an open dispute.
   await migrate("UPDATE pos_transactions SET chargeback_status = 'pending' WHERE charged_back = 1 AND COALESCE(chargeback_status,'') = ''");
 
@@ -980,6 +984,15 @@ const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
 // The three states a dispute can be in. Anything else means "not disputed".
 const CHARGEBACK_STATUSES = ['pending', 'won', 'lost'];
 
+// How much of a sale was disputed, as a fraction of its total. A partial
+// chargeback only affects that share of the commission. Defaults to the whole
+// sale when no amount was recorded, so rows flagged before amounts existed
+// behave as they always did.
+const CB_FRACTION = `
+  LEAST(1, GREATEST(0,
+    COALESCE(NULLIF(t.chargeback_amount, 0), t.total) / NULLIF(t.total, 0)
+  ))`;
+
 // The pay schedule, from settings. Two paydays a month (the 1st and the 15th)
 // is the default; 'monthly' pays once, on the 1st. `lag` says which period a
 // payday settles: 'previous' skips a period so there's time to run payroll,
@@ -1123,7 +1136,9 @@ async function payrollForPayday(userId, payday, settings) {
       t.charged_back_at::date::text AS marked_date,
       t.chargeback_closed_at::date::text AS closed_date,
       e.id AS employee_id, e.name AS employee_name, e.commission_rate,
-      ${EMP_SHARE} AS share
+      ${EMP_SHARE} AS share,
+      -- Only the disputed share of the sale affects commission.
+      ${CB_FRACTION} AS cb_fraction
     FROM pos_transactions t
     JOIN pos_transaction_employees te ON te.transaction_id = t.id
     JOIN pos_employees e ON e.id = te.employee_id
@@ -1148,7 +1163,8 @@ async function payrollForPayday(userId, payday, settings) {
   }
 
   for (const d of disputes) {
-    const commission = round2(Number(d.share) * (Number(d.commission_rate) || 0) / 100);
+    const fraction = d.cb_fraction == null ? 1 : Number(d.cb_fraction);
+    const commission = round2(Number(d.share) * (Number(d.commission_rate) || 0) / 100 * fraction);
     if (commission === 0) continue;
     const naturalPayday = paydayForDate(d.sale_date, sched);
     // Withheld only if the dispute was raised before that paycheck went out;
@@ -1245,9 +1261,9 @@ async function deletePayrollAdjustment(userId, id) {
 
 // Flag (or clear) a sale as charged back. Scoped by user_id like every other
 // single-transaction operation, so one company can't touch another's rows.
-async function setTransactionChargeback(id, userId, chargedBack, note, status, closedAt) {
+async function setTransactionChargeback(id, userId, chargedBack, note, status, closedAt, amount) {
   const existing = (await query(
-    'SELECT id, type, charged_back, charged_back_at FROM pos_transactions WHERE id = $1 AND user_id = $2',
+    'SELECT id, type, total, charged_back, charged_back_at FROM pos_transactions WHERE id = $1 AND user_id = $2',
     [id, userId])).rows[0];
   if (!existing) return null;
   // Only a sale can be disputed — a return is money already going back out.
@@ -1257,7 +1273,7 @@ async function setTransactionChargeback(id, userId, chargedBack, note, status, c
     await query(
       `UPDATE pos_transactions
        SET charged_back = 0, charged_back_at = NULL, charged_back_note = '',
-           chargeback_status = '', chargeback_closed_at = NULL
+           chargeback_status = '', chargeback_closed_at = NULL, chargeback_amount = NULL
        WHERE id = $1 AND user_id = $2`, [id, userId]);
     return { ok: true };
   }
@@ -1270,13 +1286,23 @@ async function setTransactionChargeback(id, userId, chargedBack, note, status, c
   // Keep the original raised-date: it decides whether the commission had
   // already been paid out, so re-saving the status must not move it.
   const markedAt = existing.charged_back_at || new Date();
+  // Blank means the whole sale. Anything above the total is capped: a customer
+  // can't dispute more than they paid, and a fraction over 1 would take back
+  // more commission than was ever earned.
+  const total = Number(existing.total) || 0;
+  let amt = amount == null || amount === '' ? null : round2(amount);
+  if (amt != null && (!isFinite(amt) || amt <= 0)) {
+    return { error: 'Enter a disputed amount greater than zero, or leave it blank for the whole sale.' };
+  }
+  if (amt != null && total > 0 && amt > total) amt = total;
+
   await query(
     `UPDATE pos_transactions
      SET charged_back = 1, charged_back_at = $1, charged_back_note = $2,
-         chargeback_status = $3, chargeback_closed_at = $4
-     WHERE id = $5 AND user_id = $6`,
-    [markedAt, note || '', st, st === 'pending' ? null : closedAt, id, userId]);
-  return { ok: true, status: st };
+         chargeback_status = $3, chargeback_closed_at = $4, chargeback_amount = $5
+     WHERE id = $6 AND user_id = $7`,
+    [markedAt, note || '', st, st === 'pending' ? null : closedAt, amt, id, userId]);
+  return { ok: true, status: st, amount: amt == null ? total : amt };
 }
 
 async function getTransactionByReceipt(receiptNumber, userId) {
@@ -1391,7 +1417,9 @@ async function getSalesReport(userId, startDate, endDate) {
       -- the revenue above rather than deducted from it — the sale did happen
       -- and the commission was earned; this is the part that wasn't kept.
       COUNT(CASE WHEN type = 'sale' AND charged_back = 1 THEN 1 END) as chargeback_count,
-      COALESCE(SUM(CASE WHEN type = 'sale' AND charged_back = 1 THEN subtotal ELSE 0 END), 0) as chargeback_total
+      COALESCE(SUM(CASE WHEN type = 'sale' AND charged_back = 1
+        THEN subtotal * LEAST(1, GREATEST(0, COALESCE(NULLIF(chargeback_amount, 0), total) / NULLIF(total, 0)))
+        ELSE 0 END), 0) as chargeback_total
     FROM pos_transactions
     WHERE user_id = ANY($1::text[])
       AND COALESCE(original_sale_date, created_at) >= $2
@@ -1416,7 +1444,7 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
       -- back. Not deducted from sales_total above — shown beside it, so it's
       -- visible without quietly rewriting what they sold.
       COUNT(DISTINCT CASE WHEN t.type = 'sale' AND t.charged_back = 1 THEN t.id END) as chargeback_count,
-      COALESCE(SUM(CASE WHEN t.type = 'sale' AND t.charged_back = 1 THEN ${EMP_SHARE} ELSE 0 END), 0) as chargeback_total
+      COALESCE(SUM(CASE WHEN t.type = 'sale' AND t.charged_back = 1 THEN (${EMP_SHARE}) * ${CB_FRACTION} ELSE 0 END), 0) as chargeback_total
     FROM pos_employees e
     LEFT JOIN pos_transaction_employees te ON e.id = te.employee_id
     LEFT JOIN pos_transactions t ON te.transaction_id = t.id

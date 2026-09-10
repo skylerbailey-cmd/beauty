@@ -1112,6 +1112,15 @@
     <h2>Chargeback — <span id="cbReceipt" style="font-family:monospace"></span></h2>
     <p class="sub" id="cbSummary"></p>
     <div class="field">
+      <label>Amount disputed</label>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span style="font-size:1.05rem;font-weight:600">$</span>
+        <input type="number" id="cbAmount" step="0.01" min="0" oninput="updateChargebackForm()" style="flex:1">
+        <button type="button" class="btn" onclick="chargebackFullAmount()" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:6px 10px;font-size:.78rem;white-space:nowrap">Full amount</button>
+      </div>
+      <div id="cbAmountNote" style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:4px"></div>
+    </div>
+    <div class="field">
       <label>Where the dispute stands</label>
       <select id="cbStatus" onchange="updateChargebackForm()" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.95rem;font-family:system-ui,sans-serif;outline:none;background:var(--white)">
         <option value="pending">Pending — still being disputed</option>
@@ -3464,6 +3473,10 @@ function openBulkChargeback() {
   const statuses = [...new Set(sales.map(t => t.chargeback_status || 'pending'))];
   document.getElementById('cbStatus').value = statuses.length === 1 ? statuses[0] : 'pending';
   document.getElementById('cbClosedAt').value = '';
+  // Each sale has its own total, so a single figure can't apply to all of
+  // them — blank means "the whole of each one".
+  chargebackMaxAmount = 0;
+  document.getElementById('cbAmount').value = '';
   document.getElementById('cbNote').value = '';
   document.getElementById('cbError').textContent = '';
   document.getElementById('cbRemoveBtn').style.display = '';
@@ -3476,6 +3489,7 @@ function openBulkChargeback() {
 // confirm box.
 let chargebackTarget = null;
 let chargebackTargets = null;
+let chargebackMaxAmount = 0;   // the sale's total, for the "full amount" shortcut
 function openChargebackModal(tx) {
   chargebackTarget = tx;
   chargebackTargets = null;   // single edit, not a batch
@@ -3484,6 +3498,11 @@ function openChargebackModal(tx) {
     `$${money(tx.total)} from ${tx.customer_name || 'this customer'} on ${new Date(tx.created_at).toLocaleDateString()}`;
   document.getElementById('cbStatus').value = tx.chargeback_status || 'pending';
   document.getElementById('cbClosedAt').value = (tx.chargeback_closed_at || '').slice(0, 10);
+  // Most disputes are for the whole sale, so start there — a partial one is
+  // typed over it.
+  chargebackMaxAmount = Number(tx.total) || 0;
+  document.getElementById('cbAmount').value = (tx.chargeback_amount != null && Number(tx.chargeback_amount) > 0
+    ? Number(tx.chargeback_amount) : chargebackMaxAmount).toFixed(2);
   document.getElementById('cbNote').value = tx.charged_back_note || '';
   document.getElementById('cbError').textContent = '';
   document.getElementById('cbRemoveBtn').style.display = tx.charged_back ? '' : 'none';
@@ -3499,10 +3518,30 @@ function closeChargebackModal() {
 
 // Only a closed dispute has a close date, and that date is what decides which
 // paycheck the money moves on — so spell out the consequence as they pick.
+function chargebackFullAmount() {
+  document.getElementById('cbAmount').value = chargebackMaxAmount ? chargebackMaxAmount.toFixed(2) : '';
+  updateChargebackForm();
+}
+
 function updateChargebackForm() {
   const status = document.getElementById('cbStatus').value;
   const closedWrap = document.getElementById('cbClosedWrap');
   closedWrap.style.display = status === 'pending' ? 'none' : '';
+
+  // Say what a partial dispute means for commission, since only that share of
+  // it is affected and the rest is still earned.
+  const noteEl = document.getElementById('cbAmountNote');
+  const amt = parseFloat(document.getElementById('cbAmount').value);
+  if (!chargebackMaxAmount) {
+    noteEl.textContent = 'Leave blank to dispute the whole of each sale.';
+  } else if (!isFinite(amt) || amt <= 0) {
+    noteEl.textContent = `Blank means the whole sale — $${money(chargebackMaxAmount)}.`;
+  } else if (amt >= chargebackMaxAmount) {
+    noteEl.textContent = `The whole sale ($${money(chargebackMaxAmount)}). All of its commission is affected.`;
+  } else {
+    const pct = (amt / chargebackMaxAmount) * 100;
+    noteEl.textContent = `${pct.toFixed(1)}% of the $${money(chargebackMaxAmount)} sale — only that share of the commission is affected.`;
+  }
   const effect = {
     pending: 'Commission on this sale is held back until the dispute closes.',
     won: 'The store kept the money. The held-back commission is paid on the paycheck covering the date it closed.',
@@ -3520,6 +3559,11 @@ async function saveChargeback(remove) {
   const status = document.getElementById('cbStatus').value;
   const closedAt = document.getElementById('cbClosedAt').value;
   const note = document.getElementById('cbNote').value.trim();
+  const amountRaw = document.getElementById('cbAmount').value.trim();
+  if (!remove && amountRaw !== '' && !(parseFloat(amountRaw) > 0)) {
+    errEl.textContent = 'Enter a disputed amount greater than zero, or clear it for the whole sale.';
+    return;
+  }
   if (!remove && status !== 'pending' && !closedAt) {
     errEl.textContent = 'Enter the date the dispute closed — it decides which paycheck this lands on.';
     return;
@@ -3533,6 +3577,7 @@ async function saveChargeback(remove) {
         body: JSON.stringify({
           manager_name: txCreds.name, manager_pin: txCreds.pin,
           charged_back: !remove, note, status, closed_at: status === 'pending' ? null : closedAt,
+          amount: amountRaw === '' ? null : Number(amountRaw),
         }),
       });
       const data = await resp.json();
@@ -3542,6 +3587,7 @@ async function saveChargeback(remove) {
       t.chargeback_status = remove ? '' : status;
       t.chargeback_closed_at = (remove || status === 'pending') ? null : closedAt;
       t.charged_back_note = remove ? '' : note;
+      t.chargeback_amount = remove ? null : (data.amount != null ? data.amount : null);
     } catch (err) {
       failed.push(`${t.receipt_number}: ${err.message}`);
     }

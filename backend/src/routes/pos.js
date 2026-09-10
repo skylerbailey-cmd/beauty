@@ -738,13 +738,13 @@ router.delete('/transactions/:id', async (req, res) => {
 // editing, since it changes what the books say was collected.
 router.post('/transactions/:id/chargeback', async (req, res) => {
   const userId = req.session.userId;
-  const { manager_name, manager_pin, charged_back, note, status, closed_at } = req.body;
+  const { manager_name, manager_pin, charged_back, note, status, closed_at, amount } = req.body;
   const manager = await verifyManager(userId, manager_name, manager_pin);
   if (!manager) return res.status(403).json({ error: 'Only a manager can mark a chargeback. Manager name and code did not match.' });
 
   const result = await pgDb.setTransactionChargeback(
     parseInt(req.params.id), userId, !!charged_back, String(note || '').trim(),
-    status, closed_at || null);
+    status, closed_at || null, amount);
   if (!result) return res.status(404).json({ error: 'Transaction not found' });
   if (result.error) return res.status(400).json({ error: result.error });
   res.json({ ok: true, charged_back: !!charged_back });
