@@ -329,6 +329,16 @@ async function initSchema() {
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS sale_alert_phone TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS sale_alert_carrier TEXT DEFAULT ''");
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS sale_alert_enabled INTEGER DEFAULT 0');
+  // Several people can be alerted, each with their own carrier, so recipients
+  // are a JSON list: [{"phone":"5203520920","carrier":"verizon"}, ...]. The
+  // single phone/carrier columns above are the original one-recipient form and
+  // are folded in below.
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS sale_alert_recipients TEXT DEFAULT ''");
+  await migrate(`UPDATE pos_settings
+    SET sale_alert_recipients = json_build_array(
+          json_build_object('phone', sale_alert_phone, 'carrier', sale_alert_carrier))::text
+    WHERE COALESCE(sale_alert_recipients, '') = ''
+      AND COALESCE(sale_alert_phone, '') <> '' AND COALESCE(sale_alert_carrier, '') <> ''`);
 
   // A payday that's been paid out. Its figures stop moving: a dispute closing
   // afterwards lands on the next paycheck that hasn't gone out yet.
@@ -1943,7 +1953,7 @@ async function getSettings(userId) {
 }
 
 async function updateSettings(userId, fields) {
-  const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'payarc_token', 'payarc_merchant_id', 'payarc_env', 'payroll_paydays', 'payroll_lag', 'sale_alert_phone', 'sale_alert_carrier', 'sale_alert_enabled'];
+  const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'payarc_token', 'payarc_merchant_id', 'payarc_env', 'payroll_paydays', 'payroll_lag', 'sale_alert_phone', 'sale_alert_carrier', 'sale_alert_enabled', 'sale_alert_recipients'];
   const sets = [];
   const params = [];
   let idx = 1;

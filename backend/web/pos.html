@@ -989,28 +989,16 @@
         <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
           Get a text whenever a sale is completed. Sent through your carrier's email-to-text gateway using this company's Gmail connection, so there's nothing to pay for — but delivery is up to the carrier and can occasionally be slow or dropped.
         </p>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-family:system-ui,sans-serif;font-size:.85rem">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-            <input type="checkbox" id="settingsAlertEnabled" style="width:16px;height:16px;accent-color:var(--rose)"> On
-          </label>
-          <input type="tel" id="settingsAlertPhone" placeholder="Mobile number" style="width:170px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
-          <select id="settingsAlertCarrier" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;background:var(--white)">
-            <option value="">Carrier…</option>
-            <option value="verizon">Verizon</option>
-            <option value="att">AT&amp;T</option>
-            <option value="tmobile">T-Mobile</option>
-            <option value="sprint">Sprint</option>
-            <option value="uscellular">US Cellular</option>
-            <option value="googlefi">Google Fi</option>
-            <option value="boost">Boost</option>
-            <option value="cricket">Cricket</option>
-            <option value="metropcs">Metro by T-Mobile</option>
-            <option value="mint">Mint Mobile</option>
-            <option value="visible">Visible</option>
-            <option value="xfinity">Xfinity Mobile</option>
-          </select>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:system-ui,sans-serif;font-size:.85rem;margin-bottom:10px">
+          <input type="checkbox" id="settingsAlertEnabled" style="width:16px;height:16px;accent-color:var(--rose)"> Send a text on every completed sale
+        </label>
+        <!-- One row per person. Each needs its own carrier, so they can't just
+             be a list of numbers. -->
+        <div id="alertRecipients"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
+          <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);font-size:.82rem;padding:7px 12px" onclick="addAlertRecipient()">+ Add number</button>
           <button class="btn btn-confirm" onclick="saveSaleAlerts()">Save</button>
-          <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border)" onclick="testSaleAlert()">Send test</button>
+          <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border)" onclick="testSaleAlert()">Send test to all</button>
         </div>
         <div id="saleAlertStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
       </div>
@@ -4753,24 +4741,78 @@ async function sendMassEmail() {
 }
 
 // ─── Sale text alerts ───────────────────────────────────────────────────────
+const SMS_CARRIERS = [
+  ['verizon', 'Verizon'], ['att', 'AT&T'], ['tmobile', 'T-Mobile'], ['sprint', 'Sprint'],
+  ['uscellular', 'US Cellular'], ['googlefi', 'Google Fi'], ['boost', 'Boost'],
+  ['cricket', 'Cricket'], ['metropcs', 'Metro by T-Mobile'], ['mint', 'Mint Mobile'],
+  ['visible', 'Visible'], ['xfinity', 'Xfinity Mobile'],
+];
+
+// Held here rather than read back out of the DOM, so adding or removing a row
+// can't lose what was typed in the others.
+let alertRecipients = [];
+
 function refreshSaleAlertState() {
-  const el = document.getElementById('settingsAlertPhone');
+  const el = document.getElementById('alertRecipients');
   if (!el) return;
-  el.value = storeSettings.sale_alert_phone || '';
-  document.getElementById('settingsAlertCarrier').value = storeSettings.sale_alert_carrier || '';
+  let list = [];
+  try {
+    const parsed = JSON.parse(storeSettings.sale_alert_recipients || '[]');
+    if (Array.isArray(parsed)) list = parsed;
+  } catch (_) { /* fall back to the single number below */ }
+  // A company set up before multiple numbers existed has just the one.
+  if (!list.length && storeSettings.sale_alert_phone) {
+    list = [{ phone: storeSettings.sale_alert_phone, carrier: storeSettings.sale_alert_carrier || '' }];
+  }
+  alertRecipients = list.map(r => ({ phone: r.phone || '', carrier: r.carrier || '' }));
+  if (!alertRecipients.length) alertRecipients = [{ phone: '', carrier: '' }];
   document.getElementById('settingsAlertEnabled').checked = !!Number(storeSettings.sale_alert_enabled);
+  renderAlertRecipients();
+}
+
+function renderAlertRecipients() {
+  const el = document.getElementById('alertRecipients');
+  if (!el) return;
+  el.innerHTML = alertRecipients.map((r, i) => `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-family:system-ui,sans-serif;font-size:.85rem">
+      <input type="tel" value="${escapeHtml(r.phone)}" placeholder="Mobile number"
+             oninput="alertRecipients[${i}].phone = this.value"
+             style="width:170px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+      <select onchange="alertRecipients[${i}].carrier = this.value"
+              style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;background:var(--white)">
+        <option value="">Carrier…</option>
+        ${SMS_CARRIERS.map(([v, n]) => `<option value="${v}"${r.carrier === v ? ' selected' : ''}>${n}</option>`).join('')}
+      </select>
+      ${alertRecipients.length > 1
+        ? `<button type="button" onclick="removeAlertRecipient(${i})" title="Remove" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:1.1rem;line-height:1;padding:0 2px">&times;</button>`
+        : ''}
+    </div>`).join('');
+}
+
+function addAlertRecipient() {
+  alertRecipients.push({ phone: '', carrier: '' });
+  renderAlertRecipients();
+}
+
+function removeAlertRecipient(i) {
+  alertRecipients.splice(i, 1);
+  if (!alertRecipients.length) alertRecipients = [{ phone: '', carrier: '' }];
+  renderAlertRecipients();
+}
+
+// Complete rows only — a half-filled one would silently never receive anything.
+function usableAlertRecipients() {
+  return alertRecipients.filter(r => String(r.phone).replace(/\D/g, '').length >= 10 && r.carrier);
 }
 
 async function saveSaleAlerts() {
   const statusEl = document.getElementById('saleAlertStatus');
-  const phone = document.getElementById('settingsAlertPhone').value.trim();
-  const carrier = document.getElementById('settingsAlertCarrier').value;
   const enabled = document.getElementById('settingsAlertEnabled').checked;
-  // Turning it on without somewhere to send is the one combination that would
-  // silently do nothing, so catch it here rather than at the first sale.
-  if (enabled && (phone.replace(/\D/g, '').length < 10 || !carrier)) {
+  const usable = usableAlertRecipients();
+  const partial = alertRecipients.filter(r => (r.phone || r.carrier) && !usable.includes(r)).length;
+  if (enabled && !usable.length) {
     statusEl.style.color = 'var(--danger)';
-    statusEl.textContent = 'Enter a 10-digit mobile number and pick a carrier before switching alerts on.';
+    statusEl.textContent = 'Add a 10-digit mobile number with its carrier before switching alerts on.';
     return;
   }
   statusEl.style.color = 'var(--mid)';
@@ -4778,13 +4820,23 @@ async function saveSaleAlerts() {
   try {
     const resp = await fetch(`${API}/api/pos/settings`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ sale_alert_phone: phone, sale_alert_carrier: carrier, sale_alert_enabled: enabled ? 1 : 0 }),
+      body: JSON.stringify({
+        sale_alert_recipients: JSON.stringify(usable),
+        sale_alert_enabled: enabled ? 1 : 0,
+        // Keep the original single fields in step with the first recipient so
+        // nothing reading them falls out of date.
+        sale_alert_phone: usable[0]?.phone || '',
+        sale_alert_carrier: usable[0]?.carrier || '',
+      }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Save failed');
     storeSettings = data.settings || storeSettings;
-    statusEl.style.color = 'var(--success)';
-    statusEl.textContent = enabled ? 'Saved. You\'ll get a text on each completed sale.' : 'Saved. Alerts are off.';
+    statusEl.style.color = partial ? '#b26a00' : 'var(--success)';
+    statusEl.textContent = (enabled
+      ? `Saved. ${usable.length} number${usable.length === 1 ? '' : 's'} will get a text on each sale.`
+      : 'Saved. Alerts are off.')
+      + (partial ? ` ${partial} incomplete row${partial === 1 ? ' was' : 's were'} not saved.` : '');
   } catch (err) {
     statusEl.style.color = 'var(--danger)';
     statusEl.textContent = err.message;
@@ -4799,8 +4851,12 @@ async function testSaleAlert() {
     const resp = await fetch(`${API}/api/pos/settings/test-sale-alert`, { method: 'POST', credentials: 'include' });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Could not send');
-    statusEl.style.color = 'var(--success)';
-    statusEl.textContent = `Sent to ${data.sent_to}. If nothing arrives in a minute or two, the carrier is probably blocking it — try a different carrier option.`;
+    const sent = data.sent_to || [];
+    const failed = data.failed || [];
+    statusEl.style.color = failed.length ? '#b26a00' : 'var(--success)';
+    statusEl.textContent = `Sent to ${sent.join(', ')}.`
+      + (failed.length ? ` Failed for ${failed.map(f => f.to).join(', ')}.` : '')
+      + ' If nothing arrives in a minute or two, the carrier is probably blocking it — try a different carrier option.';
   } catch (err) {
     statusEl.style.color = 'var(--danger)';
     statusEl.textContent = err.message;

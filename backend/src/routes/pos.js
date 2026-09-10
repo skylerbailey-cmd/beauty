@@ -922,12 +922,32 @@ const SMS_GATEWAYS = {
   mint: 'tmomail.net',
 };
 
-function smsAddressFor(settings) {
-  const digits = String(settings?.sale_alert_phone || '').replace(/\D/g, '');
+function smsAddressOf(phone, carrier) {
+  const digits = String(phone || '').replace(/\D/g, '');
   const ten = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits;
-  const gateway = SMS_GATEWAYS[String(settings?.sale_alert_carrier || '').toLowerCase()];
+  const gateway = SMS_GATEWAYS[String(carrier || '').toLowerCase()];
   if (ten.length !== 10 || !gateway) return null;
   return `${ten}@${gateway}`;
+}
+
+// Every valid recipient, de-duplicated. Falls back to the original single
+// phone/carrier fields for a company saved before the list existed.
+function smsAddressesFor(settings) {
+  let list = [];
+  try {
+    const parsed = JSON.parse(settings?.sale_alert_recipients || '[]');
+    if (Array.isArray(parsed)) list = parsed;
+  } catch (_) { /* malformed list — fall through to the single fields */ }
+  if (!list.length && settings?.sale_alert_phone) {
+    list = [{ phone: settings.sale_alert_phone, carrier: settings.sale_alert_carrier }];
+  }
+  const seen = new Set();
+  const out = [];
+  for (const r of list) {
+    const addr = smsAddressOf(r?.phone, r?.carrier);
+    if (addr && !seen.has(addr)) { seen.add(addr); out.push(addr); }
+  }
+  return out;
 }
 
 // One line, kept short: a gateway splits anything much over 160 characters
@@ -950,13 +970,22 @@ async function sendSaleAlert(userId, tx) {
   try {
     const settings = await pgDb.getSettings(userId);
     if (!settings?.sale_alert_enabled) return;
-    const to = smsAddressFor(settings);
-    if (!to) return;
+    const addresses = smsAddressesFor(settings);
+    if (!addresses.length) return;
     const user = await getSendingUser(userId);
     if (!user?.refresh_token) return;   // Gmail not connected for this company
     // Gateways prepend the subject to the message, so leave it empty and put
     // everything in the body — otherwise the text arrives saying it twice.
-    await sendGmail(user, to, '', saleAlertText(tx, settings.store_name), 'text/plain');
+    const text = saleAlertText(tx, settings.store_name);
+    // One send each rather than a single message with several recipients, so
+    // one bad number can't stop everyone else getting theirs.
+    for (const to of addresses) {
+      try {
+        await sendGmail(user, to, '', text, 'text/plain');
+      } catch (err) {
+        console.error(`[pos] Sale alert to ${to} failed:`, err.message);
+      }
+    }
   } catch (err) {
     console.error('[pos] Sale alert failed (sale itself was fine):', err.message);
   }
@@ -967,20 +996,26 @@ async function sendSaleAlert(userId, tx) {
 router.post('/settings/test-sale-alert', async (req, res) => {
   const userId = req.session.userId;
   const settings = await pgDb.getSettings(userId);
-  const to = smsAddressFor(settings);
-  if (!to) {
-    return res.status(400).json({ error: 'Enter a 10-digit mobile number and pick a carrier first.' });
+  const addresses = smsAddressesFor(settings);
+  if (!addresses.length) {
+    return res.status(400).json({ error: 'Add a 10-digit mobile number and pick a carrier first.' });
   }
   const user = await getSendingUser(userId);
   if (!user?.refresh_token) {
     return res.status(403).json({ error: 'Gmail is not connected for this company. Connect it on the Welcome Emails page first.' });
   }
-  try {
-    await sendGmail(user, to, '', `Test from ${settings.store_name || 'SkySale'} — sale alerts are working.`, 'text/plain');
-    res.json({ ok: true, sent_to: to });
-  } catch (err) {
-    res.status(500).json({ error: 'Could not send: ' + err.message });
+  // Report per recipient: with several numbers, "it failed" isn't much use
+  // without knowing which one.
+  const text = `Test from ${settings.store_name || 'SkySale'} — sale alerts are working.`;
+  const sent = [], failed = [];
+  for (const to of addresses) {
+    try { await sendGmail(user, to, '', text, 'text/plain'); sent.push(to); }
+    catch (err) { failed.push({ to, error: err.message }); }
   }
+  if (!sent.length) {
+    return res.status(500).json({ error: 'Could not send: ' + (failed[0]?.error || 'unknown error'), failed });
+  }
+  res.json({ ok: true, sent_to: sent, failed });
 });
 
 // ─── Email Receipt ─────────────────────────────────────────────────────────
