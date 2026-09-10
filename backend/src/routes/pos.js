@@ -1016,6 +1016,8 @@ router.post('/transactions/:id/welcome', async (req, res) => {
       customerName,
       selectedProductIds,
       userId,
+      // Sign the email with the store the customer actually bought from.
+      storeName: (await pgDb.getSettings(userId))?.store_name,
     }));
   } catch (err) {
     return res.status(400).json({ error: err.message });

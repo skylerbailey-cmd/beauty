@@ -892,7 +892,7 @@ const TIPS_BANK = [
 // Build the personalized welcome email HTML for a set of products.
 // Shared by the /generate route and the POS welcome-email endpoint.
 // Throws an Error (with a user-friendly message) on invalid input.
-function generateWelcomeEmailBody({ customerEmail, customerName, selectedProductIds: rawProductIds, includeSuggestions, userId }) {
+function generateWelcomeEmailBody({ customerEmail, customerName, selectedProductIds: rawProductIds, includeSuggestions, userId, storeName }) {
   // A bundle isn't a real product — swap it for the items it stands for.
   const selectedProductIds = expandBundles(rawProductIds);
 
@@ -906,15 +906,20 @@ function generateWelcomeEmailBody({ customerEmail, customerName, selectedProduct
     throw new Error('At least one product must be selected');
   }
 
-  // Get company name and theme from session user
-  let companyName = 'our store';
+  // What the customer should see us called: the STORE name they bought from,
+  // which is also what's printed on their receipt. The account's company name
+  // is the login identity and can be something else entirely (a holding
+  // company), so it's only a fallback. Passed in because this function is
+  // synchronous and the store name lives in Postgres.
+  let companyName = String(storeName || '').trim();
   let userTheme = 'rose';
   if (userId) {
     const { getUser } = require('../db');
     const user = getUser(userId);
-    if (user?.company_name) companyName = user.company_name;
+    if (!companyName && user?.company_name) companyName = user.company_name;
     if (user?.theme) userTheme = user.theme;
   }
+  if (!companyName) companyName = 'our store';
   const tc = EMAIL_THEMES[userTheme] || EMAIL_THEMES.rose;
 
   // Filter products by user's selected brands
@@ -1231,9 +1236,12 @@ function generateWelcomeEmailBody({ customerEmail, customerName, selectedProduct
 }
 
 // POST /api/welcome/generate — build the personalized welcome email preview
-router.post('/generate', (req, res) => {
+router.post('/generate', async (req, res) => {
   try {
-    const result = generateWelcomeEmailBody({ ...req.body, userId: req.session?.userId });
+    const settings = req.session?.userId ? await pgDb.getSettings(req.session.userId) : null;
+    const result = generateWelcomeEmailBody({
+      ...req.body, userId: req.session?.userId, storeName: settings?.store_name,
+    });
     res.json({
       success: true,
       customerEmail: result.customerEmail,
