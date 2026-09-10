@@ -1480,29 +1480,50 @@ function payarcChargeNet(c) {
   return Math.round((base - refunded) * 100) / 100;
 }
 
-// Charges in a date range, per local day. Pages newest-first and stops once it
-// runs past the start of the range, so a long history doesn't get pulled.
+// Charges in a date range, bucketed by local day.
+//
+// Pages until the pagination metadata says there is nothing left. It does NOT
+// stop early on seeing a charge older than the range: that would assume the
+// API returns newest first, and if it returns oldest first the very first page
+// ends the walk and every day reports $0.
+//
+// Reports what it saw (pages, totals, the dates it found, a sample record) so
+// an empty result can be told apart from a mapping that didn't match.
 async function fetchPayarcRange(settings, from, to, tz) {
   const byDate = {};
-  let rawCount = 0;
-  let sample = null;
-  let page = 1;
-  const MAX_PAGES = 40; // ~4000 charges; a guard, not an expected limit
+  const diag = {
+    pages: 0, charges_seen: 0, in_range: 0, dated: 0, undated: 0,
+    earliest: null, latest: null, sample: null, truncated: false, list_key: null,
+  };
+  const MAX_PAGES = 40; // ~4000 charges
 
-  while (page <= MAX_PAGES) {
+  for (let page = 1; page <= MAX_PAGES; page++) {
     const r = await payarcGet(settings, `/v1/charges?limit=100&page=${page}`);
-    if (!r.ok) return { ok: false, error: r.error, status: r.status, byDate, raw_count: rawCount, sample };
-    const list = Array.isArray(r.data?.data) ? r.data.data : [];
+    if (!r.ok) return { ok: false, error: r.error, status: r.status, byDate, diag };
+
+    // Don't assume the envelope — take whichever key holds the array.
+    let list = [];
+    if (Array.isArray(r.data?.data)) { list = r.data.data; diag.list_key = 'data'; }
+    else if (Array.isArray(r.data)) { list = r.data; diag.list_key = '(root array)'; }
+    else if (Array.isArray(r.data?.charges)) { list = r.data.charges; diag.list_key = 'charges'; }
+    else if (r.data && typeof r.data === 'object') {
+      const arrKey = Object.keys(r.data).find(k => Array.isArray(r.data[k]));
+      if (arrKey) { list = r.data[arrKey]; diag.list_key = arrKey; }
+    }
+
+    diag.pages = page;
     if (!list.length) break;
 
-    let sawOlderThanRange = false;
     for (const c of list) {
-      rawCount++;
-      if (!sample) sample = c;
+      diag.charges_seen++;
+      if (!diag.sample) diag.sample = c;
       const day = payarcDate(c, tz);
-      if (!day) continue;
-      if (day < from) { sawOlderThanRange = true; continue; }
-      if (day > to) continue;
+      if (!day) { diag.undated++; continue; }
+      diag.dated++;
+      if (!diag.earliest || day < diag.earliest) diag.earliest = day;
+      if (!diag.latest || day > diag.latest) diag.latest = day;
+      if (day < from || day > to) continue;
+      diag.in_range++;
 
       const net = payarcChargeNet(c);
       if (!byDate[day]) byDate[day] = { total: 0, sales: 0, credits: 0, sale_count: 0, credit_count: 0, txns: 0 };
@@ -1513,12 +1534,11 @@ async function fetchPayarcRange(settings, from, to, tz) {
     }
 
     const pg = r.data?.meta?.pagination;
-    if (sawOlderThanRange) break;               // past the range, newest-first
     if (pg && pg.current_page >= pg.total_pages) break;
     if (!pg && list.length < 100) break;
-    page++;
+    if (page === MAX_PAGES) diag.truncated = true;
   }
-  return { ok: true, byDate, raw_count: rawCount, sample };
+  return { ok: true, byDate, diag };
 }
 
 // ─── Maverick Batch Reconciliation ──────────────────────────────────────────
@@ -1979,12 +1999,10 @@ router.get('/reconciliation-audit', async (req, res) => {
     for (const [d, v] of Object.entries(merchantByDate)) byProcessor.maverick[d] = Math.round(v.total * 100) / 100;
   }
   let payarcError = null;
-  let payarcRaw = 0;
-  let payarcSample = null;
+  let payarcDiag = null;
   if (hasPayarc) {
     const pr = await fetchPayarcRange(settings, from, to, tz);
-    payarcRaw = pr.raw_count;
-    payarcSample = pr.sample;
+    payarcDiag = pr.diag;
     if (!pr.ok) {
       payarcError = pr.error;
     } else {
@@ -1999,8 +2017,8 @@ router.get('/reconciliation-audit', async (req, res) => {
         merchantByDate[day].credit_count += v.credit_count;
         merchantByDate[day].txns += v.txns;
       }
-      totalRawCount += pr.raw_count;
-      if (!sampleRecord) sampleRecord = pr.sample;
+      totalRawCount += pr.diag.charges_seen;
+      if (!sampleRecord) sampleRecord = pr.diag.sample;
     }
   }
 
@@ -2103,8 +2121,7 @@ router.get('/reconciliation-audit', async (req, res) => {
   const processors = [];
   if (hasMaverick) processors.push('Maverick');
   if (hasPayarc) processors.push('Payarc');
-  debug.payarc_charge_count = payarcRaw;
-  if (payarcSample) debug.payarc_sample = payarcSample;
+  if (payarcDiag) debug.payarc = payarcDiag;
 
   res.json({
     configured: true, from, to, days, totals, dba_id: usedDbaId,
