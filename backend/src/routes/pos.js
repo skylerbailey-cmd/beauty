@@ -1138,10 +1138,49 @@ router.post('/reports/payroll', async (req, res) => {
   if (!employee || employee.role !== 'manager') {
     return res.status(403).json({ error: 'A manager name and PIN are needed to see payroll.' });
   }
-  if (!/^\d{4}-\d{2}-(01|15)$/.test(String(payday || ''))) {
-    return res.status(400).json({ error: 'Pick a payday — they fall on the 1st and the 15th.' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) {
+    return res.status(400).json({ error: 'Pick a payday.' });
   }
-  res.json(await pgDb.payrollForPayday(scopeIds(req), payday));
+  const settings = await pgDb.getSettings(req.session.userId);
+  res.json(await pgDb.payrollForPayday(scopeIds(req), payday, settings));
+});
+
+// Mark a payday as paid (or reopen it). Once paid its figures stop moving —
+// a dispute closing afterwards lands on the next paycheck instead.
+router.post('/reports/payroll/paid', async (req, res) => {
+  const { name, pin, payday, paid } = req.body;
+  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
+  if (!employee || employee.role !== 'manager') {
+    return res.status(403).json({ error: 'Only a manager can close off a payday.' });
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.status(400).json({ error: 'Pick a payday.' });
+  res.json(await pgDb.setPayrollPaid(req.session.userId, payday, !!paid, employee.name));
+});
+
+router.post('/reports/payroll/adjustment', async (req, res) => {
+  const { name, pin, payday, employee_id, amount, note } = req.body;
+  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
+  if (!employee || employee.role !== 'manager') {
+    return res.status(403).json({ error: 'Only a manager can adjust a paycheck.' });
+  }
+  const amt = Number(amount);
+  if (!isFinite(amt) || amt === 0) return res.status(400).json({ error: 'Enter an amount — positive to add, negative to deduct.' });
+  if (!employee_id) return res.status(400).json({ error: 'Pick who this is for.' });
+  const settings = await pgDb.getSettings(req.session.userId);
+  const run = await pgDb.payrollForPayday(scopeIds(req), payday, settings);
+  if (run.paid) return res.status(400).json({ error: 'That payday has already been paid. Reopen it first, or put this on the next one.' });
+  res.json(await pgDb.addPayrollAdjustment(req.session.userId, payday, parseInt(employee_id), amt, note, employee.name));
+});
+
+router.delete('/reports/payroll/adjustment/:id', async (req, res) => {
+  const { name, pin } = req.body;
+  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
+  if (!employee || employee.role !== 'manager') {
+    return res.status(403).json({ error: 'Only a manager can adjust a paycheck.' });
+  }
+  const ok = await pgDb.deletePayrollAdjustment(req.session.userId, parseInt(req.params.id));
+  if (!ok) return res.status(404).json({ error: 'Adjustment not found' });
+  res.json({ ok: true });
 });
 
 // The recent paydays to offer in the picker, newest first.
@@ -1150,7 +1189,11 @@ router.get('/reports/paydays', async (req, res) => {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: settings.timezone || 'America/Los_Angeles' });
   const [y, m] = today.split('-').map(Number);
   const from = `${y - 1}-${String(m).padStart(2, '0')}-01`;
-  res.json({ paydays: pgDb.paydaysBetween(from, today).map(p => ({ payday: p, period: pgDb.periodForPayday(p) })) });
+  const sched = pgDb.scheduleFrom(settings);
+  res.json({
+    paydays: pgDb.paydaysBetween(from, today, sched)
+      .map(p => ({ payday: p, period: pgDb.periodForPayday(p, sched) })),
+  });
 });
 
 router.get('/reports/products', async (req, res) => {

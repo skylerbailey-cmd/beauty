@@ -658,6 +658,7 @@
             <input type="file" id="importFile" accept=".csv" style="display:none" onchange="handleImportFile(this)">
             <button class="btn" id="importCsvBtn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:7px 14px;font-size:.82rem" onclick="document.getElementById('importFile').click()">Import CSV</button>
             <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportTransactionsCSV()">Export CSV</button>
+            <button class="btn" id="chargebackSelectedBtn" style="background:var(--gold);color:#fff;padding:7px 14px;font-size:.82rem;display:none" onclick="openBulkChargeback()">Set Chargeback Status</button>
             <button class="btn" id="deleteSelectedTxBtn" style="background:var(--danger);color:#fff;padding:7px 14px;font-size:.82rem;display:none" onclick="startBulkDeleteTransactions()">Delete Selected</button>
           </div>
         </div>
@@ -961,6 +962,29 @@
         </div>
         <div id="maverickDbaList" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"></div>
         <div id="maverickSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
+      </div>
+
+      <!-- Pay schedule — drives the Payroll section in Reports -->
+      <div class="report-card" style="margin-top:16px">
+        <h3>Pay Schedule</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
+          When payday falls and which period it settles. Changing this re-dates every paycheck in Reports → Payroll.
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-family:system-ui,sans-serif;font-size:.85rem">
+          <label>Paydays:</label>
+          <select id="settingsPaydays" onchange="renderPayScheduleExample()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;background:var(--white)">
+            <option value="1,15">1st and 15th</option>
+            <option value="1">1st only (monthly)</option>
+          </select>
+          <label>Each payday covers:</label>
+          <select id="settingsPayrollLag" onchange="renderPayScheduleExample()" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;background:var(--white)">
+            <option value="previous">the period before the one that just ended</option>
+            <option value="ended">the period that just ended</option>
+          </select>
+          <button class="btn btn-confirm" onclick="savePaySchedule()">Save</button>
+        </div>
+        <div id="payScheduleExample" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);background:var(--cream);border-radius:8px;padding:10px 12px;margin-top:10px"></div>
+        <div id="payScheduleStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
       </div>
 
       <!-- Payarc connection (the processor for companies not on Maverick) -->
@@ -3408,12 +3432,39 @@ async function toggleChargeback(txId) {
   openChargebackModal(tx);
 }
 
+// Settle several disputes at once — the migration put every pre-existing
+// chargeback on 'pending', so they'd otherwise have to be closed one by one.
+// Reuses the same dialog; chargebackTargets holds the whole selection.
+function openBulkChargeback() {
+  const sales = [...selectedTxIds]
+    .map(id => histTransactions.find(t => t.id === id))
+    .filter(t => t && t.type === 'sale');
+  if (!sales.length) return;
+  chargebackTargets = sales;
+  chargebackTarget = null;
+  document.getElementById('cbReceipt').textContent = `${sales.length} sales`;
+  document.getElementById('cbSummary').textContent =
+    sales.map(t => t.receipt_number).slice(0, 6).join(', ') + (sales.length > 6 ? `, +${sales.length - 6} more` : '');
+  // Start from a shared status if they already agree, so re-saving a batch
+  // doesn't quietly reset them all to pending.
+  const statuses = [...new Set(sales.map(t => t.chargeback_status || 'pending'))];
+  document.getElementById('cbStatus').value = statuses.length === 1 ? statuses[0] : 'pending';
+  document.getElementById('cbClosedAt').value = '';
+  document.getElementById('cbNote').value = '';
+  document.getElementById('cbError').textContent = '';
+  document.getElementById('cbRemoveBtn').style.display = '';
+  updateChargebackForm();
+  document.getElementById('chargebackModal').classList.add('show');
+}
+
 // Marking a chargeback, or moving an existing one on. The status drives
 // commission (see the note in the dialog), so it's a proper form rather than a
 // confirm box.
 let chargebackTarget = null;
+let chargebackTargets = null;
 function openChargebackModal(tx) {
   chargebackTarget = tx;
+  chargebackTargets = null;   // single edit, not a batch
   document.getElementById('cbReceipt').textContent = tx.receipt_number;
   document.getElementById('cbSummary').textContent =
     `$${money(tx.total)} from ${tx.customer_name || 'this customer'} on ${new Date(tx.created_at).toLocaleDateString()}`;
@@ -3429,6 +3480,7 @@ function openChargebackModal(tx) {
 function closeChargebackModal() {
   document.getElementById('chargebackModal').classList.remove('show');
   chargebackTarget = null;
+  chargebackTargets = null;
 }
 
 // Only a closed dispute has a close date, and that date is what decides which
@@ -3446,8 +3498,9 @@ function updateChargebackForm() {
 }
 
 async function saveChargeback(remove) {
+  const batch = chargebackTargets;
   const tx = chargebackTarget;
-  if (!tx) return;
+  if (!tx && !(batch && batch.length)) return;
   const errEl = document.getElementById('cbError');
   errEl.textContent = '';
   const status = document.getElementById('cbStatus').value;
@@ -3457,26 +3510,33 @@ async function saveChargeback(remove) {
     errEl.textContent = 'Enter the date the dispute closed — it decides which paycheck this lands on.';
     return;
   }
-  try {
-    const resp = await fetch(`${API}/api/pos/transactions/${tx.id}/chargeback`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({
-        manager_name: txCreds.name, manager_pin: txCreds.pin,
-        charged_back: !remove, note, status, closed_at: status === 'pending' ? null : closedAt,
-      }),
-    });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error || 'Could not update the chargeback');
-    // Update in place so the list doesn't have to be refetched and re-scoped.
-    tx.charged_back = remove ? 0 : 1;
-    tx.chargeback_status = remove ? '' : status;
-    tx.chargeback_closed_at = (remove || status === 'pending') ? null : closedAt;
-    tx.charged_back_note = remove ? '' : note;
-    closeChargebackModal();
-    applyTxFilters();
-  } catch (err) {
-    errEl.textContent = err.message;
+  const list = batch && batch.length ? batch : [tx];
+  const failed = [];
+  for (const t of list) {
+    try {
+      const resp = await fetch(`${API}/api/pos/transactions/${t.id}/chargeback`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({
+          manager_name: txCreds.name, manager_pin: txCreds.pin,
+          charged_back: !remove, note, status, closed_at: status === 'pending' ? null : closedAt,
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Could not update');
+      // Update in place so the list doesn't have to be refetched and re-scoped.
+      t.charged_back = remove ? 0 : 1;
+      t.chargeback_status = remove ? '' : status;
+      t.chargeback_closed_at = (remove || status === 'pending') ? null : closedAt;
+      t.charged_back_note = remove ? '' : note;
+    } catch (err) {
+      failed.push(`${t.receipt_number}: ${err.message}`);
+    }
   }
+  applyTxFilters();
+  // Say which ones didn't take rather than closing on a partial success.
+  if (failed.length) { errEl.textContent = `${failed.length} of ${list.length} failed — ${failed[0]}`; return; }
+  chargebackTargets = null;
+  closeChargebackModal();
 }
 
 function viewReceipt(txId) {
@@ -3786,6 +3846,14 @@ function updateBulkDeleteUI() {
   const n = selectedTxIds.size;
   btn.style.display = canManage && n > 0 ? '' : 'none';
   btn.textContent = `Delete Selected (${n})`;
+  // Only sales can be disputed, so the chargeback action only offers itself
+  // when the selection actually contains some.
+  const cbBtn = document.getElementById('chargebackSelectedBtn');
+  if (cbBtn) {
+    const sales = [...selectedTxIds].filter(id => histTransactions.find(t => t.id === id)?.type === 'sale').length;
+    cbBtn.style.display = canManage && sales > 0 ? '' : 'none';
+    cbBtn.textContent = `Set Chargeback Status (${sales})`;
+  }
 }
 
 function startBulkDeleteTransactions() {
@@ -4433,6 +4501,56 @@ async function sendMassEmail() {
     statusEl.style.color = 'var(--danger)';
     statusEl.textContent = 'Failed: ' + err.message;
     btn.disabled = false;
+  }
+}
+
+// ─── Pay schedule ───────────────────────────────────────────────────────────
+function refreshPayScheduleState() {
+  const el = document.getElementById('settingsPaydays');
+  if (!el) return;
+  el.value = storeSettings.payroll_paydays || '1,15';
+  document.getElementById('settingsPayrollLag').value = storeSettings.payroll_lag || 'previous';
+  renderPayScheduleExample();
+}
+
+// Spell the rule out with real dates — "the period before the one that just
+// ended" is hard to hold in your head, a worked example isn't.
+function renderPayScheduleExample() {
+  const semi = document.getElementById('settingsPaydays').value.includes('15');
+  const lag = document.getElementById('settingsPayrollLag').value;
+  const lines = semi
+    ? (lag === 'previous'
+        ? ['worked 1–15 Sep  →  paid 1 Oct', 'worked 16–30 Sep  →  paid 15 Oct']
+        : ['worked 16–30 Sep  →  paid 1 Oct', 'worked 1–15 Oct  →  paid 15 Oct'])
+    : (lag === 'previous'
+        ? ['worked all of Aug  →  paid 1 Oct']
+        : ['worked all of Sep  →  paid 1 Oct']);
+  document.getElementById('payScheduleExample').innerHTML = lines.join('<br>');
+}
+
+async function savePaySchedule() {
+  const statusEl = document.getElementById('payScheduleStatus');
+  statusEl.style.color = 'var(--mid)';
+  statusEl.textContent = 'Saving…';
+  try {
+    const resp = await fetch(`${API}/api/pos/settings`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({
+        payroll_paydays: document.getElementById('settingsPaydays').value,
+        payroll_lag: document.getElementById('settingsPayrollLag').value,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Save failed');
+    storeSettings = data.settings || storeSettings;
+    statusEl.style.color = 'var(--success)';
+    statusEl.textContent = 'Saved. Payroll now uses this schedule.';
+    // The payday list and its periods are derived from this.
+    const sel = document.getElementById('payrollPayday');
+    if (sel) { sel.innerHTML = ''; loadPaydayOptions(); }
+  } catch (err) {
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = err.message;
   }
 }
 
@@ -5272,6 +5390,45 @@ function commissionRow(e) {
 }
 
 // ─── Payroll ────────────────────────────────────────────────────────────────
+let lastPayroll = null;
+
+// Every payroll write goes through here: same manager credentials that
+// unlocked the reports, and the view is reloaded so the totals on screen are
+// always what the server just computed rather than a local guess.
+async function payrollAction(path, body, method) {
+  try {
+    const resp = await fetch(`${API}/api/pos/reports/payroll/${path}`, {
+      method: method || 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ name: personalCreds.name, pin: personalCreds.pin, ...body }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Could not save');
+    await loadPayroll();
+  } catch (err) { alert(err.message); }
+}
+
+function setPayrollPaid(paid) {
+  const payday = document.getElementById('payrollPayday').value;
+  if (paid && !confirm(`Mark ${fmtPayday(payday)} as paid?\n\nIts figures stop moving — a dispute closing after this lands on the next payday instead.`)) return;
+  payrollAction('paid', { payday, paid });
+}
+
+function addPayrollAdjustment() {
+  const amount = parseFloat(document.getElementById('payAdjAmount').value);
+  const note = document.getElementById('payAdjNote').value.trim();
+  if (!isFinite(amount) || amount === 0) { alert('Enter an amount — positive to add, negative to deduct.'); return; }
+  payrollAction('adjustment', {
+    payday: document.getElementById('payrollPayday').value,
+    employee_id: document.getElementById('payAdjEmp').value,
+    amount, note,
+  });
+}
+
+function removePayrollAdjustment(id) {
+  if (!confirm('Remove this adjustment?')) return;
+  payrollAction('adjustment/' + id, {}, 'DELETE');
+}
+
 async function loadPaydayOptions() {
   const sel = document.getElementById('payrollPayday');
   if (!sel || sel.options.length) return; // already filled
@@ -5304,7 +5461,13 @@ async function loadPayroll() {
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Could not load payroll');
 
-    note.textContent = `Paid ${fmtPayday(data.payday)} — covering work from ${fmtPayday(data.period.start)} to ${fmtPayday(data.period.end)}.`;
+    lastPayroll = data;
+    note.innerHTML = `Covering work from ${fmtPayday(data.period.start)} to ${fmtPayday(data.period.end)}.`
+      + (data.paid
+        ? ` <b style="color:var(--success)">✓ Paid${data.paid_by ? ' by ' + escapeHtml(data.paid_by) : ''}</b> — figures are locked; anything closing now lands on the next payday.
+            <button class="btn" style="background:none;border:none;color:var(--rose);text-decoration:underline;padding:0;font:inherit;cursor:pointer" onclick="setPayrollPaid(false)">Reopen</button>`
+        : ` <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:4px 10px;font-size:.78rem" onclick="setPayrollPaid(true)">Mark as paid</button>`);
+
     const rows = (data.employees || []).filter(e => e.commission_earned !== 0 || e.adjustments.length);
     if (!rows.length) { body.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid)">Nothing owed for this period.</div>'; return; }
 
@@ -5317,7 +5480,10 @@ async function loadPayroll() {
         </div>
         ${e.adjustments.map(a => `
           <div style="display:flex;justify-content:space-between;padding-left:14px;color:${a.amount < 0 ? 'var(--danger)' : 'var(--success)'};font-size:.8rem;margin-top:3px">
-            <span>#${escapeHtml(String(a.receipt))} — ${escapeHtml(a.note)}</span>
+            <span>${a.receipt ? '#' + escapeHtml(String(a.receipt)) + ' — ' : ''}${escapeHtml(a.note)}${
+              a.kind === 'manual' && !data.paid
+                ? ` <button title="Remove this adjustment" onclick="removePayrollAdjustment(${a.id})" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:.9rem;line-height:1;padding:0 2px">&times;</button>`
+                : ''}</span>
             <span>${a.amount < 0 ? '−' : '+'}$${money(Math.abs(a.amount))}</span>
           </div>`).join('')}
         <div style="display:flex;justify-content:space-between;font-weight:700;margin-top:5px;border-top:1px dashed var(--border);padding-top:5px">
@@ -5325,7 +5491,17 @@ async function loadPayroll() {
         </div>
       </div>`).join('')
       + `<div style="display:flex;justify-content:space-between;font-family:system-ui,sans-serif;font-weight:700;font-size:.95rem;padding-top:10px">
-           <span>Total for this payday</span><span>$${money(grand)}</span></div>`;
+           <span>Total for this payday</span><span>$${money(grand)}</span></div>`
+      + (data.paid ? '' : `
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
+          <select id="payAdjEmp" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;background:var(--white)">
+            ${rows.map(e => `<option value="${e.employee_id}">${escapeHtml(e.employee_name)}</option>`).join('')}
+          </select>
+          <input type="number" id="payAdjAmount" step="0.01" placeholder="Amount" style="width:100px;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem">
+          <input type="text" id="payAdjNote" placeholder="What is it for?" style="flex:1;min-width:150px;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem">
+          <button class="btn btn-confirm" style="padding:6px 12px;font-size:.8rem" onclick="addPayrollAdjustment()">Add</button>
+          <span style="color:var(--mid)">negative to deduct</span>
+        </div>`);
   } catch (err) {
     body.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--danger)">${escapeHtml(err.message)}</div>`;
   }
@@ -5511,6 +5687,7 @@ async function loadStoreSettings() {
     updateCartTotals();
     refreshMaverickConnState();
     refreshPayarcConnState();
+    refreshPayScheduleState();
   } catch (_) {}
 }
 

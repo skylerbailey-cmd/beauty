@@ -282,6 +282,37 @@ async function initSchema() {
   // Anything already flagged before statuses existed is an open dispute.
   await migrate("UPDATE pos_transactions SET chargeback_status = 'pending' WHERE charged_back = 1 AND COALESCE(chargeback_status,'') = ''");
 
+  // ─── Payroll ──────────────────────────────────────────────────────────────
+  // How often payday falls, and which period it pays for. 'previous' = the
+  // half-month before the one that just ended (worked 1–15 Sep, paid 1 Oct);
+  // 'ended' = the half-month that just ended (worked 16–30 Sep, paid 1 Oct).
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS payroll_paydays TEXT DEFAULT '1,15'");
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS payroll_lag TEXT DEFAULT 'previous'");
+
+  // A payday that's been paid out. Its figures stop moving: a dispute closing
+  // afterwards lands on the next paycheck that hasn't gone out yet.
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_payroll_runs (
+    user_id TEXT NOT NULL,
+    payday DATE NOT NULL,
+    paid_at TIMESTAMPTZ DEFAULT NOW(),
+    paid_by TEXT DEFAULT '',
+    PRIMARY KEY (user_id, payday)
+  )`);
+
+  // Manual plus/minus on someone's paycheck — a bonus, a correction, an
+  // advance — so the payroll total is the real amount to hand over.
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_payroll_adjustments (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    payday DATE NOT NULL,
+    employee_id INTEGER NOT NULL REFERENCES pos_employees(id),
+    amount REAL NOT NULL DEFAULT 0,
+    note TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    created_by TEXT DEFAULT ''
+  )`);
+  await migrate('CREATE INDEX IF NOT EXISTS idx_pg_payroll_adj ON pos_payroll_adjustments(user_id, payday)');
+
   // Batch reconciliation: which days have been reviewed, and audit date ranges
   // saved to come back to. Only the range is stored for a saved audit — it's
   // re-run against live data on open, so it reflects later edits to the
@@ -949,33 +980,85 @@ const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
 // The three states a dispute can be in. Anything else means "not disputed".
 const CHARGEBACK_STATUSES = ['pending', 'won', 'lost'];
 
-// The work period a payday pays for.
-function periodForPayday(payday) {
-  const [y, m, d] = payday.split('-').map(Number);
-  // Step back one month; the 1st pays the first half of it, the 15th the second.
-  const py = m === 1 ? y - 1 : y;
-  const pm = m === 1 ? 12 : m - 1;
-  return d === 1
-    ? { start: `${py}-${pad(pm)}-01`, end: `${py}-${pad(pm)}-15` }
-    : { start: `${py}-${pad(pm)}-16`, end: `${py}-${pad(pm)}-${pad(lastDayOfMonth(py, pm))}` };
+// The pay schedule, from settings. Two paydays a month (the 1st and the 15th)
+// is the default; 'monthly' pays once, on the 1st. `lag` says which period a
+// payday settles: 'previous' skips a period so there's time to run payroll,
+// 'ended' pays the period that just closed.
+const DEFAULT_SCHEDULE = { semiMonthly: true, lag: 'previous' };
+function scheduleFrom(settings) {
+  if (!settings) return DEFAULT_SCHEDULE;
+  return {
+    semiMonthly: String(settings.payroll_paydays || '1,15').includes('15'),
+    lag: settings.payroll_lag === 'ended' ? 'ended' : 'previous',
+  };
 }
 
-// The payday that pays for the half-month containing this date — the inverse
-// of periodForPayday.
-function paydayForDate(date) {
-  const [y, m, d] = date.split('-').map(Number);
-  const ny = m === 12 ? y + 1 : y;
-  const nm = m === 12 ? 1 : m + 1;
-  return d <= 15 ? `${ny}-${pad(nm)}-01` : `${ny}-${pad(nm)}-15`;
+// Half-months of a given month, or the whole month when paying monthly.
+function periodsOfMonth(y, m, sched) {
+  if (!sched.semiMonthly) {
+    return [{ start: `${y}-${pad(m)}-01`, end: `${y}-${pad(m)}-${pad(lastDayOfMonth(y, m))}` }];
+  }
+  return [
+    { start: `${y}-${pad(m)}-01`, end: `${y}-${pad(m)}-15` },
+    { start: `${y}-${pad(m)}-16`, end: `${y}-${pad(m)}-${pad(lastDayOfMonth(y, m))}` },
+  ];
+}
+
+// Every period end, oldest first, walking back from a payday. Index 0 is the
+// period that closed most recently before it.
+function periodsBefore(payday, sched, count) {
+  const [y, m] = payday.split('-').map(Number);
+  const out = [];
+  let yy = y, mm = m;
+  while (out.length < count + 2) {
+    mm -= 1; if (mm === 0) { mm = 12; yy -= 1; }
+    out.push(...periodsOfMonth(yy, mm, sched).reverse());
+  }
+  // A payday on the 15th also comes after the 1st–15th period of its own month.
+  const [, , d] = payday.split('-').map(Number);
+  if (sched.semiMonthly && d !== 1) {
+    out.unshift(periodsOfMonth(y, m, sched)[0]);
+  }
+  return out;
+}
+
+// The work period a payday pays for.
+function periodForPayday(payday, sched = DEFAULT_SCHEDULE) {
+  const skip = sched.lag === 'previous' ? 1 : 0;
+  return periodsBefore(payday, sched, skip + 1)[skip];
+}
+
+// The payday that pays for the period containing this date — the inverse of
+// periodForPayday. Walks forward until a payday whose period covers it.
+function paydayForDate(date, sched = DEFAULT_SCHEDULE) {
+  let [y, m] = date.split('-').map(Number);
+  for (let i = 0; i < 6; i++) {
+    for (const d of (sched.semiMonthly ? [1, 15] : [1])) {
+      const payday = `${y}-${pad(m)}-${pad(d)}`;
+      if (payday <= date) continue;
+      const p = periodForPayday(payday, sched);
+      if (date >= p.start && date <= p.end) return payday;
+    }
+    m += 1; if (m === 13) { m = 1; y += 1; }
+  }
+  return null;
+}
+
+// The payday immediately after this one.
+function nextPayday(payday, sched = DEFAULT_SCHEDULE) {
+  let [y, m, d] = payday.split('-').map(Number);
+  if (sched.semiMonthly && d === 1) return `${y}-${pad(m)}-15`;
+  m += 1; if (m === 13) { m = 1; y += 1; }
+  return `${y}-${pad(m)}-01`;
 }
 
 // Every payday from `after` up to and including `upTo`, most recent first.
-function paydaysBetween(after, upTo) {
+function paydaysBetween(after, upTo, sched = DEFAULT_SCHEDULE) {
   const out = [];
   let [y, m] = upTo.split('-').map(Number);
   for (let i = 0; i < 60; i++) {
-    for (const d of ['15', '01']) {
-      const p = `${y}-${pad(m)}-${d}`;
+    for (const d of (sched.semiMonthly ? [15, 1] : [1])) {
+      const p = `${y}-${pad(m)}-${pad(d)}`;
       if (p > upTo) continue;
       if (p <= after) return out;
       out.push(p);
@@ -993,9 +1076,26 @@ function paydaysBetween(after, upTo) {
 // covering the day it closed. A dispute that's LOST after its sale was already
 // paid out is deducted from that same paycheck, since the money has to come
 // back somehow.
-async function payrollForPayday(userId, payday) {
+async function payrollForPayday(userId, payday, settings) {
   const ids = asCompanyIds(userId);
-  const period = periodForPayday(payday);
+  const sched = scheduleFrom(settings);
+  const period = periodForPayday(payday, sched);
+
+  // Paydays already handed out. Their figures are settled, so anything that
+  // happens afterwards has to land on a paycheck that hasn't gone out yet.
+  const paidRuns = (await query(
+    `SELECT payday::text AS payday, paid_at, paid_by FROM pos_payroll_runs WHERE user_id = ANY($1::text[])`,
+    [ids])).rows;
+  const paidSet = new Set(paidRuns.map(r => r.payday));
+  const thisRun = paidRuns.find(r => r.payday === payday) || null;
+
+  // Where an amount actually lands: the paycheck for `date`, unless that one
+  // has already gone out, in which case the next one that hasn't.
+  const landsOn = (date) => {
+    let p = paydayForDate(date, sched);
+    for (let i = 0; i < 24 && p && paidSet.has(p); i++) p = nextPayday(p, sched);
+    return p;
+  };
 
   // Every sale in the period, disputed or not. Disputed ones are then removed
   // by a visible "withheld" line rather than being left out here, so the
@@ -1050,7 +1150,7 @@ async function payrollForPayday(userId, payday) {
   for (const d of disputes) {
     const commission = round2(Number(d.share) * (Number(d.commission_rate) || 0) / 100);
     if (commission === 0) continue;
-    const naturalPayday = paydayForDate(d.sale_date);
+    const naturalPayday = paydayForDate(d.sale_date, sched);
     // Withheld only if the dispute was raised before that paycheck went out;
     // otherwise the commission was already paid and can only be clawed back.
     const wasPaid = !d.marked_date || d.marked_date > naturalPayday;
@@ -1066,7 +1166,9 @@ async function payrollForPayday(userId, payday) {
       continue;
     }
 
-    const closePayday = d.closed_date ? paydayForDate(d.closed_date) : null;
+    // A dispute closing after its paycheck has gone out moves to the next one
+    // still open — a settled paycheck can't be rewritten.
+    const closePayday = d.closed_date ? landsOn(d.closed_date) : null;
     if (closePayday !== payday) {
       // Still show the original withholding on the sale's own paycheck.
       if (!wasPaid && naturalPayday === payday) {
@@ -1087,13 +1189,58 @@ async function payrollForPayday(userId, payday) {
     }
   }
 
+  // Manual lines added by hand — bonuses, corrections, advances.
+  const manual = (await query(
+    `SELECT a.id, a.employee_id, a.amount, a.note, e.name AS employee_name, e.commission_rate
+     FROM pos_payroll_adjustments a JOIN pos_employees e ON e.id = a.employee_id
+     WHERE a.user_id = ANY($1::text[]) AND a.payday = $2::date
+     ORDER BY a.created_at`, [ids, payday])).rows;
+  for (const a of manual) {
+    const r = row(a.employee_id, a.employee_name, a.commission_rate);
+    r.adjustments.push({ kind: 'manual', id: a.id, receipt: null, amount: round2(a.amount), note: a.note || 'Manual adjustment' });
+  }
+
   const rows = [...byEmp.values()];
   for (const r of rows) {
     r.adjustment_total = round2(r.adjustments.reduce((s, a) => s + a.amount, 0));
     r.total = round2(r.commission_earned + r.adjustment_total);
   }
   rows.sort((a, b) => b.total - a.total || String(a.employee_name).localeCompare(b.employee_name));
-  return { payday, period, employees: rows };
+  return {
+    payday, period, employees: rows,
+    paid: !!thisRun,
+    paid_at: thisRun ? thisRun.paid_at : null,
+    paid_by: thisRun ? thisRun.paid_by : '',
+    schedule: sched,
+  };
+}
+
+// Mark a payday paid, or reopen it.
+async function setPayrollPaid(userId, payday, paid, by) {
+  if (paid) {
+    await query(
+      `INSERT INTO pos_payroll_runs (user_id, payday, paid_at, paid_by) VALUES ($1, $2::date, NOW(), $3)
+       ON CONFLICT (user_id, payday) DO UPDATE SET paid_at = NOW(), paid_by = EXCLUDED.paid_by`,
+      [asCompanyIds(userId)[0], payday, by || '']);
+  } else {
+    await query('DELETE FROM pos_payroll_runs WHERE user_id = ANY($1::text[]) AND payday = $2::date',
+      [asCompanyIds(userId), payday]);
+  }
+  return { ok: true, paid: !!paid };
+}
+
+async function addPayrollAdjustment(userId, payday, employeeId, amount, note, by) {
+  const row = (await query(
+    `INSERT INTO pos_payroll_adjustments (user_id, payday, employee_id, amount, note, created_by)
+     VALUES ($1, $2::date, $3, $4, $5, $6) RETURNING id`,
+    [asCompanyIds(userId)[0], payday, employeeId, round2(amount), note || '', by || ''])).rows[0];
+  return { ok: true, id: row.id };
+}
+
+async function deletePayrollAdjustment(userId, id) {
+  const r = await query('DELETE FROM pos_payroll_adjustments WHERE id = $1 AND user_id = ANY($2::text[])',
+    [id, asCompanyIds(userId)]);
+  return r.rowCount > 0;
 }
 
 // Flag (or clear) a sale as charged back. Scoped by user_id like every other
@@ -1624,7 +1771,7 @@ async function getSettings(userId) {
 }
 
 async function updateSettings(userId, fields) {
-  const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'payarc_token', 'payarc_merchant_id', 'payarc_env'];
+  const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'payarc_token', 'payarc_merchant_id', 'payarc_env', 'payroll_paydays', 'payroll_lag'];
   const sets = [];
   const params = [];
   let idx = 1;
@@ -2053,8 +2200,13 @@ module.exports = {
   updateTransaction,
   deleteTransaction,
   payrollForPayday,
+  setPayrollPaid,
+  addPayrollAdjustment,
+  deletePayrollAdjustment,
   periodForPayday,
+  paydayForDate,
   paydaysBetween,
+  scheduleFrom,
   findCustomerByContact,
   findRecentDuplicate,
   setTransactionChargeback,
