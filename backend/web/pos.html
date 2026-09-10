@@ -733,7 +733,7 @@
           <div id="rptRangeNote" style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-bottom:8px"></div>
           <div style="font-family:system-ui,sans-serif;font-size:.75rem;color:var(--mid);margin-bottom:8px">A return is counted against the day the item was originally sold, not the day it came back.</div>
           <table class="report-table">
-            <thead><tr><th>Employee</th><th>Sales</th><th>Sales $</th><th>Returns $</th><th>Net Sales $</th><th>Charged Back</th><th>Commission</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Sales</th><th>Sales $</th><th>Returns $</th><th>Net Sales $</th><th>Charged Back</th><th>Counts As</th><th>Commission</th></tr></thead>
             <tbody id="empPersonalBody"></tbody>
           </table>
         </div>
@@ -764,7 +764,7 @@
         <div class="report-card">
           <h3>Employee Commissions &amp; Sales</h3>
           <table class="report-table">
-            <thead><tr><th>Employee</th><th>Sales</th><th>Sales $</th><th>Returns $</th><th>Net Sales $</th><th>Charged Back</th><th>Commission</th></tr></thead>
+            <thead><tr><th>Employee</th><th>Sales</th><th>Sales $</th><th>Returns $</th><th>Net Sales $</th><th>Charged Back</th><th>Counts As</th><th>Commission</th></tr></thead>
             <tbody id="empReportBody"></tbody>
           </table>
         </div>
@@ -5579,10 +5579,16 @@ function renderLeaderboard(employees, containerId) {
 // Render the manager-only leaderboard + commissions table from the last report
 // Commission earned = credited amount × the employee's commission % from
 // Settings (unless a special commission plan already applied it server-side).
+// What commission is earned on: net sales less any charged-back share. A
+// disputed sale stops paying, so this is the figure the rate applies to.
+function commissionBase(e) {
+  return e.net_after_chargebacks != null ? Number(e.net_after_chargebacks) : Number(e.net_total) || 0;
+}
+
 function commissionAmt(e, amount) {
   // An employee on a commission plan has their payout computed server-side
-  // (tiered rates depend on each day's sales), so use that figure. Everyone
-  // else earns their flat rate on the credited amount.
+  // (tiered rates depend on each day's sales, and it deducts disputes the same
+  // way), so use that figure. Everyone else earns their flat rate.
   if (e.has_special_plan && e.commission_total != null) return Number(e.commission_total) || 0;
   const rate = Number(e.commission_rate) || 0;
   return (Number(amount) || 0) * rate / 100;
@@ -5600,10 +5606,11 @@ function commissionRow(e) {
       <td>$${money(Number(e.sales_total))}</td>
       <td>$${money(Number(e.returns_total))}</td>
       <td>$${money(Number(e.net_total))}</td>
-      <td>${Number(e.chargeback_count || 0) > 0
-        ? `<span style="color:var(--danger);font-weight:600" title="${e.chargeback_count} sale${Number(e.chargeback_count) === 1 ? '' : 's'} disputed and taken back — this is their credited share, and it is not deducted from the figures to the left">$${money(Number(e.chargeback_total || 0))}</span>`
+      <td>${Number(e.chargeback_total || 0) > 0
+        ? `<span style="color:var(--danger);font-weight:600" title="Their credited share of disputed sales — deducted before commission">−$${money(Number(e.chargeback_total || 0))}</span>`
         : '<span style="color:var(--mid)">—</span>'}</td>
-      <td style="font-weight:600">$${money(commissionAmt(e, e.net_total))}</td>
+      <td title="Net sales less the disputed share — what commission is earned on">$${money(commissionBase(e))}</td>
+      <td style="font-weight:600">$${money(commissionAmt(e, commissionBase(e)))}</td>
     </tr>`;
 }
 
@@ -5614,7 +5621,7 @@ function commissionRow(e) {
 function commissionTotalsRow(rows, label) {
   if (!rows || rows.length < 2) return '';
   const sum = (f) => rows.reduce((s, e) => s + (Number(e[f]) || 0), 0);
-  const commission = rows.reduce((s, e) => s + commissionAmt(e, e.net_total), 0);
+  const commission = rows.reduce((s, e) => s + commissionAmt(e, commissionBase(e)), 0);
   const chargeback = sum('chargeback_total');
   return `
     <tr style="border-top:2px solid var(--border);font-weight:700;background:var(--cream)">
@@ -5623,7 +5630,8 @@ function commissionTotalsRow(rows, label) {
       <td>$${money(sum('sales_total'))}</td>
       <td>$${money(sum('returns_total'))}</td>
       <td>$${money(sum('net_total'))}</td>
-      <td>${chargeback > 0 ? `<span style="color:var(--danger)">$${money(chargeback)}</span>` : '<span style="color:var(--mid);font-weight:400">—</span>'}</td>
+      <td>${chargeback > 0 ? `<span style="color:var(--danger)">−$${money(chargeback)}</span>` : '<span style="color:var(--mid);font-weight:400">—</span>'}</td>
+      <td>$${money(rows.reduce((s, e) => s + commissionBase(e), 0))}</td>
       <td>$${money(commission)}</td>
     </tr>`;
 }
@@ -5753,7 +5761,7 @@ function renderManagerCommissions() {
       // Only across companies: within one, a total of everybody is rarely the
       // number being looked for and just adds noise.
       + (viewingCompanyCount > 1 ? commissionTotalsRow(rows, 'All employees — both companies') : '')) ||
-    '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No data</td></tr>';
+    '<tr><td colspan="8" style="text-align:center;color:var(--mid)">No data</td></tr>';
 }
 
 // ─── Employee Personal Report / Manager unlock ──────────────────────────────
@@ -5838,7 +5846,7 @@ async function unlockPersonalReport(silent) {
         // is what someone working at both stores is actually owed.
         (personalRows.map(r => commissionRow(spans ? { ...r, employee_name: `${r.employee_name} — ${r.company_name}` } : r)).join('')
           + (spans ? commissionTotalsRow(personalRows, `${data.employee.name} — both companies`) : '')) ||
-        '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No data</td></tr>';
+        '<tr><td colspan="8" style="text-align:center;color:var(--mid)">No data</td></tr>';
       // Say plainly when a company was asked for but couldn't be included,
       // rather than quietly returning fewer companies than were requested.
       const rejected = data.companies_rejected || [];

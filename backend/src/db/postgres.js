@@ -1575,7 +1575,14 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
       COUNT(DISTINCT CASE WHEN t.type = 'sale' AND t.charged_back = 1 THEN t.id END) as chargeback_count,
       COALESCE(SUM(CASE WHEN t.type = 'sale' THEN (${EMP_SHARE}) * COALESCE((
         SELECT LEAST(1, GREATEST(0, SUM(cb.amount) / NULLIF(t.total, 0)))
-        FROM pos_transaction_chargebacks cb WHERE cb.transaction_id = t.id), 0) ELSE 0 END), 0) as chargeback_total
+        FROM pos_transaction_chargebacks cb WHERE cb.transaction_id = t.id), 0) ELSE 0 END), 0) as chargeback_total,
+      -- What commission is actually earned on: net sales less the disputed
+      -- share, so a charged-back sale stops paying.
+      COALESCE(SUM(CASE
+        WHEN t.type = 'sale' THEN (${EMP_SHARE}) * (1 - COALESCE((
+          SELECT LEAST(1, GREATEST(0, SUM(cb.amount) / NULLIF(t.total, 0)))
+          FROM pos_transaction_chargebacks cb WHERE cb.transaction_id = t.id), 0))
+        WHEN t.type = 'return' THEN -(${EMP_SHARE}) ELSE 0 END), 0) as net_after_chargebacks
     FROM pos_employees e
     LEFT JOIN pos_transaction_employees te ON e.id = te.employee_id
     LEFT JOIN pos_transactions t ON te.transaction_id = t.id
@@ -1995,7 +2002,12 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
   // node-pg renders the array as the literal '{company-a}', which never equals
   // a company id — zeroing the sales of every employee on a commission plan.
   const txResult = await query(`
-    SELECT t.id, t.type, t.created_at, te.commission_value, ${EMP_SHARE} AS commission_amount
+    SELECT t.id, t.type, t.created_at, te.commission_value,
+      -- Same deduction as the report: a disputed sale doesn't pay commission.
+      (${EMP_SHARE}) * CASE WHEN t.type = 'sale' THEN (1 - COALESCE((
+          SELECT LEAST(1, GREATEST(0, SUM(cb.amount) / NULLIF(t.total, 0)))
+          FROM pos_transaction_chargebacks cb WHERE cb.transaction_id = t.id), 0))
+        ELSE 1 END AS commission_amount
     FROM pos_transactions t
     JOIN pos_transaction_employees te ON t.id = te.transaction_id
     WHERE te.employee_id = $1 AND t.user_id = ANY($2::text[])
