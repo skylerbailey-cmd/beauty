@@ -1284,13 +1284,18 @@ router.get('/customers/search', async (req, res) => {
 // notes even for a customer who doesn't have a `customers` row yet.
 router.post('/customers/upsert', async (req, res) => {
   const { name, email, phone, birthday, address, notes } = req.body;
-  if (!email || !String(email).trim()) {
-    return res.status(400).json({ error: 'This customer has no email on file, so there\'s no way to save CRM info for them yet.' });
+  // A phone number is enough to identify a customer now that they no longer
+  // have to be keyed by email, so don't refuse to save one who has only that.
+  const hasEmail = !!String(email || '').trim();
+  const hasPhone = String(phone || '').replace(/\D/g, '').length >= 10;
+  if (!hasEmail && !hasPhone) {
+    return res.status(400).json({ error: 'This customer needs an email or a phone number before their details can be saved.' });
   }
   if (!name || !String(name).trim()) {
     return res.status(400).json({ error: 'Name is required.' });
   }
   const customer = await pgDb.findOrCreateCustomer(name, email, req.session.userId, phone);
+  if (!customer) return res.status(400).json({ error: 'Could not save this customer.' });
   await pgDb.updateCustomer(customer.id, { birthday: birthday || null, address: address || '', notes: notes || '' });
   res.json({ customer: await pgDb.getCustomer(customer.id) });
 });

@@ -51,7 +51,6 @@ async function initSchema() {
       created_at TIMESTAMPTZ DEFAULT NOW(),
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_pg_customers_user_email ON customers(user_id, email);
     CREATE INDEX IF NOT EXISTS idx_pg_customers_user_id ON customers(user_id);
 
     CREATE TABLE IF NOT EXISTS customer_products (
@@ -298,6 +297,26 @@ async function initSchema() {
   )`);
   await migrate('CREATE INDEX IF NOT EXISTS idx_pg_saved_audits_user ON pos_saved_audits(user_id)');
   await migrate('ALTER TABLE customers ADD COLUMN IF NOT EXISTS birthday DATE');
+
+  // Customers used to be unique on (user_id, email), which meant a company
+  // could hold exactly ONE customer without an email address. Every
+  // phone-only customer after the first collided with it, and any sale rung up
+  // without an email matched that same row and overwrote its name and phone —
+  // quietly merging unrelated people into one record.
+  //
+  // Email is now unique only among customers that HAVE one, and a phone-only
+  // customer is instead unique on their phone number. Kept as two partial
+  // indexes rather than one rule so a customer who has both is still keyed by
+  // email, exactly as before.
+  await migrate('DROP INDEX IF EXISTS idx_pg_customers_user_email');
+  await migrate(`CREATE UNIQUE INDEX IF NOT EXISTS idx_pg_customers_user_email
+    ON customers(user_id, LOWER(TRIM(email)))
+    WHERE TRIM(COALESCE(email, '')) <> ''`);
+  // Last 10 digits, so formatting and a country code don't create duplicates.
+  await migrate(`CREATE UNIQUE INDEX IF NOT EXISTS idx_pg_customers_user_phone
+    ON customers(user_id, RIGHT(REGEXP_REPLACE(COALESCE(phone, ''), '\\D', '', 'g'), 10))
+    WHERE TRIM(COALESCE(email, '')) = ''
+      AND LENGTH(REGEXP_REPLACE(COALESCE(phone, ''), '\\D', '', 'g')) >= 10`);
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_address TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_city TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_state TEXT DEFAULT ''");
@@ -336,10 +355,28 @@ async function initSchema() {
 
 // ─── Customers ──────────────────────────────────────────────────────────────
 
+// Matches on email when there is one, and on phone number when there isn't.
+// Matching a blank email would otherwise pull back whichever email-less
+// customer happened to be first and overwrite them with this sale's details.
 async function findOrCreateCustomer(name, email, userId, phone) {
-  const existing = userId
-    ? (await query('SELECT * FROM customers WHERE email = $1 AND user_id = $2', [email, userId])).rows[0]
-    : (await query('SELECT * FROM customers WHERE email = $1', [email])).rows[0];
+  const e = String(email || '').trim();
+  const digits = String(phone || '').replace(/\D/g, '');
+  const p = digits.length >= 10 ? digits.slice(-10) : '';
+
+  const findSql = e
+    ? `SELECT * FROM customers WHERE LOWER(TRIM(email)) = LOWER($1) ${userId ? 'AND user_id = $2' : ''} LIMIT 1`
+    : `SELECT * FROM customers
+       WHERE TRIM(COALESCE(email,'')) = ''
+         AND RIGHT(REGEXP_REPLACE(COALESCE(phone,''), '\\D', '', 'g'), 10) = $1
+         ${userId ? 'AND user_id = $2' : ''} LIMIT 1`;
+  const findArgs = userId ? [e || p, userId] : [e || p];
+
+  // With neither an email nor a usable phone there is nothing to match on, and
+  // nothing that could be looked up again later — don't create a CRM row that
+  // can never be found or de-duplicated.
+  if (!e && !p) return null;
+
+  const existing = (await query(findSql, findArgs)).rows[0];
   if (existing) {
     const sets = [];
     const params = [];
@@ -352,11 +389,19 @@ async function findOrCreateCustomer(name, email, userId, phone) {
     }
     return existing;
   }
-  const result = await query(
-    'INSERT INTO customers (name, email, phone, user_id) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id, email) DO UPDATE SET name = EXCLUDED.name, phone = EXCLUDED.phone RETURNING *',
-    [name || '', email, phone || '', userId || '']
-  );
-  return result.rows[0];
+  // No ON CONFLICT target: uniqueness now comes from two PARTIAL indexes, and
+  // ON CONFLICT can't infer those. On a race, the insert loses and we return
+  // the row the other writer created.
+  try {
+    const result = await query(
+      'INSERT INTO customers (name, email, phone, user_id) VALUES ($1, $2, $3, $4) RETURNING *',
+      [name || '', e, phone || '', userId || '']
+    );
+    return result.rows[0];
+  } catch (err) {
+    if (err.code !== '23505') throw err; // not a uniqueness collision
+    return (await query(findSql, findArgs)).rows[0] || null;
+  }
 }
 
 async function addCustomerProducts(customerId, products) {
