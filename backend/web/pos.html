@@ -5607,6 +5607,27 @@ function commissionRow(e) {
     </tr>`;
 }
 
+// A totals line for a commission table. Only worth showing when the rows span
+// more than one company — with a single company the reader would be adding up
+// unrelated people, but across companies these are the same person's figures
+// (or the whole group's), and the sum is the number actually wanted.
+function commissionTotalsRow(rows, label) {
+  if (!rows || rows.length < 2) return '';
+  const sum = (f) => rows.reduce((s, e) => s + (Number(e[f]) || 0), 0);
+  const commission = rows.reduce((s, e) => s + commissionAmt(e, e.net_total), 0);
+  const chargeback = sum('chargeback_total');
+  return `
+    <tr style="border-top:2px solid var(--border);font-weight:700;background:var(--cream)">
+      <td>${escapeHtml(label || 'Total')}</td>
+      <td>${sum('sale_count')}</td>
+      <td>$${money(sum('sales_total'))}</td>
+      <td>$${money(sum('returns_total'))}</td>
+      <td>$${money(sum('net_total'))}</td>
+      <td>${chargeback > 0 ? `<span style="color:var(--danger)">$${money(chargeback)}</span>` : '<span style="color:var(--mid);font-weight:400">—</span>'}</td>
+      <td>$${money(commission)}</td>
+    </tr>`;
+}
+
 // ─── Payroll ────────────────────────────────────────────────────────────────
 let lastPayroll = null;
 
@@ -5726,8 +5747,12 @@ async function loadPayroll() {
 }
 
 function renderManagerCommissions() {
+  const rows = lastEmployeesReport || [];
   document.getElementById('empReportBody').innerHTML =
-    lastEmployeesReport.map(commissionRow).join('') ||
+    (rows.map(commissionRow).join('')
+      // Only across companies: within one, a total of everybody is rarely the
+      // number being looked for and just adds noise.
+      + (viewingCompanyCount > 1 ? commissionTotalsRow(rows, 'All employees — both companies') : '')) ||
     '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No data</td></tr>';
 }
 
@@ -5806,10 +5831,13 @@ async function unlockPersonalReport(silent) {
       document.getElementById('empPersonalName').textContent =
         `${data.employee.name} — Personal Sales & Commission`
         + (included.length ? ` · ${included.join(' + ')}` : '');
+      const personalRows = data.report || [];
       document.getElementById('empPersonalBody').innerHTML =
         // Across companies, label each row so two figures under the same name
-        // aren't mistaken for a duplicate.
-        (data.report || []).map(r => commissionRow(spans ? { ...r, employee_name: `${r.employee_name} — ${r.company_name}` } : r)).join('') ||
+        // aren't mistaken for a duplicate, and total them — the combined figure
+        // is what someone working at both stores is actually owed.
+        (personalRows.map(r => commissionRow(spans ? { ...r, employee_name: `${r.employee_name} — ${r.company_name}` } : r)).join('')
+          + (spans ? commissionTotalsRow(personalRows, `${data.employee.name} — both companies`) : '')) ||
         '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No data</td></tr>';
       // Say plainly when a company was asked for but couldn't be included,
       // rather than quietly returning fewer companies than were requested.
