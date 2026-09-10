@@ -1285,7 +1285,13 @@ router.get('/reports/employees', async (req, res) => {
   const { start, end } = req.query;
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
-  res.json({ report: await pgDb.getEmployeeSalesReport(scopeIds(req), startDate, endDate) });
+  // Commission is reported across every company regardless of which is signed
+  // in — staff work at both and are paid on the combined figure. The
+  // leaderboard still asks for the signed-in company only.
+  const scope = req.query.all === '1'
+    ? (await pgDb.getAllCompanyIds()).map(c => c.user_id)
+    : scopeIds(req);
+  res.json({ report: await pgDb.getEmployeeSalesReport(scope, startDate, endDate) });
 });
 
 // Commission owed on a given payday, with chargeback adjustments itemised.
@@ -1419,40 +1425,23 @@ router.post('/reports/employee-personal', async (req, res) => {
     const included = [];
     const rejected = [];
 
-    const own = await pgDb.getEmployeeSalesReport(req.session.userId, startDate, endDate);
-    const ownName = (await pgDb.getSettings(req.session.userId))?.store_name || '';
-    for (const r of own.filter(r => r.employee_id === employee.id)) {
-      rows.push({ ...r, company_name: ownName });
-    }
-    included.push(ownName || 'This company');
-
-    const { getUserByEmail } = require('../db');
-    for (const raw of (Array.isArray(req.body.companies) ? req.body.companies : [])) {
-      const email = String(raw || '').trim().toLowerCase();
-      if (!email) continue;
-      const u = getUserByEmail(email);
-      // Same company as the one signed in — already covered above, not a
-      // failure worth reporting.
-      if (u && u.id === req.session.userId) continue;
-      // Anything else that can't be used has to be REPORTED, not skipped. A
-      // silent continue here made an unresolvable company look exactly like
-      // one that had been included: the report listed a single company with
-      // nothing said about the other.
-      if (!u) {
-        rejected.push({ company: email, reason: 'not signed in on this device yet — open it once from the account menu' });
-        continue;
-      }
-      const there = await pgDb.verifyEmployeePin(pin, u.id, name);
+    // Every company, not just the one signed in — the same person works at
+    // both and is paid on the combined figure. Their own name and PIN is
+    // re-checked at each one, and only rows belonging to the employee it
+    // matches there are returned, so this shows nobody else's figures.
+    for (const co of await pgDb.getAllCompanyIds()) {
+      const there = co.user_id === req.session.userId
+        ? employee
+        : await pgDb.verifyEmployeePin(pin, co.user_id, name);
       if (!there) {
-        rejected.push({ company: u.company_name || email, reason: 'that name and PIN is not an active employee there' });
+        rejected.push({ company: co.store_name, reason: 'that name and PIN is not an active employee there' });
         continue;
       }
-      const theirs = await pgDb.getEmployeeSalesReport(u.id, startDate, endDate);
-      const storeName = (await pgDb.getSettings(u.id))?.store_name || u.company_name || email;
+      const theirs = await pgDb.getEmployeeSalesReport(co.user_id, startDate, endDate);
       for (const r of theirs.filter(r => r.employee_id === there.id)) {
-        rows.push({ ...r, company_name: storeName });
+        rows.push({ ...r, company_name: co.store_name });
       }
-      included.push(storeName);
+      included.push(co.store_name);
     }
 
     res.json({ employee, role: 'sales', report: rows, companies_included: included, companies_rejected: rejected });

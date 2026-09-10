@@ -4410,7 +4410,7 @@ async function loadReports() {
 
   const [salesResp, empResp, prodResp, flaggedResp] = await Promise.all([
     fetch(`${API}/api/pos/reports/sales?${qs}`, { credentials: 'include' }),
-    fetch(`${API}/api/pos/reports/employees?${qs}`, { credentials: 'include' }),
+    fetch(`${API}/api/pos/reports/employees?${qs}&all=1`, { credentials: 'include' }),
     fetch(`${API}/api/pos/reports/products?${qs}`, { credentials: 'include' }),
     fetch(`${API}/api/pos/reports/flagged-returns?${qs}`, { credentials: 'include' }),
   ]);
@@ -5909,11 +5909,14 @@ async function loadPayroll() {
 
 function renderManagerCommissions() {
   const rows = lastEmployeesReport || [];
+  // Commissions always cover every company, so name the store on each row and
+  // always total — an employee working at both has a row for each.
+  const stores = [...new Set(rows.map(r => r.company_name).filter(Boolean))];
+  const spans = stores.length > 1;
   document.getElementById('empReportBody').innerHTML =
-    (rows.map(commissionRow).join('')
-      // Only across companies: within one, a total of everybody is rarely the
-      // number being looked for and just adds noise.
-      + (viewingCompanyCount > 1 ? commissionTotalsRow(rows, 'All employees — both companies') : '')) ||
+    (rows.map(r => commissionRow(spans && r.company_name
+        ? { ...r, employee_name: `${r.employee_name} — ${r.company_name}` } : r)).join('')
+      + (rows.length > 1 ? commissionTotalsRow(rows, spans ? `All employees — ${stores.join(' + ')}` : 'All employees') : '')) ||
     '<tr><td colspan="8" style="text-align:center;color:var(--mid)">No data</td></tr>';
 }
 
@@ -5988,6 +5991,8 @@ async function unlockPersonalReport(silent) {
       // signal that the other one didn't come back, and silence there reads
       // as though it had been included.
       const included = data.companies_included || [];
+      // The report covers every company now, so a person working at both always
+      // gets a row each plus a combined total.
       const spans = included.length > 1;
       document.getElementById('empPersonalName').textContent =
         `${data.employee.name} — Personal Sales & Commission`

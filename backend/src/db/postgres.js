@@ -1013,6 +1013,16 @@ async function findRecentDuplicate(userId, { type, customer_name, customer_email
   return rows[0] || null;
 }
 
+// Every company that's actually been set up (a store name is the marker — the
+// rest are placeholder rows from sign-ups that never configured anything).
+// Commission is reported across all of them regardless of which one is signed
+// in, since staff work at more than one and are paid on the combined figure.
+async function getAllCompanyIds() {
+  return (await query(
+    `SELECT user_id, store_name FROM pos_settings
+     WHERE TRIM(COALESCE(store_name, '')) <> '' ORDER BY store_name`)).rows;
+}
+
 // ─── Payroll: semi-monthly pay periods ──────────────────────────────────────
 //
 // Paydays are the 1st and the 15th, each covering a half-month that closed two
@@ -1578,6 +1588,7 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
   const baseReport = (await query(`
     SELECT
       e.id as employee_id, e.name as employee_name, e.commission_rate, e.active,
+      COALESCE(st.store_name, '') as company_name,
       COUNT(DISTINCT CASE WHEN t.type = 'sale' THEN t.id END) as sale_count,
       COUNT(DISTINCT CASE WHEN t.type = 'return' THEN t.id END) as return_count,
       COALESCE(SUM(CASE WHEN t.type = 'sale' THEN ${EMP_SHARE} ELSE 0 END), 0) as sales_total,
@@ -1600,6 +1611,7 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
           FROM pos_transaction_chargebacks cb WHERE cb.transaction_id = t.id), 0))
         WHEN t.type = 'return' THEN -(${EMP_SHARE}) ELSE 0 END), 0) as net_after_chargebacks
     FROM pos_employees e
+    LEFT JOIN pos_settings st ON st.user_id = e.user_id
     LEFT JOIN pos_transaction_employees te ON e.id = te.employee_id
     LEFT JOIN pos_transactions t ON te.transaction_id = t.id
       AND t.user_id = ANY($1::text[])
@@ -1611,7 +1623,7 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
     -- the leaderboard while still counting in the KPI tiles above, making the
     -- report under-report revenue by exactly their share.
     WHERE e.user_id = ANY($4::text[]) AND (e.active = 1 OR t.id IS NOT NULL)
-    GROUP BY e.id ORDER BY net_total DESC
+    GROUP BY e.id, st.store_name ORDER BY net_total DESC
   `, [asCompanyIds(userId), startDate, endDate, asCompanyIds(userId)])).rows;
 
   // Check for special commission plans and recalculate those employees
@@ -2389,6 +2401,7 @@ module.exports = {
   listChargebacks,
   saveChargeback,
   deleteChargeback,
+  getAllCompanyIds,
   payrollForPayday,
   setPayrollPaid,
   addPayrollAdjustment,
