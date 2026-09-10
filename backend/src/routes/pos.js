@@ -1476,13 +1476,22 @@ function payarcDate(c, tz) {
   return d.toLocaleDateString('en-CA', { timeZone: tz });
 }
 
-// Settled amount for one charge, net of anything refunded back on it. Captured
-// amount when present, since an authorised-but-not-captured charge never funds.
+// Did this charge actually fund? Payarc keeps the requested amount on charges
+// that failed or were voided — an "Insufficient Funds" charge still carries its
+// full `amount` — so status is the only thing that says whether money moved.
+function payarcSettled(c) {
+  return String(c.status || '').trim().toLowerCase() === 'settled';
+}
+
+// What one charge actually settled for. net_amount is Payarc's own figure and
+// is already net of refunds and voids (and 0 on anything that didn't fund), so
+// prefer it; the captured-minus-refunded form is only a fallback.
 function payarcChargeNet(c) {
-  const captured = payarcMoney(c.amount_captured);
-  const base = captured != null && captured !== 0 ? captured : (payarcMoney(c.amount) || 0);
+  const net = payarcMoney(c.net_amount);
+  if (net != null) return net;
+  const captured = payarcMoney(c.amount_captured) || 0;
   const refunded = payarcMoney(c.amount_refunded) || 0;
-  return Math.round((base - refunded) * 100) / 100;
+  return Math.round((captured - refunded) * 100) / 100;
 }
 
 // Charges in a date range, bucketed by local day.
@@ -1498,6 +1507,7 @@ async function fetchPayarcRange(settings, from, to, tz) {
   const byDate = {};
   const diag = {
     pages: 0, charges_seen: 0, in_range: 0, dated: 0, undated: 0,
+    settled: 0, not_settled: 0, not_settled_statuses: {},
     earliest: null, latest: null, sample: null, truncated: false, list_key: null,
   };
   const MAX_PAGES = 40; // ~4000 charges
@@ -1529,6 +1539,17 @@ async function fetchPayarcRange(settings, from, to, tz) {
       if (!diag.latest || day > diag.latest) diag.latest = day;
       if (day < from || day > to) continue;
       diag.in_range++;
+
+      // Declined, voided and unsettled charges never funded, so they don't
+      // belong in the settled total — counted separately so a day that looks
+      // short can be explained rather than just looking wrong.
+      if (!payarcSettled(c)) {
+        diag.not_settled++;
+        (diag.not_settled_statuses[String(c.status || 'unknown')] ??= 0);
+        diag.not_settled_statuses[String(c.status || 'unknown')]++;
+        continue;
+      }
+      diag.settled++;
 
       const net = payarcChargeNet(c);
       if (!byDate[day]) byDate[day] = { total: 0, sales: 0, credits: 0, sale_count: 0, credit_count: 0, txns: 0 };
