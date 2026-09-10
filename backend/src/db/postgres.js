@@ -1170,14 +1170,36 @@ async function payrollForPayday(userId, payday, settings) {
   const paidRuns = (await query(
     `SELECT payday::text AS payday, paid_at, paid_by FROM pos_payroll_runs WHERE user_id = ANY($1::text[])`,
     [ids])).rows;
-  const paidSet = new Set(paidRuns.map(r => r.payday));
   const thisRun = paidRuns.find(r => r.payday === payday) || null;
+  // The day each closed payday was actually closed off. Two companies can close
+  // the same payday at different moments; the later one is what matters, since
+  // until then the figures were still moving.
+  const closedOn = new Map();
+  for (const r of paidRuns) {
+    const day = r.paid_at ? new Date(r.paid_at).toISOString().slice(0, 10) : '9999-12-31';
+    if (!closedOn.has(r.payday) || day > closedOn.get(r.payday)) closedOn.set(r.payday, day);
+  }
 
-  // Where an amount actually lands: the paycheck for `date`, unless that one
-  // has already gone out, in which case the next one that hasn't.
-  const landsOn = (date) => {
+  // Where a deduction actually lands, given the day the thing happened (`on` —
+  // the day a refund was rung up, or a dispute raised).
+  //
+  //   paycheck still open        -> it goes on that one
+  //   closed AFTER it happened   -> it was on that cheque already; nothing owed
+  //   closed BEFORE it happened  -> too late for that cheque, take it off the
+  //                                 next one still open
+  //
+  // That middle case is the one that matters: without it, closing a payday
+  // moved every deduction already sitting on it onto the next cheque, charging
+  // people a second time for a return the closed cheque had accounted for.
+  // Returns null when there is nothing left to collect.
+  const landsOn = (date, on) => {
     let p = paydayForDate(date, sched);
-    for (let i = 0; i < 24 && p && paidSet.has(p); i++) p = nextPayday(p, sched);
+    for (let i = 0; i < 24 && p; i++) {
+      const closed = closedOn.get(p);
+      if (!closed) return p;
+      if (on && on <= closed) return null;
+      p = nextPayday(p, sched);
+    }
     return p;
   };
 
@@ -1270,8 +1292,8 @@ async function payrollForPayday(userId, payday, settings) {
     const commission = round2(Number(rt.share) * (Number(rt.commission_rate) || 0) / 100);
     if (commission === 0) continue;
     const naturalPayday = paydayForDate(rt.sale_date, sched);
-    const target = landsOn(rt.sale_date);
-    if (target !== payday) continue;
+    const target = landsOn(rt.sale_date, rt.return_date);
+    if (!target || target !== payday) continue;
     const r = row(rt.employee_id, rt.employee_name, rt.commission_rate, rt.company_id);
     r.adjustments.push({
       kind: 'return', receipt: rt.receipt_number, amount: -commission,
@@ -1292,10 +1314,12 @@ async function payrollForPayday(userId, payday, settings) {
 
     if (d.status === 'pending') {
       // Money in doubt is held back whenever the sale happened. If its own
-      // paycheck hasn't gone out, it's withheld there; if it has, the amount
-      // is taken off the next paycheck that hasn't, since it was already paid.
-      const target = wasPaid ? landsOn(d.marked_date || d.sale_date) : naturalPayday;
-      if (target === payday) {
+      // paycheck hasn't gone out, it's withheld there; if that cheque closed
+      // before the dispute was raised, the amount comes off the next one still
+      // open. A dispute raised before its cheque closed was already withheld
+      // there, and landsOn returns null so it isn't withheld twice.
+      const target = landsOn(d.sale_date, d.marked_date);
+      if (target && target === payday) {
         const r = row(d.employee_id, d.employee_name, d.commission_rate, d.company_id);
         const card = d.card_last4 ? ' (card ****' + d.card_last4 + ')' : '';
         r.adjustments.push({
@@ -1310,7 +1334,7 @@ async function payrollForPayday(userId, payday, settings) {
 
     // A dispute closing after its paycheck has gone out moves to the next one
     // still open — a settled paycheck can't be rewritten.
-    const closePayday = d.closed_date ? landsOn(d.closed_date) : null;
+    const closePayday = d.closed_date ? landsOn(d.closed_date, d.closed_date) : null;
     if (closePayday !== payday) {
       // Still show the original withholding on the sale's own paycheck.
       if (!wasPaid && naturalPayday === payday) {
