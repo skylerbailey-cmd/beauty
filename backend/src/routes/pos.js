@@ -733,6 +733,32 @@ router.delete('/transactions/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Chargebacks on one sale. A sale paid across several cards can be disputed on
+// each card separately, so these are a list rather than a single flag.
+router.get('/transactions/:id/chargebacks', async (req, res) => {
+  res.json({ chargebacks: await pgDb.listChargebacks(parseInt(req.params.id), scopeIds(req)) });
+});
+
+// Add or update one. Manager-gated like editing, since it moves commission.
+router.post('/transactions/:id/chargebacks', async (req, res) => {
+  const { manager_name, manager_pin } = req.body;
+  const manager = await verifyManager(req.session.userId, manager_name, manager_pin);
+  if (!manager) return res.status(403).json({ error: 'Only a manager can record a chargeback. Manager name and code did not match.' });
+  const result = await pgDb.saveChargeback(parseInt(req.params.id), req.session.userId, req.body);
+  if (!result) return res.status(404).json({ error: 'Transaction not found' });
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json(result);
+});
+
+router.delete('/transactions/:txId/chargebacks/:id', async (req, res) => {
+  const { manager_name, manager_pin } = req.body;
+  const manager = await verifyManager(req.session.userId, manager_name, manager_pin);
+  if (!manager) return res.status(403).json({ error: 'Only a manager can remove a chargeback.' });
+  const ok = await pgDb.deleteChargeback(parseInt(req.params.id), req.session.userId);
+  if (!ok) return res.status(404).json({ error: 'Chargeback not found' });
+  res.json({ ok: true });
+});
+
 // Mark a sale as charged back (the customer disputed it and the bank took the
 // money) or clear that flag if the dispute is won. Same manager check as
 // editing, since it changes what the books say was collected.

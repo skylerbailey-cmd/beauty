@@ -283,6 +283,37 @@ async function initSchema() {
   // sale, in which case only that share of the commission is affected.
   // NULL/0 means the whole thing, so existing flags keep their meaning.
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS chargeback_amount REAL');
+
+  // A sale paid across several cards can be disputed on each card separately,
+  // so chargebacks are their own rows rather than columns on the transaction.
+  // Each carries its own amount, card, status and dates. pos_transactions
+  // keeps charged_back as a cached "has any" flag, maintained on write.
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_transaction_chargebacks (
+    id SERIAL PRIMARY KEY,
+    transaction_id INTEGER NOT NULL REFERENCES pos_transactions(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL DEFAULT '',
+    amount REAL NOT NULL DEFAULT 0,
+    card_last4 TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    opened_at TIMESTAMPTZ DEFAULT NOW(),
+    closed_at TIMESTAMPTZ,
+    note TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  await migrate('CREATE INDEX IF NOT EXISTS idx_pg_cb_tx ON pos_transaction_chargebacks(transaction_id)');
+  await migrate('CREATE INDEX IF NOT EXISTS idx_pg_cb_user ON pos_transaction_chargebacks(user_id)');
+
+  // Move the one-per-transaction chargebacks into the table. Guarded on there
+  // being no row yet, so it runs once and re-deploys don't duplicate them.
+  await migrate(`
+    INSERT INTO pos_transaction_chargebacks (transaction_id, user_id, amount, status, opened_at, closed_at, note)
+    SELECT t.id, t.user_id,
+           COALESCE(NULLIF(t.chargeback_amount, 0), t.total),
+           COALESCE(NULLIF(t.chargeback_status, ''), 'pending'),
+           COALESCE(t.charged_back_at, NOW()), t.chargeback_closed_at, COALESCE(t.charged_back_note, '')
+    FROM pos_transactions t
+    WHERE t.charged_back = 1
+      AND NOT EXISTS (SELECT 1 FROM pos_transaction_chargebacks c WHERE c.transaction_id = t.id)`);
   // Anything already flagged before statuses existed is an open dispute.
   await migrate("UPDATE pos_transactions SET chargeback_status = 'pending' WHERE charged_back = 1 AND COALESCE(chargeback_status,'') = ''");
 
@@ -1130,20 +1161,25 @@ async function payrollForPayday(userId, payday, settings) {
 
   // Every disputed sale, with the dates needed to decide which paycheck it
   // touches and whether its commission had already gone out.
+  // One row per (dispute × employee). A sale split across cards can carry
+  // several disputes, each with its own amount, status and dates, so they're
+  // handled one at a time rather than as a single flag on the sale.
   const disputes = (await query(`
-    SELECT t.id, t.receipt_number, t.chargeback_status AS status,
+    SELECT cb.id AS chargeback_id, t.receipt_number, cb.status,
       COALESCE(t.original_sale_date, t.created_at)::date::text AS sale_date,
-      t.charged_back_at::date::text AS marked_date,
-      t.chargeback_closed_at::date::text AS closed_date,
+      cb.opened_at::date::text AS marked_date,
+      cb.closed_at::date::text AS closed_date,
+      cb.card_last4,
       e.id AS employee_id, e.name AS employee_name, e.commission_rate,
       ${EMP_SHARE} AS share,
       -- Only the disputed share of the sale affects commission.
-      ${CB_FRACTION} AS cb_fraction
-    FROM pos_transactions t
+      LEAST(1, GREATEST(0, cb.amount / NULLIF(t.total, 0))) AS cb_fraction
+    FROM pos_transaction_chargebacks cb
+    JOIN pos_transactions t ON t.id = cb.transaction_id
     JOIN pos_transaction_employees te ON te.transaction_id = t.id
     JOIN pos_employees e ON e.id = te.employee_id
     WHERE t.user_id = ANY($1::text[]) AND t.type = 'sale'
-      AND COALESCE(t.chargeback_status, '') IN ('pending', 'won', 'lost')
+      AND cb.status IN ('pending', 'won', 'lost')
   `, [ids])).rows;
 
   const byEmp = new Map();
@@ -1177,7 +1213,7 @@ async function payrollForPayday(userId, payday, settings) {
       if (!wasPaid && naturalPayday === payday) {
         const r = row(d.employee_id, d.employee_name, d.commission_rate);
         r.adjustments.push({ kind: 'withheld', receipt: d.receipt_number, amount: -commission,
-          note: `dispute open on the ${d.sale_date} sale` });
+          note: `dispute open on the ${d.sale_date} sale${d.card_last4 ? ' (card ****' + d.card_last4 + ')' : ''}` });
       }
       continue;
     }
@@ -1257,6 +1293,82 @@ async function deletePayrollAdjustment(userId, id) {
   const r = await query('DELETE FROM pos_payroll_adjustments WHERE id = $1 AND user_id = ANY($2::text[])',
     [id, asCompanyIds(userId)]);
   return r.rowCount > 0;
+}
+
+// ─── Chargebacks (many per transaction) ─────────────────────────────────────
+
+async function listChargebacks(transactionId, userId) {
+  return (await query(
+    `SELECT id, transaction_id, amount, card_last4, status,
+            opened_at::date::text AS opened_at, closed_at::date::text AS closed_at, note
+     FROM pos_transaction_chargebacks
+     WHERE transaction_id = $1 AND user_id = ANY($2::text[])
+     ORDER BY created_at`, [transactionId, asCompanyIds(userId)])).rows;
+}
+
+// pos_transactions.charged_back is a cached "has any dispute" flag so the
+// list and its filters don't need a join. Recomputed after every write.
+async function syncChargebackFlag(transactionId) {
+  await query(
+    `UPDATE pos_transactions t
+     SET charged_back = CASE WHEN EXISTS
+           (SELECT 1 FROM pos_transaction_chargebacks c WHERE c.transaction_id = t.id) THEN 1 ELSE 0 END
+     WHERE t.id = $1`, [transactionId]);
+}
+
+async function saveChargeback(transactionId, userId, cb) {
+  const tx = (await query(
+    'SELECT id, type, total, user_id FROM pos_transactions WHERE id = $1 AND user_id = ANY($2::text[])',
+    [transactionId, asCompanyIds(userId)])).rows[0];
+  if (!tx) return null;
+  if (tx.type !== 'sale') return { error: 'Only a sale can be marked as a chargeback.' };
+
+  const status = CHARGEBACK_STATUSES.includes(String(cb.status || '').toLowerCase())
+    ? String(cb.status).toLowerCase() : 'pending';
+  if (status !== 'pending' && !cb.closed_at) {
+    return { error: 'A closed dispute needs the date it was closed — that decides which paycheck it lands on.' };
+  }
+
+  const total = Number(tx.total) || 0;
+  let amount = round2(cb.amount);
+  if (!isFinite(amount) || amount <= 0) amount = total;      // blank means the whole sale
+
+  // Disputes across several cards can't add up to more than was paid.
+  const others = (await query(
+    'SELECT COALESCE(SUM(amount),0) s FROM pos_transaction_chargebacks WHERE transaction_id = $1 AND id <> $2',
+    [transactionId, cb.id || 0])).rows[0].s;
+  const room = round2(total - Number(others));
+  if (room <= 0) return { error: `This sale is already fully disputed ($${total.toFixed(2)}).` };
+  if (amount > room) amount = room;
+
+  if (cb.id) {
+    const r = await query(
+      `UPDATE pos_transaction_chargebacks
+       SET amount = $1, card_last4 = $2, status = $3, closed_at = $4, note = $5
+       WHERE id = $6 AND transaction_id = $7 AND user_id = ANY($8::text[]) RETURNING id`,
+      [amount, cb.card_last4 || '', status, status === 'pending' ? null : cb.closed_at,
+       cb.note || '', cb.id, transactionId, asCompanyIds(userId)]);
+    if (!r.rowCount) return { error: 'Chargeback not found' };
+  } else {
+    await query(
+      `INSERT INTO pos_transaction_chargebacks
+         (transaction_id, user_id, amount, card_last4, status, opened_at, closed_at, note)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [transactionId, tx.user_id, amount, cb.card_last4 || '', status,
+       cb.opened_at || new Date(), status === 'pending' ? null : cb.closed_at, cb.note || '']);
+  }
+  await syncChargebackFlag(transactionId);
+  return { ok: true, amount, capped: amount !== round2(cb.amount) && cb.amount > 0 };
+}
+
+async function deleteChargeback(id, userId) {
+  const row = (await query(
+    'SELECT transaction_id FROM pos_transaction_chargebacks WHERE id = $1 AND user_id = ANY($2::text[])',
+    [id, asCompanyIds(userId)])).rows[0];
+  if (!row) return false;
+  await query('DELETE FROM pos_transaction_chargebacks WHERE id = $1', [id]);
+  await syncChargebackFlag(row.transaction_id);
+  return true;
 }
 
 // Flag (or clear) a sale as charged back. Scoped by user_id like every other
@@ -1362,6 +1474,14 @@ async function getTransactions(userId, opts = {}) {
        JOIN pos_employees e ON te.employee_id = e.id WHERE te.transaction_id = $1`, [tx.id]
     )).rows;
     tx.payments = await getTransactionPayments(tx);
+    // A sale can carry several disputes (one per card), so the list needs them
+    // all — the cached charged_back flag only says whether there are any.
+    tx.chargebacks = tx.charged_back
+      ? (await query(
+          `SELECT id, amount, card_last4, status, opened_at::date::text AS opened_at,
+                  closed_at::date::text AS closed_at, note
+           FROM pos_transaction_chargebacks WHERE transaction_id = $1 ORDER BY created_at`, [tx.id])).rows
+      : [];
   }
   return transactions;
 }
@@ -1393,6 +1513,14 @@ async function getEmployeeTransactions(userId, employeeId, opts = {}) {
        JOIN pos_employees e ON te.employee_id = e.id WHERE te.transaction_id = $1`, [tx.id]
     )).rows;
     tx.payments = await getTransactionPayments(tx);
+    // A sale can carry several disputes (one per card), so the list needs them
+    // all — the cached charged_back flag only says whether there are any.
+    tx.chargebacks = tx.charged_back
+      ? (await query(
+          `SELECT id, amount, card_last4, status, opened_at::date::text AS opened_at,
+                  closed_at::date::text AS closed_at, note
+           FROM pos_transaction_chargebacks WHERE transaction_id = $1 ORDER BY created_at`, [tx.id])).rows
+      : [];
   }
   return transactions;
 }
@@ -1417,8 +1545,9 @@ async function getSalesReport(userId, startDate, endDate) {
       -- the revenue above rather than deducted from it — the sale did happen
       -- and the commission was earned; this is the part that wasn't kept.
       COUNT(CASE WHEN type = 'sale' AND charged_back = 1 THEN 1 END) as chargeback_count,
-      COALESCE(SUM(CASE WHEN type = 'sale' AND charged_back = 1
-        THEN subtotal * LEAST(1, GREATEST(0, COALESCE(NULLIF(chargeback_amount, 0), total) / NULLIF(total, 0)))
+      COALESCE(SUM(CASE WHEN type = 'sale' THEN subtotal * COALESCE((
+        SELECT LEAST(1, GREATEST(0, SUM(cb.amount) / NULLIF(pos_transactions.total, 0)))
+        FROM pos_transaction_chargebacks cb WHERE cb.transaction_id = pos_transactions.id), 0)
         ELSE 0 END), 0) as chargeback_total
     FROM pos_transactions
     WHERE user_id = ANY($1::text[])
@@ -1444,7 +1573,9 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
       -- back. Not deducted from sales_total above — shown beside it, so it's
       -- visible without quietly rewriting what they sold.
       COUNT(DISTINCT CASE WHEN t.type = 'sale' AND t.charged_back = 1 THEN t.id END) as chargeback_count,
-      COALESCE(SUM(CASE WHEN t.type = 'sale' AND t.charged_back = 1 THEN (${EMP_SHARE}) * ${CB_FRACTION} ELSE 0 END), 0) as chargeback_total
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN (${EMP_SHARE}) * COALESCE((
+        SELECT LEAST(1, GREATEST(0, SUM(cb.amount) / NULLIF(t.total, 0)))
+        FROM pos_transaction_chargebacks cb WHERE cb.transaction_id = t.id), 0) ELSE 0 END), 0) as chargeback_total
     FROM pos_employees e
     LEFT JOIN pos_transaction_employees te ON e.id = te.employee_id
     LEFT JOIN pos_transactions t ON te.transaction_id = t.id
@@ -2227,6 +2358,9 @@ module.exports = {
   getEmployeeTransactions,
   updateTransaction,
   deleteTransaction,
+  listChargebacks,
+  saveChargeback,
+  deleteChargeback,
   payrollForPayday,
   setPayrollPaid,
   addPayrollAdjustment,

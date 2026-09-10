@@ -623,7 +623,14 @@
         <button class="btn half-month" onclick="setHalfMonth('histStart','histEnd','first',loadTransactions)" title="1st to 15th of the month in the From box">1st–15th</button>
         <button class="btn half-month" onclick="setHalfMonth('histStart','histEnd','second',loadTransactions)" title="16th to the end of the month in the From box">16th–End</button>
         <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="showAllTransactions()">Show All</button>
-        <input type="text" id="histSearch" placeholder="Search anything (receipt, customer, employee, card, amount, type…)" oninput="applyTxFilters()" style="min-width:300px;flex:1">
+        <select id="histChargebackFilter" onchange="applyTxFilters()" title="Show only sales with a dispute" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;background:var(--white)">
+          <option value="">All transactions</option>
+          <option value="any">Chargebacks — any</option>
+          <option value="pending">Chargebacks — pending</option>
+          <option value="won">Chargebacks — won</option>
+          <option value="lost">Chargebacks — lost</option>
+        </select>
+        <input type="text" id="histSearch" placeholder="Search anything (receipt, customer, employee, card, amount, type…)" oninput="applyTxFilters()" style="min-width:260px;flex:1">
         <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:8px 16px" onclick="clearTxFilters()">Clear</button>
         <span id="txCompanyPicker" style="display:none;align-items:center;gap:6px">
           <label>Company:</label>
@@ -1109,16 +1116,24 @@
 <!-- ─── Chargeback status ─── -->
 <div class="modal-overlay" id="chargebackModal">
   <div class="modal" style="max-width:440px">
-    <h2>Chargeback — <span id="cbReceipt" style="font-family:monospace"></span></h2>
+    <h2>Chargebacks — <span id="cbReceipt" style="font-family:monospace"></span></h2>
     <p class="sub" id="cbSummary"></p>
+    <!-- Disputes already on this sale. A sale paid on several cards can have
+         one per card, so they're listed and added to rather than replaced. -->
+    <div id="cbExisting" style="margin-bottom:14px"></div>
     <div class="field">
-      <label>Amount disputed</label>
+      <label id="cbAmountLabel">Amount disputed</label>
       <div style="display:flex;align-items:center;gap:6px">
         <span style="font-size:1.05rem;font-weight:600">$</span>
         <input type="number" id="cbAmount" step="0.01" min="0" oninput="updateChargebackForm()" style="flex:1">
         <button type="button" class="btn" onclick="chargebackFullAmount()" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:6px 10px;font-size:.78rem;white-space:nowrap">Full amount</button>
       </div>
       <div id="cbAmountNote" style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:4px"></div>
+    </div>
+    <div class="field" id="cbCardWrap">
+      <label>Card disputed (optional)</label>
+      <input type="text" id="cbCard" maxlength="4" placeholder="Last 4" style="width:110px;text-align:center;letter-spacing:2px">
+      <span id="cbCardHint" style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-left:8px"></span>
     </div>
     <div class="field">
       <label>Where the dispute stands</label>
@@ -1139,10 +1154,10 @@
     </div>
     <div id="cbError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger);margin-bottom:8px"></div>
     <div class="modal-actions" style="justify-content:space-between">
-      <button class="btn" id="cbRemoveBtn" style="background:var(--cream);color:var(--mid);border:1.5px dashed var(--border)" onclick="saveChargeback(true)">Not a chargeback</button>
+      <button class="btn" id="cbRemoveBtn" style="background:var(--cream);color:var(--mid);border:1.5px dashed var(--border)" onclick="saveChargeback(true)">Remove all</button>
       <div style="display:flex;gap:10px">
         <button class="btn btn-cancel" onclick="closeChargebackModal()">Cancel</button>
-        <button class="btn btn-confirm" style="background:var(--danger)" onclick="saveChargeback(false)">Save</button>
+        <button class="btn btn-confirm" id="cbSaveBtn" style="background:var(--danger)" onclick="saveChargeback(false)">Save</button>
       </div>
     </div>
   </div>
@@ -3229,7 +3244,15 @@ function paymentSummary(tx) {
 function applyTxFilters() {
   const q = document.getElementById('histSearch').value.trim().toLowerCase();
 
+  // Chargeback filter, applied before the free-text search so "show me the
+  // disputes" works without having to guess a search term.
+  const cbFilter = document.getElementById('histChargebackFilter')?.value || '';
   const rows = histTransactions.filter(tx => {
+    if (cbFilter) {
+      const cbs = tx.chargebacks || [];
+      if (!cbs.length) return false;
+      if (cbFilter !== 'any' && !cbs.some(c => c.status === cbFilter)) return false;
+    }
     if (!q) return true;
     const emps = (tx.employees || []).map(e => e.employee_name).join(' ');
     const items = (tx.items || []).map(i => i.product_name).join(' ');
@@ -3237,8 +3260,10 @@ function applyTxFilters() {
     const hay = [
       tx.receipt_number, tx.type, tx.customer_name, tx.customer_email,
       tx.card_last4, tx.payment_method, tenderInfo, emps, items,
-      // So searching "chargeback" pulls up every disputed sale.
-      tx.charged_back ? `chargeback charged back ${tx.charged_back_note || ''}` : '',
+      // So searching "chargeback", a status, or a disputed card finds them.
+      (tx.chargebacks || []).length
+        ? 'chargeback charged back ' + (tx.chargebacks || []).map(c => `${c.status} ${c.card_last4 || ''} ${c.note || ''}`).join(' ')
+        : '',
       new Date(tx.created_at).toLocaleString(),
       (tx.subtotal || 0).toFixed(2), (tx.total || 0).toFixed(2),
     ].join(' ').toLowerCase();
@@ -3264,9 +3289,7 @@ function applyTxFilters() {
       ${canManage ? `<td><input type="checkbox" class="tx-select" onchange="toggleTxSelect(${tx.id}, this.checked)" ${selectedTxIds.has(tx.id) ? 'checked' : ''}></td>` : ''}
       <td style="font-family:monospace">${tx.receipt_number}</td>
       <td>${new Date(tx.created_at).toLocaleString()}</td>
-      <td><span class="tx-type-${tx.type}">${tx.type.toUpperCase()}</span>${tx.charged_back ? `<br><span class="tx-chargeback ${'cb-' + (tx.chargeback_status || 'pending')}" title="${escapeHtml(tx.charged_back_note || 'Disputed by the customer')}">${
-        { pending: 'CB PENDING', won: 'CB WON', lost: 'CB LOST' }[tx.chargeback_status] || 'CHARGED BACK'
-      }</span>` : ''}</td>
+      <td><span class="tx-type-${tx.type}">${tx.type.toUpperCase()}</span>${cbBadges(tx)}</td>
       <td>${tx.employees && tx.employees.length > 0 ? tx.employees.map(e => e.employee_name).join(', ') : '-'}</td>
       <td>${tx.customer_name || '-'}</td>
       <td>${tx.items.length}</td>
@@ -3455,6 +3478,24 @@ async function toggleChargeback(txId) {
   openChargebackModal(tx);
 }
 
+// One badge per dispute, since a sale paid on several cards can be disputed on
+// each one separately and they can be at different stages.
+function cbBadges(tx) {
+  const cbs = tx.chargebacks || [];
+  if (!cbs.length) return '';
+  const label = { pending: 'CB PENDING', won: 'CB WON', lost: 'CB LOST' };
+  return cbs.map(c => {
+    const title = [
+      `$${money(c.amount)}`,
+      c.card_last4 ? `card ****${c.card_last4}` : '',
+      c.closed_at ? `closed ${c.closed_at}` : `opened ${c.opened_at || ''}`,
+      c.note || '',
+    ].filter(Boolean).join(' · ');
+    return `<br><span class="tx-chargeback cb-${c.status}" title="${escapeHtml(title)}">${
+      label[c.status] || 'CHARGED BACK'}${c.card_last4 ? ' ****' + escapeHtml(c.card_last4) : ''}</span>`;
+  }).join('');
+}
+
 // Settle several disputes at once — the migration put every pre-existing
 // chargeback on 'pending', so they'd otherwise have to be closed one by one.
 // Reuses the same dialog; chargebackTargets holds the whole selection.
@@ -3468,14 +3509,25 @@ function openBulkChargeback() {
   document.getElementById('cbReceipt').textContent = `${sales.length} sales`;
   document.getElementById('cbSummary').textContent =
     sales.map(t => t.receipt_number).slice(0, 6).join(', ') + (sales.length > 6 ? `, +${sales.length - 6} more` : '');
-  // Start from a shared status if they already agree, so re-saving a batch
-  // doesn't quietly reset them all to pending.
-  const statuses = [...new Set(sales.map(t => t.chargeback_status || 'pending'))];
+  // Start from a shared status if the selection already agrees, so re-saving a
+  // batch doesn't quietly reset them all to pending. A sale with several
+  // disputes has no single status, so those fall back to pending.
+  const statuses = [...new Set(sales.map(t => {
+    const cbs = t.chargebacks || [];
+    return cbs.length === 1 ? cbs[0].status : 'pending';
+  }))];
   document.getElementById('cbStatus').value = statuses.length === 1 ? statuses[0] : 'pending';
   document.getElementById('cbClosedAt').value = '';
   // Each sale has its own total, so a single figure can't apply to all of
   // them — blank means "the whole of each one".
   chargebackMaxAmount = 0;
+  chargebackEditId = null;
+  // The list and the card belong to one sale, so they're hidden for a batch.
+  document.getElementById('cbExisting').innerHTML =
+    '<div style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)">Records one dispute against each selected sale, for its whole amount.</div>';
+  document.getElementById('cbCardWrap').style.display = 'none';
+  document.getElementById('cbSaveBtn').textContent = 'Save';
+  document.getElementById('cbAmountLabel').textContent = 'Amount disputed';
   document.getElementById('cbAmount').value = '';
   document.getElementById('cbNote').value = '';
   document.getElementById('cbError').textContent = '';
@@ -3490,23 +3542,22 @@ function openBulkChargeback() {
 let chargebackTarget = null;
 let chargebackTargets = null;
 let chargebackMaxAmount = 0;   // the sale's total, for the "full amount" shortcut
+let chargebackEditId = null;   // the dispute being edited, if any
 function openChargebackModal(tx) {
   chargebackTarget = tx;
-  chargebackTargets = null;   // single edit, not a batch
+  chargebackTargets = null;   // single sale, not a batch
   document.getElementById('cbReceipt').textContent = tx.receipt_number;
   document.getElementById('cbSummary').textContent =
     `$${money(tx.total)} from ${tx.customer_name || 'this customer'} on ${new Date(tx.created_at).toLocaleDateString()}`;
-  document.getElementById('cbStatus').value = tx.chargeback_status || 'pending';
-  document.getElementById('cbClosedAt').value = (tx.chargeback_closed_at || '').slice(0, 10);
-  // Most disputes are for the whole sale, so start there — a partial one is
-  // typed over it.
   chargebackMaxAmount = Number(tx.total) || 0;
-  document.getElementById('cbAmount').value = (tx.chargeback_amount != null && Number(tx.chargeback_amount) > 0
-    ? Number(tx.chargeback_amount) : chargebackMaxAmount).toFixed(2);
-  document.getElementById('cbNote').value = tx.charged_back_note || '';
-  document.getElementById('cbError').textContent = '';
-  document.getElementById('cbRemoveBtn').style.display = tx.charged_back ? '' : 'none';
-  updateChargebackForm();
+  // Cards this sale was actually paid on — a dispute belongs to one of them.
+  const cards = (tx.payments || []).filter(p => p.method === 'card' && p.card_last4).map(p => p.card_last4);
+  document.getElementById('cbCardHint').textContent = cards.length
+    ? `paid on ${cards.map(c => '****' + c).join(', ')}` : '';
+  document.getElementById('cbRemoveBtn').style.display = (tx.chargebacks || []).length ? '' : 'none';
+  document.getElementById('cbCardWrap').style.display = '';
+  renderChargebackList();
+  resetChargebackForm();
   document.getElementById('chargebackModal').classList.add('show');
 }
 
@@ -3514,51 +3565,135 @@ function closeChargebackModal() {
   document.getElementById('chargebackModal').classList.remove('show');
   chargebackTarget = null;
   chargebackTargets = null;
+  chargebackEditId = null;
 }
 
-// Only a closed dispute has a close date, and that date is what decides which
-// paycheck the money moves on — so spell out the consequence as they pick.
-function chargebackFullAmount() {
-  document.getElementById('cbAmount').value = chargebackMaxAmount ? chargebackMaxAmount.toFixed(2) : '';
+// The disputes already recorded, each editable or removable, plus how much of
+// the sale is still undisputed — they can't total more than it.
+function renderChargebackList() {
+  const el = document.getElementById('cbExisting');
+  const tx = chargebackTarget;
+  if (!el) return;
+  if (!tx) { el.innerHTML = ''; return; }
+  const cbs = tx.chargebacks || [];
+  const used = cbs.reduce((s, c) => s + Number(c.amount || 0), 0);
+  const left = Math.max(0, round2(chargebackMaxAmount - used));
+  if (!cbs.length) {
+    el.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)">No disputes recorded on this sale yet.</div>';
+    return;
+  }
+  const label = { pending: 'Pending', won: 'Closed won', lost: 'Closed lost' };
+  el.innerHTML = cbs.map(c => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
+      <span class="tx-chargeback cb-${c.status}" style="margin:0">${label[c.status] || c.status}</span>
+      <span style="flex:1">$${money(c.amount)}${c.card_last4 ? ` · ****${escapeHtml(c.card_last4)}` : ''}${c.closed_at ? ` · closed ${c.closed_at}` : ''}${c.note ? ` · ${escapeHtml(c.note)}` : ''}</span>
+      <button type="button" onclick="editChargeback(${c.id})" style="border:none;background:none;color:var(--rose);text-decoration:underline;cursor:pointer;font-size:.8rem">Edit</button>
+      <button type="button" onclick="removeChargeback(${c.id})" title="Remove" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:1rem;line-height:1">&times;</button>
+    </div>`).join('')
+    + `<div style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:6px">$${money(used)} of $${money(chargebackMaxAmount)} disputed · $${money(left)} left</div>`;
+}
+
+// Blank form, ready for another dispute on the same sale.
+function resetChargebackForm() {
+  chargebackEditId = null;
+  const cbs = (chargebackTarget && chargebackTarget.chargebacks) || [];
+  const used = cbs.reduce((s, c) => s + Number(c.amount || 0), 0);
+  const left = Math.max(0, round2(chargebackMaxAmount - used));
+  document.getElementById('cbAmountLabel').textContent = cbs.length ? 'Amount disputed (another card)' : 'Amount disputed';
+  document.getElementById('cbAmount').value = left > 0 ? left.toFixed(2) : '';
+  document.getElementById('cbCard').value = '';
+  document.getElementById('cbStatus').value = 'pending';
+  document.getElementById('cbClosedAt').value = '';
+  document.getElementById('cbNote').value = '';
+  document.getElementById('cbError').textContent = '';
+  const btn = document.getElementById('cbSaveBtn');
+  if (btn) btn.textContent = cbs.length ? 'Add dispute' : 'Save';
   updateChargebackForm();
 }
 
+function chargebackFullAmount() {
+  const cbs = (chargebackTarget && chargebackTarget.chargebacks) || [];
+  const used = cbs.filter(c => c.id !== chargebackEditId).reduce((s, c) => s + Number(c.amount || 0), 0);
+  const left = Math.max(0, round2(chargebackMaxAmount - used));
+  document.getElementById('cbAmount').value = left ? left.toFixed(2) : '';
+  updateChargebackForm();
+}
+
+// Only a closed dispute has a close date, and that date decides which paycheck
+// the money moves on — so the consequence is spelled out as they choose.
 function updateChargebackForm() {
   const status = document.getElementById('cbStatus').value;
-  const closedWrap = document.getElementById('cbClosedWrap');
-  closedWrap.style.display = status === 'pending' ? 'none' : '';
+  document.getElementById('cbClosedWrap').style.display = status === 'pending' ? 'none' : '';
 
-  // Say what a partial dispute means for commission, since only that share of
-  // it is affected and the rest is still earned.
   const noteEl = document.getElementById('cbAmountNote');
   const amt = parseFloat(document.getElementById('cbAmount').value);
   if (!chargebackMaxAmount) {
     noteEl.textContent = 'Leave blank to dispute the whole of each sale.';
   } else if (!isFinite(amt) || amt <= 0) {
-    noteEl.textContent = `Blank means the whole sale — $${money(chargebackMaxAmount)}.`;
+    noteEl.textContent = `Blank means whatever is left of the $${money(chargebackMaxAmount)} sale.`;
   } else if (amt >= chargebackMaxAmount) {
     noteEl.textContent = `The whole sale ($${money(chargebackMaxAmount)}). All of its commission is affected.`;
   } else {
     const pct = (amt / chargebackMaxAmount) * 100;
     noteEl.textContent = `${pct.toFixed(1)}% of the $${money(chargebackMaxAmount)} sale — only that share of the commission is affected.`;
   }
+
   const effect = {
-    pending: 'Commission on this sale is held back until the dispute closes.',
+    pending: 'Commission on this share is held back until the dispute closes.',
     won: 'The store kept the money. The held-back commission is paid on the paycheck covering the date it closed.',
-    lost: 'The store lost the money. The commission is never paid — and if it had already been paid out, it comes off the paycheck covering the date it closed.',
+    lost: 'The store lost the money. That commission is never paid — and if it had already been paid out, it comes off the paycheck covering the date it closed.',
   }[status] || '';
   document.getElementById('cbEffect').textContent = effect;
 }
 
-async function saveChargeback(remove) {
-  const batch = chargebackTargets;
+function editChargeback(id) {
+  const c = ((chargebackTarget && chargebackTarget.chargebacks) || []).find(x => x.id === id);
+  if (!c) return;
+  chargebackEditId = id;
+  document.getElementById('cbAmountLabel').textContent = 'Amount disputed';
+  document.getElementById('cbAmount').value = Number(c.amount).toFixed(2);
+  document.getElementById('cbCard').value = c.card_last4 || '';
+  document.getElementById('cbStatus').value = c.status || 'pending';
+  document.getElementById('cbClosedAt').value = c.closed_at || '';
+  document.getElementById('cbNote').value = c.note || '';
+  const btn = document.getElementById('cbSaveBtn');
+  if (btn) btn.textContent = 'Update dispute';
+  updateChargebackForm();
+}
+
+async function removeChargeback(id) {
+  if (!confirm('Remove this dispute?\n\nAny commission it was holding back is released.')) return;
+  try {
+    const resp = await fetch(`${API}/api/pos/transactions/${chargebackTarget.id}/chargebacks/${id}`, {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ manager_name: txCreds.name, manager_pin: txCreds.pin }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Could not remove it');
+    await refreshChargebacks();
+  } catch (err) { document.getElementById('cbError').textContent = err.message; }
+}
+
+// Re-read from the server so the list, badges and remaining balance reflect
+// what was actually stored rather than what we hoped was.
+async function refreshChargebacks() {
   const tx = chargebackTarget;
-  if (!tx && !(batch && batch.length)) return;
+  const resp = await fetch(`${API}/api/pos/transactions/${tx.id}/chargebacks`, { credentials: 'include' });
+  tx.chargebacks = resp.ok ? ((await resp.json()).chargebacks || []) : [];
+  tx.charged_back = tx.chargebacks.length ? 1 : 0;
+  document.getElementById('cbRemoveBtn').style.display = tx.chargebacks.length ? '' : 'none';
+  renderChargebackList();
+  resetChargebackForm();
+  applyTxFilters();
+}
+
+async function saveChargeback(remove) {
   const errEl = document.getElementById('cbError');
   errEl.textContent = '';
   const status = document.getElementById('cbStatus').value;
   const closedAt = document.getElementById('cbClosedAt').value;
   const note = document.getElementById('cbNote').value.trim();
+  const card = document.getElementById('cbCard').value.replace(/\D/g, '').slice(0, 4);
   const amountRaw = document.getElementById('cbAmount').value.trim();
   if (!remove && amountRaw !== '' && !(parseFloat(amountRaw) > 0)) {
     errEl.textContent = 'Enter a disputed amount greater than zero, or clear it for the whole sale.';
@@ -3568,35 +3703,44 @@ async function saveChargeback(remove) {
     errEl.textContent = 'Enter the date the dispute closed — it decides which paycheck this lands on.';
     return;
   }
-  const list = batch && batch.length ? batch : [tx];
+
+  // In batch mode this records one dispute for the whole of each selected sale.
+  const list = chargebackTargets && chargebackTargets.length ? chargebackTargets : [chargebackTarget];
   const failed = [];
   for (const t of list) {
     try {
-      const resp = await fetch(`${API}/api/pos/transactions/${t.id}/chargeback`, {
+      if (remove) {
+        for (const c of (t.chargebacks || [])) {
+          const r = await fetch(`${API}/api/pos/transactions/${t.id}/chargebacks/${c.id}`, {
+            method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+            body: JSON.stringify({ manager_name: txCreds.name, manager_pin: txCreds.pin }),
+          });
+          if (!r.ok) throw new Error(((await r.json()).error) || 'Could not remove');
+        }
+        t.chargebacks = []; t.charged_back = 0;
+        continue;
+      }
+      const resp = await fetch(`${API}/api/pos/transactions/${t.id}/chargebacks`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify({
           manager_name: txCreds.name, manager_pin: txCreds.pin,
-          charged_back: !remove, note, status, closed_at: status === 'pending' ? null : closedAt,
+          id: chargebackTargets ? null : chargebackEditId,
           amount: amountRaw === '' ? null : Number(amountRaw),
+          card_last4: card, status, closed_at: status === 'pending' ? null : closedAt, note,
         }),
       });
       const data = await resp.json();
-      if (!resp.ok) throw new Error(data.error || 'Could not update');
-      // Update in place so the list doesn't have to be refetched and re-scoped.
-      t.charged_back = remove ? 0 : 1;
-      t.chargeback_status = remove ? '' : status;
-      t.chargeback_closed_at = (remove || status === 'pending') ? null : closedAt;
-      t.charged_back_note = remove ? '' : note;
-      t.chargeback_amount = remove ? null : (data.amount != null ? data.amount : null);
+      if (!resp.ok) throw new Error(data.error || 'Could not save');
+      t.charged_back = 1;
     } catch (err) {
       failed.push(`${t.receipt_number}: ${err.message}`);
     }
   }
-  applyTxFilters();
-  // Say which ones didn't take rather than closing on a partial success.
-  if (failed.length) { errEl.textContent = `${failed.length} of ${list.length} failed — ${failed[0]}`; return; }
-  chargebackTargets = null;
-  closeChargebackModal();
+
+  if (failed.length) { errEl.textContent = `${failed.length} of ${list.length} failed — ${failed[0]}`; applyTxFilters(); return; }
+  if (chargebackTargets) { chargebackTargets = null; closeChargebackModal(); applyTxFilters(); return; }
+  // Stay open on a single sale so another card can be added straight away.
+  await refreshChargebacks();
 }
 
 function viewReceipt(txId) {
