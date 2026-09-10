@@ -274,6 +274,13 @@ async function initSchema() {
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS charged_back INTEGER DEFAULT 0');
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS charged_back_at TIMESTAMPTZ');
   await migrate("ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS charged_back_note TEXT DEFAULT ''");
+  // Where the dispute stands: 'pending' while it's open, 'won' if the store
+  // kept the money, 'lost' if the bank took it. Drives whether the sale's
+  // commission is withheld, released, or clawed back — see payrollForPayday.
+  await migrate("ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS chargeback_status TEXT DEFAULT ''");
+  await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS chargeback_closed_at TIMESTAMPTZ');
+  // Anything already flagged before statuses existed is an open dispute.
+  await migrate("UPDATE pos_transactions SET chargeback_status = 'pending' WHERE charged_back = 1 AND COALESCE(chargeback_status,'') = ''");
 
   // Batch reconciliation: which days have been reviewed, and audit date ranges
   // saved to come back to. Only the range is stored for a saved audit — it's
@@ -924,21 +931,205 @@ async function findRecentDuplicate(userId, { type, customer_name, customer_email
   return rows[0] || null;
 }
 
+// ─── Payroll: semi-monthly pay periods ──────────────────────────────────────
+//
+// Paydays are the 1st and the 15th, each covering a half-month that closed two
+// weeks earlier:
+//   worked 1–15 Sep   → paid 1 Oct
+//   worked 16–30 Sep  → paid 15 Oct
+//   worked 1–15 Oct   → paid 1 Nov
+//
+// All dates here are plain 'YYYY-MM-DD' strings in the store's local calendar;
+// no Date objects, so a timezone can never shift a day across a period edge.
+
+const lastDayOfMonth = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+const pad = n => String(n).padStart(2, '0');
+const round2 = n => Math.round((Number(n) || 0) * 100) / 100;
+
+// The three states a dispute can be in. Anything else means "not disputed".
+const CHARGEBACK_STATUSES = ['pending', 'won', 'lost'];
+
+// The work period a payday pays for.
+function periodForPayday(payday) {
+  const [y, m, d] = payday.split('-').map(Number);
+  // Step back one month; the 1st pays the first half of it, the 15th the second.
+  const py = m === 1 ? y - 1 : y;
+  const pm = m === 1 ? 12 : m - 1;
+  return d === 1
+    ? { start: `${py}-${pad(pm)}-01`, end: `${py}-${pad(pm)}-15` }
+    : { start: `${py}-${pad(pm)}-16`, end: `${py}-${pad(pm)}-${pad(lastDayOfMonth(py, pm))}` };
+}
+
+// The payday that pays for the half-month containing this date — the inverse
+// of periodForPayday.
+function paydayForDate(date) {
+  const [y, m, d] = date.split('-').map(Number);
+  const ny = m === 12 ? y + 1 : y;
+  const nm = m === 12 ? 1 : m + 1;
+  return d <= 15 ? `${ny}-${pad(nm)}-01` : `${ny}-${pad(nm)}-15`;
+}
+
+// Every payday from `after` up to and including `upTo`, most recent first.
+function paydaysBetween(after, upTo) {
+  const out = [];
+  let [y, m] = upTo.split('-').map(Number);
+  for (let i = 0; i < 60; i++) {
+    for (const d of ['15', '01']) {
+      const p = `${y}-${pad(m)}-${d}`;
+      if (p > upTo) continue;
+      if (p <= after) return out;
+      out.push(p);
+    }
+    m -= 1; if (m === 0) { m = 12; y -= 1; }
+  }
+  return out;
+}
+
+// What each employee is owed on a given payday.
+//
+// Commission is earned on sales in the period, but a sale under dispute doesn't
+// pay: it's withheld while pending and never paid if the dispute is lost. A
+// dispute that's WON releases the withheld commission onto the paycheck
+// covering the day it closed. A dispute that's LOST after its sale was already
+// paid out is deducted from that same paycheck, since the money has to come
+// back somehow.
+async function payrollForPayday(userId, payday) {
+  const ids = asCompanyIds(userId);
+  const period = periodForPayday(payday);
+
+  // Every sale in the period, disputed or not. Disputed ones are then removed
+  // by a visible "withheld" line rather than being left out here, so the
+  // paycheck shows what was earned and exactly why it was reduced — a total
+  // that silently omits them can't be checked against the sales.
+  const earned = (await query(`
+    SELECT e.id AS employee_id, e.name AS employee_name, e.commission_rate,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN ${EMP_SHARE}
+                        WHEN t.type = 'return' THEN -(${EMP_SHARE}) ELSE 0 END), 0) AS net_sales,
+      COUNT(DISTINCT CASE WHEN t.type = 'sale' THEN t.id END) AS sale_count
+    FROM pos_employees e
+    JOIN pos_transaction_employees te ON te.employee_id = e.id
+    JOIN pos_transactions t ON t.id = te.transaction_id
+    WHERE e.user_id = ANY($1::text[]) AND t.user_id = ANY($1::text[])
+      AND COALESCE(t.original_sale_date, t.created_at)::date >= $2::date
+      AND COALESCE(t.original_sale_date, t.created_at)::date <= $3::date
+    GROUP BY e.id
+  `, [ids, period.start, period.end])).rows;
+
+  // Every disputed sale, with the dates needed to decide which paycheck it
+  // touches and whether its commission had already gone out.
+  const disputes = (await query(`
+    SELECT t.id, t.receipt_number, t.chargeback_status AS status,
+      COALESCE(t.original_sale_date, t.created_at)::date::text AS sale_date,
+      t.charged_back_at::date::text AS marked_date,
+      t.chargeback_closed_at::date::text AS closed_date,
+      e.id AS employee_id, e.name AS employee_name, e.commission_rate,
+      ${EMP_SHARE} AS share
+    FROM pos_transactions t
+    JOIN pos_transaction_employees te ON te.transaction_id = t.id
+    JOIN pos_employees e ON e.id = te.employee_id
+    WHERE t.user_id = ANY($1::text[]) AND t.type = 'sale'
+      AND COALESCE(t.chargeback_status, '') IN ('pending', 'won', 'lost')
+  `, [ids])).rows;
+
+  const byEmp = new Map();
+  const row = (id, name, rate) => {
+    if (!byEmp.has(id)) byEmp.set(id, {
+      employee_id: id, employee_name: name, commission_rate: Number(rate) || 0,
+      net_sales: 0, sale_count: 0, commission_earned: 0, adjustments: [], total: 0,
+    });
+    return byEmp.get(id);
+  };
+
+  for (const e of earned) {
+    const r = row(e.employee_id, e.employee_name, e.commission_rate);
+    r.net_sales = round2(Number(e.net_sales));
+    r.sale_count = Number(e.sale_count);
+    r.commission_earned = round2(r.net_sales * r.commission_rate / 100);
+  }
+
+  for (const d of disputes) {
+    const commission = round2(Number(d.share) * (Number(d.commission_rate) || 0) / 100);
+    if (commission === 0) continue;
+    const naturalPayday = paydayForDate(d.sale_date);
+    // Withheld only if the dispute was raised before that paycheck went out;
+    // otherwise the commission was already paid and can only be clawed back.
+    const wasPaid = !d.marked_date || d.marked_date > naturalPayday;
+
+    if (d.status === 'pending') {
+      // Nothing lands on this paycheck; it shows on the sale's own paycheck as
+      // a withholding so the reduction there is explainable.
+      if (!wasPaid && naturalPayday === payday) {
+        const r = row(d.employee_id, d.employee_name, d.commission_rate);
+        r.adjustments.push({ kind: 'withheld', receipt: d.receipt_number, amount: -commission,
+          note: `dispute open on the ${d.sale_date} sale` });
+      }
+      continue;
+    }
+
+    const closePayday = d.closed_date ? paydayForDate(d.closed_date) : null;
+    if (closePayday !== payday) {
+      // Still show the original withholding on the sale's own paycheck.
+      if (!wasPaid && naturalPayday === payday) {
+        const r = row(d.employee_id, d.employee_name, d.commission_rate);
+        r.adjustments.push({ kind: 'withheld', receipt: d.receipt_number, amount: -commission,
+          note: `dispute on the ${d.sale_date} sale` });
+      }
+      continue;
+    }
+
+    const r = row(d.employee_id, d.employee_name, d.commission_rate);
+    if (d.status === 'won' && !wasPaid) {
+      r.adjustments.push({ kind: 'won', receipt: d.receipt_number, amount: commission,
+        note: `dispute won ${d.closed_date}, commission released` });
+    } else if (d.status === 'lost' && wasPaid) {
+      r.adjustments.push({ kind: 'lost', receipt: d.receipt_number, amount: -commission,
+        note: `dispute lost ${d.closed_date}, already paid on ${naturalPayday}` });
+    }
+  }
+
+  const rows = [...byEmp.values()];
+  for (const r of rows) {
+    r.adjustment_total = round2(r.adjustments.reduce((s, a) => s + a.amount, 0));
+    r.total = round2(r.commission_earned + r.adjustment_total);
+  }
+  rows.sort((a, b) => b.total - a.total || String(a.employee_name).localeCompare(b.employee_name));
+  return { payday, period, employees: rows };
+}
+
 // Flag (or clear) a sale as charged back. Scoped by user_id like every other
 // single-transaction operation, so one company can't touch another's rows.
-async function setTransactionChargeback(id, userId, chargedBack, note) {
+async function setTransactionChargeback(id, userId, chargedBack, note, status, closedAt) {
   const existing = (await query(
-    'SELECT id, type FROM pos_transactions WHERE id = $1 AND user_id = $2', [id, userId])).rows[0];
+    'SELECT id, type, charged_back, charged_back_at FROM pos_transactions WHERE id = $1 AND user_id = $2',
+    [id, userId])).rows[0];
   if (!existing) return null;
   // Only a sale can be disputed — a return is money already going back out.
   if (existing.type !== 'sale') return { error: 'Only a sale can be marked as a chargeback.' };
+
+  if (!chargedBack) {
+    await query(
+      `UPDATE pos_transactions
+       SET charged_back = 0, charged_back_at = NULL, charged_back_note = '',
+           chargeback_status = '', chargeback_closed_at = NULL
+       WHERE id = $1 AND user_id = $2`, [id, userId]);
+    return { ok: true };
+  }
+
+  const st = CHARGEBACK_STATUSES.includes(String(status || '').toLowerCase())
+    ? String(status).toLowerCase() : 'pending';
+  if (st !== 'pending' && !closedAt) {
+    return { error: 'A closed dispute needs the date it was closed — that decides which paycheck it lands on.' };
+  }
+  // Keep the original raised-date: it decides whether the commission had
+  // already been paid out, so re-saving the status must not move it.
+  const markedAt = existing.charged_back_at || new Date();
   await query(
     `UPDATE pos_transactions
-     SET charged_back = $1, charged_back_at = $2, charged_back_note = $3
-     WHERE id = $4 AND user_id = $5`,
-    [chargedBack ? 1 : 0, chargedBack ? new Date() : null, chargedBack ? (note || '') : '', id, userId]
-  );
-  return { ok: true };
+     SET charged_back = 1, charged_back_at = $1, charged_back_note = $2,
+         chargeback_status = $3, chargeback_closed_at = $4
+     WHERE id = $5 AND user_id = $6`,
+    [markedAt, note || '', st, st === 'pending' ? null : closedAt, id, userId]);
+  return { ok: true, status: st };
 }
 
 async function getTransactionByReceipt(receiptNumber, userId) {
@@ -1861,6 +2052,9 @@ module.exports = {
   getEmployeeTransactions,
   updateTransaction,
   deleteTransaction,
+  payrollForPayday,
+  periodForPayday,
+  paydaysBetween,
   findCustomerByContact,
   findRecentDuplicate,
   setTransactionChargeback,

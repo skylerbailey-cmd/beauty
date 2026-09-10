@@ -334,6 +334,11 @@
       background: var(--danger); color: #fff; font-size: .62rem; font-weight: 700;
       letter-spacing: .04em; white-space: nowrap;
     }
+    /* Open disputes are a warning, lost ones are a loss, won ones are settled
+       in the store's favour — so they shouldn't all read as equally bad. */
+    .tx-chargeback.cb-pending { background: #b26a00; }
+    .tx-chargeback.cb-lost    { background: var(--danger); }
+    .tx-chargeback.cb-won     { background: var(--success); }
 
     /* ── Print styles ─── */
     /* Thermal paper: no page margins, size to the 80mm roll (height auto). */
@@ -716,6 +721,21 @@
 
       <!-- Manager-only: KPIs, sales leaderboard, full commissions table, and top products (revealed after a manager unlocks above) -->
       <div id="managerCommissionsSection" style="display:none">
+        <!-- Payroll: what's actually owed on a payday, once disputes are
+             accounted for. Separate from the commission table above, which
+             reports whatever date range is selected. -->
+        <div class="report-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+            <h3 style="margin:0">Payroll</h3>
+            <div style="display:flex;gap:8px;align-items:center;font-family:system-ui,sans-serif;font-size:.85rem">
+              <label>Payday:</label>
+              <select id="payrollPayday" onchange="loadPayroll()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;background:var(--white)"></select>
+            </div>
+          </div>
+          <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:6px 0 12px" id="payrollPeriodNote"></p>
+          <div id="payrollBody"></div>
+        </div>
+
         <div class="stat-grid" id="salesSummary"></div>
         <div class="report-card">
           <h3>Sales Leaderboard</h3>
@@ -1045,6 +1065,39 @@
       <div style="display:flex;gap:10px">
         <button class="btn btn-cancel" onclick="closePriceEdit()">Cancel</button>
         <button class="btn btn-confirm" onclick="confirmPriceEdit()">Add to Cart</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Chargeback status ─── -->
+<div class="modal-overlay" id="chargebackModal">
+  <div class="modal" style="max-width:440px">
+    <h2>Chargeback — <span id="cbReceipt" style="font-family:monospace"></span></h2>
+    <p class="sub" id="cbSummary"></p>
+    <div class="field">
+      <label>Where the dispute stands</label>
+      <select id="cbStatus" onchange="updateChargebackForm()" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.95rem;font-family:system-ui,sans-serif;outline:none;background:var(--white)">
+        <option value="pending">Pending — still being disputed</option>
+        <option value="won">Closed won — we kept the money</option>
+        <option value="lost">Closed lost — the money was taken</option>
+      </select>
+    </div>
+    <div class="field" id="cbClosedWrap">
+      <label>Date it closed</label>
+      <input type="date" id="cbClosedAt">
+    </div>
+    <div id="cbEffect" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);background:var(--cream);border-radius:8px;padding:10px 12px;margin-bottom:14px"></div>
+    <div class="field">
+      <label>Note (optional)</label>
+      <input type="text" id="cbNote" placeholder="Reference, reason, who handled it">
+    </div>
+    <div id="cbError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger);margin-bottom:8px"></div>
+    <div class="modal-actions" style="justify-content:space-between">
+      <button class="btn" id="cbRemoveBtn" style="background:var(--cream);color:var(--mid);border:1.5px dashed var(--border)" onclick="saveChargeback(true)">Not a chargeback</button>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-cancel" onclick="closeChargebackModal()">Cancel</button>
+        <button class="btn btn-confirm" style="background:var(--danger)" onclick="saveChargeback(false)">Save</button>
       </div>
     </div>
   </div>
@@ -3166,7 +3219,9 @@ function applyTxFilters() {
       ${canManage ? `<td><input type="checkbox" class="tx-select" onchange="toggleTxSelect(${tx.id}, this.checked)" ${selectedTxIds.has(tx.id) ? 'checked' : ''}></td>` : ''}
       <td style="font-family:monospace">${tx.receipt_number}</td>
       <td>${new Date(tx.created_at).toLocaleString()}</td>
-      <td><span class="tx-type-${tx.type}">${tx.type.toUpperCase()}</span>${tx.charged_back ? `<br><span class="tx-chargeback" title="${escapeHtml(tx.charged_back_note || 'Disputed by the customer — the money was taken back')}">CHARGED BACK</span>` : ''}</td>
+      <td><span class="tx-type-${tx.type}">${tx.type.toUpperCase()}</span>${tx.charged_back ? `<br><span class="tx-chargeback ${'cb-' + (tx.chargeback_status || 'pending')}" title="${escapeHtml(tx.charged_back_note || 'Disputed by the customer')}">${
+        { pending: 'CB PENDING', won: 'CB WON', lost: 'CB LOST' }[tx.chargeback_status] || 'CHARGED BACK'
+      }</span>` : ''}</td>
       <td>${tx.employees && tx.employees.length > 0 ? tx.employees.map(e => e.employee_name).join(', ') : '-'}</td>
       <td>${tx.customer_name || '-'}</td>
       <td>${tx.items.length}</td>
@@ -3350,31 +3405,77 @@ async function toggleChargeback(txId) {
     alert('Unlock the Transactions tab with a manager name and PIN first.');
     return;
   }
-  const marking = !tx.charged_back;
+  openChargebackModal(tx);
+}
 
-  let note = '';
-  if (marking) {
-    if (!confirm(`Mark ${tx.receipt_number} as a chargeback?\n\n`
-      + `$${money(tx.total)} from ${tx.customer_name || 'this customer'} was disputed and taken back.\n\n`
-      + `The sale stays on the books with its receipt and items intact — it's flagged as money the store did not keep.`)) return;
-    note = (prompt('Anything to record about the dispute? (optional)', '') || '').trim();
-  } else {
-    if (!confirm(`Clear the chargeback on ${tx.receipt_number}?\n\nUse this if the dispute was won and the money was kept.`)) return;
+// Marking a chargeback, or moving an existing one on. The status drives
+// commission (see the note in the dialog), so it's a proper form rather than a
+// confirm box.
+let chargebackTarget = null;
+function openChargebackModal(tx) {
+  chargebackTarget = tx;
+  document.getElementById('cbReceipt').textContent = tx.receipt_number;
+  document.getElementById('cbSummary').textContent =
+    `$${money(tx.total)} from ${tx.customer_name || 'this customer'} on ${new Date(tx.created_at).toLocaleDateString()}`;
+  document.getElementById('cbStatus').value = tx.chargeback_status || 'pending';
+  document.getElementById('cbClosedAt').value = (tx.chargeback_closed_at || '').slice(0, 10);
+  document.getElementById('cbNote').value = tx.charged_back_note || '';
+  document.getElementById('cbError').textContent = '';
+  document.getElementById('cbRemoveBtn').style.display = tx.charged_back ? '' : 'none';
+  updateChargebackForm();
+  document.getElementById('chargebackModal').classList.add('show');
+}
+
+function closeChargebackModal() {
+  document.getElementById('chargebackModal').classList.remove('show');
+  chargebackTarget = null;
+}
+
+// Only a closed dispute has a close date, and that date is what decides which
+// paycheck the money moves on — so spell out the consequence as they pick.
+function updateChargebackForm() {
+  const status = document.getElementById('cbStatus').value;
+  const closedWrap = document.getElementById('cbClosedWrap');
+  closedWrap.style.display = status === 'pending' ? 'none' : '';
+  const effect = {
+    pending: 'Commission on this sale is held back until the dispute closes.',
+    won: 'The store kept the money. The held-back commission is paid on the paycheck covering the date it closed.',
+    lost: 'The store lost the money. The commission is never paid — and if it had already been paid out, it comes off the paycheck covering the date it closed.',
+  }[status] || '';
+  document.getElementById('cbEffect').textContent = effect;
+}
+
+async function saveChargeback(remove) {
+  const tx = chargebackTarget;
+  if (!tx) return;
+  const errEl = document.getElementById('cbError');
+  errEl.textContent = '';
+  const status = document.getElementById('cbStatus').value;
+  const closedAt = document.getElementById('cbClosedAt').value;
+  const note = document.getElementById('cbNote').value.trim();
+  if (!remove && status !== 'pending' && !closedAt) {
+    errEl.textContent = 'Enter the date the dispute closed — it decides which paycheck this lands on.';
+    return;
   }
-
   try {
-    const resp = await fetch(`${API}/api/pos/transactions/${txId}/chargeback`, {
+    const resp = await fetch(`${API}/api/pos/transactions/${tx.id}/chargeback`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ manager_name: txCreds.name, manager_pin: txCreds.pin, charged_back: marking, note }),
+      body: JSON.stringify({
+        manager_name: txCreds.name, manager_pin: txCreds.pin,
+        charged_back: !remove, note, status, closed_at: status === 'pending' ? null : closedAt,
+      }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Could not update the chargeback');
     // Update in place so the list doesn't have to be refetched and re-scoped.
-    tx.charged_back = marking ? 1 : 0;
-    tx.charged_back_note = marking ? note : '';
+    tx.charged_back = remove ? 0 : 1;
+    tx.chargeback_status = remove ? '' : status;
+    tx.chargeback_closed_at = (remove || status === 'pending') ? null : closedAt;
+    tx.charged_back_note = remove ? '' : note;
+    closeChargebackModal();
     applyTxFilters();
   } catch (err) {
-    alert(err.message);
+    errEl.textContent = err.message;
   }
 }
 
@@ -5170,6 +5271,66 @@ function commissionRow(e) {
     </tr>`;
 }
 
+// ─── Payroll ────────────────────────────────────────────────────────────────
+async function loadPaydayOptions() {
+  const sel = document.getElementById('payrollPayday');
+  if (!sel || sel.options.length) return; // already filled
+  try {
+    const resp = await fetch(`${API}/api/pos/reports/paydays`, { credentials: 'include' });
+    if (!resp.ok) return;
+    const list = (await resp.json()).paydays || [];
+    sel.innerHTML = list.map(p => `<option value="${p.payday}">${fmtPayday(p.payday)}</option>`).join('');
+    if (list.length) loadPayroll();
+  } catch (_) { /* leave the section empty */ }
+}
+
+function fmtPayday(d) {
+  const [y, m, day] = d.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, day)).toLocaleDateString('en-US',
+    { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+async function loadPayroll() {
+  const sel = document.getElementById('payrollPayday');
+  const body = document.getElementById('payrollBody');
+  const note = document.getElementById('payrollPeriodNote');
+  if (!sel || !sel.value || !personalCreds) return;
+  body.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid)">Loading…</div>';
+  try {
+    const resp = await fetch(`${API}/api/pos/reports/payroll`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ name: personalCreds.name, pin: personalCreds.pin, payday: sel.value }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Could not load payroll');
+
+    note.textContent = `Paid ${fmtPayday(data.payday)} — covering work from ${fmtPayday(data.period.start)} to ${fmtPayday(data.period.end)}.`;
+    const rows = (data.employees || []).filter(e => e.commission_earned !== 0 || e.adjustments.length);
+    if (!rows.length) { body.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid)">Nothing owed for this period.</div>'; return; }
+
+    const grand = rows.reduce((s, e) => s + e.total, 0);
+    body.innerHTML = rows.map(e => `
+      <div style="border-bottom:1px solid var(--border);padding:10px 0;font-family:system-ui,sans-serif;font-size:.85rem">
+        <div style="display:flex;justify-content:space-between;font-weight:600">
+          <span>${escapeHtml(e.employee_name)} <span style="font-weight:400;color:var(--mid)">· ${e.commission_rate}% of $${money(e.net_sales)}${e.sale_count ? ` over ${e.sale_count} sale${e.sale_count === 1 ? '' : 's'}` : ''}</span></span>
+          <span>$${money(e.commission_earned)}</span>
+        </div>
+        ${e.adjustments.map(a => `
+          <div style="display:flex;justify-content:space-between;padding-left:14px;color:${a.amount < 0 ? 'var(--danger)' : 'var(--success)'};font-size:.8rem;margin-top:3px">
+            <span>#${escapeHtml(String(a.receipt))} — ${escapeHtml(a.note)}</span>
+            <span>${a.amount < 0 ? '−' : '+'}$${money(Math.abs(a.amount))}</span>
+          </div>`).join('')}
+        <div style="display:flex;justify-content:space-between;font-weight:700;margin-top:5px;border-top:1px dashed var(--border);padding-top:5px">
+          <span>To pay</span><span>$${money(e.total)}</span>
+        </div>
+      </div>`).join('')
+      + `<div style="display:flex;justify-content:space-between;font-family:system-ui,sans-serif;font-weight:700;font-size:.95rem;padding-top:10px">
+           <span>Total for this payday</span><span>$${money(grand)}</span></div>`;
+  } catch (err) {
+    body.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--danger)">${escapeHtml(err.message)}</div>`;
+  }
+}
+
 function renderManagerCommissions() {
   document.getElementById('empReportBody').innerHTML =
     lastEmployeesReport.map(commissionRow).join('') ||
@@ -5228,6 +5389,7 @@ async function unlockPersonalReport(silent) {
       // Managers unlock the KPIs, full leaderboard, commissions, and top products
       managerReportsUnlocked = true;
       renderCompanyPickers(); // a manager can now combine companies here
+      loadPaydayOptions();    // payroll lives behind the same unlock
       document.getElementById('managerCommissionsSection').style.display = 'block';
       document.getElementById('salesSummary').innerHTML = lastSalesSummaryHtml;
       document.getElementById('prodReportBody').innerHTML = lastProductsHtml;

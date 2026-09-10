@@ -738,12 +738,13 @@ router.delete('/transactions/:id', async (req, res) => {
 // editing, since it changes what the books say was collected.
 router.post('/transactions/:id/chargeback', async (req, res) => {
   const userId = req.session.userId;
-  const { manager_name, manager_pin, charged_back, note } = req.body;
+  const { manager_name, manager_pin, charged_back, note, status, closed_at } = req.body;
   const manager = await verifyManager(userId, manager_name, manager_pin);
   if (!manager) return res.status(403).json({ error: 'Only a manager can mark a chargeback. Manager name and code did not match.' });
 
   const result = await pgDb.setTransactionChargeback(
-    parseInt(req.params.id), userId, !!charged_back, String(note || '').trim());
+    parseInt(req.params.id), userId, !!charged_back, String(note || '').trim(),
+    status, closed_at || null);
   if (!result) return res.status(404).json({ error: 'Transaction not found' });
   if (result.error) return res.status(400).json({ error: result.error });
   res.json({ ok: true, charged_back: !!charged_back });
@@ -1127,6 +1128,29 @@ router.get('/reports/employees', async (req, res) => {
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
   res.json({ report: await pgDb.getEmployeeSalesReport(scopeIds(req), startDate, endDate) });
+});
+
+// Commission owed on a given payday, with chargeback adjustments itemised.
+// Manager-gated like the rest of the commission figures.
+router.post('/reports/payroll', async (req, res) => {
+  const { name, pin, payday } = req.body;
+  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
+  if (!employee || employee.role !== 'manager') {
+    return res.status(403).json({ error: 'A manager name and PIN are needed to see payroll.' });
+  }
+  if (!/^\d{4}-\d{2}-(01|15)$/.test(String(payday || ''))) {
+    return res.status(400).json({ error: 'Pick a payday — they fall on the 1st and the 15th.' });
+  }
+  res.json(await pgDb.payrollForPayday(scopeIds(req), payday));
+});
+
+// The recent paydays to offer in the picker, newest first.
+router.get('/reports/paydays', async (req, res) => {
+  const settings = await pgDb.getSettings(req.session.userId);
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: settings.timezone || 'America/Los_Angeles' });
+  const [y, m] = today.split('-').map(Number);
+  const from = `${y - 1}-${String(m).padStart(2, '0')}-01`;
+  res.json({ paydays: pgDb.paydaysBetween(from, today).map(p => ({ payday: p, period: pgDb.periodForPayday(p) })) });
 });
 
 router.get('/reports/products', async (req, res) => {
