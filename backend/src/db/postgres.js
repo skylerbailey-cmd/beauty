@@ -1050,6 +1050,19 @@ const CB_FRACTION = `
     COALESCE(NULLIF(t.chargeback_amount, 0), t.total) / NULLIF(t.total, 0)
   ))`;
 
+// The disputed share of a sale at one status, as a fraction of its total.
+// Statuses are handled separately because they mean different things:
+//   pending — the money is in doubt, so the commission is held
+//   won     — the store kept it, so the commission is earned after all
+//   lost    — the money is gone, so the sale is struck off entirely
+const cbFractionAt = (status) => `
+  LEAST(1, GREATEST(0, COALESCE((
+    SELECT SUM(cb.amount) FROM pos_transaction_chargebacks cb
+    WHERE cb.transaction_id = t.id AND cb.status = '${status}'), 0) / NULLIF(t.total, 0)))`;
+const CB_PENDING = cbFractionAt('pending');
+const CB_WON = cbFractionAt('won');
+const CB_LOST = cbFractionAt('lost');
+
 // The pay schedule, from settings. Two paydays a month (the 1st and the 15th)
 // is the default; 'monthly' pays once, on the 1st. `lag` says which period a
 // payday settles: 'previous' skips a period so there's time to run payroll,
@@ -1234,12 +1247,19 @@ async function payrollForPayday(userId, payday, settings) {
     const wasPaid = !d.marked_date || d.marked_date > naturalPayday;
 
     if (d.status === 'pending') {
-      // Nothing lands on this paycheck; it shows on the sale's own paycheck as
-      // a withholding so the reduction there is explainable.
-      if (!wasPaid && naturalPayday === payday) {
+      // Money in doubt is held back whenever the sale happened. If its own
+      // paycheck hasn't gone out, it's withheld there; if it has, the amount
+      // is taken off the next paycheck that hasn't, since it was already paid.
+      const target = wasPaid ? landsOn(d.marked_date || d.sale_date) : naturalPayday;
+      if (target === payday) {
         const r = row(d.employee_id, d.employee_name, d.commission_rate);
-        r.adjustments.push({ kind: 'withheld', receipt: d.receipt_number, amount: -commission,
-          note: `dispute open on the ${d.sale_date} sale${d.card_last4 ? ' (card ****' + d.card_last4 + ')' : ''}` });
+        const card = d.card_last4 ? ' (card ****' + d.card_last4 + ')' : '';
+        r.adjustments.push({
+          kind: 'withheld', receipt: d.receipt_number, amount: -commission,
+          note: wasPaid
+            ? `dispute opened on the ${d.sale_date} sale${card} — held back, already paid on ${naturalPayday}`
+            : `dispute open on the ${d.sale_date} sale${card}`,
+        });
       }
       continue;
     }
@@ -1573,7 +1593,8 @@ async function getSalesReport(userId, startDate, endDate) {
       COUNT(CASE WHEN type = 'sale' AND charged_back = 1 THEN 1 END) as chargeback_count,
       COALESCE(SUM(CASE WHEN type = 'sale' THEN subtotal * COALESCE((
         SELECT LEAST(1, GREATEST(0, SUM(cb.amount) / NULLIF(pos_transactions.total, 0)))
-        FROM pos_transaction_chargebacks cb WHERE cb.transaction_id = pos_transactions.id), 0)
+        FROM pos_transaction_chargebacks cb
+        WHERE cb.transaction_id = pos_transactions.id AND cb.status IN ('pending','won')), 0)
         ELSE 0 END), 0) as chargeback_total
     FROM pos_transactions
     WHERE user_id = ANY($1::text[])
@@ -1591,24 +1612,26 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
       COALESCE(st.store_name, '') as company_name,
       COUNT(DISTINCT CASE WHEN t.type = 'sale' THEN t.id END) as sale_count,
       COUNT(DISTINCT CASE WHEN t.type = 'return' THEN t.id END) as return_count,
-      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN ${EMP_SHARE} ELSE 0 END), 0) as sales_total,
+      -- A lost dispute strikes the sale off: the money is gone, so it is not
+      -- sales, not commission, and not listed as a chargeback either.
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN (${EMP_SHARE}) * (1 - ${CB_LOST}) ELSE 0 END), 0) as sales_total,
       COALESCE(SUM(CASE WHEN t.type = 'return' THEN ${EMP_SHARE} ELSE 0 END), 0) as returns_total,
       -- net = sales - returns; rows outside the date range (t IS NULL) must NOT
       -- be subtracted, so use an explicit WHEN for returns and ELSE 0
-      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN ${EMP_SHARE} WHEN t.type = 'return' THEN -(${EMP_SHARE}) ELSE 0 END), 0) as net_total,
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN (${EMP_SHARE}) * (1 - ${CB_LOST})
+                        WHEN t.type = 'return' THEN -(${EMP_SHARE}) ELSE 0 END), 0) as net_total,
       -- This employee's credited share of any sale that was later charged
       -- back. Not deducted from sales_total above — shown beside it, so it's
       -- visible without quietly rewriting what they sold.
-      COUNT(DISTINCT CASE WHEN t.type = 'sale' AND t.charged_back = 1 THEN t.id END) as chargeback_count,
-      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN (${EMP_SHARE}) * COALESCE((
-        SELECT LEAST(1, GREATEST(0, SUM(cb.amount) / NULLIF(t.total, 0)))
-        FROM pos_transaction_chargebacks cb WHERE cb.transaction_id = t.id), 0) ELSE 0 END), 0) as chargeback_total,
+      COUNT(DISTINCT CASE WHEN t.type = 'sale' AND EXISTS (
+        SELECT 1 FROM pos_transaction_chargebacks cb
+        WHERE cb.transaction_id = t.id AND cb.status IN ('pending','won')) THEN t.id END) as chargeback_count,
+      COALESCE(SUM(CASE WHEN t.type = 'sale'
+        THEN (${EMP_SHARE}) * (${CB_PENDING} + ${CB_WON}) ELSE 0 END), 0) as chargeback_total,
       -- What commission is actually earned on: net sales less the disputed
       -- share, so a charged-back sale stops paying.
       COALESCE(SUM(CASE
-        WHEN t.type = 'sale' THEN (${EMP_SHARE}) * (1 - COALESCE((
-          SELECT LEAST(1, GREATEST(0, SUM(cb.amount) / NULLIF(t.total, 0)))
-          FROM pos_transaction_chargebacks cb WHERE cb.transaction_id = t.id), 0))
+        WHEN t.type = 'sale' THEN (${EMP_SHARE}) * (1 - ${CB_LOST} - ${CB_PENDING})
         WHEN t.type = 'return' THEN -(${EMP_SHARE}) ELSE 0 END), 0) as net_after_chargebacks
     FROM pos_employees e
     LEFT JOIN pos_settings st ON st.user_id = e.user_id
@@ -2032,10 +2055,8 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
   const txResult = await query(`
     SELECT t.id, t.type, t.created_at, te.commission_value,
       -- Same deduction as the report: a disputed sale doesn't pay commission.
-      (${EMP_SHARE}) * CASE WHEN t.type = 'sale' THEN (1 - COALESCE((
-          SELECT LEAST(1, GREATEST(0, SUM(cb.amount) / NULLIF(t.total, 0)))
-          FROM pos_transaction_chargebacks cb WHERE cb.transaction_id = t.id), 0))
-        ELSE 1 END AS commission_amount
+      (${EMP_SHARE}) * CASE WHEN t.type = 'sale'
+        THEN (1 - ${CB_LOST} - ${CB_PENDING}) ELSE 1 END AS commission_amount
     FROM pos_transactions t
     JOIN pos_transaction_employees te ON t.id = te.transaction_id
     WHERE te.employee_id = $1 AND t.user_id = ANY($2::text[])
