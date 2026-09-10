@@ -2247,6 +2247,15 @@ function explainCheckoutBlockers() {
 }
 
 // ─── Transaction ────────────────────────────────────────────────────────────
+// Phone numbers arrive however they were typed — "5203520920", "520-352-0920",
+// "+1 (520) 352 0920". Print one consistent form on the receipt, and leave
+// anything that isn't a plain 10-digit number exactly as entered.
+function formatPhone(v) {
+  const d = String(v || '').replace(/\D/g, '');
+  const ten = d.length === 11 && d.startsWith('1') ? d.slice(1) : d;
+  return ten.length === 10 ? `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}` : String(v || '');
+}
+
 function isValidEmail(v) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v || ''); }
 // 10+ digits once formatting is stripped — catches a stray keystroke without
 // rejecting country codes or extensions. Mirrors the server-side check.
@@ -2535,6 +2544,7 @@ function showReceipt(tx) {
     ${empNames ? `<div class="r-row"><span>Employee${tx.employees.length > 1 ? 's' : ''}:</span><span>${empNames}</span></div>` : ''}
     ${tx.customer_name ? `<div class="r-row"><strong><span>Customer:</span><span>${tx.customer_name}</span></strong></div>` : ''}
     ${tx.customer_email ? `<div class="r-row"><span>Email:</span><span class="r-wrap">${escapeHtml(tx.customer_email)}</span></div>` : ''}
+    ${tx.customer_phone ? `<div class="r-row"><span>Phone:</span><span>${escapeHtml(formatPhone(tx.customer_phone))}</span></div>` : ''}
     <div class="r-line"></div>
   `;
 

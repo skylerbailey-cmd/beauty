@@ -10,6 +10,14 @@ const { PRODUCTS, BUNDLES, generateWelcomeEmailBody } = require('./welcome');
 // report, and anything it doesn't know lands in "Other".
 const PAYMENT_METHODS = ['card', 'cash', 'check', 'other'];
 
+// Print phone numbers in one consistent form; anything that isn't a plain
+// 10-digit number is left exactly as it was entered.
+function formatPhone(v) {
+  const d = String(v || '').replace(/\D/g, '');
+  const ten = d.length === 11 && d.startsWith('1') ? d.slice(1) : d;
+  return ten.length === 10 ? `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}` : String(v || '');
+}
+
 // Format a money amount with thousands separators (e.g. 15146.25 -> "15,146.25")
 function money(n) { return Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
 
@@ -941,6 +949,7 @@ router.post('/transactions/:id/email', async (req, res) => {
         ${employeeNames ? `<p style="font-size:.85rem;color:#6b5057;margin:0 0 4px">Employee${tx.employees.length > 1 ? 's' : ''}: <strong>${employeeNames}</strong></p>` : ''}
         ${tx.customer_name ? `<p style="font-size:.85rem;color:#6b5057;margin:0 0 4px">Customer: <strong>${tx.customer_name}</strong></p>` : ''}
         ${tx.customer_email ? `<p style="font-size:.85rem;color:#6b5057;margin:0 0 4px;word-break:break-all">Email: ${tx.customer_email}</p>` : ''}
+        ${tx.customer_phone ? `<p style="font-size:.85rem;color:#6b5057;margin:0 0 4px">Phone: ${formatPhone(tx.customer_phone)}</p>` : ''}
         <div style="margin-top:12px">
         <table style="width:100%;border-collapse:collapse;font-size:.88rem">
           <thead><tr style="background:#f2dde2">
