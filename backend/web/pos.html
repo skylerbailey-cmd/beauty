@@ -1406,11 +1406,23 @@ let currentUser = null;
 // switcher in the corner. Set both together so they can never disagree about
 // which company you're looking at.
 function setHeaderCompany(name) {
-  const label = name || 'My Store';
+  const account = name || 'My Store';
+  // The big title shows the STORE name from Settings — the name the business
+  // actually trades under, and the one printed on receipts. The account name in
+  // the corner switcher stays as it is: that's what identifies the login you'd
+  // switch between, and the two can legitimately differ.
+  const store = String(storeSettings?.store_name || '').trim();
+  const title = store || account;
   const corner = document.getElementById('headerCompany');
   const big = document.getElementById('headerCompanyBig');
-  if (corner) corner.textContent = label;
-  if (big) { big.textContent = label; big.title = label; }
+  if (corner) corner.textContent = account;
+  if (big) { big.textContent = title; big.title = title; }
+}
+
+// Settings load after the header is first drawn, and the store name can be
+// edited, so re-apply the title whenever it may have changed.
+function refreshHeaderCompany() {
+  setHeaderCompany(currentUser?.companyName);
 }
 
 // ─── Init ───────────────────────────────────────────────────────────────────
@@ -5308,6 +5320,7 @@ async function loadStoreSettings() {
     const resp = await fetch(`${API}/api/pos/settings`, { credentials: 'include' });
     const data = await resp.json();
     storeSettings = data.settings || storeSettings;
+    refreshHeaderCompany(); // the page title comes from the store name
     document.getElementById('settingsStoreName').value = storeSettings.store_name || '';
     document.getElementById('settingsStoreAddress').value = storeSettings.store_address || '';
     document.getElementById('settingsStoreCity').value = storeSettings.store_city || '';
@@ -5349,6 +5362,7 @@ async function saveStoreSettings() {
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Save failed');
     storeSettings = data.settings || storeSettings;
+    refreshHeaderCompany(); // renaming the store renames the page title
     updateCartTotals();
     const btn = document.querySelector('#tab-settings .btn-confirm');
     if (btn) { btn.textContent = 'Saved!'; setTimeout(() => { btn.textContent = 'Save Settings'; }, 1500); }
@@ -5493,6 +5507,10 @@ async function switchAccount(email) {
     selectedBrands = data.user.brands || ['avologi', 'avinichi', 'hydrasphere', 'spacetouch', 'lumieres'];
     addLinkedAccount(currentUser.email, currentUser.companyName);
     applyTheme(currentUser.theme || 'rose');
+    // Drop the previous company's store name before re-titling, or the header
+    // keeps showing the store you just switched away from until its settings
+    // arrive (loadStoreSettings further down re-applies it).
+    storeSettings = { ...storeSettings, store_name: '' };
     setHeaderCompany(currentUser.companyName);
     document.getElementById('headerEmail').textContent = currentUser.email;
     document.getElementById('settingsCompanyName').value = currentUser.companyName || '';
