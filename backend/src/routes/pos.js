@@ -1494,76 +1494,105 @@ function payarcChargeNet(c) {
   return Math.round((captured - refunded) * 100) / 100;
 }
 
-// Charges in a date range, bucketed by local day.
+// Settled card volume from Payarc's BATCH reports — the same figures the
+// Payarc dashboard shows under Transactions → Batch Transactions.
 //
-// Pages until the pagination metadata says there is nothing left. It does NOT
-// stop early on seeing a charge older than the range: that would assume the
-// API returns newest first, and if it returns oldest first the very first page
-// ends the walk and every day reports $0.
+// /v1/charges is NOT the right source: it only returns charges created through
+// the API, so a store taking payments on a terminal has almost nothing there
+// (this account had 4 charges in total while its batches ran to tens of
+// thousands of dollars a week).
 //
-// Reports what it saw (pages, totals, the dates it found, a sample record) so
-// an empty result can be told apart from a mapping that didn't match.
+// /v1/batch/reports/details?date=YYYY-MM-DD returns every batch settled on
+// that date, keyed by batch reference, each with its individual transactions.
+async function fetchPayarcBatchDay(settings, batchDate) {
+  const r = await payarcGet(settings, `/v1/batch/reports/details?date=${encodeURIComponent(batchDate)}`);
+  if (!r.ok) return { ok: false, error: r.error, status: r.status, rows: [] };
+  const data = (r.data && r.data.data) || {};
+  const rows = [];
+  for (const [ref, batch] of Object.entries(data)) {
+    if (ref === 'grand_total') continue;           // account-wide, not this batch
+    for (const row of (batch.batch_data || [])) rows.push({ ...row, batch_ref: ref, batch_date: batchDate });
+  }
+  return { ok: true, rows };
+}
+
+// A transaction that carries a reject_record never funded — Payarc leaves it in
+// the batch but excludes it from batch_total, and it may be re-submitted and
+// settle in a later batch. Counting them would double-count that money.
+const payarcRejected = row => row.reject_record != null && String(row.reject_record).trim() !== '';
+
+// Amounts come as zero-padded cent strings ("00000389475" = $3,894.75).
+function payarcRowAmount(row) {
+  const cents = parseInt(String(row.amount || '0'), 10);
+  if (!isFinite(cents)) return 0;
+  const magnitude = Math.abs(cents) / 100;
+  return /refund|credit|return|void/i.test(String(row.trans_type || '')) ? -magnitude : magnitude;
+}
+
+// A batch settles a day or more after the sale, so to cover transactions made
+// inside the range we have to look at batches settled somewhat after it (one
+// sale here settled 8 days later), and a little before for stragglers.
+const PAYARC_SETTLE_LEAD_DAYS = 3;
+const PAYARC_SETTLE_LAG_DAYS = 14;
+
 async function fetchPayarcRange(settings, from, to, tz) {
   const byDate = {};
   const diag = {
-    pages: 0, charges_seen: 0, in_range: 0, dated: 0, undated: 0,
-    settled: 0, not_settled: 0, not_settled_statuses: {},
-    earliest: null, latest: null, sample: null, truncated: false, list_key: null,
+    batch_days_checked: 0, batches: 0, rows: 0, in_range: 0,
+    rejected: 0, reject_codes: {}, earliest: null, latest: null,
+    sample: null, errors: 0,
   };
-  const MAX_PAGES = 40; // ~4000 charges
 
-  for (let page = 1; page <= MAX_PAGES; page++) {
-    const r = await payarcGet(settings, `/v1/charges?limit=100&page=${page}`);
-    if (!r.ok) return { ok: false, error: r.error, status: r.status, byDate, diag };
+  const shift = (day, n) => {
+    const d = new Date(day + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  };
+  const scanDays = [];
+  for (let d = shift(from, -PAYARC_SETTLE_LEAD_DAYS); d <= shift(to, PAYARC_SETTLE_LAG_DAYS); d = shift(d, 1)) {
+    scanDays.push(d);
+  }
 
-    // Don't assume the envelope — take whichever key holds the array.
-    let list = [];
-    if (Array.isArray(r.data?.data)) { list = r.data.data; diag.list_key = 'data'; }
-    else if (Array.isArray(r.data)) { list = r.data; diag.list_key = '(root array)'; }
-    else if (Array.isArray(r.data?.charges)) { list = r.data.charges; diag.list_key = 'charges'; }
-    else if (r.data && typeof r.data === 'object') {
-      const arrKey = Object.keys(r.data).find(k => Array.isArray(r.data[k]));
-      if (arrKey) { list = r.data[arrKey]; diag.list_key = arrKey; }
-    }
+  const results = await mapWithConcurrency(scanDays, 5, day => fetchPayarcBatchDay(settings, day));
+  let firstError = null;
+  for (const res of results) {
+    diag.batch_days_checked++;
+    if (!res.ok) { diag.errors++; if (!firstError) firstError = res.error; continue; }
+    const refs = new Set();
+    for (const row of res.rows) {
+      refs.add(row.batch_ref);
+      diag.rows++;
+      if (!diag.sample) diag.sample = row;
 
-    diag.pages = page;
-    if (!list.length) break;
+      if (payarcRejected(row)) {
+        diag.rejected++;
+        const code = String(row.reject_record);
+        diag.reject_codes[code] = (diag.reject_codes[code] || 0) + 1;
+        continue;
+      }
 
-    for (const c of list) {
-      diag.charges_seen++;
-      if (!diag.sample) diag.sample = c;
-      const day = payarcDate(c, tz);
-      if (!day) { diag.undated++; continue; }
-      diag.dated++;
+      // Bucket by when the sale was TAKEN, not when the batch settled — that's
+      // the day the POS recorded it, so the two line up.
+      const day = String(row.transaction_date || row.batch_date || '').slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
       if (!diag.earliest || day < diag.earliest) diag.earliest = day;
       if (!diag.latest || day > diag.latest) diag.latest = day;
       if (day < from || day > to) continue;
       diag.in_range++;
 
-      // Declined, voided and unsettled charges never funded, so they don't
-      // belong in the settled total — counted separately so a day that looks
-      // short can be explained rather than just looking wrong.
-      if (!payarcSettled(c)) {
-        diag.not_settled++;
-        (diag.not_settled_statuses[String(c.status || 'unknown')] ??= 0);
-        diag.not_settled_statuses[String(c.status || 'unknown')]++;
-        continue;
-      }
-      diag.settled++;
-
-      const net = payarcChargeNet(c);
+      const amt = payarcRowAmount(row);
       if (!byDate[day]) byDate[day] = { total: 0, sales: 0, credits: 0, sale_count: 0, credit_count: 0, txns: 0 };
-      byDate[day].total += net;
-      if (net < 0) { byDate[day].credits += Math.abs(net); byDate[day].credit_count += 1; }
-      else { byDate[day].sales += net; byDate[day].sale_count += 1; }
+      byDate[day].total += amt;
+      if (amt < 0) { byDate[day].credits += Math.abs(amt); byDate[day].credit_count += 1; }
+      else { byDate[day].sales += amt; byDate[day].sale_count += 1; }
       byDate[day].txns += 1;
     }
-
-    const pg = r.data?.meta?.pagination;
-    if (pg && pg.current_page >= pg.total_pages) break;
-    if (!pg && list.length < 100) break;
-    if (page === MAX_PAGES) diag.truncated = true;
+    diag.batches += refs.size;
   }
+
+  // Every day failing means the credential or endpoint is wrong; a few failing
+  // is a transient blip that shouldn't wipe out the rest of the report.
+  if (diag.errors === scanDays.length) return { ok: false, error: firstError, byDate: {}, diag };
   return { ok: true, byDate, diag };
 }
 

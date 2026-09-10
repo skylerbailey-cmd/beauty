@@ -4664,15 +4664,15 @@ function renderAudit(data) {
     const payarcTotal = (data.days || []).reduce((s, d) => s + (d.by_processor?.payarc || 0), 0);
     if (pa && Math.abs(payarcTotal) < 0.01) {
       paEl.style.display = 'block';
-      paEl.innerHTML = `<b>Payarc returned no money for this range.</b> `
-        + `Read ${pa.charges_seen} charge(s) over ${pa.pages} page(s)`
-        + (pa.list_key ? ` from the "${escapeHtml(pa.list_key)}" field` : '')
-        + `; ${pa.in_range} fell inside ${data.from} → ${data.to}`
-        + (pa.dated ? `, and the charges seen run ${pa.earliest} → ${pa.latest}` : '')
-        + (pa.undated ? `. ${pa.undated} had no readable date` : '')
-        + (pa.truncated ? '. Stopped at the page limit — there are more charges than were read' : '')
+      const codes = Object.entries(pa.reject_codes || {}).map(([c, n]) => `${n}×${c}`).join(', ');
+      paEl.innerHTML = `<b>Payarc settled nothing in this range.</b> `
+        + `Checked ${pa.batch_days_checked} settlement day(s), found ${pa.batches} batch(es) holding ${pa.rows} transaction(s)`
+        + `; ${pa.in_range} were taken inside ${data.from} → ${data.to}`
+        + (pa.earliest ? `, and the transactions found run ${pa.earliest} → ${pa.latest}` : '')
+        + (pa.rejected ? `. ${pa.rejected} were rejected and never funded${codes ? ` (${escapeHtml(codes)})` : ''}` : '')
+        + (pa.errors ? `. ${pa.errors} day(s) could not be read` : '')
         + `.`
-        + (pa.sample ? `<br><br>One raw charge, so the amount/date fields can be mapped:<pre style="white-space:pre-wrap;word-break:break-word;margin-top:6px;max-height:240px;overflow:auto;background:#fff;padding:8px;border-radius:6px;border:1px solid #eadb9a">${escapeHtml(JSON.stringify(pa.sample, null, 2))}</pre>` : '');
+        + (pa.sample ? `<br><br>One raw batch transaction, for reference:<pre style="white-space:pre-wrap;word-break:break-word;margin-top:6px;max-height:240px;overflow:auto;background:#fff;padding:8px;border-radius:6px;border:1px solid #eadb9a">${escapeHtml(JSON.stringify(pa.sample, null, 2))}</pre>` : '');
     } else {
       paEl.style.display = 'none';
     }
