@@ -4528,7 +4528,10 @@ async function runAudit() {
 function renderAudit(data) {
   const t = data.totals || {};
   const mismatches = t.mismatches || 0;
-  document.getElementById('batchResultRange').textContent = `${data.from} → ${data.to}`;
+  // Name the processors, so a combined total is never mistaken for one of them.
+  const procs = data.processors || [];
+  document.getElementById('batchResultRange').textContent =
+    `${data.from} → ${data.to}` + (procs.length ? ` · ${procs.join(' + ')}` : '');
   // Reflect an auto-corrected DBA id
   if (data.dba_id) {
     storeSettings.maverick_dba_id = data.dba_id;
@@ -4561,7 +4564,11 @@ function renderAudit(data) {
                title="${escapeHtml(revTitle)}" style="width:16px;height:16px;accent-color:var(--success);cursor:pointer">
       </td>
       <td>${d.date}</td>
-      <td>$${money(d.merchant_total)}<br><span style="font-size:.7rem;color:var(--mid)">${d.merchant_batches} batch${d.merchant_batches === 1 ? '' : 'es'}</span></td>
+      <td>$${money(d.merchant_total)}<br><span style="font-size:.7rem;color:var(--mid)">${
+        d.by_processor
+          ? `Maverick $${money(d.by_processor.maverick)} + Payarc $${money(d.by_processor.payarc)}`
+          : `${d.merchant_batches} batch${d.merchant_batches === 1 ? '' : 'es'}`
+      }</span></td>
       <td>$${money(d.pos_total)}<br><span style="font-size:.7rem;color:var(--mid)">${d.pos_sale_count} sale${d.pos_sale_count === 1 ? '' : 's'}${d.pos_return_count ? ', ' + d.pos_return_count + ' return' + (d.pos_return_count === 1 ? '' : 's') : ''}</span></td>
       <td style="font-weight:600;color:${d.matched ? 'var(--mid)' : 'var(--danger)'}">${d.difference > 0 ? '+' : ''}$${money(d.difference)}</td>
       <td>${d.matched
@@ -4571,6 +4578,16 @@ function renderAudit(data) {
     </tr>
   `;
   }).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No batches or card sales in this range</td></tr>';
+
+  // A processor that couldn't be reached contributes nothing, which on its own
+  // looks exactly like it settled nothing — say which one failed and why.
+  const procErrors = data.processor_errors || [];
+  const statusEl = document.getElementById('batchStatus');
+  if (procErrors.length && statusEl) {
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = procErrors.map(e => `${e.processor} could not be read: ${e.error}`).join(' · ')
+      + ' — the totals below exclude it.';
+  }
 
   // Diagnostic: if the merchant total is $0, show what Maverick actually returned
   const dbg = data._debug || {};

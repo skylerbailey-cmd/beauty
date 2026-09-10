@@ -1445,6 +1445,74 @@ router.get('/payarc/test', async (req, res) => {
   });
 });
 
+// Payarc money fields are minor units (cents), alongside an *_formatted string.
+function payarcMoney(v) {
+  const n = numVal(v);
+  return n == null ? null : n / 100;
+}
+
+// The local calendar date for a charge, in the store's timezone, from either an
+// epoch integer (created_at) or a date string.
+function payarcDate(c, tz) {
+  const raw = c.created_at ?? c.date ?? c.batch_date ?? c.approved_date;
+  if (raw == null) return null;
+  const d = typeof raw === 'number' || /^\d+$/.test(String(raw))
+    ? new Date(Number(raw) * 1000)
+    : new Date(raw);
+  if (isNaN(d)) return null;
+  return d.toLocaleDateString('en-CA', { timeZone: tz });
+}
+
+// Settled amount for one charge, net of anything refunded back on it. Captured
+// amount when present, since an authorised-but-not-captured charge never funds.
+function payarcChargeNet(c) {
+  const captured = payarcMoney(c.amount_captured);
+  const base = captured != null && captured !== 0 ? captured : (payarcMoney(c.amount) || 0);
+  const refunded = payarcMoney(c.amount_refunded) || 0;
+  return Math.round((base - refunded) * 100) / 100;
+}
+
+// Charges in a date range, per local day. Pages newest-first and stops once it
+// runs past the start of the range, so a long history doesn't get pulled.
+async function fetchPayarcRange(settings, from, to, tz) {
+  const byDate = {};
+  let rawCount = 0;
+  let sample = null;
+  let page = 1;
+  const MAX_PAGES = 40; // ~4000 charges; a guard, not an expected limit
+
+  while (page <= MAX_PAGES) {
+    const r = await payarcGet(settings, `/v1/charges?limit=100&page=${page}`);
+    if (!r.ok) return { ok: false, error: r.error, status: r.status, byDate, raw_count: rawCount, sample };
+    const list = Array.isArray(r.data?.data) ? r.data.data : [];
+    if (!list.length) break;
+
+    let sawOlderThanRange = false;
+    for (const c of list) {
+      rawCount++;
+      if (!sample) sample = c;
+      const day = payarcDate(c, tz);
+      if (!day) continue;
+      if (day < from) { sawOlderThanRange = true; continue; }
+      if (day > to) continue;
+
+      const net = payarcChargeNet(c);
+      if (!byDate[day]) byDate[day] = { total: 0, sales: 0, credits: 0, sale_count: 0, credit_count: 0, txns: 0 };
+      byDate[day].total += net;
+      if (net < 0) { byDate[day].credits += Math.abs(net); byDate[day].credit_count += 1; }
+      else { byDate[day].sales += net; byDate[day].sale_count += 1; }
+      byDate[day].txns += 1;
+    }
+
+    const pg = r.data?.meta?.pagination;
+    if (sawOlderThanRange) break;               // past the range, newest-first
+    if (pg && pg.current_page >= pg.total_pages) break;
+    if (!pg && list.length < 100) break;
+    page++;
+  }
+  return { ok: true, byDate, raw_count: rawCount, sample };
+}
+
 // ─── Maverick Batch Reconciliation ──────────────────────────────────────────
 
 const MAVERICK_BASE = 'https://dashboard.maverickpayments.com';
@@ -1784,7 +1852,13 @@ router.get('/reconciliation-audit', async (req, res) => {
   const dbaId = (settings.maverick_dba_id || '').trim();
   const token = (settings.maverick_token || '').trim();
   const tz = settings.timezone || 'America/Los_Angeles';
-  if (!dbaId || !token) return res.json({ configured: false });
+  // A company may settle through either processor, or both at once. With both
+  // connected the day total is the sum of the two, since together they are what
+  // actually funded; each one's own figure rides along so a mismatch can be
+  // traced to the processor it came from.
+  const hasMaverick = !!(dbaId && token);
+  const hasPayarc = !!(settings.payarc_token || '').trim();
+  if (!hasMaverick && !hasPayarc) return res.json({ configured: false });
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: tz });
   let from = (req.query.from || '').trim();
@@ -1805,7 +1879,7 @@ router.get('/reconciliation-audit', async (req, res) => {
   // day totals below — see fetchMerchantDay's comment for why a single wide
   // fetch can't be trusted for that.
   let usedDbaId = dbaId;
-  try {
+  if (hasMaverick) try {
     let r = await fetchMaverickBatches(dbaId, from, to, token);
     // If the configured id isn't accessible (e.g. it's a merchant id, not the
     // DBA id), resolve the real DBA id by store name and retry once.
@@ -1832,7 +1906,9 @@ router.get('/reconciliation-audit', async (req, res) => {
   for (let d = new Date(from + 'T00:00:00Z'); d <= new Date(to + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1)) {
     allDays.push(d.toISOString().slice(0, 10));
   }
-  const dayResults = await mapWithConcurrency(allDays, 5, day => fetchMerchantDay(usedDbaId, day, token));
+  const dayResults = hasMaverick
+    ? await mapWithConcurrency(allDays, 5, day => fetchMerchantDay(usedDbaId, day, token))
+    : allDays.map(() => ({ ok: false, records: [], failed: [] }));
 
   // Each record is a settled transaction: { amount, type: 'debit'|'credit', date,
   // batch: { id, date } }. A 'credit' is a refund back to the cardholder, so it
@@ -1887,6 +1963,39 @@ router.get('/reconciliation-audit', async (req, res) => {
     }
   }
 
+  // Payarc side, merged into the same per-day buckets so the day total is what
+  // both processors settled together. byProcessor keeps them separately.
+  const byProcessor = {};
+  if (hasMaverick) {
+    byProcessor.maverick = {};
+    for (const [d, v] of Object.entries(merchantByDate)) byProcessor.maverick[d] = Math.round(v.total * 100) / 100;
+  }
+  let payarcError = null;
+  let payarcRaw = 0;
+  let payarcSample = null;
+  if (hasPayarc) {
+    const pr = await fetchPayarcRange(settings, from, to, tz);
+    payarcRaw = pr.raw_count;
+    payarcSample = pr.sample;
+    if (!pr.ok) {
+      payarcError = pr.error;
+    } else {
+      byProcessor.payarc = {};
+      for (const [day, v] of Object.entries(pr.byDate)) {
+        byProcessor.payarc[day] = Math.round(v.total * 100) / 100;
+        if (!merchantByDate[day]) merchantByDate[day] = { total: 0, sales: 0, credits: 0, sale_count: 0, credit_count: 0, failed: 0, failed_amount: 0, over_limit: 0, over_limit_amount: 0, txns: 0, batchIds: new Set() };
+        merchantByDate[day].total += v.total;
+        merchantByDate[day].sales += v.sales;
+        merchantByDate[day].credits += v.credits;
+        merchantByDate[day].sale_count += v.sale_count;
+        merchantByDate[day].credit_count += v.credit_count;
+        merchantByDate[day].txns += v.txns;
+      }
+      totalRawCount += pr.raw_count;
+      if (!sampleRecord) sampleRecord = pr.sample;
+    }
+  }
+
   // POS side
   const posDays = await pgDb.getCardSalesByDateRange(userId, from, to, tz);
   const posByDate = {};
@@ -1925,6 +2034,11 @@ router.get('/reconciliation-audit', async (req, res) => {
       merchant_over_limit_amount: Math.round((merchantByDate[d]?.over_limit_amount || 0) * 100) / 100,
       merchant_batches: merchantByDate[d]?.batchIds?.size || 0,
       merchant_txns: merchantByDate[d]?.txns || 0,
+      // Per-processor split of merchant_total, present only when more than one
+      // is connected — so a mismatch can be pinned to one of them.
+      by_processor: Object.keys(byProcessor).length > 1
+        ? { maverick: byProcessor.maverick?.[d] || 0, payarc: byProcessor.payarc?.[d] || 0 }
+        : null,
       pos_total: Math.round(p * 100) / 100,
       pos_sales: Math.round((posByDate[d]?.sales_total || 0) * 100) / 100,
       pos_returns: Math.round((posByDate[d]?.returns_total || 0) * 100) / 100,
@@ -1964,7 +2078,7 @@ router.get('/reconciliation-audit', async (req, res) => {
 
   // If the selected range has no records at all, probe recent batches (last
   // 5 days) to distinguish "wrong dates" from "no connection / no batches".
-  if (totalRawCount === 0) {
+  if (totalRawCount === 0 && hasMaverick) {
     try {
       const probe = await fetchMaverickBatches(usedDbaId, null, null, token);
       if (probe.ok) {
@@ -1976,7 +2090,22 @@ router.get('/reconciliation-audit', async (req, res) => {
     } catch (_) { /* best effort */ }
   }
 
-  res.json({ configured: true, from, to, days, totals, dba_id: usedDbaId, _debug: debug });
+  // Name the processors that produced these figures. With one connected this
+  // reads as before; with two it's the only way to tell the total is combined.
+  const processors = [];
+  if (hasMaverick) processors.push('Maverick');
+  if (hasPayarc) processors.push('Payarc');
+  debug.payarc_charge_count = payarcRaw;
+  if (payarcSample) debug.payarc_sample = payarcSample;
+
+  res.json({
+    configured: true, from, to, days, totals, dba_id: usedDbaId,
+    processors,
+    // A processor that failed is reported rather than silently contributing 0,
+    // which would read as "settled nothing" and look like a real shortfall.
+    processor_errors: payarcError ? [{ processor: 'Payarc', error: payarcError }] : [],
+    _debug: debug,
+  });
 });
 
 function last4Of(v) {
