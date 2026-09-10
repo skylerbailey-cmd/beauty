@@ -1163,6 +1163,7 @@ async function payrollForPayday(userId, payday, settings) {
   const ids = asCompanyIds(userId);
   const sched = scheduleFrom(settings);
   const period = periodForPayday(payday, sched);
+  const storeNames = new Map((await getAllCompanyIds()).map(c => [c.user_id, c.store_name]));
 
   // Paydays already handed out. Their figures are settled, so anything that
   // happens afterwards has to land on a paycheck that hasn't gone out yet.
@@ -1180,23 +1181,45 @@ async function payrollForPayday(userId, payday, settings) {
     return p;
   };
 
-  // Every sale in the period, disputed or not. Disputed ones are then removed
-  // by a visible "withheld" line rather than being left out here, so the
-  // paycheck shows what was earned and exactly why it was reduced — a total
+  // Every sale in the period. What's later taken back — a return, a dispute —
+  // is shown as its own line rather than being quietly left out here, so the
+  // paycheck shows what was earned and exactly why it was reduced; a total
   // that silently omits them can't be checked against the sales.
   const earned = (await query(`
     SELECT e.id AS employee_id, e.name AS employee_name, e.commission_rate,
-      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN ${EMP_SHARE}
-                        WHEN t.type = 'return' THEN -(${EMP_SHARE}) ELSE 0 END), 0) AS net_sales,
-      COUNT(DISTINCT CASE WHEN t.type = 'sale' THEN t.id END) AS sale_count
+      e.user_id AS company_id,
+      COALESCE(SUM(${EMP_SHARE}), 0) AS sales_total,
+      COUNT(DISTINCT t.id) AS sale_count
     FROM pos_employees e
     JOIN pos_transaction_employees te ON te.employee_id = e.id
     JOIN pos_transactions t ON t.id = te.transaction_id
     WHERE e.user_id = ANY($1::text[]) AND t.user_id = ANY($1::text[])
+      AND t.type = 'sale'
       AND COALESCE(t.original_sale_date, t.created_at)::date >= $2::date
       AND COALESCE(t.original_sale_date, t.created_at)::date <= $3::date
     GROUP BY e.id
   `, [ids, period.start, period.end])).rows;
+
+  // Returns come off the paycheck that pays the sale they undo, which is not
+  // always the one covering the day the customer walked back in — a sale on
+  // the 14th returned on the 20th belongs to the earlier period. So these are
+  // matched on the original sale's date, not the return's, and are looked for
+  // outside this payday's period. A return whose paycheck has already gone out
+  // can't be taken off it, so it lands on the next one still open.
+  const returns = (await query(`
+    SELECT t.receipt_number,
+      COALESCE(t.original_sale_date, t.created_at)::date::text AS sale_date,
+      t.created_at::date::text AS return_date,
+      e.id AS employee_id, e.name AS employee_name, e.commission_rate,
+      e.user_id AS company_id,
+      ${EMP_SHARE} AS share
+    FROM pos_transactions t
+    JOIN pos_transaction_employees te ON te.transaction_id = t.id
+    JOIN pos_employees e ON e.id = te.employee_id
+    WHERE t.user_id = ANY($1::text[]) AND e.user_id = ANY($1::text[])
+      AND t.type = 'return'
+      AND t.created_at::date >= $2::date - INTERVAL '1 year'
+  `, [ids, period.start])).rows;
 
   // Every disputed sale, with the dates needed to decide which paycheck it
   // touches and whether its commission had already gone out.
@@ -1210,7 +1233,7 @@ async function payrollForPayday(userId, payday, settings) {
       cb.closed_at::date::text AS closed_date,
       cb.card_last4,
       e.id AS employee_id, e.name AS employee_name, e.commission_rate,
-      ${EMP_SHARE} AS share,
+      e.user_id AS company_id, ${EMP_SHARE} AS share,
       -- Only the disputed share of the sale affects commission.
       LEAST(1, GREATEST(0, cb.amount / NULLIF(t.total, 0))) AS cb_fraction
     FROM pos_transaction_chargebacks cb
@@ -1221,20 +1244,41 @@ async function payrollForPayday(userId, payday, settings) {
       AND cb.status IN ('pending', 'won', 'lost')
   `, [ids])).rows;
 
+  // One row per (employee record x company): the same person working at both
+  // stores has a separate record at each, and each store cuts its own check.
   const byEmp = new Map();
-  const row = (id, name, rate) => {
+  const row = (id, name, rate, companyId) => {
     if (!byEmp.has(id)) byEmp.set(id, {
       employee_id: id, employee_name: name, commission_rate: Number(rate) || 0,
-      net_sales: 0, sale_count: 0, commission_earned: 0, adjustments: [], total: 0,
+      company_id: companyId || null, store_name: storeNames.get(companyId) || '',
+      sales_total: 0, sale_count: 0, commission_earned: 0, adjustments: [], total: 0,
     });
     return byEmp.get(id);
   };
 
   for (const e of earned) {
-    const r = row(e.employee_id, e.employee_name, e.commission_rate);
-    r.net_sales = round2(Number(e.net_sales));
+    const r = row(e.employee_id, e.employee_name, e.commission_rate, e.company_id);
+    r.sales_total = round2(Number(e.sales_total));
     r.sale_count = Number(e.sale_count);
-    r.commission_earned = round2(r.net_sales * r.commission_rate / 100);
+    r.commission_earned = round2(r.sales_total * r.commission_rate / 100);
+  }
+
+  // A return reverses the commission on the paycheck paying its sale. If that
+  // paycheck is still open the deduction goes on it; if it has been paid the
+  // money is already out, so landsOn moves the deduction to the next open one.
+  for (const rt of returns) {
+    const commission = round2(Number(rt.share) * (Number(rt.commission_rate) || 0) / 100);
+    if (commission === 0) continue;
+    const naturalPayday = paydayForDate(rt.sale_date, sched);
+    const target = landsOn(rt.sale_date);
+    if (target !== payday) continue;
+    const r = row(rt.employee_id, rt.employee_name, rt.commission_rate, rt.company_id);
+    r.adjustments.push({
+      kind: 'return', receipt: rt.receipt_number, amount: -commission,
+      note: naturalPayday === payday
+        ? `returned ${rt.return_date} against the ${rt.sale_date} sale`
+        : `returned ${rt.return_date} against the ${rt.sale_date} sale — already paid on ${naturalPayday}`,
+    });
   }
 
   for (const d of disputes) {
@@ -1252,7 +1296,7 @@ async function payrollForPayday(userId, payday, settings) {
       // is taken off the next paycheck that hasn't, since it was already paid.
       const target = wasPaid ? landsOn(d.marked_date || d.sale_date) : naturalPayday;
       if (target === payday) {
-        const r = row(d.employee_id, d.employee_name, d.commission_rate);
+        const r = row(d.employee_id, d.employee_name, d.commission_rate, d.company_id);
         const card = d.card_last4 ? ' (card ****' + d.card_last4 + ')' : '';
         r.adjustments.push({
           kind: 'withheld', receipt: d.receipt_number, amount: -commission,
@@ -1270,14 +1314,14 @@ async function payrollForPayday(userId, payday, settings) {
     if (closePayday !== payday) {
       // Still show the original withholding on the sale's own paycheck.
       if (!wasPaid && naturalPayday === payday) {
-        const r = row(d.employee_id, d.employee_name, d.commission_rate);
+        const r = row(d.employee_id, d.employee_name, d.commission_rate, d.company_id);
         r.adjustments.push({ kind: 'withheld', receipt: d.receipt_number, amount: -commission,
           note: `dispute on the ${d.sale_date} sale` });
       }
       continue;
     }
 
-    const r = row(d.employee_id, d.employee_name, d.commission_rate);
+    const r = row(d.employee_id, d.employee_name, d.commission_rate, d.company_id);
     if (d.status === 'won' && !wasPaid) {
       r.adjustments.push({ kind: 'won', receipt: d.receipt_number, amount: commission,
         note: `dispute won ${d.closed_date}, commission released` });
@@ -1289,12 +1333,13 @@ async function payrollForPayday(userId, payday, settings) {
 
   // Manual lines added by hand — bonuses, corrections, advances.
   const manual = (await query(
-    `SELECT a.id, a.employee_id, a.amount, a.note, e.name AS employee_name, e.commission_rate
+    `SELECT a.id, a.employee_id, a.amount, a.note, e.name AS employee_name,
+            e.commission_rate, e.user_id AS company_id
      FROM pos_payroll_adjustments a JOIN pos_employees e ON e.id = a.employee_id
      WHERE a.user_id = ANY($1::text[]) AND a.payday = $2::date
      ORDER BY a.created_at`, [ids, payday])).rows;
   for (const a of manual) {
-    const r = row(a.employee_id, a.employee_name, a.commission_rate);
+    const r = row(a.employee_id, a.employee_name, a.commission_rate, a.company_id);
     r.adjustments.push({ kind: 'manual', id: a.id, receipt: null, amount: round2(a.amount), note: a.note || 'Manual adjustment' });
   }
 
@@ -1303,14 +1348,26 @@ async function payrollForPayday(userId, payday, settings) {
     r.adjustment_total = round2(r.adjustments.reduce((s, a) => s + a.amount, 0));
     r.total = round2(r.commission_earned + r.adjustment_total);
   }
-  rows.sort((a, b) => b.total - a.total || String(a.employee_name).localeCompare(b.employee_name));
+  // Grouped by person, so someone paid by both stores reads as one packet of
+  // lines instead of two rows sitting apart in a list ordered by amount.
+  rows.sort((a, b) =>
+    String(a.employee_name).localeCompare(String(b.employee_name))
+    || String(a.store_name).localeCompare(String(b.store_name)));
   return {
     payday, period, employees: rows,
+    total: round2(rows.reduce((s2, r) => s2 + r.total, 0)),
     paid: !!thisRun,
     paid_at: thisRun ? thisRun.paid_at : null,
     paid_by: thisRun ? thisRun.paid_by : '',
     schedule: sched,
   };
+}
+
+// Which paydays have already been handed out, so the picker can mark them.
+async function paidPaydays(userId) {
+  return (await query(
+    `SELECT DISTINCT payday::text AS payday FROM pos_payroll_runs WHERE user_id = ANY($1::text[])`,
+    [asCompanyIds(userId)])).rows.map(r => r.payday);
 }
 
 // Mark a payday paid, or reopen it.
@@ -2424,12 +2481,14 @@ module.exports = {
   deleteChargeback,
   getAllCompanyIds,
   payrollForPayday,
+  paidPaydays,
   setPayrollPaid,
   addPayrollAdjustment,
   deletePayrollAdjustment,
   periodForPayday,
   paydayForDate,
   paydaysBetween,
+  nextPayday,
   scheduleFrom,
   findCustomerByContact,
   findRecentDuplicate,

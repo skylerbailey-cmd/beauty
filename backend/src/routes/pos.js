@@ -1274,27 +1274,34 @@ router.post('/company-scope', async (req, res) => {
   res.json({ ok: true, included, rejected, company_count: ids.length });
 });
 
+// The unlocked reports read across every company: staff work at both stores
+// and a manager wants one picture rather than having to sign into each account
+// to assemble it. `all=1` is what the Reports tab sends; anything else stays on
+// whatever the session is scoped to.
+const reportScope = async (req) => req.query.all === '1'
+  ? (await pgDb.getAllCompanyIds()).map(c => c.user_id)
+  : scopeIds(req);
+
 router.get('/reports/sales', async (req, res) => {
   const { start, end } = req.query;
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
-  res.json({ report: await pgDb.getSalesReport(scopeIds(req), startDate, endDate) });
+  res.json({ report: await pgDb.getSalesReport(await reportScope(req), startDate, endDate) });
 });
 
 router.get('/reports/employees', async (req, res) => {
   const { start, end } = req.query;
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
-  // Commission is reported across every company regardless of which is signed
-  // in — staff work at both and are paid on the combined figure. The
-  // leaderboard still asks for the signed-in company only.
-  const scope = req.query.all === '1'
-    ? (await pgDb.getAllCompanyIds()).map(c => c.user_id)
-    : scopeIds(req);
-  res.json({ report: await pgDb.getEmployeeSalesReport(scope, startDate, endDate) });
+  res.json({ report: await pgDb.getEmployeeSalesReport(await reportScope(req), startDate, endDate) });
 });
 
-// Commission owed on a given payday, with chargeback adjustments itemised.
+// Payroll always covers every company, the way the commission figures do:
+// staff work at both stores and a manager runs one payday across both rather
+// than switching accounts to find the other half of someone's pay.
+const payrollScope = async () => (await pgDb.getAllCompanyIds()).map(c => c.user_id);
+
+// Commission owed on a given payday, with returns and chargebacks itemised.
 // Manager-gated like the rest of the commission figures.
 router.post('/reports/payroll', async (req, res) => {
   const { name, pin, payday } = req.body;
@@ -1306,7 +1313,7 @@ router.post('/reports/payroll', async (req, res) => {
     return res.status(400).json({ error: 'Pick a payday.' });
   }
   const settings = await pgDb.getSettings(req.session.userId);
-  res.json(await pgDb.payrollForPayday(scopeIds(req), payday, settings));
+  res.json(await pgDb.payrollForPayday(await payrollScope(), payday, settings));
 });
 
 // Mark a payday as paid (or reopen it). Once paid its figures stop moving —
@@ -1318,7 +1325,9 @@ router.post('/reports/payroll/paid', async (req, res) => {
     return res.status(403).json({ error: 'Only a manager can close off a payday.' });
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.status(400).json({ error: 'Pick a payday.' });
-  res.json(await pgDb.setPayrollPaid(req.session.userId, payday, !!paid, employee.name));
+  // Scoped to every company, not the signed-in one: a payday covers both
+  // stores, so closing it from one account has to be reopenable from the other.
+  res.json(await pgDb.setPayrollPaid(await payrollScope(), payday, !!paid, employee.name));
 });
 
 router.post('/reports/payroll/adjustment', async (req, res) => {
@@ -1331,7 +1340,7 @@ router.post('/reports/payroll/adjustment', async (req, res) => {
   if (!isFinite(amt) || amt === 0) return res.status(400).json({ error: 'Enter an amount — positive to add, negative to deduct.' });
   if (!employee_id) return res.status(400).json({ error: 'Pick who this is for.' });
   const settings = await pgDb.getSettings(req.session.userId);
-  const run = await pgDb.payrollForPayday(scopeIds(req), payday, settings);
+  const run = await pgDb.payrollForPayday(await payrollScope(), payday, settings);
   if (run.paid) return res.status(400).json({ error: 'That payday has already been paid. Reopen it first, or put this on the next one.' });
   res.json(await pgDb.addPayrollAdjustment(req.session.userId, payday, parseInt(employee_id), amt, note, employee.name));
 });
@@ -1354,9 +1363,14 @@ router.get('/reports/paydays', async (req, res) => {
   const [y, m] = today.split('-').map(Number);
   const from = `${y - 1}-${String(m).padStart(2, '0')}-01`;
   const sched = pgDb.scheduleFrom(settings);
+  // The next payday is offered too: the period it covers has usually closed by
+  // the time anyone opens this, and it's the one a manager is about to run.
+  const scope = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
+  const paid = new Set(await pgDb.paidPaydays(scope));
+  const upcoming = pgDb.nextPayday(pgDb.paydaysBetween(from, today, sched)[0] || today, sched);
   res.json({
-    paydays: pgDb.paydaysBetween(from, today, sched)
-      .map(p => ({ payday: p, period: pgDb.periodForPayday(p, sched) })),
+    paydays: [upcoming, ...pgDb.paydaysBetween(from, today, sched)]
+      .map(p => ({ payday: p, period: pgDb.periodForPayday(p, sched), paid: paid.has(p) })),
   });
 });
 
@@ -1364,7 +1378,7 @@ router.get('/reports/products', async (req, res) => {
   const { start, end } = req.query;
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
-  res.json({ report: await pgDb.getTopProductsReport(scopeIds(req), startDate, endDate) });
+  res.json({ report: await pgDb.getTopProductsReport(await reportScope(req), startDate, endDate) });
 });
 
 router.get('/reports/customers', async (req, res) => {
@@ -1378,7 +1392,7 @@ router.get('/reports/flagged-returns', async (req, res) => {
   const { start, end } = req.query;
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
-  res.json({ report: await pgDb.getFlaggedReturns(scopeIds(req), startDate, endDate) });
+  res.json({ report: await pgDb.getFlaggedReturns(await reportScope(req), startDate, endDate) });
 });
 
 router.get('/reports/day-summary', async (req, res) => {
@@ -1409,9 +1423,12 @@ router.post('/reports/employee-personal', async (req, res) => {
   const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
   const endDate = end || new Date().toISOString();
 
-  // Managers see all employees, sales see only their own
+  // Managers see all employees, sales see only their own. Both cover every
+  // company: the Reports tab has no company picker because everything on it is
+  // combined, so scoping this to the signed-in account would hide half of it.
   if (employee.role === 'manager') {
-    const report = await pgDb.getEmployeeSalesReport(scopeIds(req), startDate, endDate);
+    const all = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
+    const report = await pgDb.getEmployeeSalesReport(all, startDate, endDate);
     res.json({ employee, role: 'manager', report });
   } else {
     // A sales employee only ever sees their OWN figures, but they may work at

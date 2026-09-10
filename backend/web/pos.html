@@ -711,10 +711,10 @@
         <button class="btn btn-confirm" onclick="loadReports()">Update</button>
         <button class="btn half-month" onclick="setHalfMonth('rptStart','rptEnd','first',loadReports)" title="1st to 15th of the month in the From box">1st–15th</button>
         <button class="btn half-month" onclick="setHalfMonth('rptStart','rptEnd','second',loadReports)" title="16th to the end of the month in the From box">16th–End</button>
-        <span id="rptCompanyPicker" style="display:none;align-items:center;gap:6px">
-          <label>Company:</label>
-          <select id="rptCompanyScope" onchange="changeCompanyScope(this.value)"></select>
-        </span>
+        <!-- No company picker here on purpose: everything below this filter —
+             KPIs, leaderboard, commissions, payroll, top products — always
+             covers both companies, so there is nothing to choose between.
+             Transactions still has its picker. -->
       </div>
 
       <!-- Employee Sales & Commissions (Manager/Employee view — locked) -->
@@ -747,9 +747,11 @@
         <div class="report-card">
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
             <h3 style="margin:0">Payroll</h3>
-            <div style="display:flex;gap:8px;align-items:center;font-family:system-ui,sans-serif;font-size:.85rem">
-              <label>Payday:</label>
+            <div style="display:flex;gap:6px;align-items:center;font-family:system-ui,sans-serif;font-size:.85rem">
+              <label>Paycheck:</label>
+              <button class="btn" title="Previous paycheck" onclick="stepPayday(1)" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:6px 10px;font-size:.85rem;line-height:1">‹</button>
               <select id="payrollPayday" onchange="loadPayroll()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;background:var(--white)"></select>
+              <button class="btn" title="Next paycheck" onclick="stepPayday(-1)" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:6px 10px;font-size:.85rem;line-height:1">›</button>
             </div>
           </div>
           <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:6px 0 12px" id="payrollPeriodNote"></p>
@@ -3407,22 +3409,16 @@ function setHalfMonth(startId, endId, half, apply) {
 function renderCompanyPickers() {
   const others = getLinkedAccounts().filter(a => a.email !== currentUser?.email);
   const isManager = txAccess?.role === 'manager' || managerReportsUnlocked;
-  // A sales employee who has unlocked their own report gets the picker on
-  // Reports too — combining there only spans companies where their own PIN
-  // works, and still shows nobody's figures but their own.
-  const personalUnlocked = !!personalCreds && !managerReportsUnlocked;
   const opts = `<option value="current">${escapeHtml(currentUser?.companyName || 'This company')} only</option>`
     + `<option value="all">All companies (${others.length + 1})</option>`;
-  for (const [wrapId, selId] of [['txCompanyPicker', 'txCompanyScope'], ['rptCompanyPicker', 'rptCompanyScope']]) {
-    const wrap = document.getElementById(wrapId);
-    const sel = document.getElementById(selId);
-    if (!wrap || !sel) continue;
-    // Transactions stays manager-only; Reports also opens up to an employee
-    // looking at their own sales.
-    const show = others.length > 0 && (isManager || (selId === 'rptCompanyScope' && personalUnlocked));
-    wrap.style.display = show ? 'inline-flex' : 'none';
-    if (show) { sel.innerHTML = opts; sel.value = companyScopeMode; }
-  }
+  // Transactions is the only tab left with a picker — Reports always spans
+  // every company now, so there is nothing there to switch between.
+  const wrap = document.getElementById('txCompanyPicker');
+  const sel = document.getElementById('txCompanyScope');
+  if (!wrap || !sel) return;
+  const show = others.length > 0 && isManager;
+  wrap.style.display = show ? 'inline-flex' : 'none';
+  if (show) { sel.innerHTML = opts; sel.value = companyScopeMode; }
 }
 
 async function changeCompanyScope(mode) {
@@ -4406,11 +4402,13 @@ async function saveTxEdit() {
 async function loadReports() {
   const start = document.getElementById('rptStart').value;
   const end = document.getElementById('rptEnd').value;
-  const qs = `start=${start}T00:00:00&end=${end}T23:59:59`;
+  // all=1: every report here covers both companies at once, so there is no
+  // company to pick — see the note where the picker used to be.
+  const qs = `start=${start}T00:00:00&end=${end}T23:59:59&all=1`;
 
   const [salesResp, empResp, prodResp, flaggedResp] = await Promise.all([
     fetch(`${API}/api/pos/reports/sales?${qs}`, { credentials: 'include' }),
-    fetch(`${API}/api/pos/reports/employees?${qs}&all=1`, { credentials: 'include' }),
+    fetch(`${API}/api/pos/reports/employees?${qs}`, { credentials: 'include' }),
     fetch(`${API}/api/pos/reports/products?${qs}`, { credentials: 'include' }),
     fetch(`${API}/api/pos/reports/flagged-returns?${qs}`, { credentials: 'include' }),
   ]);
@@ -5836,15 +5834,46 @@ async function loadPaydayOptions() {
     const resp = await fetch(`${API}/api/pos/reports/paydays`, { credentials: 'include' });
     if (!resp.ok) return;
     const list = (await resp.json()).paydays || [];
-    sel.innerHTML = list.map(p => `<option value="${p.payday}">${fmtPayday(p.payday)}</option>`).join('');
+    // Each option names the paycheck AND the fortnight it settles, because the
+    // two never match: the Sep 1 cheque pays Aug 1–15. Picking by payday alone
+    // meant counting back a period in your head every time.
+    sel.innerHTML = list.map(p =>
+      `<option value="${p.payday}">${fmtPayday(p.payday)} — pays ${fmtPeriod(p.period)}${p.paid ? ' ✓' : ''}</option>`
+    ).join('');
+    // Open on the most recent payday that hasn't been paid out; that's the one
+    // being worked on. Everything else is history or not due yet.
+    const open = list.filter(p => !p.paid).pop();
+    if (open) sel.value = open.payday;
     if (list.length) loadPayroll();
   } catch (_) { /* leave the section empty */ }
+}
+
+// Move a paycheck at a time. Positive steps go back in time, since the list is
+// newest-first — "‹" is the previous paycheck, as the arrows read on screen.
+function stepPayday(delta) {
+  const sel = document.getElementById('payrollPayday');
+  if (!sel || !sel.options.length) return;
+  const next = sel.selectedIndex + delta;
+  if (next < 0 || next >= sel.options.length) return;
+  sel.selectedIndex = next;
+  loadPayroll();
 }
 
 function fmtPayday(d) {
   const [y, m, day] = d.split('-').map(Number);
   return new Date(Date.UTC(y, m - 1, day)).toLocaleDateString('en-US',
     { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// "Aug 1–15" — the year and the repeated month are noise inside one period.
+function fmtPeriod(p) {
+  if (!p) return '';
+  const short = d => {
+    const [y, m, day] = d.split('-').map(Number);
+    return { m: new Date(Date.UTC(y, m - 1, day)).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short' }), d: day };
+  };
+  const a = short(p.start), b = short(p.end);
+  return a.m === b.m ? `${a.m} ${a.d}–${b.d}` : `${a.m} ${a.d} – ${b.m} ${b.d}`;
 }
 
 async function loadPayroll() {
@@ -5862,7 +5891,7 @@ async function loadPayroll() {
     if (!resp.ok) throw new Error(data.error || 'Could not load payroll');
 
     lastPayroll = data;
-    note.innerHTML = `Covering work from ${fmtPayday(data.period.start)} to ${fmtPayday(data.period.end)}.`
+    note.innerHTML = `Paid ${fmtPayday(data.payday)} for work from ${fmtPayday(data.period.start)} to ${fmtPayday(data.period.end)}, across both companies.`
       + (data.paid
         ? ` <b style="color:var(--success)">✓ Paid${data.paid_by ? ' by ' + escapeHtml(data.paid_by) : ''}</b> — figures are locked; anything closing now lands on the next payday.
             <button class="btn" style="background:none;border:none;color:var(--rose);text-decoration:underline;padding:0;font:inherit;cursor:pointer" onclick="setPayrollPaid(false)">Reopen</button>`
@@ -5871,31 +5900,48 @@ async function loadPayroll() {
     const rows = (data.employees || []).filter(e => e.commission_earned !== 0 || e.adjustments.length);
     if (!rows.length) { body.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid)">Nothing owed for this period.</div>'; return; }
 
+    // Each store keeps its own employee record and cuts its own cheque, so
+    // someone working at both has a row per store. They're gathered under one
+    // heading with a combined figure, since that's what the person is owed.
+    const byPerson = [];
+    for (const e of rows) {
+      let g = byPerson.find(p => p.name === e.employee_name);
+      if (!g) { g = { name: e.employee_name, rows: [] }; byPerson.push(g); }
+      g.rows.push(e);
+    }
     const grand = rows.reduce((s, e) => s + e.total, 0);
-    body.innerHTML = rows.map(e => `
+
+    const storeLine = e => `
+      <div style="display:flex;justify-content:space-between;font-weight:600;margin-top:4px">
+        <span>${e.store_name ? escapeHtml(e.store_name) + ' ' : ''}<span style="font-weight:400;color:var(--mid)">· ${e.commission_rate}% of $${money(e.sales_total)}${e.sale_count ? ` over ${e.sale_count} sale${e.sale_count === 1 ? '' : 's'}` : ''}</span></span>
+        <span>$${money(e.commission_earned)}</span>
+      </div>
+      ${e.adjustments.map(a => `
+        <div style="display:flex;justify-content:space-between;padding-left:14px;color:${a.amount < 0 ? 'var(--danger)' : 'var(--success)'};font-size:.8rem;margin-top:3px">
+          <span>${a.receipt ? '#' + escapeHtml(String(a.receipt)) + ' — ' : ''}${escapeHtml(a.note)}${
+            a.kind === 'manual' && !data.paid
+              ? ` <button title="Remove this adjustment" onclick="removePayrollAdjustment(${a.id})" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:.9rem;line-height:1;padding:0 2px">&times;</button>`
+              : ''}</span>
+          <span>${a.amount < 0 ? '−' : '+'}$${money(Math.abs(a.amount))}</span>
+        </div>`).join('')}`;
+
+    body.innerHTML = byPerson.map(p => {
+      const subtotal = p.rows.reduce((s, e) => s + e.total, 0);
+      return `
       <div style="border-bottom:1px solid var(--border);padding:10px 0;font-family:system-ui,sans-serif;font-size:.85rem">
-        <div style="display:flex;justify-content:space-between;font-weight:600">
-          <span>${escapeHtml(e.employee_name)} <span style="font-weight:400;color:var(--mid)">· ${e.commission_rate}% of $${money(e.net_sales)}${e.sale_count ? ` over ${e.sale_count} sale${e.sale_count === 1 ? '' : 's'}` : ''}</span></span>
-          <span>$${money(e.commission_earned)}</span>
-        </div>
-        ${e.adjustments.map(a => `
-          <div style="display:flex;justify-content:space-between;padding-left:14px;color:${a.amount < 0 ? 'var(--danger)' : 'var(--success)'};font-size:.8rem;margin-top:3px">
-            <span>${a.receipt ? '#' + escapeHtml(String(a.receipt)) + ' — ' : ''}${escapeHtml(a.note)}${
-              a.kind === 'manual' && !data.paid
-                ? ` <button title="Remove this adjustment" onclick="removePayrollAdjustment(${a.id})" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:.9rem;line-height:1;padding:0 2px">&times;</button>`
-                : ''}</span>
-            <span>${a.amount < 0 ? '−' : '+'}$${money(Math.abs(a.amount))}</span>
-          </div>`).join('')}
+        <div style="font-weight:700;font-size:.9rem">${escapeHtml(p.name)}</div>
+        ${p.rows.map(storeLine).join('')}
         <div style="display:flex;justify-content:space-between;font-weight:700;margin-top:5px;border-top:1px dashed var(--border);padding-top:5px">
-          <span>To pay</span><span>$${money(e.total)}</span>
+          <span>To pay${p.rows.length > 1 ? ' <span style="font-weight:400;color:var(--mid)">· both stores</span>' : ''}</span><span>$${money(subtotal)}</span>
         </div>
-      </div>`).join('')
+      </div>`;
+    }).join('')
       + `<div style="display:flex;justify-content:space-between;font-family:system-ui,sans-serif;font-weight:700;font-size:.95rem;padding-top:10px">
-           <span>Total for this payday</span><span>$${money(grand)}</span></div>`
+           <span>Total for this paycheck</span><span>$${money(grand)}</span></div>`
       + (data.paid ? '' : `
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
           <select id="payAdjEmp" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;background:var(--white)">
-            ${rows.map(e => `<option value="${e.employee_id}">${escapeHtml(e.employee_name)}</option>`).join('')}
+            ${rows.map(e => `<option value="${e.employee_id}">${escapeHtml(e.employee_name)}${e.store_name ? ' — ' + escapeHtml(e.store_name) : ''}</option>`).join('')}
           </select>
           <input type="number" id="payAdjAmount" step="0.01" placeholder="Amount" style="width:100px;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem">
           <input type="text" id="payAdjNote" placeholder="What is it for?" style="flex:1;min-width:150px;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem">
