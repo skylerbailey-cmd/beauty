@@ -302,6 +302,13 @@ async function initSchema() {
   )`);
   await migrate('CREATE INDEX IF NOT EXISTS idx_pg_cb_tx ON pos_transaction_chargebacks(transaction_id)');
   await migrate('CREATE INDEX IF NOT EXISTS idx_pg_cb_user ON pos_transaction_chargebacks(user_id)');
+  // Which paycheck this dispute was actually taken off, once a manager says so.
+  // An open dispute keeps coming off whichever cheque is next until it's set —
+  // the commission can't be released while the money is still in question, and
+  // guessing from dates was wrong whenever payroll ran outside the app.
+  await migrate('ALTER TABLE pos_transaction_chargebacks ADD COLUMN IF NOT EXISTS withheld_payday DATE');
+  await migrate('ALTER TABLE pos_transaction_chargebacks ADD COLUMN IF NOT EXISTS withheld_at TIMESTAMPTZ');
+  await migrate("ALTER TABLE pos_transaction_chargebacks ADD COLUMN IF NOT EXISTS withheld_by TEXT DEFAULT ''");
 
   // Move the one-per-transaction chargebacks into the table. Guarded on there
   // being no row yet, so it runs once and re-deploys don't duplicate them.
@@ -1203,6 +1210,15 @@ async function payrollForPayday(userId, payday, settings) {
     return p;
   };
 
+  // The first paycheck from `date` onwards that hasn't gone out. Unlike
+  // landsOn it never gives up: an open dispute has to keep being held from
+  // somebody's pay until it's resolved or a manager says it was already taken.
+  const openPayday = (date) => {
+    let p = paydayForDate(date, sched);
+    for (let i = 0; i < 48 && p && closedOn.has(p); i++) p = nextPayday(p, sched);
+    return p;
+  };
+
   // Every sale in the period. What's later taken back — a return, a dispute —
   // is shown as its own line rather than being quietly left out here, so the
   // paycheck shows what was earned and exactly why it was reduced; a total
@@ -1254,6 +1270,7 @@ async function payrollForPayday(userId, payday, settings) {
       cb.opened_at::date::text AS marked_date,
       cb.closed_at::date::text AS closed_date,
       cb.card_last4,
+      cb.withheld_payday::text AS withheld_payday,
       e.id AS employee_id, e.name AS employee_name, e.commission_rate,
       e.user_id AS company_id, ${EMP_SHARE} AS share,
       -- Only the disputed share of the sale affects commission.
@@ -1303,56 +1320,52 @@ async function payrollForPayday(userId, payday, settings) {
     });
   }
 
+  // Disputes don't follow the return rule above. A return is a settled fact on
+  // a settled cheque; a dispute is money still in question, and whether it was
+  // ever actually held back is something only whoever ran payroll knows —
+  // especially for the months payroll ran outside this app. So a dispute keeps
+  // coming off whichever paycheck is open until a manager marks it withheld,
+  // and `withheld_payday` records the cheque it came off.
   for (const d of disputes) {
     const fraction = d.cb_fraction == null ? 1 : Number(d.cb_fraction);
     const commission = round2(Number(d.share) * (Number(d.commission_rate) || 0) / 100 * fraction);
     if (commission === 0) continue;
-    const naturalPayday = paydayForDate(d.sale_date, sched);
-    // Withheld only if the dispute was raised before that paycheck went out;
-    // otherwise the commission was already paid and can only be clawed back.
-    const wasPaid = !d.marked_date || d.marked_date > naturalPayday;
+    const card = d.card_last4 ? ' (card ****' + d.card_last4 + ')' : '';
+    const r = () => row(d.employee_id, d.employee_name, d.commission_rate, d.company_id);
 
-    if (d.status === 'pending') {
-      // Money in doubt is held back whenever the sale happened. If its own
-      // paycheck hasn't gone out, it's withheld there; if that cheque closed
-      // before the dispute was raised, the amount comes off the next one still
-      // open. A dispute raised before its cheque closed was already withheld
-      // there, and landsOn returns null so it isn't withheld twice.
-      const target = landsOn(d.sale_date, d.marked_date);
-      if (target && target === payday) {
-        const r = row(d.employee_id, d.employee_name, d.commission_rate, d.company_id);
-        const card = d.card_last4 ? ' (card ****' + d.card_last4 + ')' : '';
-        r.adjustments.push({
-          kind: 'withheld', receipt: d.receipt_number, amount: -commission,
-          note: wasPaid
-            ? `dispute opened on the ${d.sale_date} sale${card} — held back, already paid on ${naturalPayday}`
-            : `dispute open on the ${d.sale_date} sale${card}`,
+    if (d.withheld_payday) {
+      // Already taken off a cheque. Show it there so that paycheck still
+      // explains itself, and — if the dispute has since been won — hand the
+      // money back on the next cheque that hasn't gone out.
+      if (d.withheld_payday === payday) {
+        r().adjustments.push({
+          kind: 'withheld', chargeback_id: d.chargeback_id, receipt: d.receipt_number,
+          amount: -commission, note: `dispute on the ${d.sale_date} sale${card} — held back`,
+        });
+      }
+      if (d.status === 'won' && openPayday(d.closed_date || d.sale_date) === payday
+          && d.withheld_payday !== payday) {
+        r().adjustments.push({
+          kind: 'won', chargeback_id: d.chargeback_id, receipt: d.receipt_number,
+          amount: commission,
+          note: `dispute won${d.closed_date ? ' ' + d.closed_date : ''} — released, was held on ${d.withheld_payday}`,
         });
       }
       continue;
     }
 
-    // A dispute closing after its paycheck has gone out moves to the next one
-    // still open — a settled paycheck can't be rewritten.
-    const closePayday = d.closed_date ? landsOn(d.closed_date, d.closed_date) : null;
-    if (closePayday !== payday) {
-      // Still show the original withholding on the sale's own paycheck.
-      if (!wasPaid && naturalPayday === payday) {
-        const r = row(d.employee_id, d.employee_name, d.commission_rate, d.company_id);
-        r.adjustments.push({ kind: 'withheld', receipt: d.receipt_number, amount: -commission,
-          note: `dispute on the ${d.sale_date} sale` });
-      }
-      continue;
-    }
-
-    const r = row(d.employee_id, d.employee_name, d.commission_rate, d.company_id);
-    if (d.status === 'won' && !wasPaid) {
-      r.adjustments.push({ kind: 'won', receipt: d.receipt_number, amount: commission,
-        note: `dispute won ${d.closed_date}, commission released` });
-    } else if (d.status === 'lost' && wasPaid) {
-      r.adjustments.push({ kind: 'lost', receipt: d.receipt_number, amount: -commission,
-        note: `dispute lost ${d.closed_date}, already paid on ${naturalPayday}` });
-    }
+    // Not withheld yet. Pending and lost both have to come off pay; the
+    // difference is only that a lost one never comes back. A won dispute that
+    // was never withheld needs nothing — the commission was paid all along.
+    if (d.status === 'won') continue;
+    if (openPayday(d.sale_date) !== payday) continue;
+    r().adjustments.push({
+      kind: d.status === 'lost' ? 'lost' : 'withheld',
+      chargeback_id: d.chargeback_id, receipt: d.receipt_number, amount: -commission,
+      note: d.status === 'lost'
+        ? `dispute lost${d.closed_date ? ' ' + d.closed_date : ''} on the ${d.sale_date} sale${card}`
+        : `dispute open on the ${d.sale_date} sale${card}`,
+    });
   }
 
   // Manual lines added by hand — bonuses, corrections, advances.
@@ -1486,6 +1499,65 @@ async function saveChargeback(transactionId, userId, cb) {
   }
   await syncChargebackFlag(transactionId);
   return { ok: true, amount, capped: amount !== round2(cb.amount) && cb.amount > 0 };
+}
+
+// Every dispute touching a date range, with the employee shares behind it —
+// what the "Charged Back" column on the commission report is actually made of.
+// One row per (dispute x employee), so a split sale lists each person's share.
+async function chargebacksForRange(userId, startDate, endDate) {
+  return (await query(`
+    SELECT cb.id AS chargeback_id, cb.status, cb.amount, cb.card_last4, cb.note,
+      cb.opened_at::date::text AS opened_at,
+      cb.closed_at::date::text AS closed_at,
+      cb.withheld_payday::text AS withheld_payday, cb.withheld_by,
+      t.id AS transaction_id, t.receipt_number, t.total AS sale_total,
+      t.customer_name,
+      COALESCE(t.original_sale_date, t.created_at)::date::text AS sale_date,
+      s.store_name, e.id AS employee_id, e.name AS employee_name,
+      COALESCE(e.commission_rate, 0) AS commission_rate,
+      -- The employee's slice of the disputed money, and the commission on it.
+      (${EMP_SHARE}) * LEAST(1, GREATEST(0, cb.amount / NULLIF(t.total, 0))) AS disputed_share
+    FROM pos_transaction_chargebacks cb
+    JOIN pos_transactions t ON t.id = cb.transaction_id
+    JOIN pos_settings s ON s.user_id = t.user_id
+    JOIN pos_transaction_employees te ON te.transaction_id = t.id
+    JOIN pos_employees e ON e.id = te.employee_id
+    WHERE t.user_id = ANY($1::text[]) AND t.type = 'sale'
+      AND COALESCE(t.original_sale_date, t.created_at) >= $2
+      AND COALESCE(t.original_sale_date, t.created_at) <= $3
+    ORDER BY t.created_at DESC, e.name
+  `, [asCompanyIds(userId), startDate, endDate])).rows.map(r => ({
+    ...r,
+    disputed_share: round2(Number(r.disputed_share)),
+    commission_at_risk: round2(Number(r.disputed_share) * Number(r.commission_rate) / 100),
+  }));
+}
+
+// Record that a dispute was (or wasn't) taken off a paycheck. Until this is
+// set the amount keeps coming off whichever cheque is open.
+async function setChargebackWithheld(id, userId, payday, by) {
+  const r = await query(
+    `UPDATE pos_transaction_chargebacks
+     SET withheld_payday = $1::date, withheld_at = CASE WHEN $1::date IS NULL THEN NULL ELSE NOW() END,
+         withheld_by = CASE WHEN $1::date IS NULL THEN '' ELSE $2 END
+     WHERE id = $3 AND user_id = ANY($4::text[]) RETURNING id`,
+    [payday || null, by || '', id, asCompanyIds(userId)]);
+  return r.rowCount > 0;
+}
+
+// Change just the status (and closing date) of an existing dispute.
+async function setChargebackStatus(id, userId, status, closedAt) {
+  const st = CHARGEBACK_STATUSES.includes(String(status || '').toLowerCase())
+    ? String(status).toLowerCase() : null;
+  if (!st) return { error: 'Pick pending, won, or lost.' };
+  const closed = st === 'pending' ? null : (closedAt || new Date().toISOString().slice(0, 10));
+  const r = await query(
+    `UPDATE pos_transaction_chargebacks SET status = $1, closed_at = $2::date
+     WHERE id = $3 AND user_id = ANY($4::text[]) RETURNING transaction_id`,
+    [st, closed, id, asCompanyIds(userId)]);
+  if (!r.rowCount) return { error: 'Chargeback not found' };
+  await syncChargebackFlag(r.rows[0].transaction_id);
+  return { ok: true, status: st, closed_at: closed };
 }
 
 async function deleteChargeback(id, userId) {
@@ -2515,6 +2587,9 @@ module.exports = {
   updateTransaction,
   deleteTransaction,
   listChargebacks,
+  chargebacksForRange,
+  setChargebackWithheld,
+  setChargebackStatus,
   saveChargeback,
   deleteChargeback,
   getAllCompanyIds,

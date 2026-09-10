@@ -1515,6 +1515,23 @@
   </div>
 </div>
 
+<!-- What the "Charged Back" figure on the commission report is made of: the
+     sale behind each dispute, whose commission it touches, and whether it has
+     already come off a paycheck. Managers can change either from here. -->
+<div class="modal-overlay" id="cbDrilldownModal">
+  <div class="modal" style="max-width:900px">
+    <h2>Chargebacks <span id="cbDrilldownWho" style="font-size:.85rem;color:var(--mid);font-weight:400"></span></h2>
+    <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:0 0 10px">
+      An open dispute keeps coming off whichever paycheck is next until it is marked as withheld.
+      A lost one does the same and never comes back; a won one is released.
+    </p>
+    <div id="cbDrilldownBody" style="max-height:65vh;overflow:auto"></div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="document.getElementById('cbDrilldownModal').classList.remove('show')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Hidden receipt for printing -->
 <div id="printReceipt" class="receipt-print" style="display:none"></div>
 
@@ -5800,7 +5817,9 @@ function commissionRow(e) {
       <td>$${money(Number(e.returns_total))}</td>
       <td>$${money(Number(e.net_total))}</td>
       <td>${Number(e.chargeback_total || 0) > 0
-        ? `<span style="color:var(--danger);font-weight:600" title="Their credited share of disputed sales — deducted before commission">−$${money(Number(e.chargeback_total || 0))}</span>`
+        ? `<button onclick="openChargebackDrilldown('${escapeHtml(String(e.employee_name)).replace(/'/g, "\\'")}')"
+             title="See which sales these disputes are on"
+             style="border:none;background:none;padding:0;font:inherit;color:var(--danger);font-weight:600;cursor:pointer;text-decoration:underline">−$${money(Number(e.chargeback_total || 0))}</button>`
         : '<span style="color:var(--mid)">—</span>'}</td>
       <td title="Net sales less the disputed share — what commission is earned on">$${money(commissionBase(e))}</td>
       <td style="font-weight:600">$${money(commissionAmt(e, commissionBase(e)))}</td>
@@ -5823,10 +5842,153 @@ function commissionTotalsRow(rows, label) {
       <td>$${money(sum('sales_total'))}</td>
       <td>$${money(sum('returns_total'))}</td>
       <td>$${money(sum('net_total'))}</td>
-      <td>${chargeback > 0 ? `<span style="color:var(--danger)">−$${money(chargeback)}</span>` : '<span style="color:var(--mid);font-weight:400">—</span>'}</td>
+      <td>${chargeback > 0
+        ? `<button onclick="openChargebackDrilldown('')" title="See every disputed sale in this period"
+             style="border:none;background:none;padding:0;font:inherit;color:var(--danger);font-weight:700;cursor:pointer;text-decoration:underline">−$${money(chargeback)}</button>`
+        : '<span style="color:var(--mid);font-weight:400">—</span>'}</td>
       <td>$${money(rows.reduce((s, e) => s + commissionBase(e), 0))}</td>
       <td>$${money(commission)}</td>
     </tr>`;
+}
+
+// ─── Chargeback drill-down from the commission report ───────────────────────
+// The "Charged Back" column is a total with no way in. This opens the sales
+// behind it — which receipt, whose share, and whether it has already been
+// taken off a cheque — because the figure is only checkable against the sale.
+let cbDrilldownRows = [];
+let cbDrilldownFilter = '';
+
+async function openChargebackDrilldown(employeeName) {
+  if (!personalCreds) return;
+  cbDrilldownFilter = employeeName || '';
+  const modal = document.getElementById('cbDrilldownModal');
+  const body = document.getElementById('cbDrilldownBody');
+  document.getElementById('cbDrilldownWho').textContent =
+    (employeeName ? `· ${employeeName}` : '· everyone')
+    + ` · ${document.getElementById('rptStart').value} to ${document.getElementById('rptEnd').value}`;
+  body.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid)">Loading…</div>';
+  modal.classList.add('show');
+  try {
+    const resp = await fetch(`${API}/api/pos/reports/chargebacks`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({
+        name: personalCreds.name, pin: personalCreds.pin,
+        start: `${document.getElementById('rptStart').value}T00:00:00`,
+        end: `${document.getElementById('rptEnd').value}T23:59:59`,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Could not load chargebacks');
+    cbDrilldownRows = data.chargebacks || [];
+    cbDrilldownIsManager = data.role === 'manager';
+    renderChargebackDrilldown();
+  } catch (err) {
+    body.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--danger)">${escapeHtml(err.message)}</div>`;
+  }
+}
+let cbDrilldownIsManager = false;
+
+function renderChargebackDrilldown() {
+  const body = document.getElementById('cbDrilldownBody');
+  const rows = cbDrilldownFilter
+    ? cbDrilldownRows.filter(r => String(r.employee_name).trim().toLowerCase() === cbDrilldownFilter.trim().toLowerCase())
+    : cbDrilldownRows;
+  if (!rows.length) {
+    body.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid)">No disputed sales in this period.</div>';
+    return;
+  }
+  const total = rows.reduce((s, r) => s + Number(r.commission_at_risk || 0), 0);
+  const statusPill = (st) => {
+    const c = st === 'won' ? 'var(--success)' : st === 'lost' ? 'var(--mid)' : 'var(--danger)';
+    return `<span style="color:${c};font-weight:600;text-transform:capitalize">${escapeHtml(st)}</span>`;
+  };
+  body.innerHTML = `
+    <table class="report-table" style="font-size:.82rem">
+      <thead><tr>
+        <th>Receipt</th><th>Sold</th><th>Customer</th><th>Card</th><th>Store</th>
+        <th>Employee</th><th>Disputed $</th><th>Commission</th><th>Status</th><th>Held back</th>
+      </tr></thead>
+      <tbody>${rows.map(r => `
+        <tr>
+          <td style="font-family:monospace">
+            <button onclick="findDisputedSale('${escapeHtml(r.receipt_number)}', '${escapeHtml(r.sale_date)}')"
+              title="Open this sale in Transactions"
+              style="border:none;background:none;padding:0;font:inherit;color:var(--rose);cursor:pointer;text-decoration:underline">${escapeHtml(r.receipt_number)}</button>
+          </td>
+          <td>${escapeHtml(r.sale_date)}</td>
+          <td>${escapeHtml(r.customer_name || '-')}</td>
+          <td>${r.card_last4 ? '****' + escapeHtml(r.card_last4) : '-'}</td>
+          <td>${escapeHtml(r.store_name || '-')}</td>
+          <td>${escapeHtml(r.employee_name)}</td>
+          <td>$${money(Number(r.disputed_share))}</td>
+          <td style="color:var(--danger);font-weight:600">−$${money(Number(r.commission_at_risk))}</td>
+          <td>${cbDrilldownIsManager ? `
+            <select onchange="setChargebackStatusFromReport(${r.chargeback_id}, this.value)"
+              style="padding:3px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:.78rem;background:var(--white)">
+              ${['pending', 'won', 'lost'].map(o => `<option value="${o}" ${o === r.status ? 'selected' : ''}>${o[0].toUpperCase() + o.slice(1)}</option>`).join('')}
+            </select>` : statusPill(r.status)}</td>
+          <td>${cbDrilldownIsManager ? `
+            <label style="display:flex;align-items:center;gap:5px;font-size:.78rem;white-space:nowrap;cursor:pointer">
+              <input type="checkbox" ${r.withheld_payday ? 'checked' : ''}
+                onchange="setChargebackWithheldFromReport(${r.chargeback_id}, this.checked)">
+              ${r.withheld_payday ? escapeHtml(r.withheld_payday) : 'not yet'}
+            </label>`
+            : (r.withheld_payday ? escapeHtml(r.withheld_payday) : '<span style="color:var(--mid)">not yet</span>')}</td>
+        </tr>`).join('')}
+      </tbody>
+      <tfoot><tr style="border-top:2px solid var(--border);font-weight:700;background:var(--cream)">
+        <td colspan="7">Total commission at risk</td>
+        <td style="color:var(--danger)">−$${money(total)}</td><td colspan="2"></td>
+      </tr></tfoot>
+    </table>`;
+}
+
+// Jump to the disputed sale itself. Transactions is the only place a receipt
+// can be opened — it holds the PIN-scoped list, so viewing a receipt from here
+// would otherwise need a lookup that isn't scoped to who's asking. The date
+// range is narrowed to the sale's own day so it's the row on screen, and
+// switchTab asks for a name and PIN if that tab isn't unlocked yet.
+function findDisputedSale(receipt, saleDate) {
+  document.getElementById('cbDrilldownModal').classList.remove('show');
+  if (saleDate) {
+    document.getElementById('histStart').value = saleDate;
+    document.getElementById('histEnd').value = saleDate;
+  }
+  document.getElementById('histSearch').value = receipt;
+  switchTab('history');
+}
+
+// Both writes go through the same manager-gated endpoint, then the report and
+// the payroll figures are reloaded so nothing on screen is a stale guess.
+async function updateChargebackFromReport(id, patch) {
+  try {
+    const resp = await fetch(`${API}/api/pos/reports/chargebacks/${id}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ name: personalCreds.name, pin: personalCreds.pin, ...patch }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Could not save');
+    await openChargebackDrilldown(cbDrilldownFilter);
+    loadReports();
+    if (managerReportsUnlocked) loadPayroll();
+  } catch (err) { alert(err.message); }
+}
+
+function setChargebackStatusFromReport(id, status) {
+  updateChargebackFromReport(id, { status });
+}
+
+// Marking it withheld pins it to the paycheck currently selected in Payroll —
+// that's the cheque the money is coming off. Unticking puts it back on the
+// next open cheque.
+function setChargebackWithheldFromReport(id, on) {
+  const payday = document.getElementById('payrollPayday')?.value || '';
+  if (on && !payday) {
+    alert('Open the Payroll section first and pick the paycheck this is being held from.');
+    renderChargebackDrilldown();
+    return;
+  }
+  updateChargebackFromReport(id, { withheld_payday: on ? payday : '' });
 }
 
 // ─── Payroll ────────────────────────────────────────────────────────────────

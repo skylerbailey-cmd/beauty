@@ -1356,6 +1356,51 @@ router.delete('/reports/payroll/adjustment/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// What the "Charged Back" figure on the commission report is made of. Anyone
+// who can see the report can see this; an employee is shown only their own
+// rows, the same rule the personal report follows.
+router.post('/reports/chargebacks', async (req, res) => {
+  const { name, pin, start, end } = req.body;
+  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
+  if (!employee) return res.status(401).json({ error: 'Invalid name or PIN' });
+
+  const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
+  const endDate = end || new Date().toISOString();
+  const scope = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
+  let rows = await pgDb.chargebacksForRange(scope, startDate, endDate);
+
+  if (employee.role !== 'manager') {
+    // Match on name, not id: the same person has a different employee record
+    // at each company, and this spans both.
+    const mine = String(employee.name).trim().toLowerCase();
+    rows = rows.filter(r => String(r.employee_name).trim().toLowerCase() === mine);
+  }
+  res.json({ chargebacks: rows, role: employee.role });
+});
+
+// Change a dispute's status, or record which paycheck it came off. Both move
+// money, so both are manager-only.
+router.post('/reports/chargebacks/:id', async (req, res) => {
+  const { name, pin, status, closed_at, withheld_payday } = req.body;
+  const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
+  if (!employee || employee.role !== 'manager') {
+    return res.status(403).json({ error: 'Only a manager can change a chargeback.' });
+  }
+  const id = parseInt(req.params.id);
+  const scope = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
+
+  if (status !== undefined) {
+    const r = await pgDb.setChargebackStatus(id, scope, status, closed_at);
+    if (r.error) return res.status(400).json(r);
+  }
+  if (withheld_payday !== undefined) {
+    // '' or null clears it, putting the dispute back on the open paycheck.
+    const ok = await pgDb.setChargebackWithheld(id, scope, withheld_payday || null, employee.name);
+    if (!ok) return res.status(404).json({ error: 'Chargeback not found' });
+  }
+  res.json({ ok: true });
+});
+
 // The recent paydays to offer in the picker, newest first.
 router.get('/reports/paydays', async (req, res) => {
   const settings = await pgDb.getSettings(req.session.userId);
