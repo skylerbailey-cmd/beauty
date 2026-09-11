@@ -744,6 +744,9 @@
           <table class="report-table">
             <thead><tr><th>Employee</th><th>Sales</th><th>Sales $</th><th>Returns $</th><th>Net Sales $</th><th>Charged Back</th><th>Counts As</th><th>Commission</th></tr></thead>
             <tbody id="empPersonalBody"></tbody>
+            <!-- Filled once the open disputes are known: commission earned,
+                 what is being held, and what is actually left to pay. -->
+            <tfoot id="empPersonalPaySummary"></tfoot>
           </table>
           <!-- Open disputes get their own table. They are not a loss yet, so
                they can't sit in Charged Back beside sales that are gone for
@@ -782,6 +785,7 @@
           <table class="report-table">
             <thead><tr><th>Employee</th><th>Sales</th><th>Sales $</th><th>Returns $</th><th>Net Sales $</th><th>Charged Back</th><th>Counts As</th><th>Commission</th></tr></thead>
             <tbody id="empReportBody"></tbody>
+            <tfoot id="empReportPaySummary"></tfoot>
           </table>
           <div id="empReportPending"></div>
         </div>
@@ -1574,6 +1578,7 @@ function defaultSaleEmployees() {
 }
 let managerReportsUnlocked = false; // gates KPIs, leaderboard, commissions, and top products
 let lastEmployeesReport = [];       // most recent employee report data
+let lastPersonalRows = [];          // the unlocked employee's own rows, for the pay summary
 let lastSalesSummaryHtml = '';      // most recent KPI tiles HTML, revealed on manager unlock
 let lastProductsHtml = '';          // most recent top-products rows HTML, revealed on manager unlock
 let selectedBrands = ['avologi', 'avinichi', 'hydrasphere', 'spacetouch', 'lumieres'];
@@ -5908,6 +5913,10 @@ async function loadPendingChargebacks() {
   // under their own name, so the previous person's list must never still be
   // sitting there — not while the new one loads, and not if it fails.
   put('');
+  for (const id of ['empPersonalPaySummary', 'empReportPaySummary']) {
+    const el = document.getElementById(id);
+    if (el && mine === pendingCbRequest) el.innerHTML = '';
+  }
   if (!personalCreds) return;
 
   try {
@@ -5925,11 +5934,40 @@ async function loadPendingChargebacks() {
       .sort((a, b) => String(a.employee_name).localeCompare(String(b.employee_name))
         || String(b.sale_date).localeCompare(String(a.sale_date)));
     put(renderPendingChargebacks(pending, data.role === 'manager'));
+    renderPaySummary(pending);
   } catch (err) {
     // Say so rather than leaving a blank where a deduction should be — an
     // empty space reads as "nothing is being held", which may be untrue.
     put(`<div style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--danger);margin-top:12px">
       Could not load open disputes: ${escapeHtml(err.message)}</div>`);
+  }
+}
+
+// Commission earned, what open disputes are holding, and what is left. Sitting
+// at the foot of the commission table because that is where someone reads the
+// commission figure — the disputes below explain it, but nobody subtracts two
+// tables in their head, and the number that matters is what actually gets paid.
+function renderPaySummary(pending) {
+  const held = pending.reduce((sum, c) => sum + Number(c.commission_at_risk || 0), 0);
+  const line = (label, amount, opts = {}) => `
+    <tr style="${opts.strong ? 'font-weight:700;background:var(--cream);' : ''}${opts.top ? 'border-top:2px solid var(--border);' : ''}">
+      <td colspan="7" style="${opts.strong ? 'font-weight:700' : ''}">${label}</td>
+      <td style="font-weight:700;${opts.colour ? 'color:' + opts.colour : ''}">${amount}</td>
+    </tr>`;
+
+  for (const [tableId, rowsFor] of [['empPersonalPaySummary', lastPersonalRows],
+                                    ['empReportPaySummary', lastEmployeesReport]]) {
+    const el = document.getElementById(tableId);
+    if (!el) continue;
+    const rows = rowsFor || [];
+    // Nothing held, or nothing to hold it against: the Commission column
+    // already says everything, so don't add three rows that repeat it.
+    if (!held || !rows.length) { el.innerHTML = ''; continue; }
+    const earned = rows.reduce((sum, e) => sum + commissionAmt(e, commissionBase(e)), 0);
+    el.innerHTML =
+      line('Commission earned', `$${money(earned)}`, { top: true })
+      + line('Held from pay — open disputes below', `−$${money(held)}`, { colour: 'var(--danger)' })
+      + line('Commission on the upcoming paycheck', `$${money(earned - held)}`, { strong: true });
   }
 }
 
@@ -6613,6 +6651,7 @@ async function unlockPersonalReport(silent) {
         `${data.employee.name} — Personal Sales & Commission`
         + (included.length ? ` · ${included.join(' + ')}` : '');
       const personalRows = data.report || [];
+      lastPersonalRows = personalRows;   // the pay summary totals these
       document.getElementById('empPersonalBody').innerHTML =
         // Across companies, label each row so two figures under the same name
         // aren't mistaken for a duplicate, and total them — the combined figure
@@ -6662,13 +6701,15 @@ function lockPersonalReport() {
   rptSelectedPayday = '';
   // Everything the unlock filled in, including the tables themselves.
   for (const id of ['empPersonalPending', 'empReportPending', 'empPersonalBody',
-                    'empReportBody', 'leaderboard', 'flaggedReturnsBody',
+                    'empReportBody', 'empPersonalPaySummary', 'empReportPaySummary',
+                    'leaderboard', 'flaggedReturnsBody',
                     'payrollBody', 'payrollPeriodNote', 'rptRangeNote', 'empPersonalName']) {
     const el = document.getElementById(id);
     if (el) el.innerHTML = '';
   }
   // And the copies held in memory, which survive the DOM being emptied.
   lastEmployeesReport = [];
+  lastPersonalRows = [];
   lastSalesSummaryHtml = '';
   lastProductsHtml = '';
   lastPayroll = null;
