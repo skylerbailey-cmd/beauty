@@ -826,6 +826,12 @@
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
           <h3 style="margin:0">Customers</h3>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <!-- Searches everything on the row — name, email, phone, address,
+                 notes, what they bought and who served them — because the thing
+                 someone half-remembers about a customer is rarely their name. -->
+            <input type="search" id="custSearch" oninput="applyCustomerFilters()"
+              placeholder="Search name, email, phone, item…"
+              style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none;min-width:230px">
             <label style="font-size:.8rem;color:var(--mid);font-family:system-ui,sans-serif">Purchased:</label>
             <select id="custProductFilter" onchange="applyCustomerFilters()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none;max-width:220px">
               <option value="">All items</option>
@@ -4620,13 +4626,34 @@ function populateCustEmployeeFilter() {
   if ([...map.keys()].map(String).includes(current)) sel.value = current;
 }
 
+// Everything on a customer row, flattened for searching. Phone numbers are
+// kept twice — as typed and as bare digits — so "5551234" finds
+// "(555) 123-4567" without the searcher having to match the punctuation.
+function customerHaystack(c) {
+  const phone = String(c.phone || '');
+  return [
+    c.customer_name, c.customer_email, phone, phone.replace(/\D/g, ''),
+    c.address, c.notes,
+    (c.products || []).map(p => p.product_name).join(' '),
+    (c.employees || []).map(e => e.name).join(' '),
+  ].join(' ').toLowerCase();
+}
+
 function applyCustomerFilters() {
   const pid = document.getElementById('custProductFilter').value;
   const eid = document.getElementById('custEmployeeFilter').value;
-  custFiltered = custReportData.filter(c =>
-    (!pid || (c.products || []).some(p => p.product_id === pid)) &&
-    (!eid || (c.employees || []).some(e => String(e.id) === eid))
-  );
+  const q = (document.getElementById('custSearch')?.value || '').trim().toLowerCase();
+  // Every word has to appear somewhere, in any order — so "gold sagiv" finds
+  // the customer who bought a gold something from Sagiv.
+  const words = q ? q.split(/\s+/) : [];
+
+  custFiltered = custReportData.filter(c => {
+    if (pid && !(c.products || []).some(p => p.product_id === pid)) return false;
+    if (eid && !(c.employees || []).some(e => String(e.id) === eid)) return false;
+    if (!words.length) return true;
+    const hay = customerHaystack(c);
+    return words.every(w => hay.includes(w));
+  });
   renderCustomers(custFiltered);
 
   const prodSel = document.getElementById('custProductFilter');
@@ -4635,13 +4662,22 @@ function applyCustomerFilters() {
   const empLabel = eid ? (empSel.options[empSel.selectedIndex]?.text || 'employee') : null;
   const withEmail = custFiltered.filter(c => c.customer_email).length;
   let extra = '';
+  if (q) extra += ` matching “${q}”`;
   if (prodLabel) extra += ` who purchased “${prodLabel}”`;
   if (empLabel) extra += `${prodLabel ? ' and' : ' who were'} served by ${empLabel}`;
   // Say how many qualify for the welcome-email button. Without this, a range
   // where nobody does is indistinguishable from the feature being broken —
   // the button is just absent either way.
   const bigSpenders = custFiltered.filter(c => Number(c.largest_sale) > WELCOME_EMAIL_MIN_SALE).length;
-  document.getElementById('custFilterSummary').textContent =
+  // A search that finds nobody usually means the dates, not the spelling —
+  // this list only holds customers who bought inside the range above.
+  const summary = document.getElementById('custFilterSummary');
+  if (q && !custFiltered.length) {
+    summary.textContent = `No customer matching “${q}” bought anything in these dates`
+      + ` — widen the date range above to search further back.`;
+    return;
+  }
+  summary.textContent =
     `${custFiltered.length} customer${custFiltered.length !== 1 ? 's' : ''}` + extra + ` · ${withEmail} with an email`
     + ` · ${bigSpenders} with a sale over $${WELCOME_EMAIL_MIN_SALE.toLocaleString()} in these dates`;
 }
