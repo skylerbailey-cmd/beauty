@@ -1205,11 +1205,12 @@ async function payrollForPayday(userId, payday, settings) {
   // The first paycheck from `date` onwards that hasn't gone out. Unlike
   // landsOn it never gives up: an open dispute has to keep being held from
   // somebody's pay until it's resolved or a manager says it was already taken.
-  const openPayday = (date) => {
-    let p = paydayForDate(date, sched);
+  const openFrom = (p0) => {
+    let p = p0;
     for (let i = 0; i < 48 && p && closedOn.has(p); i++) p = nextPayday(p, sched);
     return p;
   };
+  const openPayday = (date) => openFrom(paydayForDate(date, sched));
 
   // Every sale in the period. What's later taken back — a return, a dispute —
   // is shown as its own line rather than being quietly left out here, so the
@@ -1326,17 +1327,26 @@ async function payrollForPayday(userId, payday, settings) {
     const r = () => row(d.employee_id, d.employee_name, d.commission_rate, d.company_id);
 
     if (d.withheld_payday) {
-      // Already taken off a cheque. Show it there so that paycheck still
-      // explains itself, and — if the dispute has since been won — hand the
-      // money back on the next cheque that hasn't gone out.
+      const heldChequeWentOut = closedOn.has(d.withheld_payday);
+
+      // Won, and the cheque that held it never actually went out: nothing was
+      // taken, so there is nothing to give back. Just stop holding it.
+      if (d.status === 'won' && !heldChequeWentOut) continue;
+
+      // Otherwise the cheque it came off still has to explain its own figure.
       if (d.withheld_payday === payday) {
         r().adjustments.push({
           kind: 'withheld', chargeback_id: d.chargeback_id, receipt: d.receipt_number,
           amount: -commission, note: `dispute on the ${d.sale_date} sale${card} — held back`,
         });
       }
-      if (d.status === 'won' && openPayday(d.closed_date || d.sale_date) === payday
-          && d.withheld_payday !== payday) {
+
+      // Won after that cheque went out: the money is owed back, and it goes on
+      // the next cheque still open. Walked forward from the payday that held
+      // it, NOT from the day the dispute closed — a closing date is not a sale
+      // and must not be put through the pay-period lag, which was pushing the
+      // release a fortnight past the first cheque that could have paid it.
+      if (d.status === 'won' && openFrom(d.withheld_payday) === payday) {
         r().adjustments.push({
           kind: 'won', chargeback_id: d.chargeback_id, receipt: d.receipt_number,
           amount: commission,
