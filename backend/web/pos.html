@@ -745,6 +745,11 @@
             <thead><tr><th>Employee</th><th>Sales</th><th>Sales $</th><th>Returns $</th><th>Net Sales $</th><th>Charged Back</th><th>Counts As</th><th>Commission</th></tr></thead>
             <tbody id="empPersonalBody"></tbody>
           </table>
+          <!-- Open disputes get their own table. They are not a loss yet, so
+               they can't sit in Charged Back beside sales that are gone for
+               good — but the money is being kept back now, so it can't be left
+               off the page either. -->
+          <div id="empPersonalPending"></div>
         </div>
       </div>
 
@@ -778,6 +783,7 @@
             <thead><tr><th>Employee</th><th>Sales</th><th>Sales $</th><th>Returns $</th><th>Net Sales $</th><th>Charged Back</th><th>Counts As</th><th>Commission</th></tr></thead>
             <tbody id="empReportBody"></tbody>
           </table>
+          <div id="empReportPending"></div>
         </div>
         <div class="report-card">
           <h3>Top Products</h3>
@@ -4545,6 +4551,7 @@ async function loadReports() {
   // Dates typed by hand only light up a paycheck chip if they land exactly on
   // that pay period.
   syncPaycheckSelection();
+  loadPendingChargebacks();
 }
 
 // Always-visible leaderboard for TODAY specifically — independent of the
@@ -5836,10 +5843,10 @@ function commissionRow(e) {
       <td>$${money(Number(e.net_total))}</td>
       <td>${Number(e.chargeback_total || 0) > 0
         ? `<button onclick="event.stopPropagation();openChargebackDrilldown('${escapeHtml(person)}')"
-             title="Being held from this paycheck over open or lost disputes — click for the sales"
+             title="Disputes lost — the money is gone, so the commission on it is taken back. Click for the sales."
              style="border:none;background:none;padding:0;font:inherit;color:var(--danger);font-weight:600;cursor:pointer;text-decoration:underline">−$${money(Number(e.chargeback_total || 0))}</button>`
         : '<span style="color:var(--mid)">—</span>'}</td>
-      <td title="Net sales less what is being held over disputes — what commission is earned on">$${money(commissionBase(e))}</td>
+      <td title="Net sales less anything lost to a dispute — what commission is earned on">$${money(commissionBase(e))}</td>
       <td style="font-weight:600">$${money(commissionAmt(e, commissionBase(e)))}</td>
     </tr>`;
 }
@@ -5874,6 +5881,85 @@ function commissionTotalsRow(rows, label) {
       <td>$${money(rows.reduce((s, e) => s + commissionBase(e), 0))}</td>
       <td>$${money(commission)}</td>
     </tr>`;
+}
+
+// ─── Open disputes, and what they're holding back ───────────────────────────
+// An open dispute is not a loss — the store may yet keep the money — so it has
+// no business in the Charged Back column beside sales that are definitely
+// gone. But it IS coming off the next paycheck, so it gets its own table
+// rather than being left to a click or to the payslip to explain.
+//
+// Never scoped to the dates on screen: a dispute on a June sale is still being
+// held from the next cheque in September.
+async function loadPendingChargebacks() {
+  const targets = ['empPersonalPending', 'empReportPending'].map(id => document.getElementById(id)).filter(Boolean);
+  if (!targets.length || !personalCreds) return;
+  try {
+    const resp = await fetch(`${API}/api/pos/reports/chargebacks`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({
+        name: personalCreds.name, pin: personalCreds.pin,
+        start: '1970-01-01T00:00:00', end: '2999-12-31T23:59:59',
+      }),
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    const pending = (data.chargebacks || [])
+      .filter(c => c.status === 'pending' && !c.withheld_payday)
+      .sort((a, b) => String(a.employee_name).localeCompare(String(b.employee_name))
+        || String(b.sale_date).localeCompare(String(a.sale_date)));
+    const html = renderPendingChargebacks(pending, data.role === 'manager');
+    for (const el of targets) el.innerHTML = html;
+  } catch (_) { /* the commission table still stands on its own */ }
+}
+
+function renderPendingChargebacks(rows, isManager) {
+  if (!rows.length) {
+    return `<div style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin-top:12px">
+      No open disputes — nothing is being held from pay.</div>`;
+  }
+  const total = rows.reduce((s, c) => s + Number(c.commission_at_risk || 0), 0);
+  return `
+    <div style="margin-top:16px">
+      <h3 style="margin:0 0 2px;font-size:.95rem">Open Disputes — held from the next paycheck
+        <span style="color:var(--danger)">−$${money(total)}</span></h3>
+      <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:0 0 8px">
+        Not counted as lost, so they are not in Charged Back above and the commission there is what was earned.
+        Each one keeps coming off the next paycheck until the dispute is won or lost.
+      </p>
+      <table class="report-table" style="font-size:.82rem">
+        <thead><tr>
+          <th>Employee</th><th>Receipt</th><th>Sold</th><th>Customer</th><th>Card</th><th>Store</th>
+          <th>Opened</th><th>Disputed $</th><th>Held from pay</th>${isManager ? '<th>Status</th>' : ''}
+        </tr></thead>
+        <tbody>${rows.map(c => `
+          <tr>
+            <td style="font-weight:600">${escapeHtml(c.employee_name)}</td>
+            <td style="font-family:monospace">
+              <button onclick="findDisputedSale('${escapeHtml(c.receipt_number)}', '${escapeHtml(c.sale_date)}')"
+                title="Open this sale in Transactions"
+                style="border:none;background:none;padding:0;font:inherit;color:var(--rose);cursor:pointer;text-decoration:underline">${escapeHtml(c.receipt_number)}</button>
+            </td>
+            <td>${escapeHtml(c.sale_date)}</td>
+            <td>${escapeHtml(c.customer_name || '-')}</td>
+            <td>${c.card_last4 ? '****' + escapeHtml(c.card_last4) : '-'}</td>
+            <td>${escapeHtml(c.store_name || '-')}</td>
+            <td>${escapeHtml(c.opened_at || '-')}</td>
+            <td>$${money(Number(c.disputed_share))}</td>
+            <td style="color:var(--danger);font-weight:600">−$${money(Number(c.commission_at_risk))}</td>
+            ${isManager ? `<td>
+              <select onchange="setChargebackStatusFromReport(${c.chargeback_id}, this.value)"
+                style="padding:3px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:.78rem;background:var(--white)">
+                ${['pending', 'won', 'lost'].map(o => `<option value="${o}" ${o === c.status ? 'selected' : ''}>${o[0].toUpperCase() + o.slice(1)}</option>`).join('')}
+              </select></td>` : ''}
+          </tr>`).join('')}
+        </tbody>
+        <tfoot><tr style="border-top:2px solid var(--border);font-weight:700;background:var(--cream)">
+          <td colspan="8">Total held from the next paycheck</td>
+          <td style="color:var(--danger)">−$${money(total)}</td>${isManager ? '<td></td>' : ''}
+        </tr></tfoot>
+      </table>
+    </div>`;
 }
 
 // ─── What's behind a row of the commission report ───────────────────────────
@@ -6139,7 +6225,9 @@ async function updateChargebackFromReport(id, patch) {
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Could not save');
-    await openChargebackDrilldown(cbDrilldownFilter);
+    if (document.getElementById('cbDrilldownModal').classList.contains('show')) {
+      await openChargebackDrilldown(cbDrilldownFilter);
+    }
     loadReports();
     if (managerReportsUnlocked) loadPayroll();
   } catch (err) { alert(err.message); }
@@ -6531,6 +6619,7 @@ async function unlockPersonalReport(silent) {
         errorEl.textContent = '';
       }
       document.getElementById('empPersonalReport').style.display = 'block';
+      loadPendingChargebacks();
     }
   } catch (err) {
     errorEl.textContent = err.message;
@@ -6546,6 +6635,10 @@ function lockPersonalReport() {
   const pcBar = document.getElementById('rptPaycheckBar');
   if (pcBar) pcBar.style.display = 'none';
   rptSelectedPayday = '';
+  for (const id of ['empPersonalPending', 'empReportPending']) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '';
+  }
   document.getElementById('salesSummary').innerHTML = '';
   document.getElementById('prodReportBody').innerHTML = '';
   document.getElementById('empPersonalReport').style.display = 'none';
