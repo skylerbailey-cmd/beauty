@@ -745,10 +745,6 @@
             <thead><tr><th>Employee</th><th>Sales</th><th>Sales $</th><th>Returns $</th><th>Net Sales $</th><th>Charged Back</th><th>Counts As</th><th>Commission</th></tr></thead>
             <tbody id="empPersonalBody"></tbody>
           </table>
-          <!-- Disputes on sales outside these dates. They can't go in the table
-               without breaking its arithmetic, but the money is being kept back
-               now, so it can't be left to a click either. -->
-          <div id="empPersonalHeld"></div>
         </div>
       </div>
 
@@ -782,7 +778,6 @@
             <thead><tr><th>Employee</th><th>Sales</th><th>Sales $</th><th>Returns $</th><th>Net Sales $</th><th>Charged Back</th><th>Counts As</th><th>Commission</th></tr></thead>
             <tbody id="empReportBody"></tbody>
           </table>
-          <div id="empReportHeld"></div>
         </div>
         <div class="report-card">
           <h3>Top Products</h3>
@@ -4550,7 +4545,6 @@ async function loadReports() {
   // Dates typed by hand only light up a paycheck chip if they land exactly on
   // that pay period.
   syncPaycheckSelection();
-  loadHeldElsewhere();
 }
 
 // Always-visible leaderboard for TODAY specifically — independent of the
@@ -5842,10 +5836,10 @@ function commissionRow(e) {
       <td>$${money(Number(e.net_total))}</td>
       <td>${Number(e.chargeback_total || 0) > 0
         ? `<button onclick="event.stopPropagation();openChargebackDrilldown('${escapeHtml(person)}')"
-             title="See which sales these disputes are on"
+             title="Being held from this paycheck over open or lost disputes — click for the sales"
              style="border:none;background:none;padding:0;font:inherit;color:var(--danger);font-weight:600;cursor:pointer;text-decoration:underline">−$${money(Number(e.chargeback_total || 0))}</button>`
         : '<span style="color:var(--mid)">—</span>'}</td>
-      <td title="Net sales less the disputed share — what commission is earned on">$${money(commissionBase(e))}</td>
+      <td title="Net sales less what is being held over disputes — what commission is earned on">$${money(commissionBase(e))}</td>
       <td style="font-weight:600">$${money(commissionAmt(e, commissionBase(e)))}</td>
     </tr>`;
 }
@@ -5880,70 +5874,6 @@ function commissionTotalsRow(rows, label) {
       <td>$${money(rows.reduce((s, e) => s + commissionBase(e), 0))}</td>
       <td>$${money(commission)}</td>
     </tr>`;
-}
-
-// ─── Disputes held from pay over sales outside the dates on screen ──────────
-// The Charged Back column is tied to the sale's date, so a dispute on a July
-// sale shows nothing in an August report — while the money is still being kept
-// back. Putting it in the column would stop sales less returns less disputes
-// equalling what commission is paid on, so it goes under the table instead,
-// where it can't be missed and can't corrupt the arithmetic.
-async function loadHeldElsewhere() {
-  const targets = ['empPersonalHeld', 'empReportHeld'].map(id => document.getElementById(id)).filter(Boolean);
-  if (!targets.length || !personalCreds) return;
-  const start = document.getElementById('rptStart').value;
-  const end = document.getElementById('rptEnd').value;
-  try {
-    // Ask for all of time, then keep what falls outside the dates on screen.
-    const resp = await fetch(`${API}/api/pos/reports/chargebacks`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({
-        name: personalCreds.name, pin: personalCreds.pin,
-        start: '1970-01-01T00:00:00', end: '2999-12-31T23:59:59',
-      }),
-    });
-    if (!resp.ok) return;
-    const all = (await resp.json()).chargebacks || [];
-    const held = all.filter(c => !c.withheld_payday && c.status !== 'won'
-      && !(c.sale_date >= start && c.sale_date <= end));
-    const html = renderHeldElsewhere(held);
-    for (const el of targets) el.innerHTML = html;
-  } catch (_) { /* the table still stands on its own */ }
-}
-
-function renderHeldElsewhere(held) {
-  if (!held.length) return '';
-  const total = held.reduce((s, c) => s + Number(c.commission_at_risk || 0), 0);
-  // Grouped by person: a manager looking at everyone needs to see whose pay is
-  // affected, and for one employee it collapses to a single heading.
-  const people = [];
-  for (const c of held) {
-    let g = people.find(p => p.name === c.employee_name);
-    if (!g) { g = { name: c.employee_name, rows: [] }; people.push(g); }
-    g.rows.push(c);
-  }
-  return `
-    <div style="font-family:system-ui,sans-serif;font-size:.82rem;border:1.5px solid var(--danger);border-radius:8px;padding:10px 12px;margin-top:12px">
-      <b style="color:var(--danger)">Also being held from pay — $${money(total)}</b>
-      <div style="color:var(--mid);margin:3px 0 7px">
-        Open disputes on sales outside these dates. They come off the next paycheck whenever the sale
-        happened, so they are not in the table above. Change the dates to the sale's period to see them counted.
-      </div>
-      ${people.map(p => `
-        <div style="margin-top:6px">
-          <div style="font-weight:600">${escapeHtml(p.name)}
-            <span style="color:var(--danger)">− $${money(p.rows.reduce((s, c) => s + Number(c.commission_at_risk || 0), 0))}</span></div>
-          ${p.rows.map(c => `
-            <div style="display:flex;justify-content:space-between;gap:10px;padding:2px 0 2px 12px">
-              <span>
-                <button onclick="findDisputedSale('${escapeHtml(c.receipt_number)}', '${escapeHtml(c.sale_date)}')"
-                  style="border:none;background:none;padding:0;font:inherit;font-family:monospace;color:var(--rose);cursor:pointer;text-decoration:underline">${escapeHtml(c.receipt_number)}</button>
-                <span style="color:var(--mid)"> · sold ${escapeHtml(c.sale_date)} · ${escapeHtml(c.store_name || '')} · ${escapeHtml(c.status)}</span>
-              </span>
-              <span style="color:var(--danger);font-weight:600">−$${money(Number(c.commission_at_risk))}</span>
-            </div>`).join('')}
-        </div>`).join('')}
-    </div>`;
 }
 
 // ─── What's behind a row of the commission report ───────────────────────────
@@ -6103,15 +6033,20 @@ async function openChargebackDrilldown(employeeName) {
   try {
     const resp = await fetch(`${API}/api/pos/reports/chargebacks`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      // All of time, not the dates on screen: the Charged Back column is what
+      // is being held from the paycheck now, and a June dispute is part of
+      // that. Sorted so what's actually being held reads first.
       body: JSON.stringify({
         name: personalCreds.name, pin: personalCreds.pin,
-        start: `${document.getElementById('rptStart').value}T00:00:00`,
-        end: `${document.getElementById('rptEnd').value}T23:59:59`,
+        start: '1970-01-01T00:00:00', end: '2999-12-31T23:59:59',
       }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Could not load chargebacks');
-    cbDrilldownRows = data.chargebacks || [];
+    const isHeld = (c) => !c.withheld_payday && (c.status === 'pending' || c.status === 'lost');
+    cbDrilldownRows = (data.chargebacks || [])
+      .sort((a, b) => (isHeld(b) ? 1 : 0) - (isHeld(a) ? 1 : 0)
+        || String(b.sale_date).localeCompare(String(a.sale_date)));
     cbDrilldownIsManager = data.role === 'manager';
     renderChargebackDrilldown();
   } catch (err) {
@@ -6129,7 +6064,10 @@ function renderChargebackDrilldown() {
     body.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid)">No disputed sales in this period.</div>';
     return;
   }
-  const total = rows.reduce((s, r) => s + Number(r.commission_at_risk || 0), 0);
+  // Only what's still being held adds up to the figure in the report. Settled
+  // ones stay listed — the history is the point — but greyed and not totalled.
+  const isHeld = (c) => !c.withheld_payday && (c.status === 'pending' || c.status === 'lost');
+  const total = rows.filter(isHeld).reduce((s, r) => s + Number(r.commission_at_risk || 0), 0);
   const statusPill = (st) => {
     const c = st === 'won' ? 'var(--success)' : st === 'lost' ? 'var(--mid)' : 'var(--danger)';
     return `<span style="color:${c};font-weight:600;text-transform:capitalize">${escapeHtml(st)}</span>`;
@@ -6141,7 +6079,7 @@ function renderChargebackDrilldown() {
         <th>Employee</th><th>Disputed $</th><th>Commission</th><th>Status</th><th>Held back</th>
       </tr></thead>
       <tbody>${rows.map(r => `
-        <tr>
+        <tr style="${isHeld(r) ? '' : 'opacity:.55'}">
           <td style="font-family:monospace">
             <button onclick="findDisputedSale('${escapeHtml(r.receipt_number)}', '${escapeHtml(r.sale_date)}')"
               title="Open this sale in Transactions"
@@ -6160,7 +6098,8 @@ function renderChargebackDrilldown() {
               ${['pending', 'won', 'lost'].map(o => `<option value="${o}" ${o === r.status ? 'selected' : ''}>${o[0].toUpperCase() + o.slice(1)}</option>`).join('')}
             </select>` : statusPill(r.status)}</td>
           <td>${cbDrilldownIsManager ? `
-            <label style="display:flex;align-items:center;gap:5px;font-size:.78rem;white-space:nowrap;cursor:pointer">
+            <label title="Tick once this has actually come off a paycheck — it then stops being held"
+              style="display:flex;align-items:center;gap:5px;font-size:.78rem;white-space:nowrap;cursor:pointer">
               <input type="checkbox" ${r.withheld_payday ? 'checked' : ''}
                 onchange="setChargebackWithheldFromReport(${r.chargeback_id}, this.checked)">
               ${r.withheld_payday ? escapeHtml(r.withheld_payday) : 'not yet'}
@@ -6169,7 +6108,7 @@ function renderChargebackDrilldown() {
         </tr>`).join('')}
       </tbody>
       <tfoot><tr style="border-top:2px solid var(--border);font-weight:700;background:var(--cream)">
-        <td colspan="7">Total commission at risk</td>
+        <td colspan="7">Being held from pay now</td>
         <td style="color:var(--danger)">−$${money(total)}</td><td colspan="2"></td>
       </tr></tfoot>
     </table>`;
@@ -6592,7 +6531,6 @@ async function unlockPersonalReport(silent) {
         errorEl.textContent = '';
       }
       document.getElementById('empPersonalReport').style.display = 'block';
-      loadHeldElsewhere();
     }
   } catch (err) {
     errorEl.textContent = err.message;
@@ -6608,10 +6546,6 @@ function lockPersonalReport() {
   const pcBar = document.getElementById('rptPaycheckBar');
   if (pcBar) pcBar.style.display = 'none';
   rptSelectedPayday = '';
-  for (const id of ['empPersonalHeld', 'empReportHeld']) {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = '';
-  }
   document.getElementById('salesSummary').innerHTML = '';
   document.getElementById('prodReportBody').innerHTML = '';
   document.getElementById('empPersonalReport').style.display = 'none';

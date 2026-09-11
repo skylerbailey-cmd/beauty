@@ -1062,13 +1062,6 @@ const CB_FRACTION = `
 //   pending — the money is in doubt, so the commission is held
 //   won     — the store kept it, so the commission is earned after all
 //   lost    — the money is gone, so the sale is struck off entirely
-const cbFractionAt = (status) => `
-  LEAST(1, GREATEST(0, COALESCE((
-    SELECT SUM(cb.amount) FROM pos_transaction_chargebacks cb
-    WHERE cb.transaction_id = t.id AND cb.status = '${status}'), 0) / NULLIF(t.total, 0)))`;
-const CB_PENDING = cbFractionAt('pending');
-const CB_WON = cbFractionAt('won');
-const CB_LOST = cbFractionAt('lost');
 
 // The pay schedule, from settings. Two paydays a month (the 1st and the 15th)
 // is the default; 'monthly' pays once, on the 1st. `lag` says which period a
@@ -1838,27 +1831,15 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
       COALESCE(st.store_name, '') as company_name,
       COUNT(DISTINCT CASE WHEN t.type = 'sale' THEN t.id END) as sale_count,
       COUNT(DISTINCT CASE WHEN t.type = 'return' THEN t.id END) as return_count,
-      -- A lost dispute strikes the sale off: the money is gone, so it is not
-      -- sales, not commission, and not listed as a chargeback either.
-      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN (${EMP_SHARE}) * (1 - ${CB_LOST}) ELSE 0 END), 0) as sales_total,
+      -- Sales and returns are exactly what happened in the period. Disputes are
+      -- not netted out of them: a disputed sale was still made, and hiding it
+      -- here would leave the figure unable to be checked against the receipts.
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN ${EMP_SHARE} ELSE 0 END), 0) as sales_total,
       COALESCE(SUM(CASE WHEN t.type = 'return' THEN ${EMP_SHARE} ELSE 0 END), 0) as returns_total,
       -- net = sales - returns; rows outside the date range (t IS NULL) must NOT
       -- be subtracted, so use an explicit WHEN for returns and ELSE 0
-      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN (${EMP_SHARE}) * (1 - ${CB_LOST})
-                        WHEN t.type = 'return' THEN -(${EMP_SHARE}) ELSE 0 END), 0) as net_total,
-      -- This employee's credited share of any sale that was later charged
-      -- back. Not deducted from sales_total above — shown beside it, so it's
-      -- visible without quietly rewriting what they sold.
-      COUNT(DISTINCT CASE WHEN t.type = 'sale' AND EXISTS (
-        SELECT 1 FROM pos_transaction_chargebacks cb
-        WHERE cb.transaction_id = t.id AND cb.status IN ('pending','won')) THEN t.id END) as chargeback_count,
-      COALESCE(SUM(CASE WHEN t.type = 'sale'
-        THEN (${EMP_SHARE}) * (${CB_PENDING} + ${CB_WON}) ELSE 0 END), 0) as chargeback_total,
-      -- What commission is actually earned on: net sales less the disputed
-      -- share, so a charged-back sale stops paying.
-      COALESCE(SUM(CASE
-        WHEN t.type = 'sale' THEN (${EMP_SHARE}) * (1 - ${CB_LOST} - ${CB_PENDING})
-        WHEN t.type = 'return' THEN -(${EMP_SHARE}) ELSE 0 END), 0) as net_after_chargebacks
+      COALESCE(SUM(CASE WHEN t.type = 'sale' THEN ${EMP_SHARE}
+                        WHEN t.type = 'return' THEN -(${EMP_SHARE}) ELSE 0 END), 0) as net_total
     FROM pos_employees e
     LEFT JOIN pos_settings st ON st.user_id = e.user_id
     LEFT JOIN pos_transaction_employees te ON e.id = te.employee_id
@@ -1874,6 +1855,61 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
     WHERE e.user_id = ANY($4::text[]) AND (e.active = 1 OR t.id IS NOT NULL)
     GROUP BY e.id, st.store_name ORDER BY net_total DESC
   `, [asCompanyIds(userId), startDate, endDate, asCompanyIds(userId)])).rows;
+
+  // What is being held from this person's pay right now. Deliberately NOT tied
+  // to the dates on screen: an open dispute on a June sale is still money kept
+  // back from the next cheque, so it has to show whatever period is being
+  // looked at, or the commission figure here won't match what gets paid.
+  //
+  // Pending and lost both count — a lost one is about to be taken for good.
+  // Once a dispute is pinned to the cheque it came off (withheld_payday), the
+  // money is collected and it drops out of here.
+  const held = (await query(`
+    SELECT e.id AS employee_id, e.name AS employee_name, e.commission_rate, e.active,
+      COALESCE(st.store_name, '') AS company_name,
+      COUNT(DISTINCT cb.id) AS chargeback_count,
+      COALESCE(SUM((${EMP_SHARE})
+        * LEAST(1, GREATEST(0, cb.amount / NULLIF(t.total, 0)))), 0) AS chargeback_total
+    FROM pos_transaction_chargebacks cb
+    JOIN pos_transactions t ON t.id = cb.transaction_id AND t.type = 'sale'
+    JOIN pos_transaction_employees te ON te.transaction_id = t.id
+    JOIN pos_employees e ON e.id = te.employee_id
+    LEFT JOIN pos_settings st ON st.user_id = e.user_id
+    WHERE t.user_id = ANY($1::text[]) AND e.user_id = ANY($1::text[])
+      AND cb.status IN ('pending', 'lost')
+      AND cb.withheld_payday IS NULL
+    GROUP BY e.id, st.store_name
+  `, [asCompanyIds(userId)])).rows;
+  const heldByEmp = new Map(held.map(h => [h.employee_id, h]));
+
+  for (const r of baseReport) {
+    const h = heldByEmp.get(r.employee_id);
+    r.chargeback_count = h ? Number(h.chargeback_count) : 0;
+    r.chargeback_total = h ? round2(Number(h.chargeback_total)) : 0;
+    // The commission base: this period's net sales, less whatever is being
+    // held. It can go negative when a dispute outweighs a quiet fortnight —
+    // that is real, and the paycheck will show it as money owed back.
+    r.net_after_chargebacks = round2(Number(r.net_total) - r.chargeback_total);
+  }
+
+  // Someone with money held but nothing sold in this period gets a row anyway.
+  // Without it a deactivated employee — or anyone who simply didn't sell this
+  // fortnight — has commission withheld on their paycheck with nothing on the
+  // report to account for it.
+  const listed = new Set(baseReport.map(r => r.employee_id));
+  for (const h of held) {
+    if (listed.has(h.employee_id)) continue;
+    baseReport.push({
+      employee_id: h.employee_id, employee_name: h.employee_name,
+      commission_rate: h.commission_rate, active: h.active,
+      company_name: h.company_name,
+      sale_count: 0, return_count: 0, sales_total: 0, returns_total: 0, net_total: 0,
+      chargeback_count: Number(h.chargeback_count),
+      chargeback_total: round2(Number(h.chargeback_total)),
+      net_after_chargebacks: round2(-Number(h.chargeback_total)),
+    });
+  }
+  baseReport.sort((a, b) => Number(b.net_total) - Number(a.net_total));
 
   // Check for special commission plans and recalculate those employees
   const plans = (await Promise.all(asCompanyIds(userId).map(id => getAllCommissionPlans(id)))).flat();
@@ -2280,9 +2316,16 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
   // a company id — zeroing the sales of every employee on a commission plan.
   const txResult = await query(`
     SELECT t.id, t.type, t.created_at, te.commission_value,
-      -- Same deduction as the report: a disputed sale doesn't pay commission.
+      -- Same deduction as the report: money still being held over a dispute
+      -- doesn't pay commission. Matched on the dispute not yet being pinned to
+      -- a paycheck rather than on its date, so a June dispute still bites.
       (${EMP_SHARE}) * CASE WHEN t.type = 'sale'
-        THEN (1 - ${CB_LOST} - ${CB_PENDING}) ELSE 1 END AS commission_amount
+        THEN 1 - LEAST(1, GREATEST(0, COALESCE((
+          SELECT SUM(cb.amount) FROM pos_transaction_chargebacks cb
+          WHERE cb.transaction_id = t.id
+            AND cb.status IN ('pending','lost')
+            AND cb.withheld_payday IS NULL), 0) / NULLIF(t.total, 0)))
+        ELSE 1 END AS commission_amount
     FROM pos_transactions t
     JOIN pos_transaction_employees te ON t.id = te.transaction_id
     WHERE te.employee_id = $1 AND t.user_id = ANY($2::text[])
