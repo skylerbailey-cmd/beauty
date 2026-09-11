@@ -4595,6 +4595,8 @@ async function loadCustomers() {
   const customers = (await resp.json()).report || [];
 
   custReportData = customers;
+  custAllTime = null;             // refetched on the next search
+  custAllTimePromise = null;
   populateCustProductFilter();
   populateCustEmployeeFilter();
   applyCustomerFilters();
@@ -4603,6 +4605,13 @@ async function loadCustomers() {
 // ─── Customers: product/employee filters + mass email ──────────────────────
 let custReportData = [];  // full customer report for the date range
 let custFiltered = [];    // customers after the product + employee filters
+// Every customer ever, fetched the first time someone searches. A search is
+// asking "where is this person", and answering "not in the fortnight you happen
+// to be looking at" is not an answer. Cleared whenever the ranged list reloads
+// so a sale rung up since doesn't go missing.
+let custAllTime = null;
+let custAllTimePromise = null;   // shared by every keystroke waiting on the same fetch
+let custFilterRun = 0;           // so a slower keystroke can't repaint over a newer one
 
 function populateCustProductFilter() {
   const sel = document.getElementById('custProductFilter');
@@ -4626,6 +4635,32 @@ function populateCustEmployeeFilter() {
   if ([...map.keys()].map(String).includes(current)) sel.value = current;
 }
 
+// Pulls every customer on record. Roughly 400 per store and a third of a
+// second, so it is fetched whole and searched in the browser rather than
+// round-tripping on every keystroke.
+function loadAllTimeCustomers(q) {
+  // One fetch, however fast someone types: every keystroke awaits the same
+  // promise instead of firing its own request or giving up and rendering the
+  // date-ranged list because another one happened to be in flight.
+  if (!custAllTimePromise) {
+    const summary = document.getElementById('custFilterSummary');
+    if (summary) summary.textContent = `Searching every sale on record for “${q}”…`;
+    custAllTimePromise = (async () => {
+      try {
+        const resp = await fetch(
+          `${API}/api/pos/reports/customers?start=1970-01-01T00:00:00&end=2999-12-31T23:59:59`,
+          { credentials: 'include' });
+        if (!resp.ok) throw new Error('Could not search earlier dates');
+        custAllTime = (await resp.json()).report || [];
+      } catch (_) {
+        custAllTime = null;          // fall back to the dates on screen
+        custAllTimePromise = null;   // and let the next keystroke try again
+      }
+    })();
+  }
+  return custAllTimePromise;
+}
+
 // Everything on a customer row, flattened for searching. Phone numbers are
 // kept twice — as typed and as bare digits — so "5551234" finds
 // "(555) 123-4567" without the searcher having to match the punctuation.
@@ -4639,7 +4674,8 @@ function customerHaystack(c) {
   ].join(' ').toLowerCase();
 }
 
-function applyCustomerFilters() {
+async function applyCustomerFilters() {
+  const run = ++custFilterRun;
   const pid = document.getElementById('custProductFilter').value;
   const eid = document.getElementById('custEmployeeFilter').value;
   const q = (document.getElementById('custSearch')?.value || '').trim().toLowerCase();
@@ -4647,7 +4683,16 @@ function applyCustomerFilters() {
   // the customer who bought a gold something from Sagiv.
   const words = q ? q.split(/\s+/) : [];
 
-  custFiltered = custReportData.filter(c => {
+  // With a search on, look through every customer ever rather than the dates on
+  // screen; with none, the dates are the point of the list, so keep them.
+  let source = custReportData;
+  if (words.length) {
+    if (!custAllTime) await loadAllTimeCustomers(q);
+    if (run !== custFilterRun) return;   // typed again while waiting
+    source = custAllTime || custReportData;
+  }
+
+  custFiltered = source.filter(c => {
     if (pid && !(c.products || []).some(p => p.product_id === pid)) return false;
     if (eid && !(c.employees || []).some(e => String(e.id) === eid)) return false;
     if (!words.length) return true;
@@ -4662,24 +4707,24 @@ function applyCustomerFilters() {
   const empLabel = eid ? (empSel.options[empSel.selectedIndex]?.text || 'employee') : null;
   const withEmail = custFiltered.filter(c => c.customer_email).length;
   let extra = '';
-  if (q) extra += ` matching “${q}”`;
+  if (q) extra += ` matching “${q}”` + (source === custAllTime ? ', across all dates' : '');
   if (prodLabel) extra += ` who purchased “${prodLabel}”`;
   if (empLabel) extra += `${prodLabel ? ' and' : ' who were'} served by ${empLabel}`;
   // Say how many qualify for the welcome-email button. Without this, a range
   // where nobody does is indistinguishable from the feature being broken —
   // the button is just absent either way.
   const bigSpenders = custFiltered.filter(c => Number(c.largest_sale) > WELCOME_EMAIL_MIN_SALE).length;
-  // A search that finds nobody usually means the dates, not the spelling —
-  // this list only holds customers who bought inside the range above.
   const summary = document.getElementById('custFilterSummary');
   if (q && !custFiltered.length) {
-    summary.textContent = `No customer matching “${q}” bought anything in these dates`
-      + ` — widen the date range above to search further back.`;
+    summary.textContent = source === custAllTime
+      ? `No customer matching “${q}” — searched every sale on record, not just these dates.`
+      : `No customer matching “${q}” in these dates.`;
     return;
   }
   summary.textContent =
     `${custFiltered.length} customer${custFiltered.length !== 1 ? 's' : ''}` + extra + ` · ${withEmail} with an email`
-    + ` · ${bigSpenders} with a sale over $${WELCOME_EMAIL_MIN_SALE.toLocaleString()} in these dates`;
+    + ` · ${bigSpenders} with a sale over $${WELCOME_EMAIL_MIN_SALE.toLocaleString()}`
+    + (source === custAllTime ? ' ever' : ' in these dates');
 }
 
 // A customer qualifies for the welcome-email shortcut on the strength of one
