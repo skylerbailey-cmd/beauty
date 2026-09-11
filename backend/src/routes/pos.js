@@ -1274,6 +1274,27 @@ router.post('/company-scope', async (req, res) => {
   res.json({ ok: true, included, rejected, company_count: ids.length });
 });
 
+// Midnight-to-now in the STORE's timezone, as instants.
+//
+// The reports used to fall back on `new Date().setHours(0,0,0,0)`, which is
+// midnight where the server happens to be — UTC in production. For a Denver
+// store that means the day rolls over at 6pm local, so the "today" leaderboard
+// emptied itself every evening, right as the day was ending and anyone would
+// actually look at it.
+async function storeToday(req) {
+  const settings = await pgDb.getSettings(req.session.userId);
+  const tz = settings.timezone || 'America/Los_Angeles';
+  const now = new Date();
+  const day = now.toLocaleDateString('en-CA', { timeZone: tz }); // en-CA => YYYY-MM-DD
+  // How far the store's clock is behind UTC at this moment, DST included.
+  const offset = new Date(now.toLocaleString('en-US', { timeZone: 'UTC' }))
+    - new Date(now.toLocaleString('en-US', { timeZone: tz }));
+  return {
+    start: new Date(Date.parse(`${day}T00:00:00Z`) + offset).toISOString(),
+    end: now.toISOString(),
+  };
+}
+
 // The unlocked reports read across every company: staff work at both stores
 // and a manager wants one picture rather than having to sign into each account
 // to assemble it. `all=1` is what the Reports tab sends; anything else stays on
@@ -1284,15 +1305,18 @@ const reportScope = async (req) => req.query.all === '1'
 
 router.get('/reports/sales', async (req, res) => {
   const { start, end } = req.query;
-  const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
-  const endDate = end || new Date().toISOString();
+  const today = await storeToday(req);
+  const startDate = start || today.start;
+  const endDate = end || today.end;
   res.json({ report: await pgDb.getSalesReport(await reportScope(req), startDate, endDate) });
 });
 
 router.get('/reports/employees', async (req, res) => {
   const { start, end } = req.query;
-  const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
-  const endDate = end || new Date().toISOString();
+  // No dates = today's leaderboard, and "today" has to mean the store's day.
+  const today = await storeToday(req);
+  const startDate = start || today.start;
+  const endDate = end || today.end;
   res.json({ report: await pgDb.getEmployeeSalesReport(await reportScope(req), startDate, endDate) });
 });
 
@@ -1385,8 +1409,9 @@ router.post('/reports/chargebacks', async (req, res) => {
   const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
   if (!employee) return res.status(401).json({ error: 'Invalid name or PIN' });
 
-  const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
-  const endDate = end || new Date().toISOString();
+  const fallback = await storeToday(req);
+  const startDate = start || fallback.start;
+  const endDate = end || fallback.end;
   const scope = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
   let rows = await pgDb.chargebacksForRange(scope, startDate, endDate);
 
@@ -1412,8 +1437,9 @@ router.post('/reports/employee-detail', async (req, res) => {
     return res.status(403).json({ error: 'You can only open your own figures.' });
   }
 
-  const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
-  const endDate = end || new Date().toISOString();
+  const fallback = await storeToday(req);
+  const startDate = start || fallback.start;
+  const endDate = end || fallback.end;
   const scope = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
 
   const activity = await pgDb.employeeActivityForRange(scope, who, startDate, endDate, store || null);
@@ -1491,22 +1517,25 @@ router.get('/reports/paydays', async (req, res) => {
 
 router.get('/reports/products', async (req, res) => {
   const { start, end } = req.query;
-  const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
-  const endDate = end || new Date().toISOString();
+  const fallback = await storeToday(req);
+  const startDate = start || fallback.start;
+  const endDate = end || fallback.end;
   res.json({ report: await pgDb.getTopProductsReport(await reportScope(req), startDate, endDate) });
 });
 
 router.get('/reports/customers', async (req, res) => {
   const { start, end } = req.query;
-  const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
-  const endDate = end || new Date().toISOString();
+  const fallback = await storeToday(req);
+  const startDate = start || fallback.start;
+  const endDate = end || fallback.end;
   res.json({ report: await pgDb.getCustomerReport(req.session.userId, startDate, endDate) });
 });
 
 router.get('/reports/flagged-returns', async (req, res) => {
   const { start, end } = req.query;
-  const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
-  const endDate = end || new Date().toISOString();
+  const fallback = await storeToday(req);
+  const startDate = start || fallback.start;
+  const endDate = end || fallback.end;
   res.json({ report: await pgDb.getFlaggedReturns(await reportScope(req), startDate, endDate) });
 });
 
@@ -1535,8 +1564,9 @@ router.post('/reports/employee-personal', async (req, res) => {
     return res.status(401).json({ error: 'Invalid name or PIN' });
   }
 
-  const startDate = start || new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
-  const endDate = end || new Date().toISOString();
+  const fallback = await storeToday(req);
+  const startDate = start || fallback.start;
+  const endDate = end || fallback.end;
 
   // Managers see all employees, sales see only their own. Both cover every
   // company: the Reports tab has no company picker because everything on it is
