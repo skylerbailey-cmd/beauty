@@ -5570,6 +5570,9 @@ function switchTab(tabName) {
   if (tabName !== 'history') { txAccess = null; txCreds = null; selectedTxIds.clear(); }
   // Settings is re-locked the same way, for the same reason.
   if (tabName !== 'settings') { settingsAccess = null; settingsCreds = null; }
+  // So is Reports: leaving it clears whoever's commissions were on screen, so
+  // the next person at this browser has to enter their own name and PIN.
+  if (tabName !== 'reports' && personalCreds) lockPersonalReport();
 
   document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('show'));
   document.querySelectorAll('.pos-subtabs button').forEach(el => el.classList.remove('active'));
@@ -6645,6 +6648,10 @@ async function unlockPersonalReport(silent) {
   }
 }
 
+// Locking has to empty the tab, not just hide it. Hiding leaves every figure
+// sitting in the page: the next person to unlock sees the last person's rows
+// flash up before their own arrive, and the numbers are still there for anyone
+// who opens the page source. This is a shared till — treat it as one.
 function lockPersonalReport() {
   managerReportsUnlocked = false;
   personalCreds = null; // Update must not keep refreshing after locking
@@ -6653,9 +6660,25 @@ function lockPersonalReport() {
   const pcBar = document.getElementById('rptPaycheckBar');
   if (pcBar) pcBar.style.display = 'none';
   rptSelectedPayday = '';
-  for (const id of ['empPersonalPending', 'empReportPending']) {
+  // Everything the unlock filled in, including the tables themselves.
+  for (const id of ['empPersonalPending', 'empReportPending', 'empPersonalBody',
+                    'empReportBody', 'leaderboard', 'flaggedReturnsBody',
+                    'payrollBody', 'payrollPeriodNote', 'rptRangeNote', 'empPersonalName']) {
     const el = document.getElementById(id);
     if (el) el.innerHTML = '';
+  }
+  // And the copies held in memory, which survive the DOM being emptied.
+  lastEmployeesReport = [];
+  lastSalesSummaryHtml = '';
+  lastProductsHtml = '';
+  lastPayroll = null;
+  cbDrilldownRows = [];
+  cbDrilldownFilter = '';
+  cbDrilldownIsManager = false;
+  pendingCbRequest++;   // drop any reply still in flight
+  for (const id of ['cbDrilldownModal', 'empDetailModal']) {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('show');
   }
   document.getElementById('salesSummary').innerHTML = '';
   document.getElementById('prodReportBody').innerHTML = '';
