@@ -5891,9 +5891,22 @@ function commissionTotalsRow(rows, label) {
 //
 // Never scoped to the dates on screen: a dispute on a June sale is still being
 // held from the next cheque in September.
+// Bumped on every call so a slow reply for the person who WAS on screen can't
+// land after a newer one and put their disputes back under someone else's name.
+let pendingCbRequest = 0;
+
 async function loadPendingChargebacks() {
   const targets = ['empPersonalPending', 'empReportPending'].map(id => document.getElementById(id)).filter(Boolean);
-  if (!targets.length || !personalCreds) return;
+  if (!targets.length) return;
+  const mine = ++pendingCbRequest;
+  const put = (html) => { if (mine === pendingCbRequest) for (const el of targets) el.innerHTML = html; };
+
+  // Emptied before the request, not after it. These are one person's disputes
+  // under their own name, so the previous person's list must never still be
+  // sitting there — not while the new one loads, and not if it fails.
+  put('');
+  if (!personalCreds) return;
+
   try {
     const resp = await fetch(`${API}/api/pos/reports/chargebacks`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
@@ -5902,15 +5915,19 @@ async function loadPendingChargebacks() {
         start: '1970-01-01T00:00:00', end: '2999-12-31T23:59:59',
       }),
     });
-    if (!resp.ok) return;
+    if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || 'Could not load open disputes');
     const data = await resp.json();
     const pending = (data.chargebacks || [])
       .filter(c => c.status === 'pending' && !c.withheld_payday)
       .sort((a, b) => String(a.employee_name).localeCompare(String(b.employee_name))
         || String(b.sale_date).localeCompare(String(a.sale_date)));
-    const html = renderPendingChargebacks(pending, data.role === 'manager');
-    for (const el of targets) el.innerHTML = html;
-  } catch (_) { /* the commission table still stands on its own */ }
+    put(renderPendingChargebacks(pending, data.role === 'manager'));
+  } catch (err) {
+    // Say so rather than leaving a blank where a deduction should be — an
+    // empty space reads as "nothing is being held", which may be untrue.
+    put(`<div style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--danger);margin-top:12px">
+      Could not load open disputes: ${escapeHtml(err.message)}</div>`);
+  }
 }
 
 function renderPendingChargebacks(rows, isManager) {
@@ -6619,8 +6636,9 @@ async function unlockPersonalReport(silent) {
         errorEl.textContent = '';
       }
       document.getElementById('empPersonalReport').style.display = 'block';
-      loadPendingChargebacks();
     }
+    // Both roles: the disputes on screen belong to whoever just unlocked.
+    loadPendingChargebacks();
   } catch (err) {
     errorEl.textContent = err.message;
     document.getElementById('empPersonalReport').style.display = 'none';
