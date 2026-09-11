@@ -729,7 +729,7 @@
       <!-- Employee Sales & Commissions (Manager/Employee view — locked) -->
       <div class="report-card">
         <h3>Employee Sales &amp; Commissions</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Enter your name and PIN. Employees see their own sales; managers unlock the KPIs, sales leaderboard, everyone's commissions, and top products below.</p>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Enter your name and PIN. Everyone sees their own sales and commission; an admin also unlocks the KPIs, sales leaderboard, everyone's commissions, payroll, and top products below.</p>
         <div id="empPersonalLocked" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input type="text" id="empPersonalName2" placeholder="Your name" style="width:150px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
           <input type="password" id="empPersonalPin" placeholder="Your PIN" maxlength="6" style="width:120px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;text-align:center" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
@@ -1083,6 +1083,7 @@
             <select id="newEmpRole" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
               <option value="sales">Sales</option>
               <option value="manager">Manager</option>
+              <option value="admin">Admin</option>
             </select>
             <button class="btn btn-confirm" onclick="addEmployee()">Add</button>
           </div>
@@ -1297,7 +1298,12 @@
       <select id="empEditRole" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.95rem;font-family:system-ui,sans-serif;outline:none">
         <option value="sales">Sales</option>
         <option value="manager">Manager</option>
+        <option value="admin">Admin</option>
       </select>
+      <div style="font-family:system-ui,sans-serif;font-size:.75rem;color:var(--mid);margin-top:4px">
+        Sales: their own sales and commission. Manager: every transaction, approving returns,
+        and settings — but still only their own commission. Admin: everyone's commissions and payroll.
+      </div>
     </div>
     <div class="field">
       <label>Commission Rate (%)</label>
@@ -1577,6 +1583,11 @@ function defaultSaleEmployees() {
   return [{ employee_id: null, name: '', commission_type: 'percent', commission_value: 100 }];
 }
 let managerReportsUnlocked = false; // gates KPIs, leaderboard, commissions, and top products
+// Roles: 'admin' is the owner — everything, including everyone's pay.
+// 'manager' runs the floor: all transactions, approving returns, settings, but
+// only their own figures in Reports. 'sales' is their own everything.
+const canManageRole = (role) => role === 'manager' || role === 'admin';
+
 let lastEmployeesReport = [];       // most recent employee report data
 let lastPersonalRows = [];          // the unlocked employee's own rows, for the pay summary
 let lastSalesSummaryHtml = '';      // most recent KPI tiles HTML, revealed on manager unlock
@@ -3159,7 +3170,7 @@ async function loadTransactions() {
   const data = await resp.json();
   if (!resp.ok) { alert(data.error || 'Failed to load transactions'); return; }
   txAccess = { id: data.employee.id, name: data.employee.name, role: data.role };
-  const canManage = txAccess.role === 'manager';
+  const canManage = canManageRole(txAccess.role);
   document.getElementById('importCsvBtn').style.display = canManage ? '' : 'none';
   document.getElementById('runAuditBtn').style.display = canManage ? '' : 'none';
   histTransactions = data.transactions || [];
@@ -3252,7 +3263,7 @@ async function submitSettingsAuth() {
 function applySettingsAccessUI() {
   // When locked (e.g. right after a company switch) hide every gated section
   // rather than leaving the last unlock's layout on screen.
-  const isManager = !!settingsAccess && settingsAccess.role === 'manager';
+  const isManager = !!settingsAccess && canManageRole(settingsAccess.role);
   document.getElementById('settingsManagerOnly').style.display = isManager ? '' : 'none';
   document.getElementById('empManagerView').style.display = isManager ? '' : 'none';
   document.getElementById('empSelfView').style.display = (settingsAccess && !isManager) ? '' : 'none';
@@ -3367,7 +3378,7 @@ function applyTxFilters() {
   });
   filteredTransactions = rows;
 
-  const canManage = !!(txAccess && txAccess.role === 'manager');
+  const canManage = !!(txAccess && canManageRole(txAccess.role));
   document.getElementById('txSelectAllHeader').style.display = canManage ? '' : 'none';
   // Selections only ever make sense for rows currently on screen — drop any
   // that scrolled out of the filtered set (e.g. the filter changed).
@@ -3443,7 +3454,7 @@ function applyTxFilters() {
     let who = '';
     if (txAccess) {
       const swap = ` <button onclick="relockTransactions()" style="border:none;background:none;cursor:pointer;color:var(--rose);text-decoration:underline;font:inherit;padding:0">Switch user</button>`;
-      who = txAccess.role === 'manager'
+      who = canManageRole(txAccess.role)
         ? `<div style="color:var(--mid)">Viewing as <b>${escapeHtml(txAccess.name)}</b> (manager) — all employees.${swap}</div>`
         : `<div style="color:var(--danger)">Viewing as <b>${escapeHtml(txAccess.name)}</b> — showing <b>only transactions you were on</b>. Unlock with a manager's name and PIN to see everyone's.${swap}</div>`;
     }
@@ -3487,7 +3498,7 @@ function setHalfMonth(startId, endId, half, apply) {
 
 function renderCompanyPickers() {
   const others = getLinkedAccounts().filter(a => a.email !== currentUser?.email);
-  const isManager = txAccess?.role === 'manager' || managerReportsUnlocked;
+  const isManager = canManageRole(txAccess?.role) || managerReportsUnlocked;
   const opts = `<option value="current">${escapeHtml(currentUser?.companyName || 'This company')} only</option>`
     + `<option value="all">All companies (${others.length + 1})</option>`;
   // Transactions is the only tab left with a picker — Reports always spans
@@ -4035,7 +4046,7 @@ function startEditTransaction(txId) {
   // the Edit button only renders for managers — so reuse those credentials
   // instead of asking for the same ones again. The server still verifies a
   // manager PIN on every save; this drops the duplicate prompt, not the check.
-  if (txAccess?.role === 'manager' && txCreds?.name && txCreds?.pin) {
+  if (canManageRole(txAccess?.role) && txCreds?.name && txCreds?.pin) {
     managerCreds = { name: txCreds.name, pin: txCreds.pin };
     openTxEdit(txId, receipt);
     return;
@@ -4153,7 +4164,7 @@ function toggleSelectAllTx(checked) {
 function updateBulkDeleteUI() {
   const btn = document.getElementById('deleteSelectedTxBtn');
   if (!btn) return;
-  const canManage = !!(txAccess && txAccess.role === 'manager');
+  const canManage = !!(txAccess && canManageRole(txAccess.role));
   const n = selectedTxIds.size;
   btn.style.display = canManage && n > 0 ? '' : 'none';
   btn.textContent = `Delete Selected (${n})`;
@@ -5940,7 +5951,7 @@ async function loadPendingChargebacks() {
     const released = all
       .filter(c => c.status === 'won' && c.withheld_payday && paidOut(c.withheld_payday))
       .sort(byName);
-    put(renderPendingChargebacks(pending, data.role === 'manager') + renderReleased(released));
+    put(renderPendingChargebacks(pending, data.role === 'admin') + renderReleased(released));
     renderPaySummary(pending, released);
   } catch (err) {
     // Say so rather than leaving a blank where a deduction should be — an
@@ -6239,7 +6250,7 @@ async function openChargebackDrilldown(employeeName) {
     cbDrilldownRows = (data.chargebacks || [])
       .sort((a, b) => (isHeld(b) ? 1 : 0) - (isHeld(a) ? 1 : 0)
         || String(b.sale_date).localeCompare(String(a.sale_date)));
-    cbDrilldownIsManager = data.role === 'manager';
+    cbDrilldownIsManager = data.role === 'admin';
     renderChargebackDrilldown();
   } catch (err) {
     body.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--danger)">${escapeHtml(err.message)}</div>`;
@@ -6669,7 +6680,7 @@ async function unlockPersonalReport(silent) {
         : `Showing <b>${fmt(start)} – ${fmt(end)}</b>. Change the dates above and press <b>Update</b> to see another period.`;
     }
 
-    if (data.role === 'manager') {
+    if (data.role === 'admin') {
       // Managers unlock the KPIs, full leaderboard, commissions, and top products
       managerReportsUnlocked = true;
       renderCompanyPickers(); // a manager can now combine companies here

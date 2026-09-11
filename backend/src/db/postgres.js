@@ -563,10 +563,17 @@ async function getEmployee(id) {
   return (await query('SELECT * FROM pos_employees WHERE id = $1', [id])).rows[0];
 }
 
+// The only roles that mean anything. Anything else is stored as 'sales' rather
+// than kept verbatim: a typo saved as-is would read as neither manager nor
+// admin everywhere, which looks like the person's access broke at random.
+const EMPLOYEE_ROLES = ['sales', 'manager', 'admin'];
+const cleanRole = (r) => EMPLOYEE_ROLES.includes(String(r || '').trim().toLowerCase())
+  ? String(r).trim().toLowerCase() : 'sales';
+
 async function createEmployee(name, pin, role, commissionRate, userId) {
   const result = await query(
     'INSERT INTO pos_employees (name, pin, role, commission_rate, user_id) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-    [name, pin, role || 'sales', commissionRate || 0, userId]
+    [name, pin, cleanRole(role), commissionRate || 0, userId]
   );
   return result.rows[0];
 }
@@ -579,7 +586,7 @@ async function updateEmployee(id, fields) {
   for (const key of allowed) {
     if (fields[key] !== undefined) {
       sets.push(`${key} = $${idx}`);
-      params.push(fields[key]);
+      params.push(key === 'role' ? cleanRole(fields[key]) : fields[key]);
       idx++;
     }
   }

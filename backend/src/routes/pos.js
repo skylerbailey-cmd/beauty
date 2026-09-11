@@ -294,8 +294,7 @@ router.post('/employees/verify', async (req, res) => {
   if (name && employee.name.trim().toLowerCase() !== String(name).trim().toLowerCase()) {
     return res.status(401).json({ error: 'Invalid name or PIN' });
   }
-  const role = employee.role === 'manager' ? 'manager' : 'sales';
-  res.json({ employee: { id: employee.id, name: employee.name }, role });
+  res.json({ employee: { id: employee.id, name: employee.name }, role: roleOf(employee) });
 });
 
 // Self-service PIN change: authenticated by the employee's OWN current PIN
@@ -674,11 +673,11 @@ router.post('/transactions/mine', async (req, res) => {
   if (start) opts.startDate = start;
   if (end) opts.endDate = end;
 
-  const role = employee.role === 'manager' ? 'manager' : 'sales';
-  // A manager sees whatever company scope is active (their own by default); a
-  // sales employee is always limited to their own company's sales.
-  const scope = role === 'manager' ? scopeIds(req) : [req.session.userId];
-  const transactions = role === 'manager'
+  const role = roleOf(employee);
+  // A manager or admin sees whatever company scope is active (their own by
+  // default); a sales employee is always limited to their own company's sales.
+  const scope = canManage(employee) ? scopeIds(req) : [req.session.userId];
+  const transactions = canManage(employee)
     ? await pgDb.getTransactions(scope, opts)
     : await pgDb.getEmployeeTransactions(req.session.userId, employee.id, opts);
 
@@ -702,7 +701,7 @@ router.post('/transactions/mine', async (req, res) => {
 async function verifyManager(userId, name, pin) {
   if (!pin) return null;
   const emp = await pgDb.verifyEmployeePin(pin, userId, name);
-  if (!emp || emp.role !== 'manager') return null;
+  if (!canManage(emp)) return null;
   // Name must match the PIN's employee (case-insensitive, trimmed) when provided
   if (name && emp.name.trim().toLowerCase() !== String(name).trim().toLowerCase()) return null;
   return emp;
@@ -1240,6 +1239,18 @@ router.post('/mass-email', async (req, res) => {
 // and PIN also verifies as a manager there, so widening never exposes books the
 // person couldn't already open on their own. The chosen scope lives on the
 // session (not in the URL) so a PIN is never put in a query string.
+// Three roles now. `admin` is the owner's login: everything a manager can do
+// on the floor, plus the books — the KPIs, everyone's commissions, and payroll.
+// A `manager` keeps the operational powers (all transactions, approving a
+// return, settings) but sees only their own figures in Reports, because
+// running a store is not the same as being entitled to everyone's pay.
+const isAdmin = (e) => !!e && e.role === 'admin';
+const canManage = (e) => !!e && (e.role === 'manager' || e.role === 'admin');
+// What the browser is told. Admin reads as admin; anything that isn't a
+// manager or an admin is plain sales, so an unknown value can never widen
+// access by accident.
+const roleOf = (e) => (isAdmin(e) ? 'admin' : (canManage(e) ? 'manager' : 'sales'));
+
 function scopeIds(req) {
   const scope = req.session.companyScope;
   return Array.isArray(scope) && scope.length ? scope : [req.session.userId];
@@ -1330,8 +1341,8 @@ const payrollScope = async () => (await pgDb.getAllCompanyIds()).map(c => c.user
 router.post('/reports/payroll', async (req, res) => {
   const { name, pin, payday } = req.body;
   const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
-  if (!employee || employee.role !== 'manager') {
-    return res.status(403).json({ error: 'A manager name and PIN are needed to see payroll.' });
+  if (!isAdmin(employee)) {
+    return res.status(403).json({ error: 'Payroll needs an admin name and PIN.' });
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) {
     return res.status(400).json({ error: 'Pick a payday.' });
@@ -1345,8 +1356,8 @@ router.post('/reports/payroll', async (req, res) => {
 router.post('/reports/payroll/paid', async (req, res) => {
   const { name, pin, payday, paid } = req.body;
   const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
-  if (!employee || employee.role !== 'manager') {
-    return res.status(403).json({ error: 'Only a manager can close off a payday.' });
+  if (!isAdmin(employee)) {
+    return res.status(403).json({ error: 'Only an admin can close off a payday.' });
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.status(400).json({ error: 'Pick a payday.' });
   // Scoped to every company, not the signed-in one: a payday covers both
@@ -1378,8 +1389,8 @@ router.post('/reports/payroll/paid', async (req, res) => {
 router.post('/reports/payroll/adjustment', async (req, res) => {
   const { name, pin, payday, employee_id, amount, note } = req.body;
   const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
-  if (!employee || employee.role !== 'manager') {
-    return res.status(403).json({ error: 'Only a manager can adjust a paycheck.' });
+  if (!isAdmin(employee)) {
+    return res.status(403).json({ error: 'Only an admin can adjust a paycheck.' });
   }
   const amt = Number(amount);
   if (!isFinite(amt) || amt === 0) return res.status(400).json({ error: 'Enter an amount — positive to add, negative to deduct.' });
@@ -1393,8 +1404,8 @@ router.post('/reports/payroll/adjustment', async (req, res) => {
 router.delete('/reports/payroll/adjustment/:id', async (req, res) => {
   const { name, pin } = req.body;
   const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
-  if (!employee || employee.role !== 'manager') {
-    return res.status(403).json({ error: 'Only a manager can adjust a paycheck.' });
+  if (!isAdmin(employee)) {
+    return res.status(403).json({ error: 'Only an admin can adjust a paycheck.' });
   }
   const ok = await pgDb.deletePayrollAdjustment(req.session.userId, parseInt(req.params.id));
   if (!ok) return res.status(404).json({ error: 'Adjustment not found' });
@@ -1415,7 +1426,7 @@ router.post('/reports/chargebacks', async (req, res) => {
   const scope = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
   let rows = await pgDb.chargebacksForRange(scope, startDate, endDate);
 
-  if (employee.role !== 'manager') {
+  if (!isAdmin(employee)) {
     // Match on name, not id: the same person has a different employee record
     // at each company, and this spans both.
     const mine = String(employee.name).trim().toLowerCase();
@@ -1433,7 +1444,7 @@ router.post('/reports/employee-detail', async (req, res) => {
   if (!me) return res.status(401).json({ error: 'Invalid name or PIN' });
 
   const who = String(employee || me.name).trim();
-  if (me.role !== 'manager' && who.toLowerCase() !== String(me.name).trim().toLowerCase()) {
+  if (!isAdmin(me) && who.toLowerCase() !== String(me.name).trim().toLowerCase()) {
     return res.status(403).json({ error: 'You can only open your own figures.' });
   }
 
@@ -1472,8 +1483,8 @@ router.post('/reports/employee-detail', async (req, res) => {
 router.post('/reports/chargebacks/:id', async (req, res) => {
   const { name, pin, status, closed_at, withheld_payday } = req.body;
   const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
-  if (!employee || employee.role !== 'manager') {
-    return res.status(403).json({ error: 'Only a manager can change a chargeback.' });
+  if (!isAdmin(employee)) {
+    return res.status(403).json({ error: 'Only an admin can change a chargeback.' });
   }
   const id = parseInt(req.params.id);
   const scope = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
@@ -1568,13 +1579,14 @@ router.post('/reports/employee-personal', async (req, res) => {
   const startDate = start || fallback.start;
   const endDate = end || fallback.end;
 
-  // Managers see all employees, sales see only their own. Both cover every
-  // company: the Reports tab has no company picker because everything on it is
-  // combined, so scoping this to the signed-in account would hide half of it.
-  if (employee.role === 'manager') {
+  // An admin sees every employee; everyone else — managers included — sees
+  // only their own. Both cover every company: the Reports tab has no company
+  // picker because everything on it is combined, so scoping this to the
+  // signed-in account would hide half of it.
+  if (isAdmin(employee)) {
     const all = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
     const report = await pgDb.getEmployeeSalesReport(all, startDate, endDate);
-    res.json({ employee, role: 'manager', report });
+    res.json({ employee, role: 'admin', report });
   } else {
     // A sales employee only ever sees their OWN figures, but they may work at
     // more than one company. Their own name+PIN is re-verified against each
@@ -1606,7 +1618,7 @@ router.post('/reports/employee-personal', async (req, res) => {
       included.push(co.store_name);
     }
 
-    res.json({ employee, role: 'sales', report: rows, companies_included: included, companies_rejected: rejected });
+    res.json({ employee, role: roleOf(employee), report: rows, companies_included: included, companies_rejected: rejected });
   }
 });
 
