@@ -501,7 +501,7 @@
         <div class="pos-topbar">
           <div class="mode-toggle">
             <button class="active" id="modesale" onclick="setMode('sale')">Sale</button>
-            <button id="modereturn" onclick="setMode('return')">Return</button>
+            <button id="modereturn" onclick="setMode('return')" title="Find a receipt to reprint, email, or return against">Look Up</button>
           </div>
           <button class="btn" style="background:var(--gold);color:#fff;padding:7px 16px;font-family:system-ui,sans-serif;font-size:.82rem;border-radius:8px" onclick="printDaySummary()">Print End of Day Report</button>
         </div>
@@ -513,7 +513,9 @@
         </div>
         <!-- Return mode: receipt lookup -->
         <div id="returnView" style="display:none">
-          <div style="max-width:500px;margin-bottom:16px;padding:14px 16px;background:#fff6e0;border:1px solid #f0d48a;border-left:4px solid var(--gold);border-radius:10px;font-family:system-ui,sans-serif">
+          <!-- Hidden until a receipt that can actually be returned is found —
+               it is noise for someone who only wants to reprint. -->
+          <div id="returnPolicyNote" style="display:none;max-width:500px;margin-bottom:16px;padding:14px 16px;background:#fff6e0;border:1px solid #f0d48a;border-left:4px solid var(--gold);border-radius:10px;font-family:system-ui,sans-serif">
             <div style="font-weight:700;font-size:.85rem;color:#8a6d1f;margin-bottom:6px">⚠️ Before processing a return</div>
             <ul style="margin:0;padding-left:18px;font-size:.82rem;color:#6b5518;line-height:1.5">
               <li>Inspect each item — make sure nothing has been <strong>opened or used</strong>.</li>
@@ -522,8 +524,8 @@
             </ul>
           </div>
           <div class="report-card" style="max-width:500px">
-            <h3 style="font-family:system-ui,sans-serif;margin-bottom:4px">Lookup Original Receipt</h3>
-            <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:16px">Enter the receipt number from the original sale to process a return. Returns must be within 14 days of purchase.</p>
+            <h3 style="font-family:system-ui,sans-serif;margin-bottom:4px">Look Up a Receipt</h3>
+            <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:16px">Find any past sale or return to reprint or email it. If it is a sale from the last 14 days, you can also return against it.</p>
             <div style="display:flex;gap:8px">
               <input type="text" id="returnReceiptInput" class="search-bar" placeholder="Sale receipt # (e.g. 1042)" style="margin-bottom:0;flex:1" onkeydown="if(event.key==='Enter')lookupReceipt()">
               <button class="btn btn-confirm" onclick="lookupReceipt()" style="white-space:nowrap">Look Up</button>
@@ -545,10 +547,15 @@
                   <strong>Original Total: <span id="returnOrigTotal"></span></strong>
                 </div>
               </div>
-              <div style="margin-top:12px;text-align:right">
-                <button class="btn" style="margin-right:8px" onclick="addRefundAmount()" title="Give money back without a product coming back — a partial refund, goodwill credit or price adjustment">Refund an Amount</button>
-                <button class="btn btn-confirm" style="background:var(--danger)" onclick="addReturnItemsToCart()">Select All for Return</button>
+              <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+                <button class="btn" style="background:var(--rose);color:#fff" onclick="openLookedUpReceipt()"
+                  title="Open this receipt to print or email it">View / Print Receipt</button>
+                <span id="returnActions" style="display:none;gap:8px">
+                  <button class="btn" style="margin-right:8px" onclick="addRefundAmount()" title="Give money back without a product coming back — a partial refund, goodwill credit or price adjustment">Refund an Amount</button>
+                  <button class="btn btn-confirm" style="background:var(--danger)" onclick="addReturnItemsToCart()">Select All for Return</button>
+                </span>
               </div>
+              <div id="returnNotAllowed" style="display:none;margin-top:10px;font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);text-align:right"></div>
             </div>
           </div>
         </div>
@@ -1578,6 +1585,10 @@ let currentMode = 'sale';
 let tenders = [{ method: 'card', amount: 0, last4: '' }];
 let activeBrand = null;
 let lastTransaction = null;
+// The receipt currently on screen in the lookup panel. Separate from
+// returnOriginalTx, which is only set when a return is actually allowed — this
+// one is set for anything that was found, so it can still be printed.
+let lookedUpTx = null;
 let currentPin = '';
 let saleEmployees = []; // [{employee_id, name, commission_type, commission_value}]
 let allEmployees = [];
@@ -1937,14 +1948,24 @@ function setMode(mode) {
     saleEmployees = defaultSaleEmployees();
     empManuallyEdited = false;
     renderSaleEmployees();
+    lookedUpTx = null;
     document.getElementById('returnReceiptInput').value = '';
     document.getElementById('returnLookupResult').style.display = 'none';
     document.getElementById('returnLookupError').style.display = 'none';
+    document.getElementById('returnPolicyNote').style.display = 'none';
     document.getElementById('returnReceiptInput').focus();
   } else {
     returnOriginalTx = null;
   }
   updateCheckoutEnabled();
+}
+
+// Open the looked-up receipt in the same modal a finished sale uses, so Print,
+// Email Receipt and Send Welcome Email all work exactly as they do at checkout.
+function openLookedUpReceipt() {
+  if (!lookedUpTx) return;
+  lastTransaction = lookedUpTx;   // what Print and Email act on
+  showReceipt(lookedUpTx, true);
 }
 
 async function lookupReceipt() {
@@ -1962,16 +1983,26 @@ async function lookupReceipt() {
     if (!resp.ok) throw new Error(data.error);
 
     const tx = data.transaction;
-    if (tx.type !== 'sale') throw new Error('Can only return against a sale receipt');
 
-    // Check 14-day window
+    // Any receipt can be looked up — someone reprinting a six-month-old sale,
+    // or a copy of a return, has as much right to it as someone starting a
+    // refund. Whether it can be RETURNED against is a separate question,
+    // answered below, so an expired receipt still prints instead of erroring.
     const saleDate = new Date(tx.created_at);
     const daysSince = (Date.now() - saleDate.getTime()) / (1000 * 60 * 60 * 24);
-    if (daysSince > 14) {
-      throw new Error(`Return window expired. Sale was ${Math.floor(daysSince)} days ago (14-day limit).`);
-    }
+    const canReturn = tx.type === 'sale' && daysSince <= 14;
+    const whyNot = tx.type !== 'sale'
+      ? 'This is a return receipt — returns can only be made against a sale.'
+      : `Return window expired — this sale was ${Math.floor(daysSince)} days ago, and the limit is 14.`;
 
-    returnOriginalTx = tx;
+    returnOriginalTx = canReturn ? tx : null;
+    lookedUpTx = tx;
+    document.getElementById('returnPolicyNote').style.display = canReturn ? '' : 'none';
+    document.getElementById('returnActions').style.display = canReturn ? 'inline-flex' : 'none';
+    const notAllowed = document.getElementById('returnNotAllowed');
+    notAllowed.style.display = canReturn ? 'none' : '';
+    notAllowed.textContent = canReturn ? '' : whyNot;
+
     const daysLeft = Math.max(0, Math.ceil(14 - daysSince));
 
     document.getElementById('returnOrigReceipt').textContent = tx.receipt_number;
@@ -1979,14 +2010,15 @@ async function lookupReceipt() {
     document.getElementById('returnOrigCustomer').textContent = tx.customer_name ? `Customer: ${tx.customer_name}` : '';
     const exchangeDaysLeft = Math.max(0, Math.ceil(7 - daysSince));
     const exchangeOk = daysSince <= 7;
-    document.getElementById('returnOrigDaysLeft').innerHTML =
-      `<span style="color:${daysLeft <= 3 ? 'var(--danger)' : 'var(--success)'}">${daysLeft} day${daysLeft !== 1 ? 's' : ''} left to return</span>` +
-      ` &nbsp;·&nbsp; <span style="color:${exchangeOk ? 'var(--success)' : 'var(--danger)'}">${exchangeOk ? `Exchange available (${exchangeDaysLeft} day${exchangeDaysLeft !== 1 ? 's' : ''} left)` : 'Exchange window expired (7-day limit)'}</span>`;
+    document.getElementById('returnOrigDaysLeft').innerHTML = canReturn
+      ? `<span style="color:${daysLeft <= 3 ? 'var(--danger)' : 'var(--success)'}">${daysLeft} day${daysLeft !== 1 ? 's' : ''} left to return</span>`
+        + ` &nbsp;·&nbsp; <span style="color:${exchangeOk ? 'var(--success)' : 'var(--danger)'}">${exchangeOk ? `Exchange available (${exchangeDaysLeft} day${exchangeDaysLeft !== 1 ? 's' : ''} left)` : 'Exchange window expired (7-day limit)'}</span>`
+      : `<span style="color:var(--mid)">${tx.type === 'return' ? 'Return receipt' : 'Sale'} from ${saleDate.toLocaleDateString()}</span>`;
     document.getElementById('returnOrigTotal').textContent = `$${money(tx.total)}`;
 
     document.getElementById('returnItemsBody').innerHTML = tx.items.map((item, i) => `
       <tr>
-        <td><input type="checkbox" checked data-idx="${i}" class="return-item-cb" style="width:16px;height:16px;accent-color:var(--danger)"></td>
+        <td>${canReturn ? `<input type="checkbox" checked data-idx="${i}" class="return-item-cb" style="width:16px;height:16px;accent-color:var(--danger)">` : ''}</td>
         <td>${item.product_name}<br><span style="font-size:.72rem;color:var(--mid)">${item.brand}</span></td>
         <td>${item.quantity}</td>
         <td>$${money(item.unit_price)}</td>
@@ -2609,8 +2641,13 @@ async function submitTransaction(body) {
 }
 
 // ─── Receipt ────────────────────────────────────────────────────────────────
-function showReceipt(tx) {
-  const title = tx.type === 'return' ? 'Return Processed!' : 'Sale Complete!';
+// `reprint` = this receipt is being looked up after the fact, not just rung up.
+// Saying "Sale Complete!" over a six-month-old receipt reads as though
+// something was just charged again.
+function showReceipt(tx, reprint) {
+  const title = reprint
+    ? `Receipt ${tx.receipt_number}`
+    : (tx.type === 'return' ? 'Return Processed!' : 'Sale Complete!');
   document.getElementById('receiptModalTitle').textContent = title;
 
   const storeName = storeSettings.store_name || document.getElementById('headerCompany').textContent || 'Glow SF';
@@ -3874,7 +3911,7 @@ function viewReceipt(txId) {
   const tx = histTransactions.find(t => t.id === txId);
   if (tx) {
     lastTransaction = tx;
-    showReceipt(tx);
+    showReceipt(tx, true);   // looked up after the fact, not just rung up
   }
 }
 
