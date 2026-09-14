@@ -30,6 +30,15 @@ function formatStoreAddress(settings) {
   return [street, cityStateZip.trim()].filter(Boolean).join(', ');
 }
 
+// Email and phone for the store itself, for the receipt. A receipt that gives
+// an address but no way to get in touch is no use to a customer with a
+// question about what they just bought.
+function formatStoreContact(settings) {
+  const email = (settings?.store_email || '').trim();
+  const phone = (settings?.store_phone || '').trim();
+  return [phone, email].filter(Boolean).join('  ·  ');
+}
+
 // Auth middleware
 function requireAuth(req, res, next) {
   if (!req.session?.userId) {
@@ -1031,6 +1040,7 @@ router.post('/transactions/:id/email', async (req, res) => {
   const settings = await pgDb.getSettings(req.session.userId);
   const storeName = settings.store_name || user?.company_name || 'Glow SF';
   const storeAddress = formatStoreAddress(settings);
+  const storeContact = formatStoreContact(settings);
   const footer = settings.receipt_footer || 'Thank you for your purchase!';
   const tz = settings.timezone || 'America/Los_Angeles';
 
@@ -1061,6 +1071,7 @@ router.post('/transactions/:id/email', async (req, res) => {
       <div style="text-align:center;padding:24px 0;border-bottom:2px solid #c97d8a">
         <h1 style="margin:0;font-size:1.4rem;color:#9e5567">${storeName}</h1>
         ${storeAddress ? `<p style="margin:4px 0 0;font-size:.78rem;color:#6b5057">${storeAddress}</p>` : ''}
+        ${storeContact ? `<p style="margin:2px 0 0;font-size:.78rem;color:#6b5057">${storeContact}</p>` : ''}
         <p style="margin:4px 0 0;font-size:.85rem;color:#6b5057">${tx.type === 'return' ? 'Return Receipt' : 'Sales Receipt'}</p>
       </div>
       <div style="padding:20px 0">

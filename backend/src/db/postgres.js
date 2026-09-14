@@ -236,6 +236,8 @@ async function initSchema() {
       store_name TEXT DEFAULT '',
       store_address TEXT DEFAULT '',
       store_city TEXT DEFAULT '',
+      store_email TEXT DEFAULT '',
+      store_phone TEXT DEFAULT '',
       store_state TEXT DEFAULT '',
       store_zip TEXT DEFAULT '',
       receipt_footer TEXT DEFAULT 'Thank you for your purchase!',
@@ -415,6 +417,10 @@ async function initSchema() {
       AND LENGTH(REGEXP_REPLACE(COALESCE(phone, ''), '\\D', '', 'g')) >= 10`);
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_address TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_city TEXT DEFAULT ''");
+  // How a customer reaches the store. Printed on receipts, which otherwise
+  // carried an address but no way to get in touch.
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_email TEXT DEFAULT ''");
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_phone TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_state TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_zip TEXT DEFAULT ''");
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS tax_rate REAL DEFAULT 0.0875');
@@ -2267,7 +2273,8 @@ async function getSettings(userId) {
 }
 
 async function updateSettings(userId, fields) {
-  const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'payarc_token', 'payarc_merchant_id', 'payarc_env', 'payroll_paydays', 'payroll_lag', 'sale_alert_phone', 'sale_alert_carrier', 'sale_alert_enabled', 'sale_alert_recipients'];
+  const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip',
+    'store_email', 'store_phone', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'payarc_token', 'payarc_merchant_id', 'payarc_env', 'payroll_paydays', 'payroll_lag', 'sale_alert_phone', 'sale_alert_carrier', 'sale_alert_enabled', 'sale_alert_recipients'];
   const sets = [];
   const params = [];
   let idx = 1;

@@ -902,6 +902,15 @@
             <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">ZIP Code</label>
             <input type="text" id="settingsStoreZip" placeholder="94103" maxlength="10" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
           </div>
+          <!-- Printed and emailed on every receipt, under the address. -->
+          <div class="field">
+            <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Store Email (on receipts)</label>
+            <input type="email" id="settingsStoreEmail" placeholder="hello@yourstore.com" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
+          </div>
+          <div class="field">
+            <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Store Phone (on receipts)</label>
+            <input type="tel" id="settingsStorePhone" placeholder="(415) 555-0123" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
+          </div>
           <div class="field">
             <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Receipt Footer Text</label>
             <input type="text" id="settingsReceiptFooter" placeholder="Thank you for your purchase!" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
@@ -2652,6 +2661,12 @@ function showReceipt(tx, reprint) {
 
   const storeName = storeSettings.store_name || document.getElementById('headerCompany').textContent || 'Glow SF';
   const storeAddr = formatStoreAddress(storeSettings);
+  // How to reach the store, under the address — a customer with a question
+  // about what they bought has the receipt in hand and nothing else.
+  const storeContact = [
+    (storeSettings.store_phone || '').trim(),
+    (storeSettings.store_email || '').trim(),
+  ].filter(Boolean).join('  ·  ');
   const tz = storeSettings.timezone || 'America/Los_Angeles';
   const date = new Date(tx.created_at).toLocaleString('en-US', { timeZone: tz });
   const empNames = (tx.employees && tx.employees.length > 0)
@@ -2661,6 +2676,7 @@ function showReceipt(tx, reprint) {
   let html = `
     <div class="r-center"><strong>${storeName}</strong></div>
     ${storeAddr ? `<div class="r-center" style="font-size:.8rem">${storeAddr}</div>` : ''}
+    ${storeContact ? `<div class="r-center" style="font-size:.8rem">${escapeHtml(storeContact)}</div>` : ''}
     <div class="r-center" style="font-size:.82rem"><strong>${tx.type === 'return' ? 'RETURN RECEIPT' : 'SALES RECEIPT'}</strong></div>
     <div class="r-line"></div>
     <div class="r-row"><strong><span>Receipt #:</span><span>${tx.receipt_number}</span></strong></div>
@@ -6925,7 +6941,7 @@ document.addEventListener('click', e => {
 });
 
 // ─── Store Settings ─────────────────────────────────────────────────────────
-let storeSettings = { store_name: '', store_address: '', store_city: '', store_state: '', store_zip: '', receipt_footer: 'Thank you for your purchase!', timezone: 'America/Los_Angeles', tax_rate: 0.081875 };
+let storeSettings = { store_name: '', store_address: '', store_city: '', store_state: '', store_zip: '', store_email: '', store_phone: '', receipt_footer: 'Thank you for your purchase!', timezone: 'America/Los_Angeles', tax_rate: 0.081875 };
 
 // Combine the street address with city/state/zip so receipts always show the
 // full mailing address, e.g. "123 Main St" + "San Francisco"/"CA"/"94103".
@@ -6953,6 +6969,8 @@ async function loadStoreSettings() {
     document.getElementById('settingsStoreCity').value = storeSettings.store_city || '';
     document.getElementById('settingsStoreState').value = storeSettings.store_state || '';
     document.getElementById('settingsStoreZip').value = storeSettings.store_zip || '';
+    document.getElementById('settingsStoreEmail').value = storeSettings.store_email || '';
+    document.getElementById('settingsStorePhone').value = storeSettings.store_phone || '';
     document.getElementById('settingsReceiptFooter').value = storeSettings.receipt_footer || '';
     document.getElementById('settingsTimezone').value = storeSettings.timezone || 'America/Los_Angeles';
     document.getElementById('settingsTaxRate').value = storeSettings.tax_rate != null ? taxPctStr(storeSettings.tax_rate) : '8.1875';
@@ -6978,6 +6996,8 @@ async function saveStoreSettings() {
   const store_city = document.getElementById('settingsStoreCity').value.trim();
   const store_state = document.getElementById('settingsStoreState').value.trim();
   const store_zip = document.getElementById('settingsStoreZip').value.trim();
+  const store_email = document.getElementById('settingsStoreEmail').value.trim();
+  const store_phone = document.getElementById('settingsStorePhone').value.trim();
   const receipt_footer = document.getElementById('settingsReceiptFooter').value.trim();
   const timezone = document.getElementById('settingsTimezone').value;
   const taxPct = parseFloat(document.getElementById('settingsTaxRate').value);
@@ -6986,7 +7006,8 @@ async function saveStoreSettings() {
   try {
     const resp = await fetch(`${API}/api/pos/settings`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ store_name, store_address, store_city, store_state, store_zip, receipt_footer, timezone, tax_rate, theme }),
+      body: JSON.stringify({ store_name, store_address, store_city, store_state, store_zip,
+        store_email, store_phone, receipt_footer, timezone, tax_rate, theme }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Save failed');
