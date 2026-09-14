@@ -6692,6 +6692,18 @@ async function loadPayroll() {
     }
     const grand = rows.reduce((s, e) => s + e.total, 0);
 
+    // Each store writes its own cheques, so the grand total is rarely the
+    // number anyone needs on its own — what leaves each company's account is.
+    const byStore = [];
+    for (const e of rows) {
+      const name = e.store_name || '—';
+      let g = byStore.find(x => x.name === name);
+      if (!g) { g = { name, total: 0, people: new Set() }; byStore.push(g); }
+      g.total += e.total;
+      g.people.add(e.employee_name);
+    }
+    byStore.sort((a, b) => a.name.localeCompare(b.name));
+
     const storeLine = e => `
       <div style="display:flex;justify-content:space-between;font-weight:600;margin-top:4px">
         <span>${e.store_name ? escapeHtml(e.store_name) + ' ' : ''}<span style="font-weight:400;color:var(--mid)">· ${e.commission_rate}% of $${money(e.sales_total)}${e.sale_count ? ` over ${e.sale_count} sale${e.sale_count === 1 ? '' : 's'}` : ''}</span></span>
@@ -6717,8 +6729,13 @@ async function loadPayroll() {
         </div>
       </div>`;
     }).join('')
-      + `<div style="display:flex;justify-content:space-between;font-family:system-ui,sans-serif;font-weight:700;font-size:.95rem;padding-top:10px">
-           <span>Total for this paycheck</span><span>$${money(grand)}</span></div>`
+      + (byStore.length > 1 ? byStore.map(g => `
+          <div style="display:flex;justify-content:space-between;font-family:system-ui,sans-serif;font-size:.85rem;padding-top:6px;color:var(--mid)">
+            <span>${escapeHtml(g.name)} <span style="font-size:.78rem">· ${g.people.size} ${g.people.size === 1 ? 'person' : 'people'}</span></span>
+            <span style="font-weight:600;color:var(--dark)">$${money(g.total)}</span>
+          </div>`).join('') : '')
+      + `<div style="display:flex;justify-content:space-between;font-family:system-ui,sans-serif;font-weight:700;font-size:.95rem;padding-top:10px;${byStore.length > 1 ? 'border-top:1px solid var(--border);margin-top:6px' : ''}">
+           <span>Total for this paycheck${byStore.length > 1 ? ' <span style="font-weight:400;color:var(--mid);font-size:.82rem">· both companies</span>' : ''}</span><span>$${money(grand)}</span></div>`
       + (data.paid ? '' : `
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
           <select id="payAdjEmp" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;background:var(--white)">
