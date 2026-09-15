@@ -1982,6 +1982,10 @@ async function getCustomerReport(userId, startDate, endDate) {
       -- tab. Subtotal, not total, so the threshold is the value of what was
       -- actually bought and doesn't move with the tax rate.
       COALESCE(MAX(CASE WHEN t.type = 'sale' THEN t.subtotal END), 0) as largest_sale,
+      -- Dated the way every other report counts a transaction, so a refund
+      -- doesn't make someone look like they came in more recently than they did.
+      MAX(COALESCE(t.original_sale_date, t.created_at))::date::text as last_purchase,
+      MIN(COALESCE(t.original_sale_date, t.created_at))::date::text as first_purchase,
       cust.id as customer_id, cust.birthday, cust.address, cust.notes,
       -- Prefer the CRM record's phone (a manager may have corrected it in the
       -- Customers detail view), but fall back to whatever the sale itself

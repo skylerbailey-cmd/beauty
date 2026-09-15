@@ -839,6 +839,13 @@
             <input type="search" id="custSearch" oninput="applyCustomerFilters()"
               placeholder="Search name, email, phone, item…"
               style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none;min-width:230px">
+            <label style="font-size:.8rem;color:var(--mid);font-family:system-ui,sans-serif">Sort:</label>
+            <select id="custSort" onchange="applyCustomerFilters()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none">
+              <option value="recent">Most recent purchase</option>
+              <option value="oldest">Longest since purchase</option>
+              <option value="spent">Total spent</option>
+              <option value="name">Name (A–Z)</option>
+            </select>
             <label style="font-size:.8rem;color:var(--mid);font-family:system-ui,sans-serif">Purchased:</label>
             <select id="custProductFilter" onchange="applyCustomerFilters()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none;max-width:220px">
               <option value="">All items</option>
@@ -853,7 +860,7 @@
         </div>
         <div id="custFilterSummary" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin-top:8px"></div>
         <table class="report-table" style="margin-top:8px">
-          <thead><tr><th>Customer</th><th>Email</th><th>Purchases</th><th>Returns</th><th>Total Spent</th><th>Employee(s)</th><th>Items</th><th></th></tr></thead>
+          <thead><tr><th>Customer</th><th>Email</th><th>Last Purchase</th><th>Purchases</th><th>Returns</th><th>Total Spent</th><th>Employee(s)</th><th>Items</th><th></th></tr></thead>
           <tbody id="custReportBody"></tbody>
         </table>
         <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:8px">Click a customer for their full details (phone, address, notes).</p>
@@ -4071,10 +4078,12 @@ async function importRows(rows) {
 
 function exportCustomersCSV() {
   const list = custFiltered || [];
-  const rows = [['Name', 'Email', 'Phone', 'Birthday', 'Address', 'Purchases', 'Returns', 'Total Spent', 'Employee(s)', 'Items Purchased']];
+  const rows = [['Name', 'Email', 'Phone', 'Birthday', 'Address', 'First Purchase', 'Last Purchase',
+                 'Purchases', 'Returns', 'Total Spent', 'Employee(s)', 'Items Purchased']];
   list.forEach(c => {
     rows.push([
-      c.customer_name || '', c.customer_email || '', c.phone || '', c.birthday ? String(c.birthday).slice(0, 10) : '', c.address || '', c.purchases, c.returns,
+      c.customer_name || '', c.customer_email || '', c.phone || '', c.birthday ? String(c.birthday).slice(0, 10) : '', c.address || '',
+      c.first_purchase || '', c.last_purchase || '', c.purchases, c.returns,
       Number(c.total_spent).toFixed(2),
       (c.employees || []).map(e => e.name).join('; '),
       (c.products || []).map(p => p.product_name).join('; '),
@@ -4714,6 +4723,29 @@ function loadAllTimeCustomers(q) {
   return custAllTimePromise;
 }
 
+// Dates come back as YYYY-MM-DD, which sorts correctly as a plain string —
+// no Date objects, so no timezone shifting a purchase onto the wrong day.
+function sortCustomers(list) {
+  const how = document.getElementById('custSort')?.value || 'recent';
+  const date = (c) => c.last_purchase || '';
+  const cmp = {
+    recent: (a, b) => date(b).localeCompare(date(a)),
+    oldest: (a, b) => date(a).localeCompare(date(b)),
+    spent: (a, b) => Number(b.total_spent) - Number(a.total_spent),
+    name: (a, b) => String(a.customer_name || '').localeCompare(String(b.customer_name || '')),
+  }[how] || ((a, b) => date(b).localeCompare(date(a)));
+  // Ties broken by spend, so equal dates still read in a useful order.
+  list.sort((a, b) => cmp(a, b) || Number(b.total_spent) - Number(a.total_spent));
+}
+
+// A bought-nothing-yet customer has no date; everyone else gets a short one.
+function fmtCustDate(d) {
+  if (!d) return '<span style="color:var(--mid)">—</span>';
+  const [y, m, day] = String(d).split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, day))
+    .toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' });
+}
+
 // Everything on a customer row, flattened for searching. Phone numbers are
 // kept twice — as typed and as bare digits — so "5551234" finds
 // "(555) 123-4567" without the searcher having to match the punctuation.
@@ -4721,7 +4753,7 @@ function customerHaystack(c) {
   const phone = String(c.phone || '');
   return [
     c.customer_name, c.customer_email, phone, phone.replace(/\D/g, ''),
-    c.address, c.notes,
+    c.address, c.notes, c.last_purchase,
     (c.products || []).map(p => p.product_name).join(' '),
     (c.employees || []).map(e => e.name).join(' '),
   ].join(' ').toLowerCase();
@@ -4752,6 +4784,7 @@ async function applyCustomerFilters() {
     const hay = customerHaystack(c);
     return words.every(w => hay.includes(w));
   });
+  sortCustomers(custFiltered);
   renderCustomers(custFiltered);
 
   const prodSel = document.getElementById('custProductFilter');
@@ -4798,6 +4831,7 @@ function renderCustomers(list) {
     <tr onclick="openCustomerDetail(${i})" style="cursor:pointer" title="Click for this customer's details">
       <td style="font-weight:600">${escapeHtml(c.customer_name)}</td>
       <td>${escapeHtml(c.customer_email)}</td>
+      <td style="white-space:nowrap">${fmtCustDate(c.last_purchase)}</td>
       <td>${c.purchases}</td>
       <td>${c.returns}</td>
       <td style="font-weight:600">$${money(Number(c.total_spent))}</td>
@@ -4806,7 +4840,7 @@ function renderCustomers(list) {
       <td style="text-align:right">${welcomeBtn}</td>
     </tr>
   `;
-  }).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--mid)">No customers match this filter</td></tr>';
+  }).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--mid)">No customers match this filter</td></tr>';
 }
 
 // ─── Customer Detail ─────────────────────────────────────────────────────────
