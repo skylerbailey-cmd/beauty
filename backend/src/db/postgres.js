@@ -419,6 +419,7 @@ async function initSchema() {
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_city TEXT DEFAULT ''");
   // How a customer reaches the store. Printed on receipts, which otherwise
   // carried an address but no way to get in touch.
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS company_name TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_email TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_phone TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS store_state TEXT DEFAULT ''");
@@ -2564,6 +2565,22 @@ async function setProductVisibility(productId, userId, visible) {
 
 // ─── Gmail tokens (per-company, persistent) ─────────────────────────────────
 
+// The company name lives in SQLite, which does not survive a redeploy — the
+// same trap the Gmail token fell into. Mirrored here so a name typed into
+// Settings is still there after the next deploy instead of quietly reverting.
+async function saveCompanyName(userId, companyName) {
+  if (!userId || !String(companyName || '').trim()) return;
+  await query(
+    `INSERT INTO pos_settings (user_id, company_name) VALUES ($1, $2)
+     ON CONFLICT (user_id) DO UPDATE SET company_name = EXCLUDED.company_name`,
+    [userId, String(companyName).trim()]);
+}
+
+async function getCompanyName(userId) {
+  const r = await query('SELECT company_name FROM pos_settings WHERE user_id = $1', [userId]);
+  return (r.rows[0] && r.rows[0].company_name) || null;
+}
+
 async function saveGmailToken(userId, refreshToken, email) {
   if (!userId || !refreshToken) return;
   await query(
@@ -2676,6 +2693,8 @@ module.exports = {
   bridgeLegacyData,
   migrateDataBetweenUsers,
   saveGmailToken,
+  saveCompanyName,
+  getCompanyName,
   getGmailToken,
   // Customers
   findOrCreateCustomer,

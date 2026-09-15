@@ -221,7 +221,7 @@ router.get('/google/callback', async (req, res) => {
 // ─── GET /auth/me ──────────────────────────────────────────────────────────────
 // Return current authenticated user info
 
-router.get('/me', (req, res) => {
+router.get('/me', async (req, res) => {
   const userId = req.session?.userId || req.headers['x-user-id'];
   if (!userId) {
     return res.status(401).json({ error: 'Not authenticated' });
@@ -242,6 +242,19 @@ router.get('/me', (req, res) => {
         if (!rt) await pgDb.saveGmailToken(userId, user.refresh_token, user.email);
       } catch (_) {}
     })();
+  }
+
+  // SQLite forgets the company name on every redeploy, so fall back to the
+  // copy in Postgres and put it back — otherwise Settings shows the signup
+  // name again and looks as though saving never worked.
+  if (!user.company_name) {
+    try {
+      const saved = await require('../db/postgres').getCompanyName(userId);
+      if (saved) {
+        user.company_name = saved;
+        require('../db').updateCompanyName(userId, saved);
+      }
+    } catch (_) { /* the name just stays as it is */ }
   }
 
   // Don't expose tokens
@@ -302,7 +315,7 @@ router.post('/theme', (req, res) => {
 // ─── POST /auth/company-name ──────────────────────────────────────────────────
 // Update user's company name
 
-router.post('/company-name', (req, res) => {
+router.post('/company-name', async (req, res) => {
   const userId = req.session?.userId || req.headers['x-user-id'];
   if (!userId) {
     return res.status(401).json({ error: 'Not authenticated' });
@@ -315,6 +328,13 @@ router.post('/company-name', (req, res) => {
 
   const { updateCompanyName } = require('../db');
   updateCompanyName(userId, companyName.trim());
+  // Also to Postgres: SQLite is wiped on every redeploy, so on its own the
+  // name would quietly revert to whatever it was at signup.
+  try {
+    await require('../db/postgres').saveCompanyName(userId, companyName.trim());
+  } catch (err) {
+    console.error('[auth] could not mirror company name to postgres:', err.message);
+  }
   const cookieOpts = { maxAge: 365*24*60*60*1000, httpOnly: true, signed: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax' };
   res.cookie('glow_company_name', companyName.trim(), cookieOpts);
   res.json({ success: true, companyName: companyName.trim() });
