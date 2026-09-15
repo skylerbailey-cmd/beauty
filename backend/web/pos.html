@@ -6596,7 +6596,7 @@ function addPayrollAdjustment() {
 }
 
 function removePayrollAdjustment(id) {
-  if (!confirm('Remove this adjustment?')) return;
+  if (!confirm('Remove this adjustment from this paycheck?')) return;
   payrollAction('adjustment/' + id, {}, 'DELETE');
 }
 
@@ -6801,7 +6801,15 @@ async function loadPayroll() {
       + `<div style="display:flex;justify-content:space-between;font-family:system-ui,sans-serif;font-weight:700;font-size:.95rem;padding-top:10px;${byStore.length > 1 ? 'border-top:1px solid var(--border);margin-top:6px' : ''}">
            <span>Total for this paycheck${byStore.length > 1 ? ' <span style="font-weight:400;color:var(--mid);font-size:.82rem">· both companies</span>' : ''}</span><span>$${money(grand)}</span></div>`
       + (data.paid ? '' : `
-        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
+        <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);font-family:system-ui,sans-serif">
+          <!-- Naming the cheque here because the form is identical on every
+               payday: without it there is no way to tell which one a bonus is
+               about to land on, and it only ever lands on this one. -->
+          <div style="font-size:.82rem;font-weight:600;margin-bottom:6px">
+            Add to the ${fmtPayday(data.payday)} paycheck
+            <span style="font-weight:400;color:var(--mid)">· this one only, it won't carry to any other</span>
+          </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:.82rem">
           <select id="payAdjEmp" style="padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;background:var(--white)">
             ${rows.map(e => `<option value="${e.employee_id}">${escapeHtml(e.employee_name)}${e.store_name ? ' — ' + escapeHtml(e.store_name) : ''}</option>`).join('')}
           </select>
@@ -6809,6 +6817,7 @@ async function loadPayroll() {
           <input type="text" id="payAdjNote" placeholder="What is it for?" style="flex:1;min-width:150px;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem">
           <button class="btn btn-confirm" style="padding:6px 12px;font-size:.8rem" onclick="addPayrollAdjustment()">Add</button>
           <span style="color:var(--mid)">negative to deduct</span>
+        </div>
         </div>`);
   } catch (err) {
     body.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--danger)">${escapeHtml(err.message)}</div>`;
