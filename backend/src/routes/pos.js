@@ -1471,21 +1471,67 @@ router.post('/reports/payroll/paid', async (req, res) => {
     // next open cheque and this one would report a total it never paid.
     const settings = await pgDb.getSettings(req.session.userId);
     const run = await pgDb.payrollForPayday(scope, payday, settings);
-    const lines = run.employees.flatMap(e => e.adjustments);
-    const idsOf = (...kinds) => [...new Set(lines
-      .filter(a => kinds.includes(a.kind) && a.chargeback_id).map(a => a.chargeback_id))];
     const result = await pgDb.setPayrollPaid(scope, payday, true, employee.name);
-    const held = await pgDb.stampChargebacksWithheld(idsOf('withheld', 'lost'), scope, payday, employee.name);
-    // A release has to be recorded too, or every later cheque offers it again.
-    const released = await pgDb.stampChargebacksReleased(idsOf('won'), scope, payday);
+    const { held, released } = await recordChequeEffects(run, payday, employee.name);
     return res.json({ ...result, chargebacks_held: held, chargebacks_released: released });
   }
 
   // Reopening: the cheque never went out, so release what it was holding and
   // let those disputes go back to following the open paycheck.
   const released = await pgDb.clearChargebacksWithheld(scope, payday);
+  await pgDb.clearHoldsForPayday(payday, null);
   const result = await pgDb.setPayrollPaid(scope, payday, false, employee.name);
   res.json({ ...result, chargebacks_released: released });
+});
+
+// What a cheque going out does to the disputes it touched: the shares it took
+// are pinned so they aren't taken again, and anything it handed back is
+// recorded so it isn't handed back again. Limited to one person when only they
+// are being paid.
+async function recordChequeEffects(run, payday, by, onlyEmployeeId) {
+  const pairs = (...kinds) => {
+    const out = [];
+    for (const e of run.employees) {
+      if (onlyEmployeeId && e.employee_id !== onlyEmployeeId) continue;
+      for (const a of e.adjustments) {
+        if (kinds.includes(a.kind) && a.chargeback_id) {
+          out.push({ chargeback_id: a.chargeback_id, employee_id: e.employee_id });
+        }
+      }
+    }
+    return out;
+  };
+  return {
+    held: await pgDb.holdChargebacksFor(pairs('withheld', 'lost'), payday, by),
+    released: await pgDb.releaseChargebacksFor(pairs('won'), payday),
+  };
+}
+
+// Pay one person on a payday without closing it for anyone else. Their figures
+// settle exactly as they would if the whole payday had gone out — the disputes
+// their share was taken for are pinned, a won one is recorded as paid back —
+// but only for them.
+router.post('/reports/payroll/paid-employee', async (req, res) => {
+  const { name, pin, payday, employee_id, paid } = req.body;
+  const me = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
+  if (!isAdmin(me)) return res.status(403).json({ error: 'Only an admin can pay someone off a payday.' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.status(400).json({ error: 'Pick a payday.' });
+  const empId = parseInt(employee_id);
+  if (!empId) return res.status(400).json({ error: 'Pick who is being paid.' });
+
+  const scope = await payrollScope();
+  const settings = await pgDb.getSettings(req.session.userId);
+
+  if (paid) {
+    const run = await pgDb.payrollForPayday(scope, payday, settings);
+    if (run.paid) return res.status(400).json({ error: 'That whole payday is already closed.' });
+    const result = await pgDb.setEmployeePayrollPaid(scope, payday, empId, true, me.name);
+    const { held, released } = await recordChequeEffects(run, payday, me.name, empId);
+    return res.json({ ...result, chargebacks_held: held, chargebacks_released: released });
+  }
+
+  await pgDb.clearHoldsForPayday(payday, empId);
+  res.json(await pgDb.setEmployeePayrollPaid(scope, payday, empId, false, me.name));
 });
 
 router.post('/reports/payroll/adjustment', async (req, res) => {

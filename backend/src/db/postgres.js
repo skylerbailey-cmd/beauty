@@ -376,6 +376,42 @@ async function initSchema() {
   )`);
   await migrate('CREATE INDEX IF NOT EXISTS idx_pg_payroll_adj ON pos_payroll_adjustments(user_id, payday)');
 
+  // Paying one person on a payday without closing it for everyone. A payday can
+  // be closed as a whole (pos_payroll_runs) or person by person; whichever
+  // happens first is what settles that person's figures.
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_payroll_employee_runs (
+    payday DATE NOT NULL,
+    employee_id INTEGER NOT NULL REFERENCES pos_employees(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL DEFAULT '',
+    paid_at TIMESTAMPTZ DEFAULT NOW(),
+    paid_by TEXT DEFAULT '',
+    PRIMARY KEY (payday, employee_id)
+  )`);
+
+  // Which paycheck took each person's share of a dispute, and which gave it
+  // back. Per person, not per dispute: most disputes are split between two or
+  // three, and paying one of them must not settle it for the others.
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_chargeback_holds (
+    chargeback_id INTEGER NOT NULL REFERENCES pos_transaction_chargebacks(id) ON DELETE CASCADE,
+    employee_id INTEGER NOT NULL REFERENCES pos_employees(id) ON DELETE CASCADE,
+    held_payday DATE,
+    released_payday DATE,
+    created_by TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (chargeback_id, employee_id)
+  )`);
+  await migrate('CREATE INDEX IF NOT EXISTS idx_pg_cb_holds_emp ON pos_chargeback_holds(employee_id)');
+
+  // Carry over the whole-dispute flags that came before this table, giving
+  // every person on the sale the same hold the dispute already carried.
+  await migrate(`
+    INSERT INTO pos_chargeback_holds (chargeback_id, employee_id, held_payday, released_payday, created_by)
+    SELECT cb.id, te.employee_id, cb.withheld_payday, cb.released_payday, COALESCE(cb.withheld_by, '')
+    FROM pos_transaction_chargebacks cb
+    JOIN pos_transaction_employees te ON te.transaction_id = cb.transaction_id
+    WHERE cb.withheld_payday IS NOT NULL
+    ON CONFLICT (chargeback_id, employee_id) DO NOTHING`);
+
   // Batch reconciliation: which days have been reviewed, and audit date ranges
   // saved to come back to. Only the range is stored for a saved audit — it's
   // re-run against live data on open, so it reflects later edits to the
@@ -1188,6 +1224,20 @@ async function payrollForPayday(userId, payday, settings) {
     `SELECT payday::text AS payday, paid_at, paid_by FROM pos_payroll_runs WHERE user_id = ANY($1::text[])`,
     [ids])).rows;
   const thisRun = paidRuns.find(r => r.payday === payday) || null;
+
+  // Paydays closed for one person only. A person is settled when either their
+  // own cheque went out or the whole payday did, whichever came first.
+  const empRuns = (await query(
+    `SELECT payday::text AS payday, employee_id, paid_at, paid_by
+     FROM pos_payroll_employee_runs WHERE user_id = ANY($1::text[])`, [ids])).rows;
+  const empClosedOn = new Map();   // employee_id -> Map(payday -> closed day)
+  for (const r of empRuns) {
+    const day = r.paid_at ? new Date(r.paid_at).toISOString().slice(0, 10) : '9999-12-31';
+    if (!empClosedOn.has(r.employee_id)) empClosedOn.set(r.employee_id, new Map());
+    const own = empClosedOn.get(r.employee_id);
+    if (!own.has(r.payday) || day > own.get(r.payday)) own.set(r.payday, day);
+  }
+  const thisEmpRuns = new Map(empRuns.filter(r => r.payday === payday).map(r => [r.employee_id, r]));
   // The day each closed payday was actually closed off. Two companies can close
   // the same payday at different moments; the later one is what matters, since
   // until then the figures were still moving.
@@ -1208,10 +1258,13 @@ async function payrollForPayday(userId, payday, settings) {
   // The middle case is what stops a deduction being taken twice: it keeps
   // sitting on the closed cheque that already accounted for it, so that cheque
   // still explains the figure it paid, and no later one picks it up again.
-  const landsOn = (date, on) => {
+  // Closed for this person: their own cheque, or the whole payday.
+  const closedFor = (empId, p) => empClosedOn.get(empId)?.get(p) || closedOn.get(p) || null;
+
+  const landsOn = (date, on, empId) => {
     let p = paydayForDate(date, sched);
     for (let i = 0; i < 24 && p; i++) {
-      const closed = closedOn.get(p);
+      const closed = closedFor(empId, p);
       if (!closed) return p;
       if (on && on <= closed) return p;
       p = nextPayday(p, sched);
@@ -1222,12 +1275,12 @@ async function payrollForPayday(userId, payday, settings) {
   // The first paycheck from `date` onwards that hasn't gone out. Unlike
   // landsOn it never gives up: an open dispute has to keep being held from
   // somebody's pay until it's resolved or a manager says it was already taken.
-  const openFrom = (p0) => {
+  const openFrom = (p0, empId) => {
     let p = p0;
-    for (let i = 0; i < 48 && p && closedOn.has(p); i++) p = nextPayday(p, sched);
+    for (let i = 0; i < 48 && p && closedFor(empId, p); i++) p = nextPayday(p, sched);
     return p;
   };
-  const openPayday = (date) => openFrom(paydayForDate(date, sched));
+  const openPayday = (date, empId) => openFrom(paydayForDate(date, sched), empId);
 
   // Every sale in the period. What's later taken back — a return, a dispute —
   // is shown as its own line rather than being quietly left out here, so the
@@ -1280,8 +1333,10 @@ async function payrollForPayday(userId, payday, settings) {
       cb.opened_at::date::text AS marked_date,
       cb.closed_at::date::text AS closed_date,
       cb.card_last4,
-      cb.withheld_payday::text AS withheld_payday,
-      cb.released_payday::text AS released_payday,
+      -- This person's own hold. Most disputes are split between two or three
+      -- people, so paying one of them must not settle it for the others.
+      h.held_payday::text AS withheld_payday,
+      h.released_payday::text AS released_payday,
       e.id AS employee_id, e.name AS employee_name, e.commission_rate,
       e.user_id AS company_id, ${EMP_SHARE} AS share,
       -- Only the disputed share of the sale affects commission.
@@ -1290,6 +1345,7 @@ async function payrollForPayday(userId, payday, settings) {
     JOIN pos_transactions t ON t.id = cb.transaction_id
     JOIN pos_transaction_employees te ON te.transaction_id = t.id
     JOIN pos_employees e ON e.id = te.employee_id
+    LEFT JOIN pos_chargeback_holds h ON h.chargeback_id = cb.id AND h.employee_id = e.id
     WHERE t.user_id = ANY($1::text[]) AND t.type = 'sale'
       AND cb.status IN ('pending', 'won', 'lost')
   `, [ids])).rows;
@@ -1320,7 +1376,7 @@ async function payrollForPayday(userId, payday, settings) {
     const commission = round2(Number(rt.share) * (Number(rt.commission_rate) || 0) / 100);
     if (commission === 0) continue;
     const naturalPayday = paydayForDate(rt.sale_date, sched);
-    const target = landsOn(rt.sale_date, rt.return_date);
+    const target = landsOn(rt.sale_date, rt.return_date, rt.employee_id);
     if (!target || target !== payday) continue;
     const r = row(rt.employee_id, rt.employee_name, rt.commission_rate, rt.company_id);
     r.adjustments.push({
@@ -1345,7 +1401,7 @@ async function payrollForPayday(userId, payday, settings) {
     const r = () => row(d.employee_id, d.employee_name, d.commission_rate, d.company_id);
 
     if (d.withheld_payday) {
-      const heldChequeWentOut = closedOn.has(d.withheld_payday);
+      const heldChequeWentOut = !!closedFor(d.employee_id, d.withheld_payday);
 
       // Won, and the cheque that held it never actually went out: nothing was
       // taken, so there is nothing to give back. Just stop holding it.
@@ -1366,7 +1422,7 @@ async function payrollForPayday(userId, payday, settings) {
       // not a sale and must not go through the pay-period lag, which was
       // pushing the release a fortnight past the first cheque that could pay.
       if (d.status === 'won') {
-        const releaseOn = d.released_payday || openFrom(d.withheld_payday);
+        const releaseOn = d.released_payday || openFrom(d.withheld_payday, d.employee_id);
         if (releaseOn === payday) {
           r().adjustments.push({
             kind: 'won', chargeback_id: d.chargeback_id, receipt: d.receipt_number,
@@ -1382,7 +1438,7 @@ async function payrollForPayday(userId, payday, settings) {
       // at this paycheck needs to know the money is being held and why, but it
       // has been held once already and must not be held twice.
       if (d.status === 'pending' && heldChequeWentOut
-          && openFrom(d.withheld_payday) === payday) {
+          && openFrom(d.withheld_payday, d.employee_id) === payday) {
         r().adjustments.push({
           kind: 'held', chargeback_id: d.chargeback_id, receipt: d.receipt_number,
           amount: 0, held_amount: commission,
@@ -1396,7 +1452,7 @@ async function payrollForPayday(userId, payday, settings) {
     // difference is only that a lost one never comes back. A won dispute that
     // was never withheld needs nothing — the commission was paid all along.
     if (d.status === 'won') continue;
-    if (openPayday(d.sale_date) !== payday) continue;
+    if (openPayday(d.sale_date, d.employee_id) !== payday) continue;
     r().adjustments.push({
       kind: d.status === 'lost' ? 'lost' : 'withheld',
       chargeback_id: d.chargeback_id, receipt: d.receipt_number, amount: -commission,
@@ -1422,15 +1478,25 @@ async function payrollForPayday(userId, payday, settings) {
   for (const r of rows) {
     r.adjustment_total = round2(r.adjustments.reduce((s, a) => s + a.amount, 0));
     r.total = round2(r.commission_earned + r.adjustment_total);
+    // Settled either by their own cheque going out or by the whole payday.
+    const own = thisEmpRuns.get(r.employee_id);
+    r.paid = !!own || !!thisRun;
+    r.paid_at = own ? own.paid_at : (thisRun ? thisRun.paid_at : null);
+    r.paid_by = own ? own.paid_by : (thisRun ? thisRun.paid_by : '');
+    r.paid_individually = !!own && !thisRun;
   }
   // Grouped by person, so someone paid by both stores reads as one packet of
   // lines instead of two rows sitting apart in a list ordered by amount.
   rows.sort((a, b) =>
     String(a.employee_name).localeCompare(String(b.employee_name))
     || String(a.store_name).localeCompare(String(b.store_name)));
+  const owing = rows.filter(r => !r.paid);
   return {
     payday, period, employees: rows,
     total: round2(rows.reduce((s2, r) => s2 + r.total, 0)),
+    // What is left to hand out, for a payday being worked through one at a time.
+    outstanding_total: round2(owing.reduce((s2, r) => s2 + r.total, 0)),
+    outstanding_count: owing.length,
     paid: !!thisRun,
     paid_at: thisRun ? thisRun.paid_at : null,
     paid_by: thisRun ? thisRun.paid_by : '',
@@ -1605,6 +1671,65 @@ async function employeeActivityForRange(userId, employeeName, startDate, endDate
     credited_count: Number(r.credited_count),
     commission: round2(Number(r.share) * Number(r.commission_rate) / 100),
   }));
+}
+
+// Mark one person paid on a payday, leaving it open for everybody else.
+async function setEmployeePayrollPaid(userId, payday, employeeId, paid, by) {
+  if (paid) {
+    await query(
+      `INSERT INTO pos_payroll_employee_runs (payday, employee_id, user_id, paid_at, paid_by)
+       VALUES ($1::date, $2, $3, NOW(), $4)
+       ON CONFLICT (payday, employee_id) DO UPDATE SET paid_at = NOW(), paid_by = EXCLUDED.paid_by`,
+      [payday, employeeId, asCompanyIds(userId)[0], by || '']);
+  } else {
+    await query('DELETE FROM pos_payroll_employee_runs WHERE payday = $1::date AND employee_id = $2',
+      [payday, employeeId]);
+  }
+  return { ok: true, paid: !!paid };
+}
+
+// Record that these people's shares of these disputes came off this paycheck.
+// Keyed per person: one employee being paid must not settle a colleague's half
+// of the same dispute.
+async function holdChargebacksFor(pairs, payday, by) {
+  if (!pairs || !pairs.length) return 0;
+  let n = 0;
+  for (const { chargeback_id, employee_id } of pairs) {
+    const r = await query(
+      `INSERT INTO pos_chargeback_holds (chargeback_id, employee_id, held_payday, created_by)
+       VALUES ($1, $2, $3::date, $4)
+       ON CONFLICT (chargeback_id, employee_id) DO UPDATE SET held_payday = EXCLUDED.held_payday
+       WHERE pos_chargeback_holds.held_payday IS NULL`,
+      [chargeback_id, employee_id, payday, by || '']);
+    n += r.rowCount;
+  }
+  return n;
+}
+
+async function releaseChargebacksFor(pairs, payday) {
+  if (!pairs || !pairs.length) return 0;
+  let n = 0;
+  for (const { chargeback_id, employee_id } of pairs) {
+    const r = await query(
+      `UPDATE pos_chargeback_holds SET released_payday = $3::date
+       WHERE chargeback_id = $1 AND employee_id = $2 AND released_payday IS NULL`,
+      [chargeback_id, employee_id, payday]);
+    n += r.rowCount;
+  }
+  return n;
+}
+
+// Undo whatever a paycheck recorded, for one person or for everyone on it.
+async function clearHoldsForPayday(payday, employeeId) {
+  const where = employeeId ? 'AND employee_id = $2' : '';
+  const params = employeeId ? [payday, employeeId] : [payday];
+  await query(`UPDATE pos_chargeback_holds SET held_payday = NULL
+               WHERE held_payday = $1::date ${where}`, params);
+  await query(`UPDATE pos_chargeback_holds SET released_payday = NULL
+               WHERE released_payday = $1::date ${where}`, params);
+  await query(`DELETE FROM pos_chargeback_holds
+               WHERE held_payday IS NULL AND released_payday IS NULL ${where ? 'AND employee_id = $1' : ''}`,
+    employeeId ? [employeeId] : []);
 }
 
 // Pin disputes to the paycheck they came off, when that paycheck is closed.
@@ -2787,6 +2912,10 @@ module.exports = {
   payrollForPayday,
   paidPaydays,
   setPayrollPaid,
+  setEmployeePayrollPaid,
+  holdChargebacksFor,
+  releaseChargebacksFor,
+  clearHoldsForPayday,
   addPayrollAdjustment,
   deletePayrollAdjustment,
   periodForPayday,
