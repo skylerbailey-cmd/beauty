@@ -6136,7 +6136,11 @@ async function loadPendingChargebacks() {
     const byName = (a, b) => String(a.employee_name).localeCompare(String(b.employee_name))
       || String(b.sale_date).localeCompare(String(a.sale_date));
     const all = data.chargebacks || [];
+    // Two kinds of open dispute: one whose money is still to come off a
+    // paycheck, and one already taken off an earlier one. Both are unresolved
+    // and both belong on screen; only the first is still owed.
     const pending = all.filter(c => c.status === 'pending' && !c.withheld_payday).sort(byName);
+    const alreadyHeld = all.filter(c => c.status === 'pending' && c.withheld_payday).sort(byName);
     // Won after the money had already gone: it is owed back on the next cheque.
     // Only when the paycheck that held it actually went out — a dispute ticked
     // as withheld against a cheque still open never took anything.
@@ -6144,7 +6148,7 @@ async function loadPendingChargebacks() {
     const released = all
       .filter(c => c.status === 'won' && c.withheld_payday && paidOut(c.withheld_payday))
       .sort(byName);
-    put(renderPendingChargebacks(pending, data.role === 'admin') + renderReleased(released));
+    put(renderPendingChargebacks(pending, alreadyHeld, data.role === 'admin') + renderReleased(released));
     renderPaySummary(pending, released);
   } catch (err) {
     // Say so rather than leaving a blank where a deduction should be — an
@@ -6223,19 +6227,27 @@ function renderReleased(rows) {
     </div>`;
 }
 
-function renderPendingChargebacks(rows, isManager) {
-  if (!rows.length) {
+function renderPendingChargebacks(rows, alreadyHeld, isManager) {
+  alreadyHeld = alreadyHeld || [];
+  if (!rows.length && !alreadyHeld.length) {
     return `<div style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin-top:12px">
       No open disputes — nothing is being held from pay.</div>`;
   }
+  // Only what is still to be taken adds up to the figure owed. The rest is
+  // shown for the same reason it is shown on the paycheck: it is still in
+  // dispute, and the employee is still not being paid it.
   const total = rows.reduce((s, c) => s + Number(c.commission_at_risk || 0), 0);
+  const heldTotal = alreadyHeld.reduce((s, c) => s + Number(c.commission_at_risk || 0), 0);
+  rows = rows.concat(alreadyHeld);
   return `
     <div style="margin-top:16px">
-      <h3 style="margin:0 0 2px;font-size:.95rem">Open Disputes — held from the next paycheck
-        <span style="color:var(--danger)">−$${money(total)}</span></h3>
+      <h3 style="margin:0 0 2px;font-size:.95rem">Open Disputes
+        ${total ? `— held from the next paycheck <span style="color:var(--danger)">−$${money(total)}</span>` : ''}
+        ${heldTotal ? `<span style="font-weight:400;color:var(--mid);font-size:.82rem">· $${money(heldTotal)} already held on an earlier one</span>` : ''}</h3>
       <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:0 0 8px">
         Not counted as lost, so they are not in Charged Back above and the commission there is what was earned.
-        Each one keeps coming off the next paycheck until the dispute is won or lost.
+        One that has not been held yet comes off the next paycheck; one already held stays listed but is not taken
+        again. Either way the money is kept until the dispute is won or lost.
       </p>
       <table class="report-table" style="font-size:.82rem">
         <thead><tr>
@@ -6256,7 +6268,10 @@ function renderPendingChargebacks(rows, isManager) {
             <td>${escapeHtml(c.store_name || '-')}</td>
             <td>${escapeHtml(c.opened_at || '-')}</td>
             <td>$${money(Number(c.disputed_share))}</td>
-            <td style="color:var(--danger);font-weight:600">−$${money(Number(c.commission_at_risk))}</td>
+            <td style="${c.withheld_payday ? 'color:var(--mid)' : 'color:var(--danger);font-weight:600'}">${
+              c.withheld_payday
+                ? `held ${escapeHtml(c.withheld_payday)}`
+                : `−$${money(Number(c.commission_at_risk))}`}</td>
             ${isManager ? `<td>
               <select onchange="setChargebackStatusFromReport(${c.chargeback_id}, this.value)"
                 style="padding:3px 6px;border:1.5px solid var(--border);border-radius:6px;font-size:.78rem;background:var(--white)">
@@ -6265,7 +6280,7 @@ function renderPendingChargebacks(rows, isManager) {
           </tr>`).join('')}
         </tbody>
         <tfoot><tr style="border-top:2px solid var(--border);font-weight:700;background:var(--cream)">
-          <td colspan="8">Total held from the next paycheck</td>
+          <td colspan="8">Still to come off the next paycheck</td>
           <td style="color:var(--danger)">−$${money(total)}</td>${isManager ? '<td></td>' : ''}
         </tr></tfoot>
       </table>
@@ -6773,14 +6788,24 @@ async function loadPayroll() {
         <span>${e.store_name ? escapeHtml(e.store_name) + ' ' : ''}<span style="font-weight:400;color:var(--mid)">· ${e.commission_rate}% of $${money(e.sales_total)}${e.sale_count ? ` over ${e.sale_count} sale${e.sale_count === 1 ? '' : 's'}` : ''}</span></span>
         <span>$${money(e.commission_earned)}</span>
       </div>
-      ${e.adjustments.map(a => `
-        <div style="display:flex;justify-content:space-between;padding-left:14px;color:${a.amount < 0 ? 'var(--danger)' : 'var(--success)'};font-size:.8rem;margin-top:3px">
+      ${e.adjustments.map(a => {
+        // A 'held' line is a note, not a movement: the money came off an
+        // earlier cheque and must not come off again. Grey, with the amount in
+        // brackets, so it cannot be read as another deduction.
+        const informational = a.kind === 'held';
+        const colour = informational ? 'var(--mid)' : (a.amount < 0 ? 'var(--danger)' : 'var(--success)');
+        const figure = informational
+          ? `($${money(Math.abs(Number(a.held_amount) || 0))} held)`
+          : `${a.amount < 0 ? '−' : '+'}$${money(Math.abs(a.amount))}`;
+        return `
+        <div style="display:flex;justify-content:space-between;padding-left:14px;color:${colour};font-size:.8rem;margin-top:3px">
           <span>${a.receipt ? '#' + escapeHtml(String(a.receipt)) + ' — ' : ''}${escapeHtml(a.note)}${
             a.kind === 'manual' && !data.paid
-              ? ` <button title="Remove this adjustment" onclick="removePayrollAdjustment(${a.id})" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:.9rem;line-height:1;padding:0 2px">&times;</button>`
+              ? ` <button title="Added by hand to this paycheck only — remove it" onclick="removePayrollAdjustment(${a.id})" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:.9rem;line-height:1;padding:0 2px">&times;</button>`
               : ''}</span>
-          <span>${a.amount < 0 ? '−' : '+'}$${money(Math.abs(a.amount))}</span>
-        </div>`).join('')}`;
+          <span>${figure}</span>
+        </div>`;
+      }).join('')}`;
 
     body.innerHTML = byPerson.map(p => {
       const subtotal = p.rows.reduce((s, e) => s + e.total, 0);

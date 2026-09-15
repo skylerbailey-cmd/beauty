@@ -311,6 +311,9 @@ async function initSchema() {
   await migrate('ALTER TABLE pos_transaction_chargebacks ADD COLUMN IF NOT EXISTS withheld_payday DATE');
   await migrate('ALTER TABLE pos_transaction_chargebacks ADD COLUMN IF NOT EXISTS withheld_at TIMESTAMPTZ');
   await migrate("ALTER TABLE pos_transaction_chargebacks ADD COLUMN IF NOT EXISTS withheld_by TEXT DEFAULT ''");
+  // Which paycheck gave the money back, once a held dispute is won. Without it
+  // the release repeats on every cheque after the one that paid it.
+  await migrate('ALTER TABLE pos_transaction_chargebacks ADD COLUMN IF NOT EXISTS released_payday DATE');
 
   // Move the one-per-transaction chargebacks into the table. Guarded on there
   // being no row yet, so it runs once and re-deploys don't duplicate them.
@@ -1278,6 +1281,7 @@ async function payrollForPayday(userId, payday, settings) {
       cb.closed_at::date::text AS closed_date,
       cb.card_last4,
       cb.withheld_payday::text AS withheld_payday,
+      cb.released_payday::text AS released_payday,
       e.id AS employee_id, e.name AS employee_name, e.commission_rate,
       e.user_id AS company_id, ${EMP_SHARE} AS share,
       -- Only the disputed share of the sale affects commission.
@@ -1356,15 +1360,33 @@ async function payrollForPayday(userId, payday, settings) {
       }
 
       // Won after that cheque went out: the money is owed back, and it goes on
-      // the next cheque still open. Walked forward from the payday that held
-      // it, NOT from the day the dispute closed — a closing date is not a sale
-      // and must not be put through the pay-period lag, which was pushing the
-      // release a fortnight past the first cheque that could have paid it.
-      if (d.status === 'won' && openFrom(d.withheld_payday) === payday) {
+      // the next cheque still open — or on the one that already paid it, so
+      // that cheque keeps explaining itself. Walked forward from the payday
+      // that held it, NOT from the day the dispute closed: a closing date is
+      // not a sale and must not go through the pay-period lag, which was
+      // pushing the release a fortnight past the first cheque that could pay.
+      if (d.status === 'won') {
+        const releaseOn = d.released_payday || openFrom(d.withheld_payday);
+        if (releaseOn === payday) {
+          r().adjustments.push({
+            kind: 'won', chargeback_id: d.chargeback_id, receipt: d.receipt_number,
+            amount: commission,
+            note: `dispute won${d.closed_date ? ' ' + d.closed_date : ''} — released, was held on ${d.withheld_payday}`,
+          });
+        }
+        continue;
+      }
+
+      // Still open, and the money already came off an earlier cheque. Say so on
+      // whichever cheque is current — without taking it again. Somebody looking
+      // at this paycheck needs to know the money is being held and why, but it
+      // has been held once already and must not be held twice.
+      if (d.status === 'pending' && heldChequeWentOut
+          && openFrom(d.withheld_payday) === payday) {
         r().adjustments.push({
-          kind: 'won', chargeback_id: d.chargeback_id, receipt: d.receipt_number,
-          amount: commission,
-          note: `dispute won${d.closed_date ? ' ' + d.closed_date : ''} — released, was held on ${d.withheld_payday}`,
+          kind: 'held', chargeback_id: d.chargeback_id, receipt: d.receipt_number,
+          amount: 0, held_amount: commission,
+          note: `dispute still open on the ${d.sale_date} sale${card} — already held back on ${d.withheld_payday}`,
         });
       }
       continue;
@@ -1599,12 +1621,28 @@ async function stampChargebacksWithheld(ids, userId, payday, by) {
   return r.rowCount;
 }
 
+// Mark a won dispute as paid back on the cheque that released it. Until this is
+// set the release would be offered again by every later paycheck.
+async function stampChargebacksReleased(ids, userId, payday) {
+  if (!ids || !ids.length) return 0;
+  const r = await query(
+    `UPDATE pos_transaction_chargebacks SET released_payday = $1::date
+     WHERE id = ANY($2::int[]) AND user_id = ANY($3::text[]) AND released_payday IS NULL`,
+    [payday, ids, asCompanyIds(userId)]);
+  return r.rowCount;
+}
+
 // Reopening a paycheck undoes that: it never went out, so nothing was held.
 async function clearChargebacksWithheld(userId, payday) {
   const r = await query(
     `UPDATE pos_transaction_chargebacks
      SET withheld_payday = NULL, withheld_at = NULL, withheld_by = ''
      WHERE withheld_payday = $1::date AND user_id = ANY($2::text[])`,
+    [payday, asCompanyIds(userId)]);
+  // A release recorded against this cheque is undone too — it never went out.
+  await query(
+    `UPDATE pos_transaction_chargebacks SET released_payday = NULL
+     WHERE released_payday = $1::date AND user_id = ANY($2::text[])`,
     [payday, asCompanyIds(userId)]);
   return r.rowCount;
 }
@@ -2740,6 +2778,7 @@ module.exports = {
   employeeActivityForRange,
   setChargebackWithheld,
   stampChargebacksWithheld,
+  stampChargebacksReleased,
   clearChargebacksWithheld,
   setChargebackStatus,
   saveChargeback,

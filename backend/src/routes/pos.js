@@ -1471,13 +1471,14 @@ router.post('/reports/payroll/paid', async (req, res) => {
     // next open cheque and this one would report a total it never paid.
     const settings = await pgDb.getSettings(req.session.userId);
     const run = await pgDb.payrollForPayday(scope, payday, settings);
-    const ids = [...new Set(run.employees
-      .flatMap(e => e.adjustments)
-      .filter(a => (a.kind === 'withheld' || a.kind === 'lost') && a.chargeback_id)
-      .map(a => a.chargeback_id))];
+    const lines = run.employees.flatMap(e => e.adjustments);
+    const idsOf = (...kinds) => [...new Set(lines
+      .filter(a => kinds.includes(a.kind) && a.chargeback_id).map(a => a.chargeback_id))];
     const result = await pgDb.setPayrollPaid(scope, payday, true, employee.name);
-    const held = await pgDb.stampChargebacksWithheld(ids, scope, payday, employee.name);
-    return res.json({ ...result, chargebacks_held: held });
+    const held = await pgDb.stampChargebacksWithheld(idsOf('withheld', 'lost'), scope, payday, employee.name);
+    // A release has to be recorded too, or every later cheque offers it again.
+    const released = await pgDb.stampChargebacksReleased(idsOf('won'), scope, payday);
+    return res.json({ ...result, chargebacks_held: held, chargebacks_released: released });
   }
 
   // Reopening: the cheque never went out, so release what it was holding and
