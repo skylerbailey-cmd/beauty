@@ -651,8 +651,10 @@ router.get('/transactions', async (req, res) => {
   const { type, start, end, employee_id, limit } = req.query;
   const opts = {};
   if (type) opts.type = type;
-  if (start) opts.startDate = start;
-  if (end) opts.endDate = end;
+  // Read on the store's clock, so an evening sale doesn't fall into tomorrow.
+  const range = await rangeFor(req, start, end);
+  if (start) opts.startDate = range.startDate;
+  if (end) opts.endDate = range.endDate;
   if (employee_id) opts.employeeId = parseInt(employee_id);
   if (limit) opts.limit = parseInt(limit);
   res.json({ transactions: await pgDb.getTransactions(req.session.userId, opts) });
@@ -679,8 +681,10 @@ router.post('/transactions/mine', async (req, res) => {
   }
 
   const opts = { limit: 2000 };
-  if (start) opts.startDate = start;
-  if (end) opts.endDate = end;
+  // Read on the store's clock, so an evening sale doesn't fall into tomorrow.
+  const range = await rangeFor(req, start, end);
+  if (start) opts.startDate = range.startDate;
+  if (end) opts.endDate = range.endDate;
 
   const role = roleOf(employee);
   // A manager or admin sees whatever company scope is active (their own by
@@ -1317,6 +1321,37 @@ async function storeToday(req) {
   };
 }
 
+// A date the browser sends — "2026-09-14T23:59:59" — has no timezone on it, so
+// Postgres reads it as UTC. The stores run on Denver time, six hours behind, so
+// every sale rung up after 6pm local landed on the NEXT UTC day: invisible in
+// that day's transactions, and on the wrong side of a pay period when it fell
+// on the 15th or the last of the month.
+//
+// This pins a bare date to the store's own clock. Anything that already carries
+// a zone (a trailing Z or +hh:mm) is left alone.
+function toStoreInstant(value, tz) {
+  const str = String(value);
+  if (/(Z|[+-]\d{2}:?\d{2})$/.test(str)) return new Date(str).toISOString();
+  const asUtc = Date.parse(str.replace(' ', 'T') + 'Z');
+  if (!isFinite(asUtc)) return new Date(str).toISOString();
+  const probe = new Date(asUtc);
+  const offset = new Date(probe.toLocaleString('en-US', { timeZone: 'UTC' }))
+    - new Date(probe.toLocaleString('en-US', { timeZone: tz }));
+  return new Date(asUtc + offset).toISOString();
+}
+
+// The date range for a report: whatever was asked for, read on the store's
+// clock, falling back to the store's today.
+async function rangeFor(req, start, end) {
+  const settings = await pgDb.getSettings(req.session.userId);
+  const tz = settings.timezone || 'America/Los_Angeles';
+  const today = await storeToday(req);
+  return {
+    startDate: start ? toStoreInstant(start, tz) : today.start,
+    endDate: end ? toStoreInstant(end, tz) : today.end,
+  };
+}
+
 // The unlocked reports read across every company: staff work at both stores
 // and a manager wants one picture rather than having to sign into each account
 // to assemble it. `all=1` is what the Reports tab sends; anything else stays on
@@ -1327,18 +1362,14 @@ const reportScope = async (req) => req.query.all === '1'
 
 router.get('/reports/sales', async (req, res) => {
   const { start, end } = req.query;
-  const today = await storeToday(req);
-  const startDate = start || today.start;
-  const endDate = end || today.end;
+  const { startDate, endDate } = await rangeFor(req, start, end);
   res.json({ report: await pgDb.getSalesReport(await reportScope(req), startDate, endDate) });
 });
 
 router.get('/reports/employees', async (req, res) => {
   const { start, end } = req.query;
-  // No dates = today's leaderboard, and "today" has to mean the store's day.
-  const today = await storeToday(req);
-  const startDate = start || today.start;
-  const endDate = end || today.end;
+  // No dates = today's leaderboard; either way the clock is the store's.
+  const { startDate, endDate } = await rangeFor(req, start, end);
   res.json({ report: await pgDb.getEmployeeSalesReport(await reportScope(req), startDate, endDate) });
 });
 
@@ -1431,9 +1462,7 @@ router.post('/reports/chargebacks', async (req, res) => {
   const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
   if (!employee) return res.status(401).json({ error: 'Invalid name or PIN' });
 
-  const fallback = await storeToday(req);
-  const startDate = start || fallback.start;
-  const endDate = end || fallback.end;
+  const { startDate, endDate } = await rangeFor(req, start, end);
   const scope = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
   let rows = await pgDb.chargebacksForRange(scope, startDate, endDate);
 
@@ -1459,9 +1488,7 @@ router.post('/reports/employee-detail', async (req, res) => {
     return res.status(403).json({ error: 'You can only open your own figures.' });
   }
 
-  const fallback = await storeToday(req);
-  const startDate = start || fallback.start;
-  const endDate = end || fallback.end;
+  const { startDate, endDate } = await rangeFor(req, start, end);
   const scope = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
 
   const activity = await pgDb.employeeActivityForRange(scope, who, startDate, endDate, store || null);
@@ -1539,25 +1566,19 @@ router.get('/reports/paydays', async (req, res) => {
 
 router.get('/reports/products', async (req, res) => {
   const { start, end } = req.query;
-  const fallback = await storeToday(req);
-  const startDate = start || fallback.start;
-  const endDate = end || fallback.end;
+  const { startDate, endDate } = await rangeFor(req, start, end);
   res.json({ report: await pgDb.getTopProductsReport(await reportScope(req), startDate, endDate) });
 });
 
 router.get('/reports/customers', async (req, res) => {
   const { start, end } = req.query;
-  const fallback = await storeToday(req);
-  const startDate = start || fallback.start;
-  const endDate = end || fallback.end;
+  const { startDate, endDate } = await rangeFor(req, start, end);
   res.json({ report: await pgDb.getCustomerReport(req.session.userId, startDate, endDate) });
 });
 
 router.get('/reports/flagged-returns', async (req, res) => {
   const { start, end } = req.query;
-  const fallback = await storeToday(req);
-  const startDate = start || fallback.start;
-  const endDate = end || fallback.end;
+  const { startDate, endDate } = await rangeFor(req, start, end);
   res.json({ report: await pgDb.getFlaggedReturns(await reportScope(req), startDate, endDate) });
 });
 
@@ -1586,9 +1607,7 @@ router.post('/reports/employee-personal', async (req, res) => {
     return res.status(401).json({ error: 'Invalid name or PIN' });
   }
 
-  const fallback = await storeToday(req);
-  const startDate = start || fallback.start;
-  const endDate = end || fallback.end;
+  const { startDate, endDate } = await rangeFor(req, start, end);
 
   // An admin sees every employee; everyone else — managers included — sees
   // only their own. Both cover every company: the Reports tab has no company
