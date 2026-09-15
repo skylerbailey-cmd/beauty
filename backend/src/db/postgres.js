@@ -1613,7 +1613,8 @@ async function chargebacksForRange(userId, startDate, endDate) {
     SELECT cb.id AS chargeback_id, cb.status, cb.amount, cb.card_last4, cb.note,
       cb.opened_at::date::text AS opened_at,
       cb.closed_at::date::text AS closed_at,
-      cb.withheld_payday::text AS withheld_payday, cb.withheld_by,
+      h.held_payday::text AS withheld_payday, h.created_by AS withheld_by,
+      h.released_payday::text AS released_payday,
       t.id AS transaction_id, t.receipt_number, t.total AS sale_total,
       t.customer_name,
       COALESCE(t.original_sale_date, t.created_at)::date::text AS sale_date,
@@ -1626,6 +1627,7 @@ async function chargebacksForRange(userId, startDate, endDate) {
     JOIN pos_settings s ON s.user_id = t.user_id
     JOIN pos_transaction_employees te ON te.transaction_id = t.id
     JOIN pos_employees e ON e.id = te.employee_id
+    LEFT JOIN pos_chargeback_holds h ON h.chargeback_id = cb.id AND h.employee_id = e.id
     WHERE t.user_id = ANY($1::text[]) AND t.type = 'sale'
       AND COALESCE(t.original_sale_date, t.created_at) >= $2
       AND COALESCE(t.original_sale_date, t.created_at) <= $3
@@ -1775,13 +1777,25 @@ async function clearChargebacksWithheld(userId, payday) {
 // Record that a dispute was (or wasn't) taken off a paycheck. Until this is
 // set the amount keeps coming off whichever cheque is open.
 async function setChargebackWithheld(id, userId, payday, by) {
-  const r = await query(
-    `UPDATE pos_transaction_chargebacks
-     SET withheld_payday = $1::date, withheld_at = CASE WHEN $1::date IS NULL THEN NULL ELSE NOW() END,
-         withheld_by = CASE WHEN $1::date IS NULL THEN '' ELSE $2 END
-     WHERE id = $3 AND user_id = ANY($4::text[]) RETURNING id`,
-    [payday || null, by || '', id, asCompanyIds(userId)]);
-  return r.rowCount > 0;
+  const cb = (await query(
+    'SELECT id, transaction_id FROM pos_transaction_chargebacks WHERE id = $1 AND user_id = ANY($2::text[])',
+    [id, asCompanyIds(userId)])).rows[0];
+  if (!cb) return false;
+
+  if (!payday) {
+    await query('DELETE FROM pos_chargeback_holds WHERE chargeback_id = $1', [id]);
+    return true;
+  }
+  // Ticked by hand, so it applies to everyone credited on the sale — a manager
+  // saying "this came off the cheque" means the whole dispute, not one share.
+  await query(
+    `INSERT INTO pos_chargeback_holds (chargeback_id, employee_id, held_payday, created_by)
+     SELECT $1, te.employee_id, $2::date, $3
+     FROM pos_transaction_employees te WHERE te.transaction_id = $4
+     ON CONFLICT (chargeback_id, employee_id)
+       DO UPDATE SET held_payday = EXCLUDED.held_payday, created_by = EXCLUDED.created_by`,
+    [id, payday, by || '', cb.transaction_id]);
+  return true;
 }
 
 // Change just the status (and closing date) of an existing dispute.
@@ -2062,9 +2076,10 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
     JOIN pos_transaction_employees te ON te.transaction_id = t.id
     JOIN pos_employees e ON e.id = te.employee_id
     LEFT JOIN pos_settings st ON st.user_id = e.user_id
+    LEFT JOIN pos_chargeback_holds h ON h.chargeback_id = cb.id AND h.employee_id = e.id
     WHERE t.user_id = ANY($1::text[]) AND e.user_id = ANY($1::text[])
       AND cb.status = 'lost'
-      AND cb.withheld_payday IS NULL
+      AND h.held_payday IS NULL
     GROUP BY e.id, st.store_name
   `, [asCompanyIds(userId)])).rows;
   const heldByEmp = new Map(held.map(h => [h.employee_id, h]));
@@ -2514,9 +2529,11 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
       (${EMP_SHARE}) * CASE WHEN t.type = 'sale'
         THEN 1 - LEAST(1, GREATEST(0, COALESCE((
           SELECT SUM(cb.amount) FROM pos_transaction_chargebacks cb
+          LEFT JOIN pos_chargeback_holds h
+            ON h.chargeback_id = cb.id AND h.employee_id = te.employee_id
           WHERE cb.transaction_id = t.id
             AND cb.status = 'lost'
-            AND cb.withheld_payday IS NULL), 0) / NULLIF(t.total, 0)))
+            AND h.held_payday IS NULL), 0) / NULLIF(t.total, 0)))
         ELSE 1 END AS commission_amount
     FROM pos_transactions t
     JOIN pos_transaction_employees te ON t.id = te.transaction_id
