@@ -1040,10 +1040,11 @@
           Get a text whenever a sale is completed. Sent through your carrier's email-to-text gateway using this company's Gmail connection, so there's nothing to pay for — but delivery is up to the carrier and can be slow or dropped.
         </p>
         <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:-6px 0 12px">
-          <strong>Not arriving on AT&amp;T?</strong> They have been turning these gateways off. Try
-          <em>AT&amp;T — picture-message gateway</em>, and if that is quiet too, pick
-          <em>Email address instead of a text</em> and use the phone's email — it arrives as a
-          notification and no carrier can drop it.
+          <strong>AT&amp;T no longer runs one.</strong> Both <code>txt.att.net</code> and
+          <code>mms.att.net</code> have been shut down, so nothing can be delivered to an AT&amp;T
+          number this way — Sprint, Boost and Cricket are gone too. For those, pick
+          <em>Email address instead of a text</em> and use the phone's email address: it arrives as a
+          notification and no carrier sits in the way to drop it.
         </p>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:system-ui,sans-serif;font-size:.85rem;margin-bottom:10px">
           <input type="checkbox" id="settingsAlertEnabled" style="width:16px;height:16px;accent-color:var(--rose)"> Send a text on every completed sale
@@ -5007,15 +5008,23 @@ async function sendMassEmail() {
 }
 
 // ─── Sale text alerts ───────────────────────────────────────────────────────
+// Carriers whose gateway domains no longer resolve — checked against DNS, not
+// guessed. Kept in the list so an existing recipient still shows what it was
+// set to, but labelled so nobody picks one and waits for a text that cannot
+// arrive. The server refuses to send to them either way.
+const DEAD_SMS_CARRIERS = ['att', 'att_mms', 'sprint', 'boost', 'cricket'];
+
 const SMS_CARRIERS = [
-  ['verizon', 'Verizon'], ['att', 'AT&T'], ['att_mms', 'AT&T — picture-message gateway'],
-  ['tmobile', 'T-Mobile'], ['sprint', 'Sprint'],
-  ['uscellular', 'US Cellular'], ['googlefi', 'Google Fi'], ['boost', 'Boost'],
-  ['cricket', 'Cricket'], ['metropcs', 'Metro by T-Mobile'], ['mint', 'Mint Mobile'],
-  ['visible', 'Visible'], ['xfinity', 'Xfinity Mobile'],
-  // Last resort when a carrier drops the texts: mail it instead. The phone
-  // still buzzes, and no gateway is involved to lose it.
+  ['verizon', 'Verizon'], ['tmobile', 'T-Mobile'], ['metropcs', 'Metro by T-Mobile'],
+  ['mint', 'Mint Mobile'], ['visible', 'Visible'], ['xfinity', 'Xfinity Mobile'],
+  ['uscellular', 'US Cellular'], ['googlefi', 'Google Fi'],
+  // Mail it instead. No carrier gateway in the way, so nothing can drop it.
   ['email', 'Email address instead of a text'],
+  ['att', 'AT&T — gateway retired, cannot deliver'],
+  ['att_mms', 'AT&T picture message — gateway retired'],
+  ['sprint', 'Sprint — gateway retired'],
+  ['boost', 'Boost — gateway retired'],
+  ['cricket', 'Cricket — gateway accepts no mail'],
 ];
 
 // Held here rather than read back out of the DOM, so adding or removing a row
@@ -5054,6 +5063,9 @@ function renderAlertRecipients() {
         <option value="">Carrier…</option>
         ${SMS_CARRIERS.map(([v, n]) => `<option value="${v}"${r.carrier === v ? ' selected' : ''}>${n}</option>`).join('')}
       </select>
+      ${DEAD_SMS_CARRIERS.includes(r.carrier)
+        ? `<span style="color:var(--danger);font-size:.78rem">This carrier shut its gateway down — pick <b>Email address instead</b>.</span>`
+        : ''}
       ${alertRecipients.length > 1
         ? `<button type="button" onclick="removeAlertRecipient(${i})" title="Remove" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:1.1rem;line-height:1;padding:0 2px">&times;</button>`
         : ''}

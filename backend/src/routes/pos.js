@@ -939,6 +939,42 @@ const SMS_GATEWAYS = {
   mint: 'tmomail.net',
 };
 
+// Whether a carrier's gateway can still receive mail at all.
+//
+// Gmail accepts a message for a dead gateway and bounces it minutes later to
+// the sending inbox, so from inside the app the send looks like a success and
+// the text simply never arrives. AT&T proved the point: txt.att.net and
+// mms.att.net have no MX, no A, no AAAA — the domains are gone. A lookup here
+// turns that into an answer at the moment someone asks, instead of silence.
+//
+// RFC 7505: a single "." exchange is a domain declaring it accepts no mail.
+const gatewayMxCache = new Map();
+async function gatewayReachable(address) {
+  const domain = String(address || '').split('@')[1];
+  if (!domain) return { ok: false, why: 'no domain' };
+  if (gatewayMxCache.has(domain)) return gatewayMxCache.get(domain);
+  // A carrier gateway that has gone is worth saying so about; any other domain
+  // is somebody's own email and deserves plainer wording.
+  const isGateway = Object.values(SMS_GATEWAYS).includes(domain);
+  const retired = isGateway
+    ? `${domain} has been shut down — that carrier no longer offers email-to-text`
+    : `${domain} does not accept mail`;
+  let result;
+  try {
+    const mx = await require('dns').promises.resolveMx(domain);
+    const usable = (mx || []).filter(r => r.exchange && r.exchange !== '.');
+    result = usable.length ? { ok: true } : { ok: false, why: retired };
+  } catch (err) {
+    result = err.code === 'ENOTFOUND' || err.code === 'ENODATA'
+      ? { ok: false, why: retired }
+      : { ok: false, why: `${domain} could not be looked up (${err.code})` };
+  }
+  gatewayMxCache.set(domain, result);
+  // Re-check occasionally rather than trusting one lookup for the process life.
+  setTimeout(() => gatewayMxCache.delete(domain), 60 * 60 * 1000).unref?.();
+  return result;
+}
+
 function smsAddressOf(phone, carrier) {
   const kind = String(carrier || '').toLowerCase();
   // 'email' means the field holds an address, not a number — send straight
@@ -1005,6 +1041,11 @@ async function sendSaleAlert(userId, tx) {
     // One send each rather than a single message with several recipients, so
     // one bad number can't stop everyone else getting theirs.
     for (const to of addresses) {
+      // A retired gateway takes the message and bounces it to the sending
+      // inbox later, so skipping it saves a send and, more usefully, leaves a
+      // log line naming the recipient that will never receive anything.
+      const reach = await gatewayReachable(to);
+      if (!reach.ok) { console.error(`[pos] Sale alert to ${to} skipped: ${reach.why}`); continue; }
       try {
         await sendGmail(user, to, '', text, 'text/plain');
       } catch (err) {
@@ -1034,11 +1075,16 @@ router.post('/settings/test-sale-alert', async (req, res) => {
   const text = `Test from ${settings.store_name || 'SkySale'} — sale alerts are working.`;
   const sent = [], failed = [];
   for (const to of addresses) {
+    // Check the gateway is alive before sending. Otherwise Gmail takes the
+    // message, this reports success, and the bounce arrives privately minutes
+    // later — which is how a dead carrier stays invisible for weeks.
+    const reach = await gatewayReachable(to);
+    if (!reach.ok) { failed.push({ to, error: reach.why }); continue; }
     try { await sendGmail(user, to, '', text, 'text/plain'); sent.push(to); }
     catch (err) { failed.push({ to, error: err.message }); }
   }
   if (!sent.length) {
-    return res.status(500).json({ error: 'Could not send: ' + (failed[0]?.error || 'unknown error'), failed });
+    return res.status(500).json({ error: failed[0]?.error || 'unknown error', failed });
   }
   res.json({ ok: true, sent_to: sent, failed });
 });
