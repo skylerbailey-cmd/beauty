@@ -1037,7 +1037,13 @@
       <div class="report-card" style="margin-top:16px">
         <h3>Sale Text Alerts</h3>
         <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
-          Get a text whenever a sale is completed. Sent through your carrier's email-to-text gateway using this company's Gmail connection, so there's nothing to pay for — but delivery is up to the carrier and can occasionally be slow or dropped.
+          Get a text whenever a sale is completed. Sent through your carrier's email-to-text gateway using this company's Gmail connection, so there's nothing to pay for — but delivery is up to the carrier and can be slow or dropped.
+        </p>
+        <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:-6px 0 12px">
+          <strong>Not arriving on AT&amp;T?</strong> They have been turning these gateways off. Try
+          <em>AT&amp;T — picture-message gateway</em>, and if that is quiet too, pick
+          <em>Email address instead of a text</em> and use the phone's email — it arrives as a
+          notification and no carrier can drop it.
         </p>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:system-ui,sans-serif;font-size:.85rem;margin-bottom:10px">
           <input type="checkbox" id="settingsAlertEnabled" style="width:16px;height:16px;accent-color:var(--rose)"> Send a text on every completed sale
@@ -5002,10 +5008,14 @@ async function sendMassEmail() {
 
 // ─── Sale text alerts ───────────────────────────────────────────────────────
 const SMS_CARRIERS = [
-  ['verizon', 'Verizon'], ['att', 'AT&T'], ['tmobile', 'T-Mobile'], ['sprint', 'Sprint'],
+  ['verizon', 'Verizon'], ['att', 'AT&T'], ['att_mms', 'AT&T — picture-message gateway'],
+  ['tmobile', 'T-Mobile'], ['sprint', 'Sprint'],
   ['uscellular', 'US Cellular'], ['googlefi', 'Google Fi'], ['boost', 'Boost'],
   ['cricket', 'Cricket'], ['metropcs', 'Metro by T-Mobile'], ['mint', 'Mint Mobile'],
   ['visible', 'Visible'], ['xfinity', 'Xfinity Mobile'],
+  // Last resort when a carrier drops the texts: mail it instead. The phone
+  // still buzzes, and no gateway is involved to lose it.
+  ['email', 'Email address instead of a text'],
 ];
 
 // Held here rather than read back out of the DOM, so adding or removing a row
@@ -5035,10 +5045,11 @@ function renderAlertRecipients() {
   if (!el) return;
   el.innerHTML = alertRecipients.map((r, i) => `
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-family:system-ui,sans-serif;font-size:.85rem">
-      <input type="tel" value="${escapeHtml(r.phone)}" placeholder="Mobile number"
+      <input type="${r.carrier === 'email' ? 'email' : 'tel'}" value="${escapeHtml(r.phone)}"
+             placeholder="${r.carrier === 'email' ? 'name@example.com' : 'Mobile number'}"
              oninput="alertRecipients[${i}].phone = this.value"
              style="width:170px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
-      <select onchange="alertRecipients[${i}].carrier = this.value"
+      <select onchange="alertRecipients[${i}].carrier = this.value; renderAlertRecipients()"
               style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;background:var(--white)">
         <option value="">Carrier…</option>
         ${SMS_CARRIERS.map(([v, n]) => `<option value="${v}"${r.carrier === v ? ' selected' : ''}>${n}</option>`).join('')}
@@ -5062,7 +5073,9 @@ function removeAlertRecipient(i) {
 
 // Complete rows only — a half-filled one would silently never receive anything.
 function usableAlertRecipients() {
-  return alertRecipients.filter(r => String(r.phone).replace(/\D/g, '').length >= 10 && r.carrier);
+  return alertRecipients.filter(r => r.carrier && (r.carrier === 'email'
+    ? /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(r.phone).trim())
+    : String(r.phone).replace(/\D/g, '').length >= 10));
 }
 
 async function saveSaleAlerts() {
@@ -5072,7 +5085,7 @@ async function saveSaleAlerts() {
   const partial = alertRecipients.filter(r => (r.phone || r.carrier) && !usable.includes(r)).length;
   if (enabled && !usable.length) {
     statusEl.style.color = 'var(--danger)';
-    statusEl.textContent = 'Add a 10-digit mobile number with its carrier before switching alerts on.';
+    statusEl.textContent = 'Add a 10-digit mobile number with its carrier — or an email address — before switching alerts on.';
     return;
   }
   statusEl.style.color = 'var(--mid)';

@@ -922,6 +922,11 @@ async function sendGmail(user, toEmail, subject, htmlBody, contentType) {
 const SMS_GATEWAYS = {
   verizon: 'vtext.com',
   att: 'txt.att.net',
+  // AT&T's picture-message gateway. Kept separate because the plain text one
+  // (txt.att.net) has become unreliable for inbound email, and this sometimes
+  // still gets through when it doesn't.
+  att_mms: 'mms.att.net',
+  tmobile_mms: 'tmomail.net',
   tmobile: 'tmomail.net',
   sprint: 'messaging.sprintpcs.com',
   uscellular: 'email.uscc.net',
@@ -935,9 +940,17 @@ const SMS_GATEWAYS = {
 };
 
 function smsAddressOf(phone, carrier) {
+  const kind = String(carrier || '').toLowerCase();
+  // 'email' means the field holds an address, not a number — send straight
+  // there. No carrier gateway in the way, so nothing to silently drop it; the
+  // phone's mail app raises it as a notification just the same.
+  if (kind === 'email') {
+    const addr = String(phone || '').trim();
+    return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr) ? addr : null;
+  }
   const digits = String(phone || '').replace(/\D/g, '');
   const ten = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits;
-  const gateway = SMS_GATEWAYS[String(carrier || '').toLowerCase()];
+  const gateway = SMS_GATEWAYS[kind];
   if (ten.length !== 10 || !gateway) return null;
   return `${ten}@${gateway}`;
 }
