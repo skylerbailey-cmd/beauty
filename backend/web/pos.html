@@ -6577,7 +6577,12 @@ function removePayrollAdjustment(id) {
 
 async function loadPaydayOptions() {
   const sel = document.getElementById('payrollPayday');
-  if (!sel || sel.options.length) return; // already filled
+  if (!sel) return;
+  // The list of paydays rarely changes, so it is only fetched once. The figures
+  // under it are wiped every time the tab is locked, though — so an already
+  // filled dropdown still needs the paycheck itself loading, or Payroll comes
+  // back empty with a payday selected above it.
+  if (sel.options.length) { loadPayroll(); return; }
   try {
     const resp = await fetch(`${API}/api/pos/reports/paydays`, { credentials: 'include' });
     if (!resp.ok) return;
@@ -6947,7 +6952,8 @@ function lockPersonalReport() {
   for (const id of ['empPersonalPending', 'empReportPending', 'empPersonalBody',
                     'empReportBody', 'empPersonalPaySummary', 'empReportPaySummary',
                     'leaderboard', 'flaggedReturnsBody',
-                    'payrollBody', 'payrollPeriodNote', 'rptRangeNote', 'empPersonalName']) {
+                    'payrollBody', 'payrollPeriodNote', 'payrollPayday',
+                    'rptRangeNote', 'empPersonalName']) {
     const el = document.getElementById(id);
     if (el) el.innerHTML = '';
   }
