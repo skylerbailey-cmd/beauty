@@ -774,7 +774,7 @@
             <div style="display:flex;gap:6px;align-items:center;font-family:system-ui,sans-serif;font-size:.85rem">
               <label>Paycheck:</label>
               <button class="btn" title="Previous paycheck" onclick="stepPayday(1)" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:6px 10px;font-size:.85rem;line-height:1">‹</button>
-              <select id="payrollPayday" onchange="loadPayroll()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;background:var(--white)"></select>
+              <select id="payrollPayday" onchange="selectPaycheck(this.value)" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;background:var(--white)"></select>
               <button class="btn" title="Next paycheck" onclick="stepPayday(-1)" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:6px 10px;font-size:.85rem;line-height:1">›</button>
             </div>
           </div>
@@ -6649,7 +6649,10 @@ async function loadPaydayOptions() {
     ).join('');
     // Open on the most recent payday that hasn't been paid out; that's the one
     // being worked on. Everything else is history or not due yet.
-    const open = list.filter(p => !p.paid).pop();
+    // Land on whatever the report is already showing, so the two agree from
+    // the first render; otherwise the oldest cheque still owing.
+    const matching = list.find(p => p.payday === rptSelectedPayday);
+    const open = matching || list.filter(p => !p.paid).pop();
     if (open) sel.value = open.payday;
     if (list.length) loadPayroll();
   } catch (_) { /* leave the section empty */ }
@@ -6663,7 +6666,8 @@ function stepPayday(delta) {
   const next = sel.selectedIndex + delta;
   if (next < 0 || next >= sel.options.length) return;
   sel.selectedIndex = next;
-  loadPayroll();
+  // Route through selectPaycheck so the dates and the chips follow the arrows.
+  selectPaycheck(sel.value);
 }
 
 function fmtPayday(d) {
@@ -6726,7 +6730,16 @@ function selectPaycheck(payday) {
   document.getElementById('rptStart').value = p.period.start;
   document.getElementById('rptEnd').value = p.period.end;
   renderPaycheckChips();
+  // Payroll moves with it. Two period pickers on one tab that disagree is
+  // worse than one: the commissions showed a new fortnight while Payroll sat
+  // on the old cheque, so the same paid figure appeared under both.
+  const sel = document.getElementById('payrollPayday');
+  if (sel && sel.value !== payday
+      && [...sel.options].some(o => o.value === payday)) {
+    sel.value = payday;   // set directly: assigning .value fires no change event
+  }
   loadReports();
+  loadPayroll();
 }
 
 // Typing a date by hand, or using the half-month buttons, clears the chip
