@@ -7007,10 +7007,15 @@ async function loadPayroll() {
 
     const storeLine = e => `
       <div style="display:flex;justify-content:space-between;font-weight:600;margin-top:4px">
-        <span>${e.store_name ? detailLink(e.store_name, e.employee_name, e.store_name) + ' ' : ''}<span style="font-weight:400;color:var(--mid)">· ${e.commission_rate}% of $${money(e.sales_total)}${e.sale_count ? ` over ${e.sale_count} sale${e.sale_count === 1 ? '' : 's'}` : ''}${
-          // Said quietly rather than as a deduction: the sale came back, so it
-          // is out of what they sold, not taken off what they are owed.
-          Number(e.returns_netted) ? `, after $${money(e.returns_netted)} returned` : ''}</span></span>
+        <span>${e.store_name ? detailLink(e.store_name, e.employee_name, e.store_name) + ' ' : ''}<span style="font-weight:400;color:var(--mid)">· ${
+          // "40% of $0.00" reads like a fault. Someone with nothing sold is on
+          // the paycheck because money is being held from them, so say that.
+          (!e.sale_count && !Number(e.sales_total))
+            ? 'no sales this period'
+            : `${e.commission_rate}% of $${money(e.sales_total)}${e.sale_count ? ` over ${e.sale_count} sale${e.sale_count === 1 ? '' : 's'}` : ''}${
+              // Said quietly rather than as a deduction: the sale came back, so
+              // it is out of what they sold, not taken off what they are owed.
+              Number(e.returns_netted) ? `, after $${money(e.returns_netted)} returned` : ''}`}</span></span>
         <span>$${money(e.commission_earned)}</span>
       </div>
       ${e.adjustments.filter(a => a.kind !== 'held').map(a => {
@@ -7066,6 +7071,17 @@ async function loadPayroll() {
       <div style="border-bottom:1px solid var(--border);padding:10px 0;font-family:system-ui,sans-serif;font-size:.85rem">
         <div style="font-weight:700;font-size:.9rem">${detailLink(p.name, p.name, '')}</div>
         ${p.rows.map(storeLine).join('')}
+        ${(() => {
+          // What is being kept back from this person but not taken off this
+          // cheque. Without it, somebody with nothing sold is a row of zeroes
+          // with no hint of why they are on the paycheck at all.
+          const held = p.rows.flatMap(e => e.adjustments.filter(a => a.kind === 'held'));
+          if (!held.length) return '';
+          const t = held.reduce((sum, a) => sum + (Number(a.held_amount) || 0), 0);
+          return `<div style="font-size:.78rem;color:var(--mid);margin-top:3px">
+            $${money(t)} still held over ${held.length} open dispute${held.length === 1 ? '' : 's'}
+            — already taken off an earlier paycheck, listed below</div>`;
+        })()}
         <div style="display:flex;justify-content:space-between;align-items:center;font-weight:700;margin-top:5px;border-top:1px dashed var(--border);padding-top:5px">
           <span>To pay${p.rows.length > 1 ? ' <span style="font-weight:400;color:var(--mid)">· both stores</span>' : ''}</span>
           <span style="display:flex;align-items:center;gap:10px">
