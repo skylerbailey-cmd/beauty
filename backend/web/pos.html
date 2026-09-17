@@ -6758,7 +6758,8 @@ async function payrollAction(path, body, method, skipReload) {
     if (!resp.ok) throw new Error(data.error || 'Could not save');
     // A caller marking several rows at once reloads itself, once, at the end.
     if (!skipReload) await loadPayroll();
-  } catch (err) { alert(err.message); }
+    return true;
+  } catch (err) { alert(err.message); return false; }
 }
 
 // Records a dispute as already withheld from the paycheck on screen, so later
@@ -6788,15 +6789,32 @@ function setPayrollPaid(paid) {
   payrollAction('paid', { payday, paid });
 }
 
-function addPayrollAdjustment() {
+// Survives the reload that follows, so the confirmation is still there when
+// the table comes back — otherwise the only sign anything happened is one
+// small line somewhere in a long list.
+let lastAdjustmentNote = '';
+
+async function addPayrollAdjustment() {
   const amount = parseFloat(document.getElementById('payAdjAmount').value);
   const note = document.getElementById('payAdjNote').value.trim();
   if (!isFinite(amount) || amount === 0) { alert('Enter an amount — positive to add, negative to deduct.'); return; }
-  payrollAction('adjustment', {
-    payday: document.getElementById('payrollPayday').value,
-    employee_id: document.getElementById('payAdjEmp').value,
-    amount, note,
-  });
+  const sel = document.getElementById('payAdjEmp');
+  const who = sel.options[sel.selectedIndex]?.text || 'that employee';
+  const payday = document.getElementById('payrollPayday').value;
+  lastAdjustmentNote = `${amount < 0 ? 'Deducted' : 'Added'} $${money(Math.abs(amount))} ${amount < 0 ? 'from' : 'to'} ${who}`
+    + `${note ? ` for "${note}"` : ''} on the ${fmtPayday(payday)} paycheck.`;
+  // Saved first, reloaded second: the message has to be set before the table is
+  // redrawn to appear on it, so a failure has to take it back down again.
+  const ok = await payrollAction('adjustment', { payday, employee_id: sel.value, amount, note }, 'POST', true);
+  if (!ok) {
+    // Nothing was saved, so take the message down rather than leaving the one
+    // from a previous add sitting under a failure.
+    lastAdjustmentNote = '';
+    const el = document.getElementById('payAdjStatus');
+    if (el) el.textContent = '';
+    return;
+  }
+  await loadPayroll();
 }
 
 function removePayrollAdjustment(id) {
@@ -6938,8 +6956,12 @@ function fmtPeriod(p) {
   return a.m === b.m ? `${a.m} ${a.d}–${b.d}` : `${a.m} ${a.d} – ${b.m} ${b.d}`;
 }
 
+let lastAdjustmentPayday = '';
+
 async function loadPayroll() {
   const sel = document.getElementById('payrollPayday');
+  // The confirmation belongs to one paycheck; moving off it drops the message.
+  if (sel && sel.value !== lastAdjustmentPayday) { lastAdjustmentNote = ''; lastAdjustmentPayday = sel.value; }
   const body = document.getElementById('payrollBody');
   const note = document.getElementById('payrollPeriodNote');
   if (!sel || !sel.value || !personalCreds) return;
@@ -7023,6 +7045,7 @@ async function loadPayroll() {
         // earlier cheque and must not come off again. Grey, with the amount in
         // brackets, so it cannot be read as another deduction.
         const informational = a.kind === 'held';
+        const byHand = a.kind === 'manual';
         const colour = informational ? 'var(--mid)' : (a.amount < 0 ? 'var(--danger)' : 'var(--success)');
         const figure = informational
           ? `($${money(Math.abs(Number(a.held_amount) || 0))} held)`
@@ -7037,9 +7060,13 @@ async function loadPayroll() {
                style="border:none;background:none;color:var(--mid);cursor:pointer;font-size:.72rem;text-decoration:underline;padding:0 2px">held ✓ undo</button>`
           : ` <button title="Record that this came off this paycheck, so it stops coming off later ones" onclick="setChargebackHeld(${a.chargeback_id}, ${a.employee_id}, true)"
                style="border:none;background:none;color:var(--rose);cursor:pointer;font-size:.72rem;text-decoration:underline;padding:0 2px">mark held</button>`);
+        // Marked out from the dispute lines around it, which are automatic and
+        // all look alike — otherwise something just typed in lands in the
+        // middle of them and is impossible to pick out.
         return `
-        <div style="display:flex;justify-content:space-between;padding-left:14px;color:${colour};font-size:.8rem;margin-top:3px">
-          <span>${a.receipt ? '#' + escapeHtml(String(a.receipt)) + ' — ' : ''}${escapeHtml(a.note)}${holdBtn}${
+        <div style="display:flex;justify-content:space-between;padding-left:${byHand ? '10' : '14'}px;color:${colour};font-size:.8rem;margin-top:3px;${
+          byHand ? 'border-left:3px solid ' + (a.amount < 0 ? 'var(--danger)' : 'var(--success)') + ';font-weight:600;' : ''}">
+          <span>${byHand ? '<span style="color:var(--mid);font-weight:400">added by hand · </span>' : ''}${a.receipt ? '#' + escapeHtml(String(a.receipt)) + ' — ' : ''}${escapeHtml(a.note)}${holdBtn}${
             a.kind === 'manual' && !data.paid
               ? ` <button title="Added by hand to this paycheck only — remove it" onclick="removePayrollAdjustment(${a.id})" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:.9rem;line-height:1;padding:0 2px">&times;</button>`
               : ''}</span>
@@ -7136,6 +7163,7 @@ async function loadPayroll() {
           <button class="btn btn-confirm" style="padding:6px 12px;font-size:.8rem" onclick="addPayrollAdjustment()">Add</button>
           <span style="color:var(--mid)">negative to deduct</span>
         </div>
+        <div id="payAdjStatus" style="font-size:.82rem;color:var(--success);margin-top:6px">${escapeHtml(lastAdjustmentNote || '')}</div>
         </div>`);
   } catch (err) {
     body.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--danger)">${escapeHtml(err.message)}</div>`;
