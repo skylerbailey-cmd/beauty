@@ -6356,7 +6356,7 @@ function renderPaySummary(paycheck) {
     if (a.kind === 'won') return 'Released — dispute won, held back earlier';
     if (a.kind === 'lost') return 'Dispute lost — taken back';
     if (a.kind === 'return') return a.note || 'Returned after this was paid';
-    return 'Held from pay — dispute still open';
+    return 'Held from pay — dispute opened';
   };
   const line = (text, amount, opts = {}) => `
     <tr style="${opts.strong ? 'font-weight:700;background:var(--cream);' : ''}${opts.top ? 'border-top:2px solid var(--border);' : ''}">

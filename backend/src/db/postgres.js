@@ -1454,7 +1454,7 @@ async function payrollForPayday(userId, payday, settings) {
             kind: 'held', chargeback_id: d.chargeback_id, employee_id: d.employee_id,
             pinned: true, receipt: d.receipt_number,
             amount: 0, held_amount: commission,
-            note: `dispute still open on the ${d.sale_date} sale${card} — recorded as already held on ${d.withheld_payday}`,
+            note: `dispute opened on the ${d.sale_date} sale${card} — recorded as already held on ${d.withheld_payday}`,
           });
         }
         continue;
@@ -1501,7 +1501,7 @@ async function payrollForPayday(userId, payday, settings) {
           kind: 'held', chargeback_id: d.chargeback_id, employee_id: d.employee_id,
           pinned: true, receipt: d.receipt_number,
           amount: 0, held_amount: commission,
-          note: `dispute still open on the ${d.sale_date} sale${card} — already held back on ${d.withheld_payday}`,
+          note: `dispute opened on the ${d.sale_date} sale${card} — already held back on ${d.withheld_payday}`,
         });
       }
       continue;
@@ -1518,7 +1518,7 @@ async function payrollForPayday(userId, payday, settings) {
       receipt: d.receipt_number, amount: -commission,
       note: d.status === 'lost'
         ? `dispute lost${d.closed_date ? ' ' + d.closed_date : ''} on the ${d.sale_date} sale${card}`
-        : `dispute open on the ${d.sale_date} sale${card}`,
+        : `dispute opened on the ${d.sale_date} sale${card}`,
     });
   }
 
