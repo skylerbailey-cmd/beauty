@@ -266,9 +266,18 @@ async function initSchema() {
   // Migrations for existing DBs
   const migrate = async (sql) => { try { await query(sql); } catch (_) {} };
   await migrate('ALTER TABLE pos_employees ADD COLUMN IF NOT EXISTS commission_rate REAL DEFAULT 0');
-  // For business cards. Optional — a card prints fine without either.
+  // For business cards. The phone is optional; the title starts as the one
+  // almost everyone here has, and is editable per person.
   await migrate("ALTER TABLE pos_employees ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_employees ADD COLUMN IF NOT EXISTS title TEXT DEFAULT ''");
+  await migrate("ALTER TABLE pos_employees ALTER COLUMN title SET DEFAULT 'Skin Specialist'");
+  // Fill in the people who predate the column — but only while nobody has set
+  // a title of their own. Once one person has, this has done its job and must
+  // not run again, or it would undo anyone who deliberately cleared theirs.
+  await migrate(`
+    UPDATE pos_employees SET title = 'Skin Specialist'
+    WHERE COALESCE(TRIM(title), '') = ''
+      AND NOT EXISTS (SELECT 1 FROM pos_employees WHERE COALESCE(TRIM(title), '') <> '')`);
   await migrate('ALTER TABLE pos_product_prices ADD COLUMN IF NOT EXISTS min_price REAL DEFAULT 0');
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS card_last4 TEXT DEFAULT \'\'');
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS employees_changed INTEGER DEFAULT 0');

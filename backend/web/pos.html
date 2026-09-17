@@ -2826,7 +2826,7 @@ function renderBusinessCards() {
       <tbody>${businessCardRoster.map((e, i) => `
         <tr>
           <td style="font-weight:600;white-space:nowrap">${escapeHtml(e.name)}</td>
-          <td><input type="text" value="${escapeHtml(e.title || '')}" placeholder="e.g. Skin Therapist"
+          <td><input type="text" value="${escapeHtml(e.title || '')}" placeholder="Skin Specialist"
                 oninput="businessCardRoster[${i}].title = this.value; markCardDirty(${i})"
                 style="width:100%;min-width:150px;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem"></td>
           <td><input type="tel" value="${escapeHtml(e.phone || '')}" placeholder="optional"
