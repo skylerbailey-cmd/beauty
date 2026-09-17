@@ -1573,6 +1573,25 @@ router.delete('/reports/payroll/adjustment/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// One person's own paycheck. The summary on their report is built from this
+// rather than assembled separately, so the figure they are shown and the figure
+// payroll pays cannot drift apart — they are the same calculation.
+router.post('/reports/my-paycheck', async (req, res) => {
+  const { name, pin, payday } = req.body;
+  const me = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
+  if (!me) return res.status(401).json({ error: 'Invalid name or PIN' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.json({ rows: [] });
+
+  const scope = await payrollScope();
+  const settings = await pgDb.getSettings(req.session.userId);
+  const run = await pgDb.payrollForPayday(scope, payday, settings);
+  const mine = String(me.name).trim().toLowerCase();
+  const rows = isAdmin(me)
+    ? run.employees
+    : run.employees.filter(e => String(e.employee_name).trim().toLowerCase() === mine);
+  res.json({ payday, period: run.period, paid: run.paid, rows, role: roleOf(me) });
+});
+
 // Amounts added to, or taken off, a paycheck by hand. An employee sees their
 // own; an admin sees everyone's. Same rule as the rest of the report.
 router.post('/reports/my-adjustments', async (req, res) => {

@@ -1682,7 +1682,6 @@ let managerReportsUnlocked = false; // gates KPIs, leaderboard, commissions, and
 const canManageRole = (role) => role === 'manager' || role === 'admin';
 
 let lastEmployeesReport = [];       // most recent employee report data
-let lastPersonalRows = [];          // the unlocked employee's own rows, for the pay summary
 let lastSalesSummaryHtml = '';      // most recent KPI tiles HTML, revealed on manager unlock
 let lastProductsHtml = '';          // most recent top-products rows HTML, revealed on manager unlock
 let selectedBrands = ['avologi', 'avinichi', 'hydrasphere', 'spacetouch', 'lumieres'];
@@ -6311,22 +6310,23 @@ async function loadPendingChargebacks() {
     const released = all
       .filter(c => c.status === 'won' && c.withheld_payday && paidOut(c.withheld_payday))
       .sort(byName);
-    // Anything added to the cheque by hand belongs on the employee's own report
-    // too — it is money going on or off their pay, and payroll is admin-only.
-    let adjustments = [];
+    // The summary is built from the paycheck itself rather than reassembled
+    // here — a dispute already recorded against this cheque still comes off it,
+    // and working that out twice is how the two figures drifted $700 apart.
+    let paycheck = null;
     if (rptSelectedPayday) {
       try {
-        const aResp = await fetch(`${API}/api/pos/reports/my-adjustments`, {
+        const pResp = await fetch(`${API}/api/pos/reports/my-paycheck`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
           body: JSON.stringify({ name: personalCreds.name, pin: personalCreds.pin, payday: rptSelectedPayday }),
         });
-        if (aResp.ok) adjustments = (await aResp.json()).adjustments || [];
+        if (pResp.ok) paycheck = await pResp.json();
       } catch (_) { /* the rest of the page still stands */ }
     }
     if (mine !== pendingCbRequest) return;
     put(renderPendingChargebacks(pending, alreadyHeld, data.role === 'admin')
       + renderReleased(released));
-    renderPaySummary(pending, released, adjustments);
+    renderPaySummary(paycheck);
   } catch (err) {
     // Say so rather than leaving a blank where a deduction should be — an
     // empty space reads as "nothing is being held", which may be untrue.
@@ -6339,37 +6339,39 @@ async function loadPendingChargebacks() {
 // at the foot of the commission table because that is where someone reads the
 // commission figure — the disputes below explain it, but nobody subtracts two
 // tables in their head, and the number that matters is what actually gets paid.
-function renderPaySummary(pending, released, adjustments) {
-  const held = pending.reduce((sum, c) => sum + Number(c.commission_at_risk || 0), 0);
-  const back = (released || []).reduce((sum, c) => sum + Number(c.commission_at_risk || 0), 0);
-  const adj = (adjustments || []).reduce((sum, a) => sum + Number(a.amount || 0), 0);
-  const line = (label, amount, opts = {}) => `
+function renderPaySummary(paycheck) {
+  const targets = ['empPersonalPaySummary', 'empReportPaySummary']
+    .map(id => document.getElementById(id)).filter(Boolean);
+  const rows = (paycheck && paycheck.rows) || [];
+  if (!rows.length) { for (const el of targets) el.innerHTML = ''; return; }
+
+  const earned = rows.reduce((s, e) => s + Number(e.commission_earned || 0), 0);
+  const total = rows.reduce((s, e) => s + Number(e.total || 0), 0);
+  // Every line the paycheck carries, in the order it carries them. 'held' lines
+  // are worth nothing here — they were taken off an earlier cheque.
+  const lines = rows.flatMap(e => e.adjustments || []).filter(a => a.kind !== 'held');
+
+  const label = (a) => {
+    if (a.kind === 'manual') return a.note || 'Adjustment';
+    if (a.kind === 'won') return 'Released — dispute won, held back earlier';
+    if (a.kind === 'lost') return 'Dispute lost — taken back';
+    if (a.kind === 'return') return a.note || 'Returned after this was paid';
+    return 'Held from pay — dispute still open';
+  };
+  const line = (text, amount, opts = {}) => `
     <tr style="${opts.strong ? 'font-weight:700;background:var(--cream);' : ''}${opts.top ? 'border-top:2px solid var(--border);' : ''}">
-      <td colspan="7" style="${opts.strong ? 'font-weight:700' : ''}">${label}</td>
+      <td colspan="7" style="${opts.strong ? 'font-weight:700' : ''}">${text}</td>
       <td style="font-weight:700;${opts.colour ? 'color:' + opts.colour : ''}">${amount}</td>
     </tr>`;
 
-  for (const [tableId, rowsFor] of [['empPersonalPaySummary', lastPersonalRows],
-                                    ['empReportPaySummary', lastEmployeesReport]]) {
-    const el = document.getElementById(tableId);
-    if (!el) continue;
-    const rows = rowsFor || [];
-    // Nothing held, or nothing to hold it against: the Commission column
-    // already says everything, so don't add three rows that repeat it.
-    if ((!held && !back && !adj) || !rows.length) { el.innerHTML = ''; continue; }
-    const earned = rows.reduce((sum, e) => sum + commissionAmt(e, commissionBase(e)), 0);
-    el.innerHTML =
-      line('Commission earned', `$${money(earned)}`, { top: true })
-      + (held ? line('Held from pay — open disputes below', `−$${money(held)}`, { colour: 'var(--danger)' }) : '')
-      + (back ? line('Released — disputes won, held back earlier', `+$${money(back)}`, { colour: 'var(--success)' }) : '')
-      // One line each, labelled with whatever it was entered for — "car" says
-      // more than "added by hand", and there is no second table to look at.
-      + (adjustments || []).map(a => line(
-          escapeHtml(a.note || 'Adjustment'),
-          `${Number(a.amount) < 0 ? '−' : '+'}$${money(Math.abs(Number(a.amount)))}`,
-          { colour: Number(a.amount) < 0 ? 'var(--danger)' : 'var(--success)' })).join('')
-      + line('Commission on the upcoming paycheck', `$${money(earned - held + back + adj)}`, { strong: true });
-  }
+  const html =
+    line('Commission earned', `$${money(earned)}`, { top: true })
+    + lines.map(a => line(escapeHtml(label(a)),
+        `${Number(a.amount) < 0 ? '−' : '+'}$${money(Math.abs(Number(a.amount)))}`,
+        { colour: Number(a.amount) < 0 ? 'var(--danger)' : 'var(--success)' })).join('')
+    + line('Commission on the upcoming paycheck', `$${money(total)}`, { strong: true });
+
+  for (const el of targets) el.innerHTML = html;
 }
 
 // Disputes won after the money had already been taken. The employee is owed it
@@ -7301,7 +7303,6 @@ async function unlockPersonalReport(silent) {
         `${data.employee.name} — Personal Sales & Commission`
         + (included.length ? ` · ${included.join(' + ')}` : '');
       const personalRows = data.report || [];
-      lastPersonalRows = personalRows;   // the pay summary totals these
       document.getElementById('empPersonalBody').innerHTML =
         // Across companies, label each row so two figures under the same name
         // aren't mistaken for a duplicate, and total them — the combined figure
@@ -7360,7 +7361,6 @@ function lockPersonalReport() {
   }
   // And the copies held in memory, which survive the DOM being emptied.
   lastEmployeesReport = [];
-  lastPersonalRows = [];
   lastSalesSummaryHtml = '';
   lastProductsHtml = '';
   lastPayroll = null;
