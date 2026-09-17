@@ -441,6 +441,11 @@
     .cs-account-info { min-width: 0; flex: 1; }
     .cs-account-info .cs-name { font-weight: 600; font-size: .85rem; color: var(--dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .cs-account-info .cs-addr { font-size: .75rem; color: var(--mid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cs-forget {
+      margin-left: auto; font-size: .72rem; color: var(--mid);
+      padding: 2px 6px; border-radius: 6px; white-space: nowrap;
+    }
+    .cs-forget:hover { background: var(--rose-lt); color: var(--danger); }
     .cs-divider { border-top: 1px solid var(--border); margin: 4px 0; }
     .cs-action { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; font-size: .85rem; color: var(--rose-dk); transition: background .15s; }
     .cs-action:hover { background: var(--cream); }
@@ -7455,12 +7460,18 @@ function renderCompanySwitcherMenu() {
   let html = '';
   accounts.forEach(a => {
     const isActive = a.email === currentEmail;
+    // A company you are not in can be dropped from this browser without
+    // touching the session — useful on a shared till that has accumulated
+    // companies nobody there works for.
+    const forget = isActive ? '' : `<span class="cs-forget" title="Remove this company from this device"
+        onclick="event.stopPropagation();forgetCompany('${escapeHtml(a.email)}')">Forget</span>`;
     html += `<div class="cs-account ${isActive ? 'active' : ''}" onclick="switchAccount('${escapeHtml(a.email)}')">
       <span class="cs-check">${isActive ? '&#10003;' : ''}</span>
       <div class="cs-account-info">
         <div class="cs-name">${escapeHtml(a.companyName) || escapeHtml(a.email)}</div>
         <div class="cs-addr">${escapeHtml(a.email)}</div>
       </div>
+      ${forget}
     </div>`;
   });
 
@@ -7468,8 +7479,33 @@ function renderCompanySwitcherMenu() {
   html += `<div class="cs-action" onclick="addNewAccount()">
     <span class="cs-icon">+</span> Add another company
   </div>`;
+  if (currentEmail) {
+    const label = escapeHtml(currentUser?.companyName || currentEmail);
+    html += `<div class="cs-action" style="color:var(--danger)" onclick="signOutCompany()">
+      <span class="cs-icon">&#8594;]</span> Sign out of ${label}
+    </div>`;
+  }
 
   menu.innerHTML = html;
+}
+
+// Ends the session for the company on screen. It also drops it from this
+// browser's list, which is what signing out means here: switching back is a
+// one-click affair, so a company left listed is a company still reachable.
+function signOutCompany() {
+  const name = currentUser?.companyName || currentUser?.email || 'this company';
+  if (!confirm(`Sign out of ${name}?\n\nThis browser will forget it and you'll need to sign in again to use it.`)) return;
+  logout();
+}
+
+// Removes a company from this browser only — no session anywhere is ended.
+function forgetCompany(email) {
+  const acct = getLinkedAccounts().find(a => a.email === email);
+  const name = acct?.companyName || email;
+  if (!confirm(`Remove ${name} from this device?\n\nNobody is signed out. It just stops being listed here until it is added again.`)) return;
+  saveLinkedAccounts(getLinkedAccounts().filter(a => a.email !== email));
+  renderCompanySwitcherMenu();
+  renderCompanyPickers();
 }
 
 async function switchAccount(email) {
