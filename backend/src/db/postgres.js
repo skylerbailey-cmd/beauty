@@ -266,6 +266,9 @@ async function initSchema() {
   // Migrations for existing DBs
   const migrate = async (sql) => { try { await query(sql); } catch (_) {} };
   await migrate('ALTER TABLE pos_employees ADD COLUMN IF NOT EXISTS commission_rate REAL DEFAULT 0');
+  // For business cards. Optional — a card prints fine without either.
+  await migrate("ALTER TABLE pos_employees ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT ''");
+  await migrate("ALTER TABLE pos_employees ADD COLUMN IF NOT EXISTS title TEXT DEFAULT ''");
   await migrate('ALTER TABLE pos_product_prices ADD COLUMN IF NOT EXISTS min_price REAL DEFAULT 0');
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS card_last4 TEXT DEFAULT \'\'');
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS employees_changed INTEGER DEFAULT 0');
@@ -625,7 +628,7 @@ async function createEmployee(name, pin, role, commissionRate, userId) {
 }
 
 async function updateEmployee(id, fields) {
-  const allowed = ['name', 'pin', 'role', 'active', 'commission_rate'];
+  const allowed = ['name', 'pin', 'role', 'active', 'commission_rate', 'phone', 'title'];
   const sets = [];
   const params = [];
   let idx = 1;

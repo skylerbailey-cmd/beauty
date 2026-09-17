@@ -357,8 +357,10 @@
          (NOT visibility:hidden) — hidden elements still occupy space and feed
          blank pages after the receipt ("bursts of paper"). #printReceipt is a
          direct child of <body>, so this leaves only the receipt on the page. */
-      html, body { width: 80mm; margin: 0; padding: 0; background: #fff; }
-      body > *:not(.receipt-print) { display: none !important; }
+      /* Receipts go to the 80mm thermal roll; a business card does not, so the
+         paper rules below are scoped away from it. */
+      html, body:not(.print-card) { width: 80mm; margin: 0; padding: 0; background: #fff; }
+      body:not(.print-card) > *:not(.receipt-print) { display: none !important; }
       .receipt-print {
         display: block !important;
         width: 72mm; margin: 0; padding: 0; box-sizing: border-box;
@@ -389,7 +391,31 @@
       .receipt-print .r-sig-line { border-bottom: 1px solid #000; margin-top: 30px; display: flex; align-items: flex-end; }
       .receipt-print .r-sig-x { font-weight: 900; margin-right: 6px; }
       .receipt-print .r-sig-label { text-align: center; font-size: 13px !important; margin-top: 4px; }
+
+      /* ─── Business card ────────────────────────────────────────────────
+         A 3.5in x 2in card on whatever paper is loaded, with a hairline so it
+         can be cut out. Not sized to the page: a card printer and a sheet of
+         card stock both work, and nobody has to change the paper setting. */
+      body.print-card { width: auto; margin: 0; padding: 0; background: #fff; }
+      body.print-card > *:not(.card-print) { display: none !important; }
+      body.print-card .card-print {
+        display: block !important;
+        width: 3.5in; height: 2in; box-sizing: border-box;
+        margin: 0.25in; padding: 0.22in 0.26in;
+        border: 1px solid #999;
+        font-family: Georgia, 'Times New Roman', serif; color: #000;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        page-break-after: always;
+      }
+      body.print-card .card-print * { color: #000 !important; }
     }
+    /* Off-screen until printing; the same markup is previewed in the dialog. */
+    .card-print { display: none; }
+    .bc-store { font-size: 15pt; font-weight: 700; letter-spacing: .02em; }
+    .bc-rule { border-bottom: 1px solid #000; margin: 7pt 0 8pt; }
+    .bc-name { font-size: 13pt; font-weight: 700; }
+    .bc-title { font-size: 9.5pt; font-style: italic; margin-top: 1pt; }
+    .bc-contact { font-size: 8.5pt; line-height: 1.5; margin-top: 8pt; }
 
     /* ── Company switcher ─── */
     .company-switcher { position: relative; display: inline-block; }
@@ -503,7 +529,10 @@
             <button class="active" id="modesale" onclick="setMode('sale')">Sale</button>
             <button id="modereturn" onclick="setMode('return')" title="Find a receipt to reprint, email, or return against">Look Up</button>
           </div>
-          <button class="btn" style="background:var(--gold);color:#fff;padding:7px 16px;font-family:system-ui,sans-serif;font-size:.82rem;border-radius:8px" onclick="printDaySummary()">Print End of Day Report</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn" style="background:var(--gold);color:#fff;padding:7px 16px;font-family:system-ui,sans-serif;font-size:.82rem;border-radius:8px" onclick="printDaySummary()">Print End of Day Report</button>
+            <button class="btn" style="background:var(--rose);color:#fff;padding:7px 16px;font-family:system-ui,sans-serif;font-size:.82rem;border-radius:8px" onclick="openBusinessCards()">Print Business Card</button>
+          </div>
         </div>
         <!-- Sale mode: product search & grid -->
         <div id="saleView">
@@ -1596,8 +1625,27 @@
   </div>
 </div>
 
+<!-- Business cards: everyone on the roster, with the two things a card needs
+     that the roster doesn't already hold — a title and a direct number. Both
+     optional; the card simply leaves out what isn't filled in. -->
+<div class="modal-overlay" id="businessCardModal">
+  <div class="modal" style="max-width:760px">
+    <h2>Business Cards</h2>
+    <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:0 0 12px">
+      Add a title and a direct number if you want them on the card, then press Save.
+      The store name, address and email come from Settings.
+    </p>
+    <div id="businessCardBody" style="max-height:60vh;overflow:auto"></div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="document.getElementById('businessCardModal').classList.remove('show')">Close</button>
+    </div>
+  </div>
+</div>
+
 <!-- Hidden receipt for printing -->
 <div id="printReceipt" class="receipt-print" style="display:none"></div>
+<!-- Hidden business card for printing -->
+<div id="printCard" class="card-print"></div>
 
 <script>
 // ─── State ──────────────────────────────────────────────────────────────────
@@ -2742,6 +2790,117 @@ function showReceipt(tx, reprint) {
   document.getElementById('emailStatus').textContent = '';
   document.getElementById('sendInstructionsBtn').style.display = tx.type === 'return' ? 'none' : '';
   document.getElementById('receiptModal').classList.add('show');
+}
+
+// ─── Business cards ─────────────────────────────────────────────────────────
+// The roster already knows who works here; a card needs two more things, so
+// they are editable right here rather than buried in Settings. Both optional.
+let businessCardRoster = [];
+
+async function openBusinessCards() {
+  const modal = document.getElementById('businessCardModal');
+  const body = document.getElementById('businessCardBody');
+  body.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid)">Loading…</div>';
+  modal.classList.add('show');
+  try {
+    const resp = await fetch(`${API}/api/pos/employees`, { credentials: 'include' });
+    if (!resp.ok) throw new Error('Could not load the employee list');
+    businessCardRoster = ((await resp.json()).employees || [])
+      .filter(e => e.active)
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    renderBusinessCards();
+  } catch (err) {
+    body.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--danger)">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderBusinessCards() {
+  const body = document.getElementById('businessCardBody');
+  if (!businessCardRoster.length) {
+    body.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid)">Nobody active on the roster.</div>';
+    return;
+  }
+  body.innerHTML = `
+    <table class="report-table" style="font-size:.85rem">
+      <thead><tr><th>Name</th><th>Title</th><th>Phone</th><th></th></tr></thead>
+      <tbody>${businessCardRoster.map((e, i) => `
+        <tr>
+          <td style="font-weight:600;white-space:nowrap">${escapeHtml(e.name)}</td>
+          <td><input type="text" value="${escapeHtml(e.title || '')}" placeholder="e.g. Skin Therapist"
+                oninput="businessCardRoster[${i}].title = this.value; markCardDirty(${i})"
+                style="width:100%;min-width:150px;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem"></td>
+          <td><input type="tel" value="${escapeHtml(e.phone || '')}" placeholder="optional"
+                oninput="businessCardRoster[${i}].phone = this.value; markCardDirty(${i})"
+                style="width:100%;min-width:130px;padding:6px 8px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem"></td>
+          <td style="white-space:nowrap;text-align:right">
+            <button class="btn" id="bcSave${i}" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:5px 10px;font-size:.78rem"
+              onclick="saveBusinessCard(${i})">Save</button>
+            <button class="btn btn-confirm" style="padding:5px 10px;font-size:.78rem" onclick="printBusinessCard(${i})">Print</button>
+          </td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <div id="bcStatus" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin-top:8px"></div>`;
+}
+
+// Typing marks the row unsaved, so Print never quietly uses an older title.
+function markCardDirty(i) {
+  businessCardRoster[i]._dirty = true;
+  const btn = document.getElementById('bcSave' + i);
+  if (btn) { btn.style.background = 'var(--rose)'; btn.style.color = '#fff'; btn.textContent = 'Save'; }
+}
+
+async function saveBusinessCard(i) {
+  const e = businessCardRoster[i];
+  const status = document.getElementById('bcStatus');
+  try {
+    const resp = await fetch(`${API}/api/pos/employees/${e.id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ title: (e.title || '').trim(), phone: (e.phone || '').trim() }),
+    });
+    if (!resp.ok) throw new Error((await resp.json()).error || 'Could not save');
+    e._dirty = false;
+    const btn = document.getElementById('bcSave' + i);
+    if (btn) { btn.style.background = 'var(--cream)'; btn.style.color = 'var(--dark)'; btn.textContent = 'Saved'; }
+    status.style.color = 'var(--mid)';
+    status.textContent = `Saved ${e.name}.`;
+  } catch (err) {
+    status.style.color = 'var(--danger)';
+    status.textContent = err.message;
+  }
+}
+
+function businessCardHtml(e) {
+  const store = storeSettings.store_name || currentUser?.companyName || '';
+  const addr = formatStoreAddress(storeSettings);
+  const storeEmail = (storeSettings.store_email || '').trim();
+  const storePhone = (storeSettings.store_phone || '').trim();
+  const own = (e.phone || '').trim();
+  // Their own number first when they have one; the store's is the fallback, so
+  // a card always gives somebody a way to get in touch.
+  const lines = [
+    own ? formatPhone(own) : (storePhone ? formatPhone(storePhone) : ''),
+    storeEmail,
+    addr,
+  ].filter(Boolean);
+  return `
+    <div class="bc-store">${escapeHtml(store)}</div>
+    <div class="bc-rule"></div>
+    <div class="bc-name">${escapeHtml(e.name)}</div>
+    ${e.title ? `<div class="bc-title">${escapeHtml(e.title)}</div>` : ''}
+    <div class="bc-contact">${lines.map(l => escapeHtml(l)).join('<br>')}</div>`;
+}
+
+function printBusinessCard(i) {
+  const e = businessCardRoster[i];
+  if (!e) return;
+  if (e._dirty && !confirm('This row has unsaved changes. Print it as it looks now?')) return;
+  document.getElementById('printCard').innerHTML = businessCardHtml(e);
+  // A body class, because the print rules for the thermal roll would otherwise
+  // squeeze the card onto 80mm paper.
+  document.body.classList.add('print-card');
+  window.print();
+  setTimeout(() => document.body.classList.remove('print-card'), 500);
 }
 
 function printReceipt() {
