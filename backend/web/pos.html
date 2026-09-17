@@ -2874,12 +2874,11 @@ function businessCardHtml(e) {
   const store = storeSettings.store_name || currentUser?.companyName || '';
   const addr = formatStoreAddress(storeSettings);
   const storeEmail = (storeSettings.store_email || '').trim();
-  const storePhone = (storeSettings.store_phone || '').trim();
   const own = (e.phone || '').trim();
-  // Their own number first when they have one; the store's is the fallback, so
-  // a card always gives somebody a way to get in touch.
+  // Only their own number, never the store's — a card handed out personally
+  // shouldn't send people to the shop line unless that person chose to.
   const lines = [
-    own ? formatPhone(own) : (storePhone ? formatPhone(storePhone) : ''),
+    own ? formatPhone(own) : '',
     storeEmail,
     addr,
   ].filter(Boolean);
