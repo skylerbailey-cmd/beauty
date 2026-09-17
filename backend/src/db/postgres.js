@@ -1735,6 +1735,23 @@ async function employeeActivityForRange(userId, employeeName, startDate, endDate
   }));
 }
 
+// Hand-added amounts on a payday. Everyone's, or one person's by name — an
+// employee looking at their own report should see what has been added to or
+// taken off their cheque without needing the payroll section they can't open.
+async function adjustmentsForPayday(userId, payday, employeeName) {
+  const rows = (await query(`
+    SELECT a.id, a.amount, a.note, a.created_by, a.created_at::date::text AS created_on,
+      e.id AS employee_id, e.name AS employee_name, COALESCE(s.store_name, '') AS store_name
+    FROM pos_payroll_adjustments a
+    JOIN pos_employees e ON e.id = a.employee_id
+    LEFT JOIN pos_settings s ON s.user_id = e.user_id
+    WHERE a.user_id = ANY($1::text[]) AND a.payday = $2::date
+      AND ($3::text IS NULL OR LOWER(TRIM(e.name)) = LOWER(TRIM($3)))
+    ORDER BY e.name, a.created_at
+  `, [asCompanyIds(userId), payday, employeeName || null])).rows;
+  return rows.map(r => ({ ...r, amount: round2(r.amount) }));
+}
+
 // Mark one person paid on a payday, leaving it open for everybody else.
 async function setEmployeePayrollPaid(userId, payday, employeeId, paid, by) {
   if (paid) {
@@ -3007,6 +3024,7 @@ module.exports = {
   payrollForPayday,
   paidPaydays,
   setPayrollPaid,
+  adjustmentsForPayday,
   setEmployeePayrollPaid,
   holdChargebacksFor,
   setChargebackHold,

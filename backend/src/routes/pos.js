@@ -1573,6 +1573,18 @@ router.delete('/reports/payroll/adjustment/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Amounts added to, or taken off, a paycheck by hand. An employee sees their
+// own; an admin sees everyone's. Same rule as the rest of the report.
+router.post('/reports/my-adjustments', async (req, res) => {
+  const { name, pin, payday } = req.body;
+  const me = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
+  if (!me) return res.status(401).json({ error: 'Invalid name or PIN' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.json({ adjustments: [] });
+  const scope = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
+  const rows = await pgDb.adjustmentsForPayday(scope, payday, isAdmin(me) ? null : me.name);
+  res.json({ adjustments: rows, payday, role: roleOf(me) });
+});
+
 // What the "Charged Back" figure on the commission report is made of. Anyone
 // who can see the report can see this; an employee is shown only their own
 // rows, the same rule the personal report follows.
