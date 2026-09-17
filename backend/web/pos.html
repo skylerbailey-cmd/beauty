@@ -6488,6 +6488,10 @@ function renderEmployeeDetail(data) {
   const salesTotal = sum(data.sales, 'share');
   const returnsTotal = sum(data.returns, 'share');
   const cbTotal = sum(data.chargebacks, 'disputed_share');
+  // Disputes on sales outside these dates. Still held from pay, so they belong
+  // on the page — listed with the rest rather than in a box of their own.
+  const elsewhere = data.held_elsewhere || [];
+  const elsewhereTotal = sum(elsewhere, 'commission_at_risk');
 
   // A sale credited to more than one person only counts for this person's
   // slice, so say what that slice was — otherwise the receipt total and the
@@ -6524,25 +6528,39 @@ function renderEmployeeDetail(data) {
       <span style="font-weight:400;color:var(--mid);font-size:.82rem">· ${count} · </span>
       <span style="color:${colour};font-weight:700">$${money(amount)}</span></h3>`;
 
-  const cbTable = data.chargebacks.length ? `
+  // Every dispute in one place. Splitting them into a box above the tables and
+  // a table below meant two headings about the same thing in two different
+  // places; they differ only in whether the sale falls inside these dates, and
+  // that is a row-level fact, not a reason for a second section.
+  const cbRow = (c, outside) => `
+    <tr style="${outside ? 'background:var(--cream)' : ''}">
+      <td style="font-family:monospace">
+        <button onclick="findDisputedSale('${escapeHtml(c.receipt_number)}', '${escapeHtml(c.sale_date)}')"
+          style="border:none;background:none;padding:0;font:inherit;color:var(--rose);cursor:pointer;text-decoration:underline">${escapeHtml(c.receipt_number)}</button>
+      </td>
+      <td>${escapeHtml(c.sale_date)}${outside ? '<br><span style="font-size:.72rem;color:var(--mid)">outside these dates</span>' : ''}</td>
+      <td>${escapeHtml(c.customer_name || '-')}</td>
+      <td>${c.card_last4 ? '****' + escapeHtml(c.card_last4) : '-'}</td>
+      <td>${escapeHtml(c.store_name || '-')}</td>
+      <td>$${money(Number(c.disputed_share))}</td>
+      <td style="color:var(--danger);font-weight:600">−$${money(Number(c.commission_at_risk))}</td>
+      <td style="text-transform:capitalize">${escapeHtml(c.status)}</td>
+      <td>${c.withheld_payday ? escapeHtml(c.withheld_payday) : '<span style="color:var(--mid)">not yet</span>'}</td>
+    </tr>`;
+
+  const allCbs = data.chargebacks.concat(elsewhere);
+  const cbTable = allCbs.length ? `
     <table class="report-table" style="font-size:.82rem">
       <thead><tr><th>Receipt</th><th>Sold</th><th>Customer</th><th>Card</th><th>Store</th>
         <th>Disputed $</th><th>Commission</th><th>Status</th><th>Held back</th></tr></thead>
-      <tbody>${data.chargebacks.map(c => `
-        <tr>
-          <td style="font-family:monospace">
-            <button onclick="findDisputedSale('${escapeHtml(c.receipt_number)}', '${escapeHtml(c.sale_date)}')"
-              style="border:none;background:none;padding:0;font:inherit;color:var(--rose);cursor:pointer;text-decoration:underline">${escapeHtml(c.receipt_number)}</button>
-          </td>
-          <td>${escapeHtml(c.sale_date)}</td>
-          <td>${escapeHtml(c.customer_name || '-')}</td>
-          <td>${c.card_last4 ? '****' + escapeHtml(c.card_last4) : '-'}</td>
-          <td>${escapeHtml(c.store_name || '-')}</td>
-          <td>$${money(Number(c.disputed_share))}</td>
-          <td style="color:var(--danger);font-weight:600">−$${money(Number(c.commission_at_risk))}</td>
-          <td style="text-transform:capitalize">${escapeHtml(c.status)}</td>
-          <td>${c.withheld_payday ? escapeHtml(c.withheld_payday) : '<span style="color:var(--mid)">not yet</span>'}</td>
-        </tr>`).join('')}</tbody>
+      <tbody>
+        ${data.chargebacks.map(c => cbRow(c, false)).join('')}
+        ${elsewhere.length ? `
+          <tr><td colspan="9" style="background:var(--cream);font-size:.78rem;color:var(--mid);padding-top:8px">
+            On sales outside these dates — held from pay all the same, so not counted in the figures at the top.
+          </td></tr>` : ''}
+        ${elsewhere.map(c => cbRow(c, true)).join('')}
+      </tbody>
     </table>
     <div style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:6px">
       To change a status or mark one as withheld, click the Charged Back figure in the report.
@@ -6552,25 +6570,6 @@ function renderEmployeeDetail(data) {
   // Disputes on sales outside the dates on screen. They don't belong in this
   // period's figures — they'd stop the columns adding up — but the money is
   // being kept back right now, so it's listed separately rather than nowhere.
-  const elsewhere = data.held_elsewhere || [];
-  const elsewhereTotal = sum(elsewhere, 'commission_at_risk');
-  const elsewhereBlock = elsewhere.length ? `
-    <div style="font-family:system-ui,sans-serif;font-size:.82rem;border:1.5px solid var(--danger);border-radius:8px;padding:10px 12px;margin-top:14px">
-      <b style="color:var(--danger)">Also being held from pay — $${money(elsewhereTotal)}</b>
-      <div style="color:var(--mid);margin:3px 0 7px">
-        On ${elsewhere.length} sale${elsewhere.length === 1 ? '' : 's'} outside these dates. Open disputes come off the next paycheck
-        whenever the sale happened, so this is not in the figures above.
-      </div>
-      ${elsewhere.map(c => `
-        <div style="display:flex;justify-content:space-between;gap:10px;padding:3px 0;border-top:1px dashed var(--border)">
-          <span>
-            <button onclick="findDisputedSale('${escapeHtml(c.receipt_number)}', '${escapeHtml(c.sale_date)}')"
-              style="border:none;background:none;padding:0;font:inherit;font-family:monospace;color:var(--rose);cursor:pointer;text-decoration:underline">${escapeHtml(c.receipt_number)}</button>
-            <span style="color:var(--mid)"> · sold ${escapeHtml(c.sale_date)} · ${escapeHtml(c.store_name || '')} · ${escapeHtml(c.status)}</span>
-          </span>
-          <span style="color:var(--danger);font-weight:600">−$${money(Number(c.commission_at_risk))}</span>
-        </div>`).join('')}
-    </div>` : '';
 
   return `
     <div style="font-family:system-ui,sans-serif;font-size:.85rem;background:var(--cream);padding:10px 12px;border-radius:8px">
@@ -6580,12 +6579,15 @@ function renderEmployeeDetail(data) {
       ${cbTotal ? `· <span style="color:var(--danger)">−$${money(cbTotal)} disputed</span>
         → <b>$${money(salesTotal - returnsTotal - cbTotal)}</b> counts toward commission` : ''}
     </div>
-    ${elsewhereBlock}
     ${head('Sales', `${data.sales.length} sale${data.sales.length === 1 ? '' : 's'}`, salesTotal, 'var(--dark)')}
     ${txTable(data.sales, 'sale')}
     ${head('Returns', `${data.returns.length} return${data.returns.length === 1 ? '' : 's'}`, returnsTotal, 'var(--dark)')}
     ${txTable(data.returns, 'return')}
-    ${head('Chargebacks', `${data.chargebacks.length} dispute${data.chargebacks.length === 1 ? '' : 's'}`, cbTotal, 'var(--danger)')}
+    ${head('Chargebacks', `${allCbs.length} dispute${allCbs.length === 1 ? '' : 's'}`,
+        cbTotal + elsewhereTotal, 'var(--danger)')}
+    ${elsewhere.length ? `<div style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:-4px 0 6px">
+        $${money(elsewhereTotal)} of that is on sales outside these dates, so it is held from pay but not in the figures at the top.
+      </div>` : ''}
     ${cbTable}`;
 }
 
