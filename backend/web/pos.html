@@ -6325,7 +6325,7 @@ async function loadPendingChargebacks() {
     }
     if (mine !== pendingCbRequest) return;
     put(renderPendingChargebacks(pending, alreadyHeld, data.role === 'admin')
-      + renderReleased(released) + renderOwnAdjustments(adjustments));
+      + renderReleased(released));
     renderPaySummary(pending, released, adjustments);
   } catch (err) {
     // Say so rather than leaving a blank where a deduction should be — an
@@ -6362,39 +6362,14 @@ function renderPaySummary(pending, released, adjustments) {
       line('Commission earned', `$${money(earned)}`, { top: true })
       + (held ? line('Held from pay — open disputes below', `−$${money(held)}`, { colour: 'var(--danger)' }) : '')
       + (back ? line('Released — disputes won, held back earlier', `+$${money(back)}`, { colour: 'var(--success)' }) : '')
-      + (adj ? line('Added by hand — listed below', `${adj < 0 ? '−' : '+'}$${money(Math.abs(adj))}`,
-          { colour: adj < 0 ? 'var(--danger)' : 'var(--success)' }) : '')
+      // One line each, labelled with whatever it was entered for — "car" says
+      // more than "added by hand", and there is no second table to look at.
+      + (adjustments || []).map(a => line(
+          escapeHtml(a.note || 'Adjustment'),
+          `${Number(a.amount) < 0 ? '−' : '+'}$${money(Math.abs(Number(a.amount)))}`,
+          { colour: Number(a.amount) < 0 ? 'var(--danger)' : 'var(--success)' })).join('')
       + line('Commission on the upcoming paycheck', `$${money(earned - held + back + adj)}`, { strong: true });
   }
-}
-
-// Amounts somebody put on the cheque by hand — a bonus, an advance, a
-// correction. Shown here because payroll is admin-only, and this is money
-// going on or off their pay just as much as a dispute is.
-function renderOwnAdjustments(rows) {
-  if (!rows || !rows.length) return '';
-  const total = rows.reduce((s, a) => s + Number(a.amount || 0), 0);
-  return `
-    <div style="margin-top:16px">
-      <h3 style="margin:0 0 2px;font-size:.95rem">Added to this paycheck by hand
-        <span style="color:${total < 0 ? 'var(--danger)' : 'var(--success)'}">${total < 0 ? '−' : '+'}$${money(Math.abs(total))}</span></h3>
-      <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:0 0 8px">
-        Bonuses, advances and corrections entered against this paycheck. Nothing to do with sales or disputes.
-      </p>
-      <table class="report-table" style="font-size:.82rem">
-        <thead><tr><th>Employee</th><th>Store</th><th>What for</th><th>Added on</th><th>By</th><th>Amount</th></tr></thead>
-        <tbody>${rows.map(a => `
-          <tr>
-            <td style="font-weight:600">${escapeHtml(a.employee_name)}</td>
-            <td>${escapeHtml(a.store_name || '-')}</td>
-            <td>${escapeHtml(a.note || 'Adjustment')}</td>
-            <td>${escapeHtml(a.created_on || '-')}</td>
-            <td>${escapeHtml(a.created_by || '-')}</td>
-            <td style="font-weight:600;color:${Number(a.amount) < 0 ? 'var(--danger)' : 'var(--success)'}">${Number(a.amount) < 0 ? '−' : '+'}$${money(Math.abs(Number(a.amount)))}</td>
-          </tr>`).join('')}
-        </tbody>
-      </table>
-    </div>`;
 }
 
 // Disputes won after the money had already been taken. The employee is owed it
