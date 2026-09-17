@@ -6428,8 +6428,11 @@ function renderPendingChargebacks(rows, alreadyHeld, isManager) {
         ${heldTotal ? `<span style="font-weight:400;color:var(--mid);font-size:.82rem">· $${money(heldTotal)} already held on an earlier one</span>` : ''}</h3>
       <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:0 0 8px">
         Not counted as lost, so they are not in Charged Back above and the commission there is what was earned.
-        One that has not been held yet comes off the next paycheck; one already held stays listed but is not taken
-        again. Either way the money is kept until the dispute is won or lost.
+        ${!total
+          ? 'These have already been held from an earlier paycheck and are not taken again — they stay listed because the money is kept until the dispute is won or lost.'
+          : (heldTotal
+            ? 'One that has not been held yet comes off the next paycheck; one already held stays listed but is not taken again. Either way the money is kept until the dispute is won or lost.'
+            : 'Each one comes off the next paycheck, and the money is kept until the dispute is won or lost.')}
       </p>
       <table class="report-table" style="font-size:.82rem">
         <thead><tr>
@@ -6461,10 +6464,10 @@ function renderPendingChargebacks(rows, alreadyHeld, isManager) {
               </select></td>` : ''}
           </tr>`).join('')}
         </tbody>
-        <tfoot><tr style="border-top:2px solid var(--border);font-weight:700;background:var(--cream)">
+        ${total ? `<tfoot><tr style="border-top:2px solid var(--border);font-weight:700;background:var(--cream)">
           <td colspan="8">Still to come off the next paycheck</td>
           <td style="color:var(--danger)">−$${money(total)}</td>${isManager ? '<td></td>' : ''}
-        </tr></tfoot>
+        </tr></tfoot>` : ''}
       </table>
     </div>`;
 }
