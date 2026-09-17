@@ -7005,7 +7005,10 @@ async function loadPayroll() {
 
     const storeLine = e => `
       <div style="display:flex;justify-content:space-between;font-weight:600;margin-top:4px">
-        <span>${e.store_name ? detailLink(e.store_name, e.employee_name, e.store_name) + ' ' : ''}<span style="font-weight:400;color:var(--mid)">· ${e.commission_rate}% of $${money(e.sales_total)}${e.sale_count ? ` over ${e.sale_count} sale${e.sale_count === 1 ? '' : 's'}` : ''}</span></span>
+        <span>${e.store_name ? detailLink(e.store_name, e.employee_name, e.store_name) + ' ' : ''}<span style="font-weight:400;color:var(--mid)">· ${e.commission_rate}% of $${money(e.sales_total)}${e.sale_count ? ` over ${e.sale_count} sale${e.sale_count === 1 ? '' : 's'}` : ''}${
+          // Said quietly rather than as a deduction: the sale came back, so it
+          // is out of what they sold, not taken off what they are owed.
+          Number(e.returns_netted) ? `, after $${money(e.returns_netted)} returned` : ''}</span></span>
         <span>$${money(e.commission_earned)}</span>
       </div>
       ${e.adjustments.filter(a => a.kind !== 'held').map(a => {

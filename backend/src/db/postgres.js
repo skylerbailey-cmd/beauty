@@ -1369,7 +1369,8 @@ async function payrollForPayday(userId, payday, settings) {
     if (!byEmp.has(id)) byEmp.set(id, {
       employee_id: id, employee_name: name, commission_rate: Number(rate) || 0,
       company_id: companyId || null, store_name: storeNames.get(companyId) || '',
-      sales_total: 0, sale_count: 0, commission_earned: 0, adjustments: [], total: 0,
+      sales_total: 0, sale_count: 0, returns_netted: 0,
+      commission_earned: 0, adjustments: [], total: 0,
     });
     return byEmp.get(id);
   };
@@ -1381,9 +1382,16 @@ async function payrollForPayday(userId, payday, settings) {
     r.commission_earned = round2(r.sales_total * r.commission_rate / 100);
   }
 
-  // A return reverses the commission on the paycheck paying its sale. If that
-  // paycheck is still open the deduction goes on it; if it has been paid the
-  // money is already out, so landsOn moves the deduction to the next open one.
+  // A return reverses the commission on the paycheck paying its sale.
+  //
+  // When that is THIS paycheck, it simply comes out of what they sold — the
+  // sale never really stood, so there is nothing to deduct and a red line
+  // saying otherwise reads as money being taken off their pay for something
+  // they were never paid for.
+  //
+  // When the sale's paycheck has already gone out, the money is with them and
+  // the only way back is off a later cheque. That one is a real deduction and
+  // stays on the page, saying which cheque it should have come off.
   for (const rt of returns) {
     const commission = round2(Number(rt.share) * (Number(rt.commission_rate) || 0) / 100);
     if (commission === 0) continue;
@@ -1391,11 +1399,17 @@ async function payrollForPayday(userId, payday, settings) {
     const target = landsOn(rt.sale_date, rt.return_date, rt.employee_id);
     if (!target || target !== payday) continue;
     const r = row(rt.employee_id, rt.employee_name, rt.commission_rate, rt.company_id);
+
+    if (naturalPayday === payday) {
+      r.sales_total = round2(r.sales_total - Number(rt.share));
+      r.returns_netted = round2((r.returns_netted || 0) + Number(rt.share));
+      r.commission_earned = round2(r.sales_total * r.commission_rate / 100);
+      continue;
+    }
+
     r.adjustments.push({
       kind: 'return', receipt: rt.receipt_number, amount: -commission,
-      note: naturalPayday === payday
-        ? `returned ${rt.return_date} against the ${rt.sale_date} sale`
-        : `returned ${rt.return_date} against the ${rt.sale_date} sale — already paid on ${naturalPayday}`,
+      note: `returned ${rt.return_date} against the ${rt.sale_date} sale — already paid on ${naturalPayday}`,
     });
   }
 
