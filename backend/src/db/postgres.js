@@ -413,6 +413,22 @@ async function initSchema() {
     PRIMARY KEY (chargeback_id, employee_id)
   )`);
   await migrate('CREATE INDEX IF NOT EXISTS idx_pg_cb_holds_emp ON pos_chargeback_holds(employee_id)');
+  // Who decided this was held. A cheque going out records that IT took the
+  // money, so that cheque shows the deduction. A person ticking "mark held"
+  // means it was taken care of somewhere else — so nothing should come off any
+  // cheque, it is only shown as still being kept back.
+  await migrate('ALTER TABLE pos_chargeback_holds ADD COLUMN IF NOT EXISTS manual BOOLEAN DEFAULT FALSE');
+  // Holds recorded before that column existed. A cheque only records one as it
+  // closes, so a hold against a payday that never closed for that person can
+  // only have been ticked by hand — which is exactly the ones that should stop
+  // deducting. Runs once: after it, nothing is left defaulted-and-unclassified.
+  await migrate(`
+    UPDATE pos_chargeback_holds h SET manual = TRUE
+    WHERE COALESCE(h.manual, FALSE) = FALSE
+      AND h.held_payday IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM pos_payroll_runs r WHERE r.payday = h.held_payday)
+      AND NOT EXISTS (SELECT 1 FROM pos_payroll_employee_runs er
+                      WHERE er.payday = h.held_payday AND er.employee_id = h.employee_id)`);
 
   // Carry over the whole-dispute flags that came before this table, giving
   // every person on the sale the same hold the dispute already carried.
@@ -1349,6 +1365,7 @@ async function payrollForPayday(userId, payday, settings) {
       -- people, so paying one of them must not settle it for the others.
       h.held_payday::text AS withheld_payday,
       h.released_payday::text AS released_payday,
+      COALESCE(h.manual, FALSE) AS hold_is_manual,
       e.id AS employee_id, e.name AS employee_name, e.commission_rate,
       e.user_id AS company_id, ${EMP_SHARE} AS share,
       -- Only the disputed share of the sale affects commission.
@@ -1428,6 +1445,20 @@ async function payrollForPayday(userId, payday, settings) {
 
     if (d.withheld_payday) {
       const heldChequeWentOut = !!closedFor(d.employee_id, d.withheld_payday);
+
+      // Marked by hand: the money was dealt with elsewhere, so no cheque takes
+      // it. Shown on whichever one is open, at zero, until the dispute closes.
+      if (d.hold_is_manual) {
+        if (d.status === 'pending' && openPayday(d.sale_date, d.employee_id) === payday) {
+          r().adjustments.push({
+            kind: 'held', chargeback_id: d.chargeback_id, employee_id: d.employee_id,
+            pinned: true, receipt: d.receipt_number,
+            amount: 0, held_amount: commission,
+            note: `dispute still open on the ${d.sale_date} sale${card} — recorded as already held on ${d.withheld_payday}`,
+          });
+        }
+        continue;
+      }
 
       // Won, and the cheque that held it never actually went out: nothing was
       // taken, so there is nothing to give back. Just stop holding it.
@@ -1727,9 +1758,10 @@ async function holdChargebacksFor(pairs, payday, by) {
   let n = 0;
   for (const { chargeback_id, employee_id } of pairs) {
     const r = await query(
-      `INSERT INTO pos_chargeback_holds (chargeback_id, employee_id, held_payday, created_by)
-       VALUES ($1, $2, $3::date, $4)
-       ON CONFLICT (chargeback_id, employee_id) DO UPDATE SET held_payday = EXCLUDED.held_payday
+      `INSERT INTO pos_chargeback_holds (chargeback_id, employee_id, held_payday, created_by, manual)
+       VALUES ($1, $2, $3::date, $4, FALSE)
+       ON CONFLICT (chargeback_id, employee_id)
+         DO UPDATE SET held_payday = EXCLUDED.held_payday, manual = FALSE
        WHERE pos_chargeback_holds.held_payday IS NULL`,
       [chargeback_id, employee_id, payday, by || '']);
     n += r.rowCount;
@@ -1759,10 +1791,10 @@ async function setChargebackHold(chargebackId, employeeId, payday, by) {
     return { ok: true, held: false };
   }
   await query(
-    `INSERT INTO pos_chargeback_holds (chargeback_id, employee_id, held_payday, created_by)
-     VALUES ($1, $2, $3::date, $4)
+    `INSERT INTO pos_chargeback_holds (chargeback_id, employee_id, held_payday, created_by, manual)
+     VALUES ($1, $2, $3::date, $4, TRUE)
      ON CONFLICT (chargeback_id, employee_id)
-       DO UPDATE SET held_payday = EXCLUDED.held_payday, created_by = EXCLUDED.created_by`,
+       DO UPDATE SET held_payday = EXCLUDED.held_payday, created_by = EXCLUDED.created_by, manual = TRUE`,
     [chargebackId, employeeId, payday, by || '']);
   return { ok: true, held: true };
 }
@@ -1835,11 +1867,11 @@ async function setChargebackWithheld(id, userId, payday, by) {
   // Ticked by hand, so it applies to everyone credited on the sale — a manager
   // saying "this came off the cheque" means the whole dispute, not one share.
   await query(
-    `INSERT INTO pos_chargeback_holds (chargeback_id, employee_id, held_payday, created_by)
-     SELECT $1, te.employee_id, $2::date, $3
+    `INSERT INTO pos_chargeback_holds (chargeback_id, employee_id, held_payday, created_by, manual)
+     SELECT $1, te.employee_id, $2::date, $3, TRUE
      FROM pos_transaction_employees te WHERE te.transaction_id = $4
      ON CONFLICT (chargeback_id, employee_id)
-       DO UPDATE SET held_payday = EXCLUDED.held_payday, created_by = EXCLUDED.created_by`,
+       DO UPDATE SET held_payday = EXCLUDED.held_payday, created_by = EXCLUDED.created_by, manual = TRUE`,
     [id, payday, by || '', cb.transaction_id]);
   return true;
 }
