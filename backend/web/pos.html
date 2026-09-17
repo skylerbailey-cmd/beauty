@@ -6971,6 +6971,18 @@ async function loadPayroll() {
     }
     const grand = rows.reduce((s, e) => s + e.total, 0);
 
+    // Disputes whose money came off an earlier cheque. They belong on the
+    // paycheck — the employee is still short and still owed an explanation —
+    // but not among its deductions, where a run of red lines reads as money
+    // coming off this one when none of it is.
+    const stillHeld = [];
+    for (const e of rows) {
+      for (const a of e.adjustments) {
+        if (a.kind === 'held') stillHeld.push({ ...a, who: e.employee_name, store: e.store_name });
+      }
+    }
+    const stillHeldTotal = stillHeld.reduce((s, a) => s + (Number(a.held_amount) || 0), 0);
+
     // Each store writes its own cheques, so the grand total is rarely the
     // number anyone needs on its own — what leaves each company's account is.
     const byStore = [];
@@ -6996,7 +7008,7 @@ async function loadPayroll() {
         <span>${e.store_name ? detailLink(e.store_name, e.employee_name, e.store_name) + ' ' : ''}<span style="font-weight:400;color:var(--mid)">· ${e.commission_rate}% of $${money(e.sales_total)}${e.sale_count ? ` over ${e.sale_count} sale${e.sale_count === 1 ? '' : 's'}` : ''}</span></span>
         <span>$${money(e.commission_earned)}</span>
       </div>
-      ${e.adjustments.map(a => {
+      ${e.adjustments.filter(a => a.kind !== 'held').map(a => {
         // A 'held' line is a note, not a movement: the money came off an
         // earlier cheque and must not come off again. Grey, with the amount in
         // brackets, so it cannot be read as another deduction.
@@ -7065,6 +7077,21 @@ async function loadPayroll() {
           </div>`).join('') : '')
       + `<div style="display:flex;justify-content:space-between;font-family:system-ui,sans-serif;font-weight:700;font-size:.95rem;padding-top:10px;${byStore.length > 1 ? 'border-top:1px solid var(--border);margin-top:6px' : ''}">
            <span>Total for this paycheck${byStore.length > 1 ? ' <span style="font-weight:400;color:var(--mid);font-size:.82rem">· both companies</span>' : ''}</span><span>$${money(grand)}</span></div>`
+      + (stillHeld.length ? `
+          <div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--border);font-family:system-ui,sans-serif">
+            <div style="font-size:.85rem;font-weight:700">Still held from earlier paychecks
+              <span style="font-weight:400;color:var(--mid)">· $${money(stillHeldTotal)}</span></div>
+            <div style="font-size:.78rem;color:var(--mid);margin:2px 0 6px">
+              Already taken off a previous paycheck and not deducted again here. Listed because the dispute
+              is still open and the money is still being kept back — it is not part of the total above.
+            </div>
+            ${stillHeld.map(a => `
+              <div style="display:flex;justify-content:space-between;font-size:.8rem;color:var(--mid);padding:2px 0 2px 12px">
+                <span>${escapeHtml(a.who)}${a.store ? ' — ' + escapeHtml(a.store) : ''}
+                  <span style="color:var(--mid)">· ${a.receipt ? '#' + escapeHtml(String(a.receipt)) + ' — ' : ''}${escapeHtml(a.note)}</span></span>
+                <span style="white-space:nowrap">($${money(Number(a.held_amount) || 0)} held)</span>
+              </div>`).join('')}
+          </div>` : '')
       + (!data.paid && data.outstanding_count != null && data.outstanding_count < rows.length ? `
           <div style="display:flex;justify-content:space-between;font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid);padding-top:4px">
             <span>Still to hand out · ${data.outstanding_count} of ${rows.length} not yet paid</span>
