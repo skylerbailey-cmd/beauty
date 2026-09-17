@@ -3277,12 +3277,17 @@ async function addEmployee() {
   if (!name || !pin) return alert('Name and PIN required');
   if (pin.length < 4) return alert('PIN must be at least 4 digits');
 
-  await fetch(`${API}/api/pos/employees`, {
+  const resp = await fetch(`${API}/api/pos/employees`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({ name, pin, role, commission_rate }),
   });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    alert(err.error || 'Could not add this employee.');
+    return;   // leave the fields filled in so the PIN can just be changed
+  }
   document.getElementById('newEmpName').value = '';
   document.getElementById('newEmpPin').value = '';
   document.getElementById('newEmpCommission').value = '';
@@ -3346,27 +3351,38 @@ async function saveEmpEdit() {
     }
   }
 
-  await fetch(`${API}/api/pos/employees/${id}`, {
+  // The reply has to be read. A PIN already in use comes back as a refusal
+  // with the reason — throwing it away closed the dialog on an edit that never
+  // happened, which looks exactly like saving being broken.
+  const resp = await fetch(`${API}/api/pos/employees/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
     body: JSON.stringify({ name, pin, role, commission_rate }),
   });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    alert(err.error || 'Could not save this employee.');
+    return;   // dialog stays open, with what was typed still in it
+  }
 
-  if (planType === 'daily_threshold') {
-    await fetch(`${API}/api/pos/employees/${id}/commission-plan`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'include',
-      body: JSON.stringify({
-        plan_type: 'daily_threshold',
-        base_rate: parseFloat(document.getElementById('empEditTierBase').value),
-        tier_rate: parseFloat(document.getElementById('empEditTierRate').value),
-        tier_threshold: parseFloat(document.getElementById('empEditTierThreshold').value),
-      }),
-    });
-  } else {
-    await fetch(`${API}/api/pos/employees/${id}/commission-plan`, { method: 'DELETE', credentials: 'include' });
+  const planResp = planType === 'daily_threshold'
+    ? await fetch(`${API}/api/pos/employees/${id}/commission-plan`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          plan_type: 'daily_threshold',
+          base_rate: parseFloat(document.getElementById('empEditTierBase').value),
+          tier_rate: parseFloat(document.getElementById('empEditTierRate').value),
+          tier_threshold: parseFloat(document.getElementById('empEditTierThreshold').value),
+        }),
+      })
+    : await fetch(`${API}/api/pos/employees/${id}/commission-plan`, { method: 'DELETE', credentials: 'include' });
+  if (!planResp.ok) {
+    const err = await planResp.json().catch(() => ({}));
+    // The name, PIN and rate did save; only the plan didn't, so say which.
+    alert(`Saved, but the commission plan did not: ${err.error || 'unknown error'}`);
   }
 
   closeEmpEdit();
