@@ -675,6 +675,9 @@ async function updateEmployee(id, fields) {
 // looking up by PIN alone can return a different employee who happens to share
 // that PIN — and a caller that then compares names would reject someone who
 // typed their own PIN correctly. Matching both together picks the right row.
+// Two people may share a PIN, so the name is what separates them. Asked without
+// one, this only answers when a single person has that PIN — guessing between
+// two would sign somebody in as a colleague and credit their sales to them.
 async function verifyEmployeePin(pin, userId, name) {
   const rows = (await query(
     'SELECT * FROM pos_employees WHERE pin = $1 AND user_id = $2 AND active = 1 ORDER BY id',
@@ -682,7 +685,7 @@ async function verifyEmployeePin(pin, userId, name) {
   )).rows;
   if (!rows.length) return undefined;
   const wanted = String(name || '').trim().toLowerCase();
-  if (!wanted) return rows[0];
+  if (!wanted) return rows.length === 1 ? rows[0] : undefined;
   return rows.find(e => String(e.name || '').trim().toLowerCase() === wanted);
 }
 
