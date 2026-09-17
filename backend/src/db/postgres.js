@@ -1422,7 +1422,8 @@ async function payrollForPayday(userId, payday, settings) {
       // Otherwise the cheque it came off still has to explain its own figure.
       if (d.withheld_payday === payday) {
         r().adjustments.push({
-          kind: 'withheld', chargeback_id: d.chargeback_id, receipt: d.receipt_number,
+          kind: 'withheld', chargeback_id: d.chargeback_id, employee_id: d.employee_id,
+          pinned: true, receipt: d.receipt_number,
           amount: -commission, note: `dispute on the ${d.sale_date} sale${card} — held back`,
         });
       }
@@ -1452,7 +1453,8 @@ async function payrollForPayday(userId, payday, settings) {
       if (d.status === 'pending' && heldChequeWentOut
           && openFrom(d.withheld_payday, d.employee_id) === payday) {
         r().adjustments.push({
-          kind: 'held', chargeback_id: d.chargeback_id, receipt: d.receipt_number,
+          kind: 'held', chargeback_id: d.chargeback_id, employee_id: d.employee_id,
+          pinned: true, receipt: d.receipt_number,
           amount: 0, held_amount: commission,
           note: `dispute still open on the ${d.sale_date} sale${card} — already held back on ${d.withheld_payday}`,
         });
@@ -1467,7 +1469,8 @@ async function payrollForPayday(userId, payday, settings) {
     if (openPayday(d.sale_date, d.employee_id) !== payday) continue;
     r().adjustments.push({
       kind: d.status === 'lost' ? 'lost' : 'withheld',
-      chargeback_id: d.chargeback_id, receipt: d.receipt_number, amount: -commission,
+      chargeback_id: d.chargeback_id, employee_id: d.employee_id, pinned: false,
+      receipt: d.receipt_number, amount: -commission,
       note: d.status === 'lost'
         ? `dispute lost${d.closed_date ? ' ' + d.closed_date : ''} on the ${d.sale_date} sale${card}`
         : `dispute open on the ${d.sale_date} sale${card}`,
@@ -1731,6 +1734,23 @@ async function releaseChargebacksFor(pairs, payday) {
     n += r.rowCount;
   }
   return n;
+}
+
+// Record, or undo, one person's hold on one dispute — the control that sits on
+// the payroll line itself.
+async function setChargebackHold(chargebackId, employeeId, payday, by) {
+  if (!payday) {
+    await query('DELETE FROM pos_chargeback_holds WHERE chargeback_id = $1 AND employee_id = $2',
+      [chargebackId, employeeId]);
+    return { ok: true, held: false };
+  }
+  await query(
+    `INSERT INTO pos_chargeback_holds (chargeback_id, employee_id, held_payday, created_by)
+     VALUES ($1, $2, $3::date, $4)
+     ON CONFLICT (chargeback_id, employee_id)
+       DO UPDATE SET held_payday = EXCLUDED.held_payday, created_by = EXCLUDED.created_by`,
+    [chargebackId, employeeId, payday, by || '']);
+  return { ok: true, held: true };
 }
 
 // Undo whatever a paycheck recorded, for one person or for everyone on it.
@@ -2943,6 +2963,7 @@ module.exports = {
   setPayrollPaid,
   setEmployeePayrollPaid,
   holdChargebacksFor,
+  setChargebackHold,
   releaseChargebacksFor,
   clearHoldsForPayday,
   addPayrollAdjustment,

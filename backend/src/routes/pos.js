@@ -1507,6 +1507,19 @@ async function recordChequeEffects(run, payday, by, onlyEmployeeId) {
   };
 }
 
+// Record that a dispute was already taken off this paycheck — or undo that.
+// Sits on the payroll line so it can be answered where the question is asked,
+// rather than through the chargeback drill-down in the commission report.
+router.post('/reports/payroll/hold', async (req, res) => {
+  const { name, pin, payday, chargeback_id, employee_id, held } = req.body;
+  const me = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
+  if (!isAdmin(me)) return res.status(403).json({ error: 'Only an admin can change a chargeback hold.' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.status(400).json({ error: 'Pick a payday.' });
+  const cbId = parseInt(chargeback_id), empId = parseInt(employee_id);
+  if (!cbId || !empId) return res.status(400).json({ error: 'Which dispute, and whose share?' });
+  res.json(await pgDb.setChargebackHold(cbId, empId, held ? payday : null, me.name));
+});
+
 // Pay one person on a payday without closing it for anyone else. Their figures
 // settle exactly as they would if the whole payday had gone out — the disputes
 // their share was taken for are pinned, a won one is recorded as paid back —

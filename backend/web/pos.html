@@ -6757,6 +6757,14 @@ async function payrollAction(path, body, method, skipReload) {
   } catch (err) { alert(err.message); }
 }
 
+// Records a dispute as already withheld from the paycheck on screen, so later
+// cheques show it as a standing hold rather than taking it again.
+function setChargebackHeld(chargebackId, employeeId, held) {
+  const payday = document.getElementById('payrollPayday').value;
+  if (held && !confirm(`Record this as already held from the ${fmtPayday(payday)} paycheck?\n\nIt stops coming off later paychecks and is shown on them as still in dispute.`)) return;
+  payrollAction('hold', { payday, chargeback_id: chargebackId, employee_id: employeeId, held });
+}
+
 // One person can hold a row at each store, so this takes every id on the row.
 function setEmployeePaid(ids, paid) {
   const payday = document.getElementById('payrollPayday').value;
@@ -6987,9 +6995,19 @@ async function loadPayroll() {
         const figure = informational
           ? `($${money(Math.abs(Number(a.held_amount) || 0))} held)`
           : `${a.amount < 0 ? '−' : '+'}$${money(Math.abs(a.amount))}`;
+        // A dispute line can be marked as already taken off this cheque, so it
+        // stops chasing later ones. Not offered on a closed payday, which has
+        // recorded its holds already.
+        const holdable = !data.paid && a.chargeback_id && a.employee_id
+          && (a.kind === 'withheld' || a.kind === 'lost');
+        const holdBtn = !holdable ? '' : (a.pinned
+          ? ` <button title="Recorded as coming off this paycheck — undo" onclick="setChargebackHeld(${a.chargeback_id}, ${a.employee_id}, false)"
+               style="border:none;background:none;color:var(--mid);cursor:pointer;font-size:.72rem;text-decoration:underline;padding:0 2px">held ✓ undo</button>`
+          : ` <button title="Record that this came off this paycheck, so it stops coming off later ones" onclick="setChargebackHeld(${a.chargeback_id}, ${a.employee_id}, true)"
+               style="border:none;background:none;color:var(--rose);cursor:pointer;font-size:.72rem;text-decoration:underline;padding:0 2px">mark held</button>`);
         return `
         <div style="display:flex;justify-content:space-between;padding-left:14px;color:${colour};font-size:.8rem;margin-top:3px">
-          <span>${a.receipt ? '#' + escapeHtml(String(a.receipt)) + ' — ' : ''}${escapeHtml(a.note)}${
+          <span>${a.receipt ? '#' + escapeHtml(String(a.receipt)) + ' — ' : ''}${escapeHtml(a.note)}${holdBtn}${
             a.kind === 'manual' && !data.paid
               ? ` <button title="Added by hand to this paycheck only — remove it" onclick="removePayrollAdjustment(${a.id})" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:.9rem;line-height:1;padding:0 2px">&times;</button>`
               : ''}</span>
