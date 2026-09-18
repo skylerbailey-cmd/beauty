@@ -2515,7 +2515,10 @@
       document.getElementById('settingsCompanyName').value = currentUser.companyName;
     }
     renderWebsites(currentUser?.websites || []);
-    renderBrandCheckboxes(currentUser?.brands || ['avologi', 'avinichi', 'hydrasphere', 'spacetouch']);
+    renderBrandCheckboxes(currentUser?.brands || ALL_BRANDS);
+    // POS Settings is where brands are really kept, per store. Re-tick from
+    // there once it answers, so this tool and that page can't disagree.
+    loadBrandsFromStoreSettings();
     // The picker is empty until this resolves — the catalog is per-store (it
     // reflects the visibility toggles in POS Settings) so there's nothing to
     // show before login finishes.
@@ -2847,9 +2850,27 @@
   }
 
   // ── Brands management ──────────────────────────────────────────────────
+  // Every brand with a section in the picker. Leaving one out here would leave
+  // its products on screen no matter how the boxes are ticked.
+  const ALL_BRANDS = ['avologi', 'avinichi', 'hydrasphere', 'spacetouch', 'lumieres'];
+
+  // Which brands this store has chosen, as POS Settings holds them. That page
+  // writes to the store's settings row; the copy on the login only shadows it,
+  // and is lost on a redeploy.
+  async function loadBrandsFromStoreSettings() {
+    try {
+      const res = await fetch('/api/pos/settings', { credentials: 'include' });
+      if (!res.ok) return;
+      const s = (await res.json())?.settings;
+      const brands = typeof s?.brands === 'string' ? JSON.parse(s.brands) : s?.brands;
+      if (!Array.isArray(brands) || brands.length === 0) return;
+      if (currentUser) currentUser.brands = brands;
+      renderBrandCheckboxes(brands);
+    } catch (_) { /* keep whatever the login supplied */ }
+  }
+
   function renderBrandCheckboxes(brands) {
-    const allBrands = ['avologi', 'avinichi', 'hydrasphere', 'spacetouch'];
-    const selected = brands || allBrands;
+    const selected = brands || ALL_BRANDS;
     document.querySelectorAll('#brandCheckboxes input[type=checkbox]').forEach(cb => {
       cb.checked = selected.includes(cb.value);
     });
@@ -2857,8 +2878,7 @@
   }
 
   function applyBrandVisibility(brands) {
-    const allBrands = ['avologi', 'avinichi', 'hydrasphere', 'spacetouch'];
-    allBrands.forEach(brand => {
+    ALL_BRANDS.forEach(brand => {
       const section = document.getElementById('brand-section-' + brand);
       if (section) {
         section.style.display = brands.includes(brand) ? '' : 'none';
@@ -2875,16 +2895,26 @@
     if (brands.length === 0) {
       alert('At least one brand must be selected.');
       // Re-check the last unchecked one
-      renderBrandCheckboxes(currentUser?.brands || ['avologi', 'avinichi', 'hydrasphere', 'spacetouch']);
+      renderBrandCheckboxes(currentUser?.brands || ALL_BRANDS);
       return;
     }
     applyBrandVisibility(brands);
     try {
-      const res = await fetch('/auth/brands', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brands }),
-      });
+      // Save to the store's settings as well as the login, so ticking a brand
+      // here shows up in POS Settings and in the emails themselves.
+      const [res] = await Promise.all([
+        fetch('/auth/brands', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ brands }),
+        }),
+        fetch('/api/pos/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ brands: JSON.stringify(brands) }),
+        }),
+      ]);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       if (currentUser) currentUser.brands = data.brands;
