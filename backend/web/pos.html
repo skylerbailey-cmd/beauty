@@ -441,6 +441,27 @@
     .cs-account-info { min-width: 0; flex: 1; }
     .cs-account-info .cs-name { font-weight: 600; font-size: .85rem; color: var(--dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .cs-account-info .cs-addr { font-size: .75rem; color: var(--mid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .rpt-nav button {
+      display: block; width: 100%; text-align: left; cursor: pointer;
+      padding: 9px 12px; border: 1.5px solid transparent; border-radius: 9px;
+      background: none; font-family: system-ui, sans-serif; font-size: .86rem;
+      color: var(--dark); line-height: 1.2;
+    }
+    .rpt-nav button:hover { background: var(--cream); }
+    .rpt-nav button.active {
+      background: var(--rose); color: #fff; font-weight: 600;
+      border-color: var(--rose);
+    }
+    .rpt-nav button .rpt-sub { display: block; font-size: .72rem; opacity: .7; font-weight: 400; margin-top: 1px; }
+    /* Narrow screens: the nav becomes a row above the content rather than a
+       sliver beside it. */
+    @media (max-width: 780px) {
+      #rptLayout { flex-direction: column; }
+      #rptNav { flex: 1 1 auto !important; position: static !important;
+                flex-direction: row !important; flex-wrap: wrap; }
+      .rpt-nav button { width: auto; }
+      .rpt-nav button .rpt-sub { display: none; }
+    }
     .cs-forget {
       margin-left: auto; font-size: .72rem; color: var(--mid);
       padding: 2px 6px; border-radius: 6px; white-space: nowrap;
@@ -767,85 +788,103 @@
         </div>
       </div>
 
-      <!-- Employee Sales & Commissions (Manager/Employee view — locked) -->
-      <div class="report-card">
-        <h3>Employee Sales &amp; Commissions</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Enter your name and PIN. Everyone sees their own sales and commission; an admin also unlocks the KPIs, sales leaderboard, everyone's commissions, payroll, and top products below.</p>
-        <div id="empPersonalLocked" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <input type="text" id="empPersonalName2" placeholder="Your name" style="width:150px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
-          <input type="password" id="empPersonalPin" placeholder="Your PIN" maxlength="6" style="width:120px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;text-align:center" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
-          <button class="btn btn-confirm" onclick="unlockPersonalReport()">Unlock</button>
-          <button class="btn" style="background:var(--cream);color:var(--mid);border:1px solid var(--border);display:none" id="empLockBtn" onclick="lockPersonalReport()">Lock</button>
-          <span id="empPersonalError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger)"></span>
-        </div>
-        <div id="empPersonalReport" style="display:none;margin-top:12px">
-          <div style="font-family:system-ui,sans-serif;font-size:.88rem;font-weight:600;color:var(--dark);margin-bottom:4px" id="empPersonalName"></div>
-          <div id="rptRangeNote" style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-bottom:8px"></div>
-          <div style="font-family:system-ui,sans-serif;font-size:.75rem;color:var(--mid);margin-bottom:8px">A return is counted against the day the item was originally sold, not the day it came back.</div>
-          <table class="report-table">
-            <thead><tr><th>Employee</th><th>Sales</th><th>Net Sales $</th><th>Charged Back</th><th>Counts As</th><th>Commission</th></tr></thead>
-            <tbody id="empPersonalBody"></tbody>
-            <!-- Filled once the open disputes are known: commission earned,
-                 what is being held, and what is actually left to pay. -->
-            <tfoot id="empPersonalPaySummary"></tfoot>
-          </table>
-          <!-- Open disputes get their own table. They are not a loss yet, so
-               they can't sit in Charged Back beside sales that are gone for
-               good — but the money is being kept back now, so it can't be left
-               off the page either. -->
-          <div id="empPersonalPending"></div>
-        </div>
-      </div>
-
-      <!-- Manager-only: KPIs, sales leaderboard, full commissions table, and top products (revealed after a manager unlocks above) -->
-      <div id="managerCommissionsSection" style="display:none">
-        <!-- Payroll: what's actually owed on a payday, once disputes are
-             accounted for. Separate from the commission table above, which
-             reports whatever date range is selected. -->
+      <!-- Reports is four different jobs — who earned what, what is in
+           dispute, what the cheques come to, and how the shop is doing. They
+           are kept apart so each one is a page rather than a scroll. -->
+      <div id="rptLayout" style="display:none;gap:18px;align-items:flex-start">
+        <nav id="rptNav" style="flex:0 0 172px;position:sticky;top:12px;display:flex;flex-direction:column;gap:4px"></nav>
+        <div style="flex:1;min-width:0">
+          <section class="rpt-section" data-section="commissions">
+        <!-- Employee Sales & Commissions (Manager/Employee view — locked) -->
         <div class="report-card">
-          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-            <h3 style="margin:0">Payroll</h3>
-            <div style="display:flex;gap:6px;align-items:center;font-family:system-ui,sans-serif;font-size:.85rem">
-              <label>Paycheck:</label>
-              <button class="btn" title="Previous paycheck" onclick="stepPayday(1)" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:6px 10px;font-size:.85rem;line-height:1">‹</button>
-              <select id="payrollPayday" onchange="selectPaycheck(this.value)" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;background:var(--white)"></select>
-              <button class="btn" title="Next paycheck" onclick="stepPayday(-1)" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:6px 10px;font-size:.85rem;line-height:1">›</button>
+          <h3>Employee Sales &amp; Commissions</h3>
+          <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Enter your name and PIN. Everyone sees their own sales and commission; an admin also unlocks the KPIs, sales leaderboard, everyone's commissions, payroll, and top products below.</p>
+          <div id="empPersonalLocked" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <input type="text" id="empPersonalName2" placeholder="Your name" style="width:150px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
+            <input type="password" id="empPersonalPin" placeholder="Your PIN" maxlength="6" style="width:120px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;text-align:center" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
+            <button class="btn btn-confirm" onclick="unlockPersonalReport()">Unlock</button>
+            <button class="btn" style="background:var(--cream);color:var(--mid);border:1px solid var(--border);display:none" id="empLockBtn" onclick="lockPersonalReport()">Lock</button>
+            <span id="empPersonalError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger)"></span>
+          </div>
+          <div id="empPersonalReport" style="display:none;margin-top:12px">
+            <div style="font-family:system-ui,sans-serif;font-size:.88rem;font-weight:600;color:var(--dark);margin-bottom:4px" id="empPersonalName"></div>
+            <div id="rptRangeNote" style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-bottom:8px"></div>
+            <div id="empPersonalTableWrap">
+            <div style="font-family:system-ui,sans-serif;font-size:.75rem;color:var(--mid);margin-bottom:8px">A return is counted against the day the item was originally sold, not the day it came back.</div>
+            <table class="report-table">
+              <thead><tr><th>Employee</th><th>Sales</th><th>Net Sales $</th><th>Charged Back</th><th>Counts As</th><th>Commission</th></tr></thead>
+              <tbody id="empPersonalBody"></tbody>
+              <!-- Filled once the open disputes are known: commission earned,
+                   what is being held, and what is actually left to pay. -->
+              <tfoot id="empPersonalPaySummary"></tfoot>
+            </table>
             </div>
           </div>
-          <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:6px 0 12px" id="payrollPeriodNote"></p>
-          <div id="payrollBody"></div>
         </div>
 
-        <div class="stat-grid" id="salesSummary"></div>
-        <div class="report-card">
-          <h3>Sales Leaderboard</h3>
-          <div id="leaderboard" style="display:flex;flex-direction:column;gap:8px"></div>
-        </div>
-        <div class="report-card">
-          <h3>Employee Commissions &amp; Sales</h3>
-          <table class="report-table">
-            <thead><tr><th>Employee</th><th>Sales</th><th>Net Sales $</th><th>Charged Back</th><th>Counts As</th><th>Commission</th></tr></thead>
-            <tbody id="empReportBody"></tbody>
-            <tfoot id="empReportPaySummary"></tfoot>
-          </table>
-          <div id="empReportPending"></div>
-        </div>
-        <div class="report-card">
-          <h3>Top Products</h3>
-          <table class="report-table">
-            <thead><tr><th>Product</th><th>Brand</th><th>Units Sold</th><th>Revenue</th></tr></thead>
-            <tbody id="prodReportBody"></tbody>
-          </table>
-        </div>
-      </div>
+          <div class="report-card">
+            <h3>Employee Commissions &amp; Sales</h3>
+            <table class="report-table">
+              <thead><tr><th>Employee</th><th>Sales</th><th>Net Sales $</th><th>Charged Back</th><th>Counts As</th><th>Commission</th></tr></thead>
+              <tbody id="empReportBody"></tbody>
+              <tfoot id="empReportPaySummary"></tfoot>
+            </table>
+          </div>
+          </section>
 
-      <div class="report-card" id="flaggedReturnsCard" style="display:none">
-        <h3>⚠️ Returns With Changed Employees</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">These returns were credited to different employees than the original sale.</p>
-        <table class="report-table">
-          <thead><tr><th>Return #</th><th>Date</th><th>Original Sale</th><th>Sale Employees</th><th>Return Employees</th><th>Total</th></tr></thead>
-          <tbody id="flaggedReturnsBody"></tbody>
-        </table>
+          <section class="rpt-section" data-section="chargebacks" style="display:none">
+            <div class="report-card">
+              <h3>Chargebacks</h3>
+              <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
+                Every dispute touching this person's sales, whether it has come off a paycheck yet or not.
+              </p>
+              <div id="rptChargebacksBody"></div>
+            </div>
+          </section>
+
+          <section class="rpt-section rpt-admin" data-section="payroll" style="display:none">
+          <!-- Payroll: what's actually owed on a payday, once disputes are
+               accounted for. Separate from the commission table above, which
+               reports whatever date range is selected. -->
+          <div class="report-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <h3 style="margin:0">Payroll</h3>
+              <div style="display:flex;gap:6px;align-items:center;font-family:system-ui,sans-serif;font-size:.85rem">
+                <label>Paycheck:</label>
+                <button class="btn" title="Previous paycheck" onclick="stepPayday(1)" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:6px 10px;font-size:.85rem;line-height:1">‹</button>
+                <select id="payrollPayday" onchange="selectPaycheck(this.value)" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;background:var(--white)"></select>
+                <button class="btn" title="Next paycheck" onclick="stepPayday(-1)" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:6px 10px;font-size:.85rem;line-height:1">›</button>
+              </div>
+            </div>
+            <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:6px 0 12px" id="payrollPeriodNote"></p>
+            <div id="payrollBody"></div>
+          </div>
+
+          </section>
+
+          <section class="rpt-section rpt-admin" data-section="products" style="display:none">
+          <div class="stat-grid" id="salesSummary"></div>
+          <div class="report-card">
+            <h3>Sales Leaderboard</h3>
+            <div id="leaderboard" style="display:flex;flex-direction:column;gap:8px"></div>
+          </div>
+          <div class="report-card">
+            <h3>Top Products</h3>
+            <table class="report-table">
+              <thead><tr><th>Product</th><th>Brand</th><th>Units Sold</th><th>Revenue</th></tr></thead>
+              <tbody id="prodReportBody"></tbody>
+            </table>
+          </div>
+        <div class="report-card" id="flaggedReturnsCard" style="display:none">
+          <h3>⚠️ Returns With Changed Employees</h3>
+          <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">These returns were credited to different employees than the original sale.</p>
+          <table class="report-table">
+            <thead><tr><th>Return #</th><th>Date</th><th>Original Sale</th><th>Sale Employees</th><th>Return Employees</th><th>Total</th></tr></thead>
+            <tbody id="flaggedReturnsBody"></tbody>
+          </table>
+        </div>
+          </section>
+        </div>
       </div>
     </div>
   </div>
@@ -6282,7 +6321,7 @@ function commissionTotalsRow(rows, label) {
 let pendingCbRequest = 0;
 
 async function loadPendingChargebacks() {
-  const targets = ['empPersonalPending', 'empReportPending'].map(id => document.getElementById(id)).filter(Boolean);
+  const targets = ['rptChargebacksBody'].map(id => document.getElementById(id)).filter(Boolean);
   if (!targets.length) return;
   const mine = ++pendingCbRequest;
   const put = (html) => { if (mine === pendingCbRequest) for (const el of targets) el.innerHTML = html; };
@@ -7223,6 +7262,39 @@ function renderManagerCommissions() {
     '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No data</td></tr>';
 }
 
+// ─── Reports: the left-hand sections ────────────────────────────────────────
+// Four separate questions, kept on separate pages. Payroll and Products are
+// the books, so they only appear for an admin.
+const RPT_SECTIONS = [
+  { key: 'commissions', label: 'Commissions', sub: 'Sales and what they earn' },
+  { key: 'chargebacks', label: 'Chargebacks', sub: 'Disputes and what is held' },
+  { key: 'payroll', label: 'Payroll', sub: 'What each cheque comes to', admin: true },
+  { key: 'products', label: 'Products & KPIs', sub: 'Revenue, tax, top sellers', admin: true },
+];
+let rptSection = 'commissions';
+
+function renderReportNav() {
+  const nav = document.getElementById('rptNav');
+  if (!nav) return;
+  const visible = RPT_SECTIONS.filter(x => !x.admin || managerReportsUnlocked);
+  // An admin-only section can't stay selected after locking.
+  if (!visible.some(x => x.key === rptSection)) rptSection = 'commissions';
+  nav.innerHTML = visible.map(x => `
+    <button class="${x.key === rptSection ? 'active' : ''}" onclick="showReportSection('${x.key}')">
+      ${escapeHtml(x.label)}<span class="rpt-sub">${escapeHtml(x.sub)}</span>
+    </button>`).join('');
+  for (const el of document.querySelectorAll('.rpt-section')) {
+    const key = el.getAttribute('data-section');
+    const allowed = visible.some(x => x.key === key);
+    el.style.display = (allowed && key === rptSection) ? '' : 'none';
+  }
+}
+
+function showReportSection(key) {
+  rptSection = key;
+  renderReportNav();
+}
+
 // ─── Employee Personal Report / Manager unlock ──────────────────────────────
 // Credentials from the unlock, kept so changing the dates and pressing Update
 // can refresh these figures without making the employee sign in again.
@@ -7277,6 +7349,10 @@ async function unlockPersonalReport(silent) {
     // The date filter only ever applies to what's behind this unlock — reveal
     // it now, whichever role just unlocked, along with the paycheck shortcuts.
     document.getElementById('reportsDateFilter').style.display = '';
+    // The sections only exist once somebody has unlocked; before that the tab
+    // is just the sign-in box and today's leaderboard.
+    document.getElementById('rptLayout').style.display = 'flex';
+    renderReportNav();
     loadPaycheckFilters();
     syncPaycheckSelection();
     // Say which dates these figures cover, and that the filter drives them.
@@ -7293,18 +7369,27 @@ async function unlockPersonalReport(silent) {
       managerReportsUnlocked = true;
       renderCompanyPickers(); // a manager can now combine companies here
       loadPaydayOptions();    // payroll lives behind the same unlock
-      document.getElementById('managerCommissionsSection').style.display = 'block';
+      renderReportNav();
       document.getElementById('salesSummary').innerHTML = lastSalesSummaryHtml;
       document.getElementById('prodReportBody').innerHTML = lastProductsHtml;
       renderLeaderboard(lastEmployeesReport, 'leaderboard');
       renderManagerCommissions();
-      document.getElementById('empPersonalName').textContent = `${data.employee.name} (Manager) — full commissions unlocked below`;
+      // Nothing has been fetched yet on a first unlock, so those three are
+      // empty — which now reads as an empty Products tab rather than an empty
+      // strip at the bottom of a long page. Fetch once and they fill in.
+      // loadReports finishes by calling this again silently, and by then the
+      // cache is populated, so it does not come back here.
+      if (!lastSalesSummaryHtml) loadReports();
+      document.getElementById('empPersonalName').textContent = `Signed in as ${data.employee.name} — admin`;
       document.getElementById('empPersonalBody').innerHTML = '';
+      // Everyone's figures are in the table below, so the one-person version
+      // above it would only ever be an empty frame.
+      document.getElementById('empPersonalTableWrap').style.display = 'none';
       document.getElementById('empPersonalReport').style.display = 'block';
     } else {
       // Sales employees see only their own personal sales
       managerReportsUnlocked = false;
-      document.getElementById('managerCommissionsSection').style.display = 'none';
+      renderReportNav();
       renderCompanyPickers(); // they can now combine the companies they work at
       // Always name the companies covered, not only when there's more than
       // one — "All companies" selected but a single company listed is the
@@ -7343,6 +7428,7 @@ async function unlockPersonalReport(silent) {
       } else {
         errorEl.textContent = '';
       }
+      document.getElementById('empPersonalTableWrap').style.display = '';
       document.getElementById('empPersonalReport').style.display = 'block';
     }
     // Both roles: the disputes on screen belong to whoever just unlocked.
@@ -7360,14 +7446,17 @@ async function unlockPersonalReport(silent) {
 function lockPersonalReport() {
   managerReportsUnlocked = false;
   personalCreds = null; // Update must not keep refreshing after locking
-  document.getElementById('managerCommissionsSection').style.display = 'none';
+  document.getElementById('rptLayout').style.display = 'none';
+  rptSection = 'commissions';
+  renderReportNav();
   document.getElementById('reportsDateFilter').style.display = 'none';
   const pcBar = document.getElementById('rptPaycheckBar');
   if (pcBar) pcBar.style.display = 'none';
   rptSelectedPayday = '';
   // Everything the unlock filled in, including the tables themselves.
-  for (const id of ['empPersonalPending', 'empReportPending', 'empPersonalBody',
+  for (const id of ['empPersonalBody',
                     'empReportBody', 'empPersonalPaySummary', 'empReportPaySummary',
+                    'rptChargebacksBody',
                     'leaderboard', 'flaggedReturnsBody',
                     'payrollBody', 'payrollPeriodNote', 'payrollPayday',
                     'rptRangeNote', 'empPersonalName']) {
