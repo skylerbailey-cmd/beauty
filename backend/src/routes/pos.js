@@ -1400,13 +1400,17 @@ async function rangeFor(req, start, end) {
   };
 }
 
-// The unlocked reports read across every company: staff work at both stores
-// and a manager wants one picture rather than having to sign into each account
-// to assemble it. `all=1` is what the Reports tab sends; anything else stays on
-// whatever the session is scoped to.
-const reportScope = async (req) => req.query.all === '1'
-  ? (await pgDb.getAllCompanyIds()).map(c => c.user_id)
-  : scopeIds(req);
+// Staff work at both stores, so a report about a person (commissions, payroll)
+// asks for `all=1` and gets every company. A report about a shop (KPIs, top
+// products) asks for `all=0` and gets only the company signed in — said
+// explicitly, because the session may have been widened over on Transactions,
+// and "Glow SF only" must never quietly include the other store. Neither given:
+// stay on whatever the session is scoped to.
+const reportScope = async (req) => {
+  if (req.query.all === '1') return (await pgDb.getAllCompanyIds()).map(c => c.user_id);
+  if (req.query.all === '0') return [req.session.userId];
+  return scopeIds(req);
+};
 
 router.get('/reports/sales', async (req, res) => {
   const { start, end } = req.query;
