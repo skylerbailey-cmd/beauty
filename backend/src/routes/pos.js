@@ -1198,6 +1198,7 @@ router.post('/transactions/:id/welcome', async (req, res) => {
   // have no usage data). Use the transaction's line items.
   const selectedProductIds = tx.items.map(i => i.product_id);
 
+  const settings = await pgDb.getSettings(userId);
   let emailBody, selectedProducts;
   try {
     ({ emailBody, selectedProducts } = generateWelcomeEmailBody({
@@ -1205,8 +1206,10 @@ router.post('/transactions/:id/welcome', async (req, res) => {
       customerName,
       selectedProductIds,
       userId,
-      // Sign the email with the store the customer actually bought from.
-      storeName: (await pgDb.getSettings(userId))?.store_name,
+      // Sign the email with the store the customer actually bought from, and
+      // use the brands that store's Settings page actually shows.
+      storeName: settings?.store_name,
+      brands: settings?.brands,
     }));
   } catch (err) {
     return res.status(400).json({ error: err.message });

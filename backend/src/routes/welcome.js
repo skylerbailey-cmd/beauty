@@ -892,7 +892,7 @@ const TIPS_BANK = [
 // Build the personalized welcome email HTML for a set of products.
 // Shared by the /generate route and the POS welcome-email endpoint.
 // Throws an Error (with a user-friendly message) on invalid input.
-function generateWelcomeEmailBody({ customerEmail, customerName, selectedProductIds: rawProductIds, includeSuggestions, userId, storeName }) {
+function generateWelcomeEmailBody({ customerEmail, customerName, selectedProductIds: rawProductIds, includeSuggestions, userId, storeName, brands }) {
   // A bundle isn't a real product — swap it for the items it stands for.
   const selectedProductIds = expandBundles(rawProductIds);
 
@@ -922,8 +922,18 @@ function generateWelcomeEmailBody({ customerEmail, customerName, selectedProduct
   if (!companyName) companyName = 'our store';
   const tc = EMAIL_THEMES[userTheme] || EMAIL_THEMES.rose;
 
-  // Filter products by user's selected brands
-  const userBrands = userId ? JSON.parse(require('../db').getUser(userId)?.brands || '["avologi","avinichi","hydrasphere","spacetouch","lumieres"]') : ['avologi', 'avinichi', 'hydrasphere', 'spacetouch', 'lumieres'];
+  // Which brands this store carries. Taken from the caller when it has them —
+  // Settings keeps them in Postgres, and that is the copy someone edits and
+  // sees. The SQLite row underneath is a leftover that a redeploy wipes, so
+  // reading it here made an email disagree with the Settings page.
+  const DEFAULT_BRANDS = ['avologi', 'avinichi', 'hydrasphere', 'spacetouch', 'lumieres'];
+  const parseBrands = (v) => {
+    if (Array.isArray(v)) return v;
+    try { const p = JSON.parse(v); return Array.isArray(p) ? p : null; } catch (_) { return null; }
+  };
+  const userBrands = parseBrands(brands)
+    || (userId ? parseBrands(require('../db').getUser(userId)?.brands) : null)
+    || DEFAULT_BRANDS;
   const allProducts = Object.entries(PRODUCTS)
     .filter(([key]) => userBrands.includes(key))
     .flatMap(([, products]) => products);
@@ -1241,6 +1251,7 @@ router.post('/generate', async (req, res) => {
     const settings = req.session?.userId ? await pgDb.getSettings(req.session.userId) : null;
     const result = generateWelcomeEmailBody({
       ...req.body, userId: req.session?.userId, storeName: settings?.store_name,
+      brands: settings?.brands,
     });
     res.json({
       success: true,
