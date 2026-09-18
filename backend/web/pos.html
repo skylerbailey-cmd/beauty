@@ -791,6 +791,21 @@
         </div>
       </div>
 
+      <!-- The sign-in box sits OUTSIDE the sections below. Those only appear
+           once somebody has unlocked, so a gate placed inside them could never
+           be reached — the tab would show nothing but the leaderboard. -->
+      <div class="report-card">
+        <h3>Employee Sales &amp; Commissions</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Enter your name and PIN. Everyone sees their own sales and commission; an admin also unlocks the KPIs, sales leaderboard, everyone's commissions, payroll, and top products below.</p>
+        <div id="empPersonalLocked" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input type="text" id="empPersonalName2" placeholder="Your name" style="width:150px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
+          <input type="password" id="empPersonalPin" placeholder="Your PIN" maxlength="6" style="width:120px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;text-align:center" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
+          <button class="btn btn-confirm" onclick="unlockPersonalReport()">Unlock</button>
+          <button class="btn" style="background:var(--cream);color:var(--mid);border:1px solid var(--border);display:none" id="empLockBtn" onclick="lockPersonalReport()">Lock</button>
+          <span id="empPersonalError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger)"></span>
+        </div>
+      </div>
+
       <!-- Reports is four different jobs — who earned what, what is in
            dispute, what the cheques come to, and how the shop is doing. They
            are kept apart so each one is a page rather than a scroll. -->
@@ -798,18 +813,9 @@
         <nav id="rptNav" style="flex:0 0 172px;position:sticky;top:12px;display:flex;flex-direction:column;gap:4px"></nav>
         <div style="flex:1;min-width:0">
           <section class="rpt-section" data-section="commissions">
-        <!-- Employee Sales & Commissions (Manager/Employee view — locked) -->
         <div class="report-card">
-          <h3>Employee Sales &amp; Commissions</h3>
-          <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Enter your name and PIN. Everyone sees their own sales and commission; an admin also unlocks the KPIs, sales leaderboard, everyone's commissions, payroll, and top products below.</p>
-          <div id="empPersonalLocked" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <input type="text" id="empPersonalName2" placeholder="Your name" style="width:150px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
-            <input type="password" id="empPersonalPin" placeholder="Your PIN" maxlength="6" style="width:120px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;text-align:center" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
-            <button class="btn btn-confirm" onclick="unlockPersonalReport()">Unlock</button>
-            <button class="btn" style="background:var(--cream);color:var(--mid);border:1px solid var(--border);display:none" id="empLockBtn" onclick="lockPersonalReport()">Lock</button>
-            <span id="empPersonalError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger)"></span>
-          </div>
-          <div id="empPersonalReport" style="display:none;margin-top:12px">
+          <h3>My Sales &amp; Commission</h3>
+          <div id="empPersonalReport" style="display:none">
             <div style="font-family:system-ui,sans-serif;font-size:.88rem;font-weight:600;color:var(--dark);margin-bottom:4px" id="empPersonalName"></div>
             <div id="rptRangeNote" style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-bottom:8px"></div>
             <div id="empPersonalTableWrap">
