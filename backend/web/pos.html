@@ -6555,7 +6555,7 @@ function renderPendingChargebacks(rows, alreadyHeld, isManager) {
       </p>
       <table class="report-table" style="font-size:.82rem">
         <thead><tr>
-          <th>Employee</th><th>Receipt</th><th>Sold</th><th>Customer</th><th>Card</th><th>Store</th>
+          <th>Employee</th><th>Receipt</th><th>Sold</th><th>Customer</th><th>Store</th>
           <th>Opened</th><th>Disputed $</th><th>Held from pay</th>${isManager ? '<th>Status</th>' : ''}
         </tr></thead>
         <tbody>${rows.map(c => `
@@ -6568,7 +6568,6 @@ function renderPendingChargebacks(rows, alreadyHeld, isManager) {
             </td>
             <td>${escapeHtml(c.sale_date)}</td>
             <td>${escapeHtml(c.customer_name || '-')}</td>
-            <td>${c.card_last4 ? '****' + escapeHtml(c.card_last4) : '-'}</td>
             <td>${escapeHtml(c.store_name || '-')}</td>
             <td>${escapeHtml(c.opened_at || '-')}</td>
             <td>$${money(Number(c.disputed_share))}</td>
@@ -6584,7 +6583,7 @@ function renderPendingChargebacks(rows, alreadyHeld, isManager) {
           </tr>`).join('')}
         </tbody>
         ${total ? `<tfoot><tr style="border-top:2px solid var(--border);font-weight:700;background:var(--cream)">
-          <td colspan="8">Still to come off the next paycheck</td>
+          <td colspan="7">Still to come off the next paycheck</td>
           <td style="color:var(--danger)">−$${money(total)}</td>${isManager ? '<td></td>' : ''}
         </tr></tfoot>` : ''}
       </table>
@@ -6681,7 +6680,6 @@ function renderEmployeeDetail(data) {
       </td>
       <td>${escapeHtml(c.sale_date)}${outside ? '<br><span style="font-size:.72rem;color:var(--mid)">outside these dates</span>' : ''}</td>
       <td>${escapeHtml(c.customer_name || '-')}</td>
-      <td>${c.card_last4 ? '****' + escapeHtml(c.card_last4) : '-'}</td>
       <td>${escapeHtml(c.store_name || '-')}</td>
       <td>$${money(Number(c.disputed_share))}</td>
       <td style="color:var(--danger);font-weight:600">−$${money(Number(c.commission_at_risk))}</td>
@@ -6692,12 +6690,12 @@ function renderEmployeeDetail(data) {
   const allCbs = data.chargebacks.concat(elsewhere);
   const cbTable = allCbs.length ? `
     <table class="report-table" style="font-size:.82rem">
-      <thead><tr><th>Receipt</th><th>Sold</th><th>Customer</th><th>Card</th><th>Store</th>
+      <thead><tr><th>Receipt</th><th>Sold</th><th>Customer</th><th>Store</th>
         <th>Disputed $</th><th>Commission</th><th>Status</th><th>Held back</th></tr></thead>
       <tbody>
         ${data.chargebacks.map(c => cbRow(c, false)).join('')}
         ${elsewhere.length ? `
-          <tr><td colspan="9" style="background:var(--cream);font-size:.78rem;color:var(--mid);padding-top:8px">
+          <tr><td colspan="8" style="background:var(--cream);font-size:.78rem;color:var(--mid);padding-top:8px">
             On sales outside these dates — held from pay all the same, so not counted in the figures at the top.
           </td></tr>` : ''}
         ${elsewhere.map(c => cbRow(c, true)).join('')}
