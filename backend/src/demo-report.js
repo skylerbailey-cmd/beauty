@@ -5,88 +5,103 @@
 // a training session can never land a fake sale in the books, move a real
 // paycheck, or show one person another person's numbers.
 //
-// The figures are arranged so the arithmetic on screen can be followed all the
-// way down: six sales, one of them returned, one dispute lost and one still
-// open. Everything below is derived from these few numbers rather than typed
-// twice, so the page can't contradict itself.
+// The example works at BOTH stores, because most of the roster does and it is
+// the part of the report people misread: a row per store, a combined line under
+// them, and one paycheck covering the two. Every figure is derived from the
+// per-store lists below rather than typed twice, so a store and the combined
+// line cannot drift apart.
 
 const NAME = 'Demo';
 const PIN = process.env.DEMO_REPORT_PIN || '0000';
-const STORE = 'Training Store (example)';
+const STORE_A = 'Training North (example)';
+const STORE_B = 'Training South (example)';
 const RATE = 36;                       // commission %
-const EMPLOYEE_ID = -1;                // negative: cannot collide with a real row
-
-const GROSS = 4200;                    // six sales
-const RETURNED = 300;                  // one of them came back
-const LOST_DISPUTE = 200;              // a dispute closed lost — commission taken back
-const OPEN_DISPUTE = 1250;             // a dispute still open — commission held, not lost
+const ID_A = -1, ID_B = -2;            // negative: cannot collide with a real row
 
 const round2 = (n) => Math.round(n * 100) / 100;
-const NET = round2(GROSS - RETURNED);                       // 3,900.00
-const COUNTS_AS = round2(NET - LOST_DISPUTE);               // 3,700.00
-const EARNED = round2(COUNTS_AS * RATE / 100);              // 1,332.00
-const HELD = round2(OPEN_DISPUTE * RATE / 100);             //   450.00
-const TAKE_HOME = round2(EARNED - HELD);                    //   882.00
 
-// Is this the training login? Checked before any real PIN lookup, and only
-// matches on both the name and the PIN together.
+// Six sales across the two stores, one of them returned.
+const SALES = [
+  ['DEMO-1001', '2026-09-02', 'Example Customer', 1200, STORE_A],
+  ['DEMO-1002', '2026-09-03', 'Second Example', 900, STORE_A],
+  ['DEMO-1003', '2026-09-04', 'Third Example', 300, STORE_A],
+  ['DEMO-1005', '2026-09-08', 'Fourth Example', 300, STORE_A],
+  ['DEMO-1006', '2026-09-10', 'Fifth Example', 750, STORE_B],
+  ['DEMO-1007', '2026-09-11', 'Sixth Example', 750, STORE_B],
+];
+// Counted against the day it was SOLD, rung up later — the case that confuses.
+const RETURNS = [
+  ['DEMO-1004', '2026-09-04', '2026-09-12', 'Third Example', 300, STORE_A],
+];
+const LOST_DISPUTE = 200;              // closed lost at North — commission taken back
+const OPEN_DISPUTE = 1250;             // still open at North — held, not lost
+const WON_DISPUTE = 500;               // won at South — money held earlier, paid back
+
+const grossAt = (store) => round2(SALES.filter(s => s[4] === store).reduce((t, s) => t + s[3], 0));
+const returnedAt = (store) => round2(RETURNS.filter(r => r[5] === store).reduce((t, r) => t + r[4], 0));
+const lostAt = (store) => (store === STORE_A ? LOST_DISPUTE : 0);
+
+// One row per store, exactly as a person working at both is reported.
+function storeRow(store, id) {
+  const gross = grossAt(store);
+  const returned = returnedAt(store);
+  const net = round2(gross - returned);
+  const lost = lostAt(store);
+  return {
+    employee_id: id, employee_name: NAME, commission_rate: RATE,
+    company_name: store, active: 1,
+    sale_count: SALES.filter(s => s[4] === store).length,
+    return_count: RETURNS.filter(r => r[5] === store).length,
+    sales_total: gross, returns_total: returned, net_total: net,
+    chargeback_count: lost ? 1 : 0, chargeback_total: lost,
+    // The commission base the table reads for "Counts As". Without it the row
+    // bills a lost dispute as if it had been earned.
+    net_after_chargebacks: round2(net - lost),
+  };
+}
+
+const rows = () => [storeRow(STORE_A, ID_A), storeRow(STORE_B, ID_B)];
+const earnedAt = (store) =>
+  round2(storeRow(store, 0).net_after_chargebacks * RATE / 100);
+const HELD = round2(OPEN_DISPUTE * RATE / 100);          // 450.00, at North
+const RELEASED = round2(WON_DISPUTE * RATE / 100);       // 180.00, at South
+
 function isDemo(name, pin) {
   return String(name || '').trim().toLowerCase() === NAME.toLowerCase()
     && String(pin || '').trim() === PIN;
 }
 
-const employee = { id: EMPLOYEE_ID, name: NAME, role: 'sales', commission_rate: RATE, active: 1 };
+const employee = { id: ID_A, name: NAME, role: 'sales', commission_rate: RATE, active: 1 };
 
-// The commission row: six sales, net of the return, less the lost dispute.
-const reportRow = () => ({
-  employee_id: EMPLOYEE_ID, employee_name: NAME, commission_rate: RATE,
-  company_name: STORE, active: 1,
-  sale_count: 6, return_count: 1,
-  sales_total: GROSS, returns_total: RETURNED, net_total: NET,
-  chargeback_count: 1, chargeback_total: LOST_DISPUTE,
-  // The commission base. The table reads this for "Counts As" and works the
-  // commission out from it — leave it off and the row bills the lost dispute
-  // as if it had been earned, disagreeing with the paycheck underneath.
-  net_after_chargebacks: COUNTS_AS,
-});
+const activity = (store) => [
+  ...SALES.filter(s => !store || s[4] === store).map(([receipt, day, who, amount, where], i) => ({
+    transaction_id: -(200 + i), receipt_number: receipt, type: 'sale',
+    counts_on: day, rung_up: day, customer_name: who,
+    employee_name: NAME, store_name: where,
+    subtotal: amount, total: round2(amount * 1.081875), share: amount,
+    payment_method: 'card', card_last4: '',
+    commission_rate: RATE, commission: round2(amount * RATE / 100), credited_count: 1,
+  })),
+  ...RETURNS.filter(r => !store || r[5] === store).map(([receipt, sold, back, who, amount, where], i) => ({
+    transaction_id: -(100 + i), receipt_number: receipt, type: 'return',
+    counts_on: sold, rung_up: back, customer_name: who,
+    employee_name: NAME, store_name: where,
+    subtotal: amount, total: amount, share: amount,
+    commission_rate: RATE, commission: round2(amount * RATE / 100), credited_count: 1,
+  })),
+];
 
-// The return behind that figure, dated the way a real one is: counted against
-// the day the item was SOLD, rung up later.
-const returns = () => ([{
-  transaction_id: -101, receipt_number: 'DEMO-1004', type: 'return',
-  counts_on: '2026-09-04', rung_up: '2026-09-12',
-  customer_name: 'Example Customer', employee_name: NAME, store_name: STORE,
-  subtotal: RETURNED, total: RETURNED, share: RETURNED,
-  commission_rate: RATE, commission: round2(RETURNED * RATE / 100), credited_count: 1,
-}]);
-
-const sales = () => ([
-  ['DEMO-1001', '2026-09-02', 'Example Customer', 1200],
-  ['DEMO-1002', '2026-09-03', 'Second Example', 900],
-  ['DEMO-1003', '2026-09-04', 'Third Example', 300],
-  ['DEMO-1005', '2026-09-08', 'Fourth Example', 650],
-  ['DEMO-1006', '2026-09-10', 'Fifth Example', 400],
-  ['DEMO-1007', '2026-09-11', 'Sixth Example', 750],
-].map(([receipt, day, who, amount], i) => ({
-  transaction_id: -(200 + i), receipt_number: receipt, type: 'sale',
-  counts_on: day, rung_up: day, customer_name: who,
-  employee_name: NAME, store_name: STORE,
-  subtotal: amount, total: round2(amount * 1.081875), share: amount,
-  payment_method: 'card', card_last4: '',
-  commission_rate: RATE, commission: round2(amount * RATE / 100), credited_count: 1,
-})));
-
-// One dispute lost, one still open, one won and given back — the three states
-// an employee will actually meet.
-const chargebacks = () => ([
+// The three states an employee will actually meet, one of them at the other
+// store — so it is clear a dispute follows the sale, not the person's main shop.
+const disputes = () => ([
   {
     chargeback_id: -1, status: 'pending', amount: OPEN_DISPUTE, card_last4: '',
     note: 'Example: the bank is still deciding.',
     opened_at: '2026-09-14', closed_at: null,
     withheld_payday: null, withheld_by: '', released_payday: null,
     transaction_id: -201, receipt_number: 'DEMO-1002', sale_total: 900,
-    customer_name: 'Second Example', sale_date: '2026-09-03', store_name: STORE,
-    employee_id: EMPLOYEE_ID, employee_name: NAME, commission_rate: RATE,
+    customer_name: 'Second Example', sale_date: '2026-09-03', store_name: STORE_A,
+    employee_id: ID_A, employee_name: NAME, commission_rate: RATE,
     disputed_share: OPEN_DISPUTE, commission_at_risk: HELD,
   },
   {
@@ -94,74 +109,94 @@ const chargebacks = () => ([
     note: 'Example: the bank decided for the customer, so the commission goes back.',
     opened_at: '2026-08-20', closed_at: '2026-09-05',
     withheld_payday: '2026-09-15', withheld_by: 'demo', released_payday: null,
-    transaction_id: -202, receipt_number: 'DEMO-0990', sale_total: 200,
-    customer_name: 'Earlier Example', sale_date: '2026-08-18', store_name: STORE,
-    employee_id: EMPLOYEE_ID, employee_name: NAME, commission_rate: RATE,
+    transaction_id: -202, receipt_number: 'DEMO-0990', sale_total: LOST_DISPUTE,
+    customer_name: 'Earlier Example', sale_date: '2026-08-18', store_name: STORE_A,
+    employee_id: ID_A, employee_name: NAME, commission_rate: RATE,
     disputed_share: LOST_DISPUTE, commission_at_risk: round2(LOST_DISPUTE * RATE / 100),
   },
   {
-    chargeback_id: -3, status: 'won', amount: 500, card_last4: '',
+    chargeback_id: -3, status: 'won', amount: WON_DISPUTE, card_last4: '',
     note: 'Example: the shop won, so the money held back is paid out again.',
     opened_at: '2026-08-02', closed_at: '2026-08-29',
     withheld_payday: '2026-09-01', withheld_by: 'demo', released_payday: '2026-09-15',
-    transaction_id: -203, receipt_number: 'DEMO-0975', sale_total: 500,
-    customer_name: 'Older Example', sale_date: '2026-07-30', store_name: STORE,
-    employee_id: EMPLOYEE_ID, employee_name: NAME, commission_rate: RATE,
-    disputed_share: 500, commission_at_risk: round2(500 * RATE / 100),
+    transaction_id: -203, receipt_number: 'DEMO-0975', sale_total: WON_DISPUTE,
+    customer_name: 'Older Example', sale_date: '2026-07-30', store_name: STORE_B,
+    employee_id: ID_B, employee_name: NAME, commission_rate: RATE,
+    disputed_share: WON_DISPUTE, commission_at_risk: RELEASED,
   },
 ]);
 
-// The paycheck: what was earned, what is being held, what is left.
-const paycheckRow = () => ({
-  employee_id: EMPLOYEE_ID, employee_name: NAME, commission_rate: RATE,
-  company_id: null, store_name: STORE,
-  sales_total: NET, sale_count: 6, returns_netted: RETURNED,
-  commission_earned: EARNED,
-  adjustments: [{
-    kind: 'withheld', chargeback_id: -1, employee_id: EMPLOYEE_ID, pinned: false,
-    receipt: 'DEMO-1002', amount: -HELD,
-    note: 'dispute opened on the 2026-09-03 sale',
-  }],
-  adjustment_total: -HELD,
-  commission_balance: EARNED,
-  total: TAKE_HOME,
-  paid: false, paid_at: null, paid_by: '', paid_individually: false,
-});
+// One paycheck, a line per store — the two add up to what is actually paid.
+const paycheckRows = () => ([
+  {
+    employee_id: ID_A, employee_name: NAME, commission_rate: RATE,
+    company_id: null, store_name: STORE_A,
+    sales_total: round2(grossAt(STORE_A) - returnedAt(STORE_A)),
+    sale_count: SALES.filter(s => s[4] === STORE_A).length,
+    returns_netted: returnedAt(STORE_A),
+    commission_earned: earnedAt(STORE_A),
+    adjustments: [{
+      kind: 'withheld', chargeback_id: -1, employee_id: ID_A, pinned: false,
+      receipt: 'DEMO-1002', amount: -HELD,
+      note: 'dispute opened on the 2026-09-03 sale',
+    }],
+    adjustment_total: -HELD,
+    commission_balance: earnedAt(STORE_A),
+    total: round2(earnedAt(STORE_A) - HELD),
+    paid: false, paid_at: null, paid_by: '', paid_individually: false,
+  },
+  {
+    employee_id: ID_B, employee_name: NAME, commission_rate: RATE,
+    company_id: null, store_name: STORE_B,
+    sales_total: grossAt(STORE_B), sale_count: SALES.filter(s => s[4] === STORE_B).length,
+    returns_netted: 0,
+    commission_earned: earnedAt(STORE_B),
+    adjustments: [],
+    adjustment_total: 0,
+    commission_balance: earnedAt(STORE_B),
+    total: earnedAt(STORE_B),
+    paid: false, paid_at: null, paid_by: '', paid_individually: false,
+  },
+]);
 
-// The row and the summary under it are built from the same constants, but the
-// table derives its commission from net_after_chargebacks while the summary
-// carries commission_earned outright. If those ever disagree the demo teaches
-// the wrong thing, so say so at boot rather than in front of staff.
+// The store rows and the paycheck are reached by different routes — the table
+// derives commission from each row's base, the summary carries the earned
+// figures. If they ever part company the demo teaches the wrong thing, so say
+// so at boot rather than in front of staff.
 (() => {
-  const row = reportRow();
-  const base = row.net_after_chargebacks != null ? row.net_after_chargebacks : row.net_total;
-  const fromRow = round2(base * row.commission_rate / 100);
-  if (Math.abs(fromRow - paycheckRow().commission_earned) > 0.005) {
-    console.warn('[demo-report] the commission row and the paycheck disagree:',
-      fromRow, 'vs', paycheckRow().commission_earned);
+  const fromRows = round2(rows().reduce((t, r) => t + r.net_after_chargebacks * r.commission_rate / 100, 0));
+  const fromPay = round2(paycheckRows().reduce((t, r) => t + r.commission_earned, 0));
+  if (Math.abs(fromRows - fromPay) > 0.005) {
+    console.warn('[demo-report] the store rows and the paycheck disagree:', fromRows, 'vs', fromPay);
   }
 })();
 
 module.exports = {
-  NAME, PIN, STORE, isDemo, employee,
+  NAME, PIN, STORE_A, STORE_B, isDemo, employee,
   // Same shapes the real routes return, so the page cannot tell the difference.
   personal: () => ({
-    employee, role: 'sales', report: [reportRow()], returns: returns(),
-    companies_included: [STORE], companies_rejected: [],
+    employee, role: 'sales', report: rows(),
+    returns: activity().filter(r => r.type === 'return'),
+    // Two companies, so the page adds its "both companies" line.
+    companies_included: [STORE_A, STORE_B], companies_rejected: [],
   }),
   paycheck: (payday) => ({
     payday: payday || null,
     period: { start: '2026-09-01', end: '2026-09-15' },
-    paid: false, rows: [paycheckRow()], role: 'sales',
+    paid: false, rows: paycheckRows(), role: 'sales',
   }),
-  chargebacks: () => ({ chargebacks: chargebacks(), role: 'sales' }),
-  detail: () => ({
-    employee: NAME, store: STORE, role: 'sales',
-    sales: sales(), returns: returns(),
-    chargebacks: chargebacks().filter(c => c.status !== 'won'),
-    held_elsewhere: [],
-  }),
+  chargebacks: () => ({ chargebacks: disputes(), role: 'sales' }),
+  // Opened from one store's row, so it answers for that store alone.
+  detail: (store) => {
+    const only = store && store !== 'null' ? store : null;
+    const mine = activity(only);
+    return {
+      employee: NAME, store: only, role: 'sales',
+      sales: mine.filter(r => r.type === 'sale'),
+      returns: mine.filter(r => r.type === 'return'),
+      chargebacks: disputes().filter(c => c.status !== 'won' && (!only || c.store_name === only)),
+      held_elsewhere: [],
+    };
+  },
   adjustments: () => ({ adjustments: [], payday: null, role: 'sales' }),
-  // For the note on screen, so the numbers can be checked by hand.
-  figures: { GROSS, RETURNED, NET, LOST_DISPUTE, COUNTS_AS, RATE, EARNED, OPEN_DISPUTE, HELD, TAKE_HOME },
 };

@@ -1685,7 +1685,7 @@ router.post('/reports/chargebacks', async (req, res) => {
 // can only ask for their own row; a manager can ask for anyone's.
 router.post('/reports/employee-detail', async (req, res) => {
   const { name, pin, employee, store, start, end } = req.body;
-  if (demoReport.isDemo(name, pin)) return res.json(demoReport.detail());
+  if (demoReport.isDemo(name, pin)) return res.json(demoReport.detail(store));
   const me = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
   if (!me) return res.status(401).json({ error: 'Invalid name or PIN' });
 
