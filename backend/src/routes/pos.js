@@ -4,6 +4,9 @@ const express = require('express');
 const router = express.Router();
 const pgDb = require('../db/postgres');
 const { PRODUCTS, BUNDLES, generateWelcomeEmailBody } = require('./welcome');
+// A worked example of the report for training. Answers before any real lookup
+// and reads nothing from the database — see src/demo-report.js.
+const demoReport = require('../demo-report');
 
 // Tender methods the register can record. Adding one here is not enough on its
 // own — getDaySummary buckets tenders by the same set for the end-of-day
@@ -1627,6 +1630,7 @@ router.delete('/reports/payroll/adjustment/:id', async (req, res) => {
 // payroll pays cannot drift apart — they are the same calculation.
 router.post('/reports/my-paycheck', async (req, res) => {
   const { name, pin, payday } = req.body;
+  if (demoReport.isDemo(name, pin)) return res.json(demoReport.paycheck(payday));
   const me = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
   if (!me) return res.status(401).json({ error: 'Invalid name or PIN' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.json({ rows: [] });
@@ -1645,6 +1649,7 @@ router.post('/reports/my-paycheck', async (req, res) => {
 // own; an admin sees everyone's. Same rule as the rest of the report.
 router.post('/reports/my-adjustments', async (req, res) => {
   const { name, pin, payday } = req.body;
+  if (demoReport.isDemo(name, pin)) return res.json(demoReport.adjustments());
   const me = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
   if (!me) return res.status(401).json({ error: 'Invalid name or PIN' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.json({ adjustments: [] });
@@ -1658,6 +1663,7 @@ router.post('/reports/my-adjustments', async (req, res) => {
 // rows, the same rule the personal report follows.
 router.post('/reports/chargebacks', async (req, res) => {
   const { name, pin, start, end } = req.body;
+  if (demoReport.isDemo(name, pin)) return res.json(demoReport.chargebacks());
   const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
   if (!employee) return res.status(401).json({ error: 'Invalid name or PIN' });
 
@@ -1679,6 +1685,7 @@ router.post('/reports/chargebacks', async (req, res) => {
 // can only ask for their own row; a manager can ask for anyone's.
 router.post('/reports/employee-detail', async (req, res) => {
   const { name, pin, employee, store, start, end } = req.body;
+  if (demoReport.isDemo(name, pin)) return res.json(demoReport.detail());
   const me = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
   if (!me) return res.status(401).json({ error: 'Invalid name or PIN' });
 
@@ -1799,6 +1806,7 @@ router.get('/reports/day-summary', async (req, res) => {
 router.post('/reports/employee-personal', async (req, res) => {
   const { name, pin, start, end } = req.body;
   if (!pin) return res.status(400).json({ error: 'PIN required' });
+  if (demoReport.isDemo(name, pin)) return res.json(demoReport.personal());
 
   const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
   if (!employee) return res.status(401).json({ error: 'Invalid name or PIN' });
