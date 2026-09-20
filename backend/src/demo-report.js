@@ -43,7 +43,11 @@ const reportRow = () => ({
   company_name: STORE, active: 1,
   sale_count: 6, return_count: 1,
   sales_total: GROSS, returns_total: RETURNED, net_total: NET,
-  chargeback_total: LOST_DISPUTE,
+  chargeback_count: 1, chargeback_total: LOST_DISPUTE,
+  // The commission base. The table reads this for "Counts As" and works the
+  // commission out from it — leave it off and the row bills the lost dispute
+  // as if it had been earned, disagreeing with the paycheck underneath.
+  net_after_chargebacks: COUNTS_AS,
 });
 
 // The return behind that figure, dated the way a real one is: counted against
@@ -123,6 +127,20 @@ const paycheckRow = () => ({
   total: TAKE_HOME,
   paid: false, paid_at: null, paid_by: '', paid_individually: false,
 });
+
+// The row and the summary under it are built from the same constants, but the
+// table derives its commission from net_after_chargebacks while the summary
+// carries commission_earned outright. If those ever disagree the demo teaches
+// the wrong thing, so say so at boot rather than in front of staff.
+(() => {
+  const row = reportRow();
+  const base = row.net_after_chargebacks != null ? row.net_after_chargebacks : row.net_total;
+  const fromRow = round2(base * row.commission_rate / 100);
+  if (Math.abs(fromRow - paycheckRow().commission_earned) > 0.005) {
+    console.warn('[demo-report] the commission row and the paycheck disagree:',
+      fromRow, 'vs', paycheckRow().commission_earned);
+  }
+})();
 
 module.exports = {
   NAME, PIN, STORE, isDemo, employee,
