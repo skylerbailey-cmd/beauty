@@ -26,17 +26,17 @@ const m = (n) => (Number(n) < 0 ? '-' : '') + '$' + Math.abs(Number(n || 0)).toL
     const run = await pg.payrollForPayday(ids, p, settings);
     // Only cheques that actually went out have a figure worth freezing.
     const closed = run.employees.filter(e => e.paid);
-    const neg = closed.filter(e => Number(e.total) < -0.005);
+    const neg = closed.filter(e => Number(e.commission_balance) < -0.005);
     if (APPLY) await pg.recordPayrollBalances(ids, p, closed);
     console.log(`  ${p}  ${String(closed.length).padStart(2)} cheques recorded` +
       (neg.length ? `   ${neg.length} negative` : ''));
     for (const e of neg) {
       owed.push({ payday: p, ...e });
-      console.log(`       ${String(e.employee_name).padEnd(9)} ${String(e.store_name).padEnd(16)} ${m(e.total).padStart(12)}`);
+      console.log(`       ${String(e.employee_name).padEnd(9)} ${String(e.store_name).padEnd(16)} commission ${m(e.commission_balance).padStart(12)}  (whole cheque ${m(e.total)})`);
     }
   }
 
-  console.log(`\n  ${owed.length} shortfall(s), ${m(owed.reduce((s, e) => s + Number(e.total), 0))} in total`);
+  console.log(`\n  ${owed.length} commission shortfall(s), ${m(owed.reduce((s, e) => s + Number(e.commission_balance), 0))} in total`);
   console.log('  each lands on the payday straight after the one that ran short:');
   const land = {};
   for (const o of owed) {
@@ -46,7 +46,7 @@ const m = (n) => (Number(n) < 0 ? '-' : '') + '$' + Math.abs(Number(n || 0)).toL
   }
   for (const p of Object.keys(land)) {
     const after = (await pg.payrollForPayday(ids, p, settings)).schedule;
-    console.log(`    from ${p}: ${land[p].map(o => o.employee_name + ' ' + m(o.total)).join(', ')}`);
+    console.log(`    from ${p}: ${land[p].map(o => o.employee_name + ' ' + m(o.commission_balance)).join(', ')}`);
   }
 
   if (!APPLY) { console.log('\n  nothing written — pass --apply to write it'); await pg.pool.end(); return; }

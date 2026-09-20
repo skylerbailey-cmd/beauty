@@ -400,13 +400,17 @@ async function initSchema() {
     PRIMARY KEY (payday, employee_id)
   )`);
 
-  // What each cheque actually came to when it was handed out.
+  // What each cheque's COMMISSION came to when it was handed out — earnings
+  // less returns, and nothing else.
   //
-  // A cheque can come out negative — returns and disputes on earlier sales can
-  // exceed what someone earned this fortnight. Nothing is handed over in that
-  // case, so the shortfall is still owed and has to come off the next cheque.
+  // Returns land against the paycheck that paid the sale they undo, so a big
+  // refund can leave commission below zero for a fortnight. That shortfall is
+  // still owed and comes off the next cheque. Disputes and hand-added lines are
+  // excluded on purpose: a dispute may be won and handed back, and an advance
+  // is settled its own way, so neither should roll into next fortnight's pay.
+  //
   // Recorded at the moment of closing rather than recomputed later: once a
-  // payday is settled its figure must stop moving, or a dispute resolved next
+  // payday is settled its figure must stop moving, or a return logged next
   // month would quietly rewrite what a cheque paid.
   await migrate(`CREATE TABLE IF NOT EXISTS pos_payroll_balances (
     payday DATE NOT NULL,
@@ -1548,12 +1552,16 @@ async function payrollForPayday(userId, payday, settings) {
     });
   }
 
-  // A cheque that came out negative paid nothing, so the shortfall is still
-  // owed and comes off the next one. It lands on the payday IMMEDIATELY after
-  // the one that ran short — not on the next one still open. If that next
-  // payday has itself been closed, its own recorded figure already absorbed
-  // this shortfall, and whatever IT came to carries on from there. Skipping to
-  // the first open payday instead would take the same money twice.
+  // Commission that came out below zero — returns against sales already paid
+  // for, exceeding what was earned this fortnight — is still owed, so it comes
+  // off the next cheque. Only commission: disputes and hand-added lines are
+  // left out of this figure where it is recorded, since a dispute may yet be
+  // won and an advance is settled its own way.
+  //
+  // It lands on the payday IMMEDIATELY after the one that ran short, not on the
+  // next one still open. If that next payday has itself been closed, its own
+  // recorded figure already absorbed this shortfall, and whatever IT came to
+  // carries on from there. Skipping ahead would take the same money twice.
   const carried = (await query(
     `SELECT b.payday::text AS payday, b.employee_id, b.net_total,
             e.name AS employee_name, e.commission_rate, e.user_id AS company_id
@@ -1568,7 +1576,7 @@ async function payrollForPayday(userId, payday, settings) {
       .toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     r.adjustments.push({
       kind: 'carry', receipt: null, amount: round2(Number(c.net_total)),
-      note: `carried over from the ${c.payday} paycheck — it came to −$${short}, so nothing was paid and that is still owed`,
+      note: `commission carried over from the ${c.payday} paycheck — it came to −$${short}`,
     });
   }
 
@@ -1588,6 +1596,20 @@ async function payrollForPayday(userId, payday, settings) {
   for (const r of rows) {
     r.adjustment_total = round2(r.adjustments.reduce((s, a) => s + a.amount, 0));
     r.total = round2(r.commission_earned + r.adjustment_total);
+
+    // What they earned, and nothing else. This is the figure that carries when
+    // it comes out below zero — commission on the period's sales, less the
+    // commission reversed by returns against sales already paid for, less
+    // anything still owed from last time.
+    //
+    // Deliberately NOT the cheque total. A dispute is money in question that
+    // may yet come back, and a hand-added line like a cash advance is settled
+    // its own way; rolling either into next fortnight's pay would keep
+    // deducting something that was never commission.
+    const CARRIES = new Set(['return', 'carry']);
+    r.commission_balance = round2(
+      r.commission_earned + r.adjustments.filter(a => CARRIES.has(a.kind))
+        .reduce((s, a) => s + a.amount, 0));
     // Settled either by their own cheque going out or by the whole payday.
     const own = thisEmpRuns.get(r.employee_id);
     r.paid = !!own || !!thisRun;
@@ -1821,9 +1843,9 @@ async function setEmployeePayrollPaid(userId, payday, employeeId, paid, by) {
   return { ok: true, paid: !!paid };
 }
 
-// What a cheque came to, kept so a shortfall can follow the person forward.
-// Written as the cheque closes; a reopened payday drops it again so the
-// carry-over disappears with the close that created it.
+// What a cheque's commission came to, kept so a shortfall follows the person
+// forward. Written as the cheque closes; a reopened payday drops it again so
+// the carry-over disappears with the close that created it.
 async function recordPayrollBalances(userId, payday, rows) {
   let written = 0;
   for (const r of rows || []) {
@@ -1833,7 +1855,8 @@ async function recordPayrollBalances(userId, payday, rows) {
        VALUES ($1::date, $2, $3, $4, NOW())
        ON CONFLICT (payday, employee_id)
        DO UPDATE SET net_total = EXCLUDED.net_total, recorded_at = NOW()`,
-      [payday, r.employee_id, r.company_id || asCompanyIds(userId)[0], round2(r.total)]);
+      [payday, r.employee_id, r.company_id || asCompanyIds(userId)[0],
+       round2(r.commission_balance != null ? r.commission_balance : r.total)]);
     written++;
   }
   return written;
