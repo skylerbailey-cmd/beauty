@@ -619,20 +619,6 @@
       color: var(--mid);
       margin-bottom: 12px;
     }
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      padding: 14px 16px;
-      border: 2px solid var(--border);
-      border-radius: 12px;
-      cursor: pointer;
-      transition: all .2s;
-      background: var(--white);
-    }
 
     /* ── Sidebar Navigation ──────────────────────────────────────────── */
     .app-layout {
@@ -1681,6 +1667,9 @@
 <style>
   body.embedded > header { display: none !important; }
   body.embedded { background: transparent; }
+  /* The layout leaves room for our own header, which is hidden in here — so
+     without this the sidebar stops 73px short of the frame. */
+  body.embedded .app-layout { min-height: 100vh; }
   /* In the POS Emails tab, only Sent Emails + Welcome Emails are shown */
   body.embedded [data-tab="inbox"],
   body.embedded [data-tab="customers"],
