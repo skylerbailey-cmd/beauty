@@ -424,6 +424,9 @@
     .cs-account-info { min-width: 0; flex: 1; }
     .cs-account-info .cs-name { font-weight: 600; font-size: .85rem; color: var(--dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .cs-account-info .cs-addr { font-size: .75rem; color: var(--mid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* Rows that open something. Without a hover state a clickable row looks
+       exactly like a dead one, and nobody tries it. */
+    tr.rpt-clickable:hover > td { background: var(--accent-soft); }
     .rpt-nav button {
       display: block; width: 100%; text-align: left; cursor: pointer;
       padding: 9px 12px; border: 1.5px solid transparent; border-radius: 9px;
@@ -441,7 +444,10 @@
       #rptLayout { flex-direction: column; }
       #rptNav { flex: 1 1 auto !important; position: static !important;
                 flex-direction: row !important; flex-wrap: wrap; }
-      .rpt-nav button { width: auto; }
+      /* Rows that open something. Without a hover state a clickable row looks
+       exactly like a dead one, and nobody tries it. */
+    tr.rpt-clickable:hover > td { background: var(--accent-soft); }
+    .rpt-nav button { width: auto; }
     }
     .cs-forget {
       margin-left: auto; font-size: .72rem; color: var(--mid);
@@ -797,7 +803,12 @@
             <div style="font-family:system-ui,sans-serif;font-size:.88rem;font-weight:600;color:var(--dark);margin-bottom:4px" id="empPersonalName"></div>
             <div id="rptRangeNote" style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-bottom:8px"></div>
             <div id="empPersonalTableWrap">
-            <div style="font-family:system-ui,sans-serif;font-size:.75rem;color:var(--mid);margin-bottom:8px">A return is counted against the day the item was originally sold, not the day it came back.</div>
+            <!-- The row opens every receipt behind it, but a table row does not
+                 look clickable, so nobody found it. Say so. -->
+            <div style="font-family:system-ui,sans-serif;font-size:.75rem;color:var(--mid);margin-bottom:8px">
+              <b>Click a row</b> to see every sale, return and dispute behind it.
+              A return is counted against the day the item was originally sold, not the day it came back.
+            </div>
             <table class="report-table">
               <thead><tr><th>Employee</th><th>Sales</th><th>Net Sales $</th><th>Charged Back</th><th>Counts As</th><th>Commission</th></tr></thead>
               <tbody id="empPersonalBody"></tbody>
@@ -6324,7 +6335,7 @@ function commissionRow(e) {
   const person = String(e._person || e.employee_name || '').replace(/'/g, "\\'");
   const store = String(e._store || e.company_name || '').replace(/'/g, "\\'");
   return `
-    <tr onclick="openEmployeeDetail('${escapeHtml(person)}', '${escapeHtml(store)}')"
+    <tr class="rpt-clickable" onclick="openEmployeeDetail('${escapeHtml(person)}', '${escapeHtml(store)}')"
         style="cursor:pointer" title="See every sale, return and dispute behind this row">
       <td style="font-weight:600">${e.employee_name}${inactive}</td>
       <td>${e.sale_count}</td>
