@@ -1799,10 +1799,22 @@ router.post('/reports/employee-personal', async (req, res) => {
   // only their own. Both cover every company: the Reports tab has no company
   // picker because everything on it is combined, so scoping this to the
   // signed-in account would hide half of it.
+  // The returns behind the figures above. A return is netted into net sales
+  // rather than listed as its own line, so without this there is no way to see
+  // which refund moved the number — and a return is counted against the day the
+  // item was SOLD, so the one on screen may have been rung up later.
+  const returnsFor = async (scope, who) =>
+    (await pgDb.employeeActivityForRange(scope, who, startDate, endDate, null))
+      .filter(r => r.type === 'return');
+
   if (isAdmin(employee)) {
     const all = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
     const report = await pgDb.getEmployeeSalesReport(all, startDate, endDate);
-    res.json({ employee, role: 'admin', report });
+    // An admin reads everyone's commissions, so they get everyone's returns.
+    const names = [...new Set(report.map(r => r.employee_name).filter(Boolean))];
+    const returns = (await Promise.all(names.map(n => returnsFor(all, n)))).flat()
+      .sort((a, b) => (a.counts_on < b.counts_on ? 1 : a.counts_on > b.counts_on ? -1 : 0));
+    res.json({ employee, role: 'admin', report, returns });
   } else {
     // A sales employee only ever sees their OWN figures, but they may work at
     // more than one company. Their own name+PIN is re-verified against each
@@ -1834,7 +1846,14 @@ router.post('/reports/employee-personal', async (req, res) => {
       included.push(co.store_name);
     }
 
-    res.json({ employee, role: roleOf(employee), report: rows, companies_included: included, companies_rejected: rejected });
+    // Only their own, and only at the companies their name and PIN just
+    // cleared — the same restriction the rows above are under.
+    const theirScope = (await pgDb.getAllCompanyIds())
+      .filter(co => included.includes(co.store_name)).map(co => co.user_id);
+    const returns = theirScope.length ? await returnsFor(theirScope, employee.name) : [];
+
+    res.json({ employee, role: roleOf(employee), report: rows, returns,
+      companies_included: included, companies_rejected: rejected });
   }
 });
 

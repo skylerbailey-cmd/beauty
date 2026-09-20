@@ -837,6 +837,21 @@
               <tfoot id="empReportPaySummary"></tfoot>
             </table>
           </div>
+
+          <!-- The refunds behind the net figure above. Hidden when there are
+               none, so a clean period stays a clean page. -->
+          <div class="report-card" id="rptReturnsCard" style="display:none">
+            <h3>Returns This Period</h3>
+            <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
+              Already taken out of Net Sales above — these are not a further deduction.
+              A return counts against the period the item was <b>sold</b>, so one rung up later still appears here.
+            </p>
+            <table class="report-table">
+              <thead><tr><th>Receipt</th><th>Counts On</th><th>Refunded On</th><th>Customer</th><th>Employee</th><th>Their Share</th></tr></thead>
+              <tbody id="rptReturnsBody"></tbody>
+              <tfoot id="rptReturnsFoot"></tfoot>
+            </table>
+          </div>
           </section>
 
           <section class="rpt-section" data-section="chargebacks" style="display:none">
@@ -7347,6 +7362,43 @@ function renderManagerCommissions() {
     '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No data</td></tr>';
 }
 
+// The refunds sitting behind the net-sales figure in the table above. They are
+// netted into it rather than listed there, so this is the only place someone
+// can see which refund moved their number and check it against a receipt.
+function renderReportReturns(returns) {
+  const card = document.getElementById('rptReturnsCard');
+  const body = document.getElementById('rptReturnsBody');
+  const foot = document.getElementById('rptReturnsFoot');
+  if (!card || !body) return;
+  const rows = returns || [];
+  if (!rows.length) { card.style.display = 'none'; body.innerHTML = ''; if (foot) foot.innerHTML = ''; return; }
+
+  const stores = [...new Set(rows.map(r => r.store_name).filter(Boolean))];
+  const day = d => (d ? new Date(d + 'T12:00:00').toLocaleDateString() : '—');
+  body.innerHTML = rows.map(r => {
+    // A refund rung up outside this period is the confusing case — say so on
+    // the row rather than leaving two dates to be compared.
+    const later = r.rung_up && r.counts_on && r.rung_up !== r.counts_on;
+    return `
+    <tr>
+      <td style="font-family:monospace">${escapeHtml(String(r.receipt_number || ''))}</td>
+      <td>${day(r.counts_on)}</td>
+      <td>${day(r.rung_up)}${later ? '<span style="color:var(--mid);font-size:.75rem"> — after the period</span>' : ''}</td>
+      <td>${escapeHtml(r.customer_name || '—')}</td>
+      <td>${escapeHtml(r.employee_name || '')}${stores.length > 1 && r.store_name ? ` — ${escapeHtml(r.store_name)}` : ''}</td>
+      <td style="text-align:right">-$${money(Math.abs(Number(r.share) || 0))}</td>
+    </tr>`;
+  }).join('');
+  const total = rows.reduce((s, r) => s + Math.abs(Number(r.share) || 0), 0);
+  if (foot) {
+    foot.innerHTML = `<tr>
+      <td colspan="5" style="text-align:right;font-weight:600">${rows.length} return${rows.length === 1 ? '' : 's'} — already off Net Sales</td>
+      <td style="text-align:right;font-weight:700">-$${money(total)}</td>
+    </tr>`;
+  }
+  card.style.display = '';
+}
+
 // ─── Reports: the left-hand sections ────────────────────────────────────────
 // Four separate questions, kept on separate pages. Payroll and Products are
 // the books, so they only appear for an admin.
@@ -7520,11 +7572,14 @@ async function unlockPersonalReport(silent) {
       document.getElementById('empPersonalTableWrap').style.display = '';
       document.getElementById('empPersonalReport').style.display = 'block';
     }
-    // Both roles: the disputes on screen belong to whoever just unlocked.
+    // Both roles: the disputes and the returns on screen belong to whoever
+    // just unlocked — an admin gets everyone's, anyone else only their own.
+    renderReportReturns(data.returns);
     loadPendingChargebacks();
   } catch (err) {
     errorEl.textContent = err.message;
     document.getElementById('empPersonalReport').style.display = 'none';
+    renderReportReturns([]);
   }
 }
 
@@ -7545,10 +7600,12 @@ function lockPersonalReport() {
   // Back to this company for whoever unlocks next, like the dates below.
   rptProductsScope = 'current';
   updateProductsScopeNote();
+  const retCard = document.getElementById('rptReturnsCard');
+  if (retCard) retCard.style.display = 'none';
   // Everything the unlock filled in, including the tables themselves.
   for (const id of ['empPersonalBody',
                     'empReportBody', 'empPersonalPaySummary', 'empReportPaySummary',
-                    'rptChargebacksBody',
+                    'rptChargebacksBody', 'rptReturnsBody', 'rptReturnsFoot',
                     'leaderboard', 'flaggedReturnsBody',
                     'payrollBody', 'payrollPeriodNote', 'payrollPayday',
                     'rptRangeNote', 'empPersonalName']) {
