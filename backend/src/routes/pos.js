@@ -1525,10 +1525,13 @@ router.post('/reports/payroll/paid', async (req, res) => {
 // recorded so it isn't handed back again. Limited to one person when only they
 // are being paid.
 async function recordChequeEffects(scope, run, payday, by, onlyEmployeeId) {
+  // One id, a list of them, or nothing for the whole payday.
+  const only = onlyEmployeeId == null ? null
+    : new Set(Array.isArray(onlyEmployeeId) ? onlyEmployeeId : [onlyEmployeeId]);
   const pairs = (...kinds) => {
     const out = [];
     for (const e of run.employees) {
-      if (onlyEmployeeId && e.employee_id !== onlyEmployeeId) continue;
+      if (only && !only.has(e.employee_id)) continue;
       for (const a of e.adjustments) {
         if (kinds.includes(a.kind) && a.chargeback_id) {
           out.push({ chargeback_id: a.chargeback_id, employee_id: e.employee_id });
@@ -1540,7 +1543,7 @@ async function recordChequeEffects(scope, run, payday, by, onlyEmployeeId) {
   // What each cheque being closed came to. A cheque below zero hands over
   // nothing, so the shortfall follows the person onto the next one; recording
   // it here is what makes that possible.
-  const closing = run.employees.filter(e => !onlyEmployeeId || e.employee_id === onlyEmployeeId);
+  const closing = run.employees.filter(e => !only || only.has(e.employee_id));
   return {
     held: await pgDb.holdChargebacksFor(pairs('withheld', 'lost'), payday, by),
     released: await pgDb.releaseChargebacksFor(pairs('won'), payday),
@@ -1582,7 +1585,10 @@ router.post('/reports/payroll/paid-employee', async (req, res) => {
     const run = await pgDb.payrollForPayday(scope, payday, settings);
     if (run.paid) return res.status(400).json({ error: 'That whole payday is already closed.' });
     const result = await pgDb.setEmployeePayrollPaid(scope, payday, empId, true, me.name);
-    const { held, released, carried_forward } = await recordChequeEffects(scope, run, payday, me.name, empId);
+    // One person, one cheque: their record at the other store closes with it,
+    // so its disputes and its share of the shortfall are recorded too.
+    const theirIds = await pgDb.sameNameEmployeeIds(scope, empId);
+    const { held, released, carried_forward } = await recordChequeEffects(scope, run, payday, me.name, theirIds);
     return res.json({ ...result, chargebacks_held: held, chargebacks_released: released, carried_forward });
   }
 

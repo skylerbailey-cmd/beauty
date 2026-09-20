@@ -809,7 +809,7 @@
           </div>
         </div>
 
-          <div class="report-card">
+          <div class="report-card" id="rptEveryoneCard">
             <h3>Employee Commissions &amp; Sales</h3>
             <table class="report-table">
               <thead><tr><th>Employee</th><th>Sales</th><th>Net Sales $</th><th>Charged Back</th><th>Counts As</th><th>Commission</th></tr></thead>
@@ -832,9 +832,6 @@
               <tfoot id="rptReturnsFoot"></tfoot>
             </table>
           </div>
-          </section>
-
-          <section class="rpt-section" data-section="chargebacks" style="display:none">
             <div class="report-card">
               <h3>Chargebacks</h3>
               <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
@@ -1773,7 +1770,6 @@ async function init() {
     el.style.gap = '8px';
     setHeaderCompany(currentUser.companyName);
     document.getElementById('headerEmail').textContent = currentUser.email || '';
-
 
     if (currentUser.companyName) {
       document.getElementById('settingsCompanyName').value = currentUser.companyName;
@@ -6271,7 +6267,6 @@ async function deleteCustomProduct(customId) {
   renderBrandProductPanel('custom');
 }
 
-
 // ─── Leaderboard ────────────────────────────────────────────────────────────
 function renderLeaderboard(employees, containerId) {
   const container = document.getElementById(containerId || 'leaderboard');
@@ -7386,9 +7381,12 @@ function renderReportReturns(returns) {
 // One word each. These are signposts, not explanations — the section itself
 // says what it holds, and a caption under every one made the list of four read
 // as a wall of text.
+// Chargebacks sit with commissions now: a dispute is money coming off the pay
+// figure right above it, so keeping them apart put the cause on a different
+// page from the effect. The nav only draws when there is more than one section
+// to choose between, which for an employee there isn't.
 const RPT_SECTIONS = [
   { key: 'commissions', label: 'Commissions' },
-  { key: 'chargebacks', label: 'Chargebacks' },
   { key: 'payroll', label: 'Payroll', admin: true },
   { key: 'products', label: 'Products', admin: true },
 ];
@@ -7400,10 +7398,17 @@ function renderReportNav() {
   const visible = RPT_SECTIONS.filter(x => !x.admin || managerReportsUnlocked);
   // An admin-only section can't stay selected after locking.
   if (!visible.some(x => x.key === rptSection)) rptSection = 'commissions';
-  nav.innerHTML = visible.map(x => `
+  // One section is not a choice. An employee sees only their commissions, so
+  // the nav would be a single button beside the thing it already points at.
+  nav.style.display = visible.length > 1 ? 'flex' : 'none';
+  nav.innerHTML = visible.length < 2 ? '' : visible.map(x => `
     <button class="${x.key === rptSection ? 'active' : ''}" onclick="showReportSection('${x.key}')">
       ${escapeHtml(x.label)}
     </button>`).join('');
+  // Everyone's commissions are the admin's table. Without a roster behind it,
+  // it drew an empty frame with a copy of the reader's own summary under it.
+  const everyone = document.getElementById('rptEveryoneCard');
+  if (everyone) everyone.style.display = managerReportsUnlocked ? '' : 'none';
   for (const el of document.querySelectorAll('.rpt-section')) {
     const key = el.getAttribute('data-section');
     const allowed = visible.some(x => x.key === key);
@@ -7735,8 +7740,6 @@ async function saveBrands() {
   renderBrandFilters();
   renderProducts();
 }
-
-
 
 async function saveCompanyName() {
   const input = document.getElementById('settingsCompanyName');

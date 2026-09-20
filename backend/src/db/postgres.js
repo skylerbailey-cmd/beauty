@@ -1821,7 +1821,27 @@ async function adjustmentsForPayday(userId, payday, employeeName) {
 }
 
 // Mark one person paid on a payday, leaving it open for everybody else.
+// Everyone on this payday who is this same person. Two stores cut two rows but
+// one cheque, so paying them settles both — otherwise the store that wasn't
+// ticked keeps showing as owing, and its share never closes.
+async function sameNameEmployeeIds(userId, employeeId) {
+  const rows = (await query(
+    `SELECT b.id FROM pos_employees a JOIN pos_employees b
+       ON LOWER(TRIM(b.name)) = LOWER(TRIM(a.name))
+     WHERE a.id = $1 AND b.user_id = ANY($2::text[]) AND b.active = 1`,
+    [employeeId, asCompanyIds(userId)])).rows.map(r => r.id);
+  return rows.length ? rows : [employeeId];
+}
+
 async function setEmployeePayrollPaid(userId, payday, employeeId, paid, by) {
+  const ids = await sameNameEmployeeIds(userId, employeeId);
+  for (const id of ids) {
+    if (id !== employeeId) await setOneEmployeePayrollPaid(userId, payday, id, paid, by);
+  }
+  return setOneEmployeePayrollPaid(userId, payday, employeeId, paid, by);
+}
+
+async function setOneEmployeePayrollPaid(userId, payday, employeeId, paid, by) {
   if (paid) {
     await query(
       `INSERT INTO pos_payroll_employee_runs (payday, employee_id, user_id, paid_at, paid_by)
@@ -1840,16 +1860,34 @@ async function setEmployeePayrollPaid(userId, payday, employeeId, paid, by) {
 // forward. Written as the cheque closes; a reopened payday drops it again so
 // the carry-over disappears with the close that created it.
 async function recordPayrollBalances(userId, payday, rows) {
-  let written = 0;
+  // Someone working at both stores has a record at each, but they are paid
+  // once — so the shortfall is judged on what the two come to together. Paid
+  // $252 by one store and short $905 at the other is one cheque short $653,
+  // not a $905 debt sitting beside a $252 payment.
+  const byPerson = new Map();
   for (const r of rows || []) {
     if (!r || !r.employee_id) continue;
-    await query(
-      `INSERT INTO pos_payroll_balances (payday, employee_id, user_id, net_total, recorded_at)
-       VALUES ($1::date, $2, $3, $4, NOW())
-       ON CONFLICT (payday, employee_id)
-       DO UPDATE SET net_total = EXCLUDED.net_total, recorded_at = NOW()`,
-      [payday, r.employee_id, r.company_id || asCompanyIds(userId)[0], round2(r.total)]);
-    written++;
+    const key = String(r.employee_name || r.employee_id).trim().toLowerCase();
+    if (!byPerson.has(key)) byPerson.set(key, []);
+    byPerson.get(key).push(r);
+  }
+
+  let written = 0;
+  for (const theirs of byPerson.values()) {
+    const combined = round2(theirs.reduce((sum, r) => sum + Number(r.total || 0), 0));
+    // Pinned to whichever of their records ran furthest below zero, so the
+    // carry appears against the store that actually came up short.
+    const owner = theirs.reduce((worst, r) => (Number(r.total) < Number(worst.total) ? r : worst), theirs[0]);
+    for (const r of theirs) {
+      const amount = r === owner ? combined : 0;
+      await query(
+        `INSERT INTO pos_payroll_balances (payday, employee_id, user_id, net_total, recorded_at)
+         VALUES ($1::date, $2, $3, $4, NOW())
+         ON CONFLICT (payday, employee_id)
+         DO UPDATE SET net_total = EXCLUDED.net_total, recorded_at = NOW()`,
+        [payday, r.employee_id, r.company_id || asCompanyIds(userId)[0], amount]);
+      written++;
+    }
   }
   return written;
 }
@@ -3122,6 +3160,7 @@ module.exports = {
   setPayrollPaid,
   adjustmentsForPayday,
   setEmployeePayrollPaid,
+  sameNameEmployeeIds,
   recordPayrollBalances,
   clearPayrollBalances,
   holdChargebacksFor,
