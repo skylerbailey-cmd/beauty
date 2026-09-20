@@ -7,40 +7,20 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    :root, [data-theme="rose"] {
-      --rose: #c97d8a; --rose-lt: #f2dde2; --rose-dk: #9e5567;
-      --gold: #c9a96e; --gold-lt: #f5edd9; --cream: #fdf9f5;
-      --dark: #2c2022; --mid: #6b5057; --border: #e8d5d9;
-      --white: #ffffff; --success: #6B9E6B; --danger: #C96C6C;
-      --shadow: 0 4px 24px rgba(44,32,34,.08); --radius: 14px;
-    }
-    [data-theme="earth"] {
-      --rose: #5a8a7d; --rose-lt: #dceee9; --rose-dk: #3d6b60;
-      --gold: #a0855b; --gold-lt: #f0e8da; --cream: #f7f5f0;
-      --dark: #2a2620; --mid: #5e5648; --border: #d4cdc2;
-      --white: #ffffff; --success: #6B9E6B; --danger: #C96C6C;
-      --shadow: 0 4px 24px rgba(42,38,32,.08); --radius: 14px;
-    }
-    [data-theme="lavender"] {
-      --rose: #8b7bb5; --rose-lt: #eee9f7; --rose-dk: #6b5a9e;
-      --gold: #b0a0d0; --gold-lt: #f0ecf7; --cream: #f8f6fc;
-      --dark: #2a2535; --mid: #6b6080; --border: #d8d0e8;
-      --white: #ffffff; --success: #6B9E6B; --danger: #C96C6C;
-      --shadow: 0 4px 24px rgba(42,37,53,.08); --radius: 14px;
-    }
-    [data-theme="ocean"] {
-      --rose: #3d7a8a; --rose-lt: #daeef3; --rose-dk: #2c5f6e;
-      --gold: #5a9aaa; --gold-lt: #e0f0f5; --cream: #f4f9fb;
-      --dark: #1e2e33; --mid: #4a6a72; --border: #c5dce2;
-      --white: #ffffff; --success: #6B9E6B; --danger: #C96C6C;
-      --shadow: 0 4px 24px rgba(30,46,51,.08); --radius: 14px;
-    }
-    [data-theme="sage"] {
-      --rose: #6b8f71; --rose-lt: #e2ede4; --rose-dk: #4d6e52;
-      --gold: #8aaa8e; --gold-lt: #e8f0e9; --cream: #f5f8f5;
-      --dark: #232e24; --mid: #556b58; --border: #c8d8ca;
-      --white: #ffffff; --success: #6B9E6B; --danger: #C96C6C;
-      --shadow: 0 4px 24px rgba(35,46,36,.08); --radius: 14px;
+    /* One palette, no themes. A darker sky blue: every pairing below was
+       measured against WCAG AA (4.5:1 for body text) so the screen stays
+       readable across the counter, not only on the machine it was designed on.
+       The accent names are roles, not colours — recolouring means editing
+       these eleven lines and nothing else. */
+    :root {
+      --accent: #1F6FB2;        /* primary fill; white text on it reads 5.28:1 */
+      --accent-soft: #DCEAF6;   /* tinted rows and pills */
+      --accent-deep: #0F4C81;   /* headings and row links, 8.86:1 on white */
+      --accent2: #2D6E9E;       /* secondary fill, 5.00:1 under white text */
+      --accent2-soft: #EAF3FA;
+      --cream: #F5F8FB; --dark: #16242E; --mid: #4A6478; --border: #CBDCE9;
+      --white: #ffffff; --success: #2E7D5B; --danger: #C0392B;
+      --shadow: 0 4px 24px rgba(22,36,46,.10); --radius: 14px;
     }
 
     body { font-family: 'Georgia', serif; background: var(--cream); color: var(--dark); min-height: 100vh; }
@@ -51,13 +31,13 @@
       padding: 12px 24px; display: flex; align-items: center; gap: 16px;
       position: relative;
     }
-    header h1 { font-size: 1.2rem; color: var(--rose-dk); }
+    header h1 { font-size: 1.2rem; color: var(--accent-deep); }
     /* Which company you're currently in. Centred on the header itself rather
        than in a flex slot, because the left and right sides are different
        widths so a middle column wouldn't sit in the true centre. */
     .header-company {
       position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-      font-size: 1.6rem; font-weight: 700; color: var(--rose-dk);
+      font-size: 1.6rem; font-weight: 700; color: var(--accent-deep);
       letter-spacing: .01em; white-space: nowrap; max-width: 42%;
       overflow: hidden; text-overflow: ellipsis;
       pointer-events: none;  /* never blocks the controls it sits between */
@@ -74,8 +54,8 @@
       grid-template-columns: repeat(3,6px); gap: 4px; align-content: center;
       justify-content: center; transition: all .2s; padding: 0;
     }
-    .app-switch-btn:hover { border-color: var(--rose); background: var(--rose-lt); }
-    .app-switch-btn span { width: 6px; height: 6px; border-radius: 1.5px; background: var(--rose); }
+    .app-switch-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+    .app-switch-btn span { width: 6px; height: 6px; border-radius: 1.5px; background: var(--accent); }
     .app-menu {
       display: none; position: absolute; left: 0; top: 52px; background: var(--white);
       border: 1px solid var(--border); border-radius: 12px;
@@ -87,7 +67,7 @@
       font-size: .88rem; border-left: 3px solid transparent;
     }
     .app-menu a:hover { background: var(--cream); }
-    .app-menu a.active { background: var(--rose-lt); border-left-color: var(--rose); }
+    .app-menu a.active { background: var(--accent-soft); border-left-color: var(--accent); }
     .app-menu a b { display: block; }
     .app-menu a .sub { font-size: .75rem; color: var(--mid); }
 
@@ -102,7 +82,7 @@
     }
     .pos-topbar .employee-badge {
       font-family: system-ui, sans-serif; font-size: .82rem; padding: 6px 14px;
-      background: var(--gold-lt); border-radius: 20px; color: var(--dark);
+      background: var(--accent2-soft); border-radius: 20px; color: var(--dark);
     }
     .mode-toggle {
       display: flex; border: 1.5px solid var(--border); border-radius: 8px; overflow: hidden;
@@ -112,7 +92,7 @@
       padding: 6px 16px; border: none; cursor: pointer; background: var(--white); color: var(--mid);
       font-family: inherit; font-size: inherit; transition: all .2s;
     }
-    .mode-toggle button.active { background: var(--rose); color: white; }
+    .mode-toggle button.active { background: var(--accent); color: white; }
     .mode-toggle button.return-active { background: var(--danger); color: white; }
 
     /* ── Search ─── */
@@ -121,7 +101,7 @@
       font-size: .95rem; font-family: system-ui, sans-serif; background: var(--white);
       outline: none; margin-bottom: 16px;
     }
-    .search-bar:focus { border-color: var(--rose); }
+    .search-bar:focus { border-color: var(--accent); }
 
     /* ── Brand filters ─── */
     .brand-filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
@@ -131,8 +111,8 @@
       font-size: .78rem; font-weight: 600; transition: all .2s; text-transform: uppercase;
       letter-spacing: .5px;
     }
-    .brand-filter-btn:hover { border-color: var(--rose); }
-    .brand-filter-btn.active { background: var(--rose); color: white; border-color: var(--rose); }
+    .brand-filter-btn:hover { border-color: var(--accent); }
+    .brand-filter-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
 
     /* ── Product grid ─── */
     .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
@@ -140,16 +120,16 @@
       background: var(--white); border: 1.5px solid var(--border); border-radius: 12px;
       padding: 14px; cursor: pointer; transition: all .2s; user-select: none;
     }
-    .product-tile:hover { border-color: var(--rose); transform: translateY(-2px); box-shadow: var(--shadow); }
-    .product-tile .p-brand { font-family: system-ui, sans-serif; font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--rose); margin-bottom: 4px; }
+    .product-tile:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--shadow); }
+    .product-tile .p-brand { font-family: system-ui, sans-serif; font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--accent); margin-bottom: 4px; }
     .product-tile .p-name { font-size: .88rem; font-weight: 600; margin-bottom: 6px; line-height: 1.3; }
-    .product-tile .p-price { font-family: system-ui, sans-serif; font-size: 1rem; font-weight: 700; color: var(--rose-dk); }
+    .product-tile .p-price { font-family: system-ui, sans-serif; font-size: 1rem; font-weight: 700; color: var(--accent-deep); }
     .product-tile .p-no-price { font-family: system-ui, sans-serif; font-size: .78rem; color: var(--danger); font-style: italic; }
-    .product-tile img { width: 100%; height: 100px; object-fit: cover; border-radius: 8px; margin-bottom: 8px; background: var(--rose-lt); }
+    .product-tile img { width: 100%; height: 100px; object-fit: cover; border-radius: 8px; margin-bottom: 8px; background: var(--accent-soft); }
 
     /* ── Cart ─── */
     .cart-header { padding: 16px 20px; border-bottom: 1px solid var(--border); font-family: system-ui, sans-serif; }
-    .cart-header h3 { font-size: 1rem; color: var(--rose-dk); }
+    .cart-header h3 { font-size: 1rem; color: var(--accent-deep); }
     .cart-items { flex: 1; overflow-y: auto; padding: 12px 20px; }
     .cart-empty { text-align: center; padding: 40px 20px; color: var(--mid); font-family: system-ui, sans-serif; font-size: .9rem; }
     .cart-item {
@@ -159,7 +139,7 @@
     .cart-item .ci-info { flex: 1; }
     .cart-item .ci-name { font-size: .85rem; font-weight: 600; }
     .cart-item .ci-brand { font-size: .7rem; color: var(--mid); }
-    .cart-item .ci-price { font-size: .85rem; color: var(--rose-dk); font-weight: 600; }
+    .cart-item .ci-price { font-size: .85rem; color: var(--accent-deep); font-weight: 600; }
     .cart-item .ci-qty {
       display: flex; align-items: center; gap: 6px;
     }
@@ -168,7 +148,7 @@
       background: var(--white); cursor: pointer; font-size: .9rem; display: flex;
       align-items: center; justify-content: center; transition: all .15s;
     }
-    .cart-item .ci-qty button:hover { border-color: var(--rose); background: var(--rose-lt); }
+    .cart-item .ci-qty button:hover { border-color: var(--accent); background: var(--accent-soft); }
     .cart-item .ci-qty span { min-width: 20px; text-align: center; font-size: .88rem; font-weight: 600; }
     .cart-item .ci-remove { color: var(--danger); cursor: pointer; font-size: 1.1rem; padding: 4px; border: none; background: none; }
 
@@ -184,7 +164,7 @@
       font-size: .85rem; font-family: system-ui, sans-serif; outline: none; margin-bottom: 6px;
       background: var(--cream);
     }
-    .customer-section input:focus { border-color: var(--rose); background: var(--white); }
+    .customer-section input:focus { border-color: var(--accent); background: var(--white); }
 
     .payment-methods { display: flex; gap: 8px; margin-bottom: 12px; }
     .pay-btn {
@@ -192,8 +172,8 @@
       background: var(--white); cursor: pointer; font-family: system-ui, sans-serif;
       font-size: .78rem; font-weight: 600; text-align: center; transition: all .2s;
     }
-    .pay-btn:hover { border-color: var(--rose); }
-    .pay-btn.active { background: var(--rose); color: white; border-color: var(--rose); }
+    .pay-btn:hover { border-color: var(--accent); }
+    .pay-btn.active { background: var(--accent); color: white; border-color: var(--accent); }
 
     .checkout-btn {
       width: 100%; padding: 14px; border: none; border-radius: 10px; font-size: 1rem;
@@ -218,18 +198,18 @@
       background: var(--white); border-radius: var(--radius); box-shadow: 0 16px 48px rgba(0,0,0,.15);
       max-width: 500px; width: 90%; max-height: 85vh; overflow-y: auto; padding: 32px;
     }
-    .modal h2 { font-size: 1.2rem; color: var(--rose-dk); margin-bottom: 8px; }
+    .modal h2 { font-size: 1.2rem; color: var(--accent-deep); margin-bottom: 8px; }
     .modal p.sub { font-size: .85rem; color: var(--mid); font-family: system-ui, sans-serif; margin-bottom: 20px; }
     .modal .field { margin-bottom: 16px; }
     .modal .field label { display: block; font-family: system-ui, sans-serif; font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--mid); margin-bottom: 6px; }
     .modal .field input { width: 100%; padding: 10px 14px; border: 1.5px solid var(--border); border-radius: 8px; font-size: .95rem; font-family: system-ui, sans-serif; outline: none; }
-    .modal .field input:focus { border-color: var(--rose); }
+    .modal .field input:focus { border-color: var(--accent); }
     .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; }
     .modal-actions .btn { padding: 10px 24px; border-radius: 8px; font-family: system-ui, sans-serif; font-size: .88rem; font-weight: 600; cursor: pointer; border: none; transition: all .2s; }
     .btn-cancel { background: var(--cream); color: var(--mid); border: 1px solid var(--border) !important; }
-    .btn-cancel:hover { border-color: var(--rose) !important; color: var(--rose-dk); }
-    .btn-confirm { background: var(--rose); color: white; }
-    .btn-confirm:hover { background: var(--rose-dk); }
+    .btn-cancel:hover { border-color: var(--accent) !important; color: var(--accent-deep); }
+    .btn-confirm { background: var(--accent); color: white; }
+    .btn-confirm:hover { background: var(--accent-deep); }
 
     /* ── Receipt modal ─── */
     /* Flex column so the action buttons (Print/Email/Done/etc.) always stay
@@ -278,10 +258,10 @@
     .reports-panel { display: none; }
     .reports-panel.show { display: block; }
     .report-card { background: var(--white); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; box-shadow: var(--shadow); }
-    .report-card h3 { font-size: 1rem; color: var(--rose-dk); margin-bottom: 12px; font-family: system-ui, sans-serif; }
+    .report-card h3 { font-size: 1rem; color: var(--accent-deep); margin-bottom: 12px; font-family: system-ui, sans-serif; }
     .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
     .stat-box { background: var(--cream); border-radius: 10px; padding: 14px; text-align: center; }
-    .stat-box .stat-val { font-size: 1.4rem; font-weight: 700; color: var(--rose-dk); }
+    .stat-box .stat-val { font-size: 1.4rem; font-weight: 700; color: var(--accent-deep); }
     .stat-box .stat-lbl { font-family: system-ui, sans-serif; font-size: .72rem; text-transform: uppercase; letter-spacing: .5px; color: var(--mid); margin-top: 4px; }
     .report-table { width: 100%; border-collapse: collapse; font-family: system-ui, sans-serif; font-size: .82rem; }
     .report-table th { text-align: left; padding: 8px; border-bottom: 2px solid var(--border); color: var(--mid); font-size: .72rem; text-transform: uppercase; letter-spacing: .5px; }
@@ -299,13 +279,13 @@
 
     .date-range { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; font-family: system-ui, sans-serif; font-size: .85rem; }
     .date-range input, .date-range select { padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-family: system-ui, sans-serif; font-size: .85rem; outline: none; background: var(--white); color: var(--dark); }
-    .date-range input:focus, .date-range select:focus { border-color: var(--rose); }
+    .date-range input:focus, .date-range select:focus { border-color: var(--accent); }
     /* Half-month shortcuts — secondary to the filter's own Update button. */
     .btn.half-month {
-      background: var(--cream); color: var(--rose-dk); border: 1px solid var(--border);
+      background: var(--cream); color: var(--accent-deep); border: 1px solid var(--border);
       padding: 8px 12px; font-size: .82rem; white-space: nowrap;
     }
-    .btn.half-month:hover { border-color: var(--rose); background: #fff; }
+    .btn.half-month:hover { border-color: var(--accent); background: #fff; }
     .date-range .btn { padding: 8px 16px; }
 
     /* ── Manage employees panel ─── */
@@ -315,7 +295,7 @@
     .emp-row .emp-role { font-size: .78rem; color: var(--mid); padding: 3px 10px; background: var(--cream); border-radius: 12px; }
     .emp-row .emp-status { font-size: .72rem; padding: 3px 10px; border-radius: 12px; }
     .emp-row .emp-status.active { background: #e8f5e9; color: #388e3c; }
-    .emp-row .emp-status.inactive { background: #fce4ec; color: #c62828; }
+    .emp-row .emp-status.inactive { background: #FDECEA; color: #c62828; }
 
     /* ── Sub-tabs ─── */
     .pos-subtabs {
@@ -327,8 +307,8 @@
       color: var(--mid); border-bottom: 2px solid transparent; margin-bottom: -2px;
       transition: all .2s;
     }
-    .pos-subtabs button:hover { color: var(--rose-dk); }
-    .pos-subtabs button.active { color: var(--rose-dk); border-bottom-color: var(--rose); }
+    .pos-subtabs button:hover { color: var(--accent-deep); }
+    .pos-subtabs button.active { color: var(--accent-deep); border-bottom-color: var(--accent); }
 
     .tab-content { display: none; }
     .tab-content.show { display: block; }
@@ -427,7 +407,7 @@
       border: 1.5px solid var(--border); border-radius: 10px; background: var(--white);
       cursor: pointer; font-family: system-ui, sans-serif; transition: all .2s; min-width: 0;
     }
-    .company-switcher-btn:hover { border-color: var(--rose); background: var(--cream); }
+    .company-switcher-btn:hover { border-color: var(--accent); background: var(--cream); }
     .company-switcher-btn .cs-company { font-weight: 600; font-size: .85rem; color: var(--dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
     .company-switcher-btn .cs-email { font-size: .72rem; color: var(--mid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
     .company-switcher-btn .cs-arrow { color: var(--mid); font-size: 10px; flex-shrink: 0; }
@@ -439,8 +419,8 @@
     .company-switcher-menu.show { display: block; }
     .cs-account { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; transition: background .15s; }
     .cs-account:hover { background: var(--cream); }
-    .cs-account.active { background: var(--rose-lt); }
-    .cs-account .cs-check { width: 18px; flex-shrink: 0; text-align: center; color: var(--rose-dk); font-size: 14px; }
+    .cs-account.active { background: var(--accent-soft); }
+    .cs-account .cs-check { width: 18px; flex-shrink: 0; text-align: center; color: var(--accent-deep); font-size: 14px; }
     .cs-account-info { min-width: 0; flex: 1; }
     .cs-account-info .cs-name { font-weight: 600; font-size: .85rem; color: var(--dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .cs-account-info .cs-addr { font-size: .75rem; color: var(--mid); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -452,8 +432,8 @@
     }
     .rpt-nav button:hover { background: var(--cream); }
     .rpt-nav button.active {
-      background: var(--rose); color: #fff; font-weight: 600;
-      border-color: var(--rose);
+      background: var(--accent); color: #fff; font-weight: 600;
+      border-color: var(--accent);
     }
     /* Narrow screens: the nav becomes a row above the content rather than a
        sliver beside it. */
@@ -467,9 +447,9 @@
       margin-left: auto; font-size: .72rem; color: var(--mid);
       padding: 2px 6px; border-radius: 6px; white-space: nowrap;
     }
-    .cs-forget:hover { background: var(--rose-lt); color: var(--danger); }
+    .cs-forget:hover { background: var(--accent-soft); color: var(--danger); }
     .cs-divider { border-top: 1px solid var(--border); margin: 4px 0; }
-    .cs-action { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; font-size: .85rem; color: var(--rose-dk); transition: background .15s; }
+    .cs-action { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; font-size: .85rem; color: var(--accent-deep); transition: background .15s; }
     .cs-action:hover { background: var(--cream); }
     .cs-action .cs-icon { width: 18px; text-align: center; font-size: 16px; flex-shrink: 0; }
 
@@ -527,9 +507,9 @@
 <!-- ── Login gate ─── -->
 <div id="loginGate" style="display:none;max-width:400px;margin:80px auto;padding:0 20px">
   <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);padding:36px;text-align:center">
-    <h2 style="color:var(--rose-dk);margin-bottom:8px">Sign In Required</h2>
+    <h2 style="color:var(--accent-deep);margin-bottom:8px">Sign In Required</h2>
     <p style="font-family:system-ui,sans-serif;font-size:.88rem;color:var(--mid);margin-bottom:24px">Please sign in via the Welcome Emails page first to use the POS system.</p>
-    <a href="/" style="display:inline-block;padding:12px 32px;background:var(--rose);color:white;border-radius:10px;text-decoration:none;font-family:system-ui,sans-serif;font-weight:600">Go to Welcome Emails</a>
+    <a href="/" style="display:inline-block;padding:12px 32px;background:var(--accent);color:white;border-radius:10px;text-decoration:none;font-family:system-ui,sans-serif;font-weight:600">Go to Welcome Emails</a>
   </div>
 </div>
 
@@ -557,8 +537,8 @@
             <button id="modereturn" onclick="setMode('return')" title="Find a receipt to reprint, email, or return against">Look Up</button>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn" style="background:var(--gold);color:#fff;padding:7px 16px;font-family:system-ui,sans-serif;font-size:.82rem;border-radius:8px" onclick="printDaySummary()">Print End of Day Report</button>
-            <button class="btn" style="background:var(--rose);color:#fff;padding:7px 16px;font-family:system-ui,sans-serif;font-size:.82rem;border-radius:8px" onclick="openBusinessCards()">Print Business Card</button>
+            <button class="btn" style="background:var(--accent2);color:#fff;padding:7px 16px;font-family:system-ui,sans-serif;font-size:.82rem;border-radius:8px" onclick="printDaySummary()">Print End of Day Report</button>
+            <button class="btn" style="background:var(--accent);color:#fff;padding:7px 16px;font-family:system-ui,sans-serif;font-size:.82rem;border-radius:8px" onclick="openBusinessCards()">Print Business Card</button>
           </div>
         </div>
         <!-- Sale mode: product search & grid -->
@@ -571,7 +551,7 @@
         <div id="returnView" style="display:none">
           <!-- Hidden until a receipt that can actually be returned is found —
                it is noise for someone who only wants to reprint. -->
-          <div id="returnPolicyNote" style="display:none;max-width:500px;margin-bottom:16px;padding:14px 16px;background:#fff6e0;border:1px solid #f0d48a;border-left:4px solid var(--gold);border-radius:10px;font-family:system-ui,sans-serif">
+          <div id="returnPolicyNote" style="display:none;max-width:500px;margin-bottom:16px;padding:14px 16px;background:#fff6e0;border:1px solid #f0d48a;border-left:4px solid var(--accent2);border-radius:10px;font-family:system-ui,sans-serif">
             <div style="font-weight:700;font-size:.85rem;color:#8a6d1f;margin-bottom:6px">⚠️ Before processing a return</div>
             <ul style="margin:0;padding-left:18px;font-size:.82rem;color:#6b5518;line-height:1.5">
               <li>Inspect each item — make sure nothing has been <strong>opened or used</strong>.</li>
@@ -586,7 +566,7 @@
               <input type="text" id="returnReceiptInput" class="search-bar" placeholder="Sale receipt # (e.g. 1042)" style="margin-bottom:0;flex:1" onkeydown="if(event.key==='Enter')lookupReceipt()">
               <button class="btn btn-confirm" onclick="lookupReceipt()" style="white-space:nowrap">Look Up</button>
             </div>
-            <div id="returnLookupError" style="display:none;margin-top:10px;padding:10px 14px;background:#fce4ec;border-radius:8px;font-family:system-ui,sans-serif;font-size:.85rem;color:var(--danger)"></div>
+            <div id="returnLookupError" style="display:none;margin-top:10px;padding:10px 14px;background:#FDECEA;border-radius:8px;font-family:system-ui,sans-serif;font-size:.85rem;color:var(--danger)"></div>
             <div id="returnLookupResult" style="display:none;margin-top:16px">
               <div style="border:1px solid var(--border);border-radius:10px;padding:16px;background:var(--cream)">
                 <div style="display:flex;justify-content:space-between;font-family:system-ui,sans-serif;font-size:.85rem;margin-bottom:8px">
@@ -604,7 +584,7 @@
                 </div>
               </div>
               <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
-                <button class="btn" style="background:var(--rose);color:#fff" onclick="openLookedUpReceipt()"
+                <button class="btn" style="background:var(--accent);color:#fff" onclick="openLookedUpReceipt()"
                   title="Open this receipt to print or email it">View / Print Receipt</button>
                 <span id="returnActions" style="display:none;gap:8px">
                   <button class="btn" style="margin-right:8px" onclick="addRefundAmount()" title="Give money back without a product coming back — a partial refund, goodwill credit or price adjustment">Refund an Amount</button>
@@ -640,7 +620,7 @@
           <div class="employee-assign" style="margin-bottom:12px">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
               <label style="font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid)">Employees</label>
-              <button onclick="addEmployeeToSale()" style="background:none;border:none;cursor:pointer;color:var(--rose);font-family:system-ui,sans-serif;font-size:.78rem;text-decoration:underline">+ Add</button>
+              <button onclick="addEmployeeToSale()" style="background:none;border:none;cursor:pointer;color:var(--accent);font-family:system-ui,sans-serif;font-size:.78rem;text-decoration:underline">+ Add</button>
             </div>
             <div id="saleEmployees"></div>
           </div>
@@ -654,7 +634,7 @@
           <div id="saleTenders" style="margin-bottom:12px">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
               <span id="tenderHeading" style="font-size:.8rem;color:var(--mid);font-family:system-ui,sans-serif;font-weight:600">Payment</span>
-              <button type="button" onclick="addTender()" style="padding:4px 10px;font-size:.75rem;border:1.5px solid var(--border);background:#fff;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;color:var(--rose)">+ Split</button>
+              <button type="button" onclick="addTender()" style="padding:4px 10px;font-size:.75rem;border:1.5px solid var(--border);background:#fff;border-radius:8px;cursor:pointer;font-family:system-ui,sans-serif;color:var(--accent)">+ Split</button>
             </div>
             <div id="tenderRows"></div>
             <div id="tenderCardNote" style="display:none;font-family:system-ui,sans-serif;font-size:.75rem;color:var(--danger);margin-top:4px"></div>
@@ -699,7 +679,7 @@
           <label>Company:</label>
           <select id="txCompanyScope" onchange="changeCompanyScope(this.value)"></select>
         </span>
-        <button class="btn" id="runAuditBtn" style="background:var(--gold);color:#fff;padding:8px 16px" onclick="runAudit()">Run Batch Audit</button>
+        <button class="btn" id="runAuditBtn" style="background:var(--accent2);color:#fff;padding:8px 16px" onclick="runAudit()">Run Batch Audit</button>
         <span id="batchStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)"></span>
       </div>
 
@@ -718,7 +698,7 @@
           <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
             <h3 style="margin:0">Batch Reconciliation Audit <span id="batchResultRange" style="font-weight:400;color:var(--mid);font-size:.85rem"></span></h3>
             <div style="display:flex;gap:8px;align-items:center">
-              <button class="btn" id="saveAuditBtn" style="background:var(--gold);color:#fff;padding:7px 14px;font-size:.82rem" onclick="saveCurrentAudit()">Save This Audit</button>
+              <button class="btn" id="saveAuditBtn" style="background:var(--accent2);color:#fff;padding:7px 14px;font-size:.82rem" onclick="saveCurrentAudit()">Save This Audit</button>
               <button class="btn" id="closeAuditBtn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:7px 14px;font-size:.82rem" onclick="closeAudit()" title="Hide this report — Run Batch Audit brings it back">Close</button>
             </div>
           </div>
@@ -740,7 +720,7 @@
             <input type="file" id="importFile" accept=".csv" style="display:none" onchange="handleImportFile(this)">
             <button class="btn" id="importCsvBtn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:7px 14px;font-size:.82rem" onclick="document.getElementById('importFile').click()">Import CSV</button>
             <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportTransactionsCSV()">Export CSV</button>
-            <button class="btn" id="chargebackSelectedBtn" style="background:var(--gold);color:#fff;padding:7px 14px;font-size:.82rem;display:none" onclick="openBulkChargeback()">Set Chargeback Status</button>
+            <button class="btn" id="chargebackSelectedBtn" style="background:var(--accent2);color:#fff;padding:7px 14px;font-size:.82rem;display:none" onclick="openBulkChargeback()">Set Chargeback Status</button>
             <button class="btn" id="deleteSelectedTxBtn" style="background:var(--danger);color:#fff;padding:7px 14px;font-size:.82rem;display:none" onclick="startBulkDeleteTransactions()">Delete Selected</button>
           </div>
         </div>
@@ -962,7 +942,7 @@
               <option value="">All employees</option>
             </select>
             <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportCustomersCSV()">Export CSV</button>
-            <button class="btn" style="padding:7px 14px;font-size:.82rem;background:var(--gold);color:#fff" onclick="openMassEmail()">Mass Email</button>
+            <button class="btn" style="padding:7px 14px;font-size:.82rem;background:var(--accent2);color:#fff" onclick="openMassEmail()">Mass Email</button>
           </div>
         </div>
         <div id="custFilterSummary" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin-top:8px"></div>
@@ -1046,16 +1026,6 @@
             </select>
           </div>
           <div class="field">
-            <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Theme</label>
-            <select id="settingsTheme" onchange="selectTheme(this.value)" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
-              <option value="rose">Rose &amp; Gold</option>
-              <option value="earth">Earth &amp; Turquoise</option>
-              <option value="lavender">Lavender Spa</option>
-              <option value="ocean">Ocean Breeze</option>
-              <option value="sage">Sage Garden</option>
-            </select>
-          </div>
-          <div class="field">
             <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Sales Tax Rate (%)</label>
             <input type="number" id="settingsTaxRate" placeholder="8.1875" step="0.0001" min="0" max="20" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;background:var(--cream);color:var(--dark)">
           </div>
@@ -1072,50 +1042,50 @@
         <div id="brandCheckboxes" style="display:flex;flex-direction:column;gap:10px">
           <div class="brand-config-row" data-brand-key="avologi">
             <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
-              <input type="checkbox" value="avologi" onchange="saveBrands()" style="accent-color:var(--rose-dk)" />
+              <input type="checkbox" value="avologi" onchange="saveBrands()" style="accent-color:var(--accent-deep)" />
               <div style="flex:1"><div style="font-weight:600;font-size:.88rem;color:var(--dark)">Avologi</div><div style="font-size:.72rem;color:var(--mid)">LED and laser devices</div></div>
-              <button onclick="toggleBrandProducts('avologi')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--rose-dk)">Products</button>
+              <button onclick="toggleBrandProducts('avologi')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--accent-deep)">Products</button>
             </div>
             <div class="brand-products-panel" id="brandPanel-avologi" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:400px;overflow-y:auto"></div>
           </div>
           <div class="brand-config-row" data-brand-key="avinichi">
             <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
-              <input type="checkbox" value="avinichi" onchange="saveBrands()" style="accent-color:var(--rose-dk)" />
+              <input type="checkbox" value="avinichi" onchange="saveBrands()" style="accent-color:var(--accent-deep)" />
               <div style="flex:1"><div style="font-weight:600;font-size:.88rem;color:var(--dark)">Avinichi</div><div style="font-size:.72rem;color:var(--mid)">Noni-infused luxury skincare</div></div>
-              <button onclick="toggleBrandProducts('avinichi')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--rose-dk)">Products</button>
+              <button onclick="toggleBrandProducts('avinichi')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--accent-deep)">Products</button>
             </div>
             <div class="brand-products-panel" id="brandPanel-avinichi" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:400px;overflow-y:auto"></div>
           </div>
           <div class="brand-config-row" data-brand-key="hydrasphere">
             <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
-              <input type="checkbox" value="hydrasphere" onchange="saveBrands()" style="accent-color:var(--rose-dk)" />
+              <input type="checkbox" value="hydrasphere" onchange="saveBrands()" style="accent-color:var(--accent-deep)" />
               <div style="flex:1"><div style="font-weight:600;font-size:.88rem;color:var(--dark)">HydraSphere Plus</div><div style="font-size:.72rem;color:var(--mid)">Hydrogen-infused skincare &amp; SPF</div></div>
-              <button onclick="toggleBrandProducts('hydrasphere')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--rose-dk)">Products</button>
+              <button onclick="toggleBrandProducts('hydrasphere')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--accent-deep)">Products</button>
             </div>
             <div class="brand-products-panel" id="brandPanel-hydrasphere" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:400px;overflow-y:auto"></div>
           </div>
           <div class="brand-config-row" data-brand-key="spacetouch">
             <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
-              <input type="checkbox" value="spacetouch" onchange="saveBrands()" style="accent-color:var(--rose-dk)" />
+              <input type="checkbox" value="spacetouch" onchange="saveBrands()" style="accent-color:var(--accent-deep)" />
               <div style="flex:1"><div style="font-weight:600;font-size:.88rem;color:var(--dark)">SpaceTouch</div><div style="font-size:.72rem;color:var(--mid)">Full-body LED therapy devices</div></div>
-              <button onclick="toggleBrandProducts('spacetouch')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--rose-dk)">Products</button>
+              <button onclick="toggleBrandProducts('spacetouch')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--accent-deep)">Products</button>
             </div>
             <div class="brand-products-panel" id="brandPanel-spacetouch" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:400px;overflow-y:auto"></div>
           </div>
           <div class="brand-config-row" data-brand-key="lumieres">
             <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
-              <input type="checkbox" value="lumieres" onchange="saveBrands()" style="accent-color:var(--rose-dk)" />
+              <input type="checkbox" value="lumieres" onchange="saveBrands()" style="accent-color:var(--accent-deep)" />
               <div style="flex:1"><div style="font-weight:600;font-size:.88rem;color:var(--dark)">Lumières</div><div style="font-size:.72rem;color:var(--mid)">Red/NIR/blue light therapy devices</div></div>
-              <button onclick="toggleBrandProducts('lumieres')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--rose-dk)">Products</button>
+              <button onclick="toggleBrandProducts('lumieres')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--accent-deep)">Products</button>
             </div>
             <div class="brand-products-panel" id="brandPanel-lumieres" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:400px;overflow-y:auto"></div>
           </div>
           <!-- Custom Products inline -->
           <div class="brand-config-row">
             <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
-              <input type="checkbox" checked disabled style="accent-color:var(--rose-dk)" />
+              <input type="checkbox" checked disabled style="accent-color:var(--accent-deep)" />
               <div style="flex:1"><div style="font-weight:600;font-size:.88rem;color:var(--dark)">Custom Products</div><div style="font-size:.72rem;color:var(--mid)">Your own products</div></div>
-              <button onclick="toggleBrandProducts('custom')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--rose-dk)">Manage</button>
+              <button onclick="toggleBrandProducts('custom')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--accent-deep)">Manage</button>
             </div>
             <div class="brand-products-panel" id="brandPanel-custom" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:500px;overflow-y:auto">
             </div>
@@ -1154,7 +1124,7 @@
           notification and no carrier sits in the way to drop it.
         </p>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:system-ui,sans-serif;font-size:.85rem;margin-bottom:10px">
-          <input type="checkbox" id="settingsAlertEnabled" style="width:16px;height:16px;accent-color:var(--rose)"> Send a text on every completed sale
+          <input type="checkbox" id="settingsAlertEnabled" style="width:16px;height:16px;accent-color:var(--accent)"> Send a text on every completed sale
         </label>
         <!-- One row per person. Each needs its own carrier, so they can't just
              be a list of numbers. -->
@@ -1237,7 +1207,7 @@
             <span id="empImportStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--success)"></span>
           </div>
           <label style="display:flex;align-items:center;gap:6px;font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:8px;cursor:pointer">
-            <input type="checkbox" id="showInactiveEmps" onchange="loadEmployees()" style="accent-color:var(--rose-dk)"> Show deactivated employees
+            <input type="checkbox" id="showInactiveEmps" onchange="loadEmployees()" style="accent-color:var(--accent-deep)"> Show deactivated employees
           </label>
           <div class="emp-list" id="empList"></div>
         </div>
@@ -1263,7 +1233,7 @@
 
       <!-- Sign Out -->
       <div style="margin-top:24px;text-align:center">
-        <a href="#" onclick="logout(); return false;" style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--rose-dk);text-decoration:none" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+        <a href="#" onclick="logout(); return false;" style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--accent-deep);text-decoration:none" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
           Sign out
         </a>
       </div>
@@ -1365,7 +1335,7 @@
     </div>
     <label style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.88rem;color:var(--dark);cursor:pointer;margin-bottom:14px">
       <input type="checkbox" id="refundIncludesTax" checked onchange="updateRefundAmountPreview()"
-             style="width:16px;height:16px;accent-color:var(--rose)">
+             style="width:16px;height:16px;accent-color:var(--accent)">
       This amount already includes tax
     </label>
     <div class="field">
@@ -1387,8 +1357,8 @@
     <h2 style="text-align:center" id="receiptModalTitle">Sale Complete!</h2>
     <div class="receipt" id="receiptContent"></div>
     <div class="receipt-actions">
-      <button class="btn" style="background:var(--rose);color:white" onclick="printReceipt()">Print</button>
-      <button class="btn" style="background:var(--gold);color:white" onclick="emailReceipt()">Email Receipt</button>
+      <button class="btn" style="background:var(--accent);color:white" onclick="printReceipt()">Print</button>
+      <button class="btn" style="background:var(--accent2);color:white" onclick="emailReceipt()">Email Receipt</button>
       <button class="btn" style="background:var(--success);color:white" id="sendInstructionsBtn" onclick="showInstructionsForm()">Send Welcome Email</button>
       <button class="btn btn-cancel" onclick="closeReceipt()">Done</button>
     </div>
@@ -1597,7 +1567,7 @@
 <!-- ─── Transaction Edit Modal ─── -->
 <div class="modal-overlay" id="txEditModal">
   <div class="modal" style="max-width:660px">
-    <h2>Edit Transaction <span id="txEditReceipt" style="font-size:.95rem;color:var(--rose-dk);font-weight:700"></span></h2>
+    <h2>Edit Transaction <span id="txEditReceipt" style="font-size:.95rem;color:var(--accent-deep);font-weight:700"></span></h2>
     <p id="txEditWho" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin:-4px 0 10px"></p>
     <div style="display:flex;gap:12px">
       <div class="field" style="flex:1"><label>Customer Name</label><input type="text" id="txEditCustName"></div>
@@ -1612,7 +1582,7 @@
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
       <label style="font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid)">Employees</label>
-      <button onclick="txEditAddEmployee()" style="background:none;border:none;cursor:pointer;color:var(--rose);font-family:system-ui,sans-serif;font-size:.78rem;text-decoration:underline">+ Add</button>
+      <button onclick="txEditAddEmployee()" style="background:none;border:none;cursor:pointer;color:var(--accent);font-family:system-ui,sans-serif;font-size:.78rem;text-decoration:underline">+ Add</button>
     </div>
     <div id="txEditEmployees" style="margin-bottom:12px"></div>
     <div class="cart-totals" style="font-family:system-ui,sans-serif;font-size:.9rem;border-top:1px solid var(--border);padding-top:10px">
@@ -1628,7 +1598,7 @@
       <div style="font-family:system-ui,sans-serif;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Wrong company?</div>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <select id="txMoveTarget" style="flex:1;min-width:200px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none"></select>
-        <button class="btn" style="background:var(--gold);color:#fff;padding:8px 16px;font-size:.82rem" onclick="moveTxToCompany()">Move sale</button>
+        <button class="btn" style="background:var(--accent2);color:#fff;padding:8px 16px;font-size:.82rem" onclick="moveTxToCompany()">Move sale</button>
       </div>
       <div style="font-family:system-ui,sans-serif;font-size:.72rem;color:var(--mid);margin-top:6px">Keeps the receipt number, date, items and totals. The employees credited must also exist on that company.</div>
       <div id="txMoveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
@@ -1793,7 +1763,7 @@ async function init() {
     const resp = await fetch(`${API}/auth/me`, { credentials: 'include' });
     if (!resp.ok) throw new Error('Not auth');
     const data = await resp.json();
-    currentUser = { email: data.email, companyName: data.company_name || data.companyName, theme: data.theme, brands: data.brands };
+    currentUser = { email: data.email, companyName: data.company_name || data.companyName, brands: data.brands };
     selectedBrands = data.brands || ['avologi', 'avinichi', 'hydrasphere', 'spacetouch', 'lumieres'];
     addLinkedAccount(currentUser.email, currentUser.companyName);
 
@@ -1804,8 +1774,6 @@ async function init() {
     setHeaderCompany(currentUser.companyName);
     document.getElementById('headerEmail').textContent = currentUser.email || '';
 
-    const theme = currentUser.theme || localStorage.getItem('glowTheme') || 'rose';
-    applyTheme(theme);
 
     if (currentUser.companyName) {
       document.getElementById('settingsCompanyName').value = currentUser.companyName;
@@ -1837,8 +1805,6 @@ async function init() {
     document.getElementById('custEnd').value = today;
   } catch (err) {
     console.error('[pos] Auth check failed:', err);
-    const savedTheme = localStorage.getItem('glowTheme');
-    if (savedTheme) applyTheme(savedTheme);
     document.getElementById('loginGate').style.display = 'block';
   }
 }
@@ -1894,7 +1860,7 @@ function renderProducts() {
       <div class="p-brand">${p.brand}</div>
       <div class="p-name">${p.name}</div>
       <div class="p-price">$${(p.price > 0 ? p.price : p.retailPrice).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
-      ${p.minPrice > 0 ? `<div style="font-family:system-ui,sans-serif;font-size:.68rem;color:var(--rose-dk);margin-top:2px">Min: $${money(p.minPrice)}</div>` : ''}
+      ${p.minPrice > 0 ? `<div style="font-family:system-ui,sans-serif;font-size:.68rem;color:var(--accent-deep);margin-top:2px">Min: $${money(p.minPrice)}</div>` : ''}
     </div>
   `).join('');
 }
@@ -2924,7 +2890,7 @@ function renderBusinessCards() {
 function markCardDirty(i) {
   businessCardRoster[i]._dirty = true;
   const btn = document.getElementById('bcSave' + i);
-  if (btn) { btn.style.background = 'var(--rose)'; btn.style.color = '#fff'; btn.textContent = 'Save'; }
+  if (btn) { btn.style.background = 'var(--accent)'; btn.style.color = '#fff'; btn.textContent = 'Save'; }
 }
 
 async function saveBusinessCard(i) {
@@ -3300,7 +3266,7 @@ async function loadEmployees() {
       <div class="emp-role">${e.role}</div>
       <div style="font-size:.78rem;color:var(--mid);font-family:system-ui,sans-serif">${e.commission_rate || 0}% comm</div>
       <span class="emp-status ${e.active ? 'active' : 'inactive'}">${e.active ? 'Active' : 'Inactive'}</span>
-      <button onclick="editEmployee(${e.id})" style="border:none;background:none;cursor:pointer;font-size:.78rem;color:var(--rose);text-decoration:underline">Edit</button>
+      <button onclick="editEmployee(${e.id})" style="border:none;background:none;cursor:pointer;font-size:.78rem;color:var(--accent);text-decoration:underline">Edit</button>
       <button onclick="toggleEmployee(${e.id}, ${e.active})" style="border:none;background:none;cursor:pointer;font-size:.78rem;color:${e.active ? 'var(--danger)' : 'var(--success)'};text-decoration:underline">${e.active ? 'Deactivate' : 'Activate'}</button>
     </div>
   `).join('');
@@ -3730,9 +3696,9 @@ function applyTxFilters() {
       ${multiCompany ? `<td style="font-size:.82rem;color:var(--mid)">${escapeHtml(tx.company_name || '-')}</td>` : ''}
       <td>
         <div class="tx-actions">
-          <button onclick="viewReceipt(${tx.id})" style="color:var(--rose)">View</button>
+          <button onclick="viewReceipt(${tx.id})" style="color:var(--accent)">View</button>
           ${canManage ? `
-          <button onclick="startEditTransaction(${tx.id})" style="color:var(--gold-dk,#b8860b)">Edit</button>
+          <button onclick="startEditTransaction(${tx.id})" style="color:var(--accent-deep)">Edit</button>
           <button onclick="startDeleteTransaction(${tx.id})" style="color:var(--danger)">Delete</button>
           ${tx.type === 'sale' ? `<button onclick="toggleChargeback(${tx.id})" style="color:var(--mid)" title="${tx.charged_back ? 'Update or clear this dispute' : 'Customer disputed this sale and the money was taken back'}">Chargeback</button>` : ''}` : ''}
         </div>
@@ -3777,7 +3743,7 @@ function applyTxFilters() {
     // like missing data rather than a filtered view.
     let who = '';
     if (txAccess) {
-      const swap = ` <button onclick="relockTransactions()" style="border:none;background:none;cursor:pointer;color:var(--rose);text-decoration:underline;font:inherit;padding:0">Switch user</button>`;
+      const swap = ` <button onclick="relockTransactions()" style="border:none;background:none;cursor:pointer;color:var(--accent);text-decoration:underline;font:inherit;padding:0">Switch user</button>`;
       who = canManageRole(txAccess.role)
         ? `<div style="color:var(--mid)">Viewing as <b>${escapeHtml(txAccess.name)}</b> (manager) — all employees.${swap}</div>`
         : `<div style="color:var(--danger)">Viewing as <b>${escapeHtml(txAccess.name)}</b> — showing <b>only transactions you were on</b>. Unlock with a manager's name and PIN to see everyone's.${swap}</div>`;
@@ -4029,7 +3995,7 @@ function renderChargebackList() {
     <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
       <span class="tx-chargeback cb-${c.status}" style="margin:0">${label[c.status] || c.status}</span>
       <span style="flex:1">$${money(c.amount)}${c.card_last4 ? ` · ****${escapeHtml(c.card_last4)}` : ''}${c.closed_at ? ` · closed ${c.closed_at}` : ''}${c.note ? ` · ${escapeHtml(c.note)}` : ''}</span>
-      <button type="button" onclick="editChargeback(${c.id})" style="border:none;background:none;color:var(--rose);text-decoration:underline;cursor:pointer;font-size:.8rem">Edit</button>
+      <button type="button" onclick="editChargeback(${c.id})" style="border:none;background:none;color:var(--accent);text-decoration:underline;cursor:pointer;font-size:.8rem">Edit</button>
       <button type="button" onclick="removeChargeback(${c.id})" title="Remove" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:1rem;line-height:1">&times;</button>
     </div>`).join('')
     + `<div style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:6px">$${money(used)} of $${money(chargebackMaxAmount)} disputed · $${money(left)} left</div>`;
@@ -4883,7 +4849,7 @@ async function loadReports() {
     <div class="stat-box"><div class="stat-val">$${money((sales.net_revenue || 0))}</div><div class="stat-lbl">Net Revenue</div></div>
     <div class="stat-box"><div class="stat-val">$${money((sales.net_tax || 0))}</div><div class="stat-lbl">Tax Collected</div></div>
     ${Number(sales.chargeback_count || 0) > 0 ? `
-    <div class="stat-box" style="background:#fce4ec">
+    <div class="stat-box" style="background:#FDECEA">
       <div class="stat-val" style="color:var(--danger)">$${money((sales.chargeback_total || 0))}</div>
       <div class="stat-lbl">Charged Back (${sales.chargeback_count})</div>
     </div>` : ''}
@@ -5816,11 +5782,11 @@ function renderAudit(data) {
   document.getElementById('batchSummary').innerHTML = `
     <div class="stat-box"><div class="stat-val">$${money((t.merchant || 0))}</div><div class="stat-lbl">Merchant Settled (total)</div></div>
     <div class="stat-box"><div class="stat-val">$${money((t.pos || 0))}</div><div class="stat-lbl">POS Card Sales (net)</div></div>
-    <div class="stat-box" style="${(t.difference || 0) === 0 ? 'background:#e8f5e9' : 'background:#fce4ec'}">
+    <div class="stat-box" style="${(t.difference || 0) === 0 ? 'background:#e8f5e9' : 'background:#FDECEA'}">
       <div class="stat-val" style="color:${(t.difference || 0) === 0 ? 'var(--success)' : 'var(--danger)'}">${(t.difference || 0) > 0 ? '+' : ''}$${money((t.difference || 0))}</div>
       <div class="stat-lbl">Difference (Merchant − POS)</div>
     </div>
-    <div class="stat-box" style="${mismatches ? 'background:#fce4ec' : 'background:#e8f5e9'}">
+    <div class="stat-box" style="${mismatches ? 'background:#FDECEA' : 'background:#e8f5e9'}">
       <div class="stat-val" style="color:${mismatches ? 'var(--danger)' : 'var(--success)'}">${mismatches || '✓ 0'}</div>
       <div class="stat-lbl">Days Not Matching</div>
     </div>
@@ -5951,7 +5917,7 @@ async function openDayDrilldown(date) {
             <td style="text-align:right">−$${money2(data.pos_credits_total || 0)}</td>
             <td style="text-align:right;font-weight:600">$${money2(posNet)}</td>
             <td style="text-align:right">${allPos.length}</td></tr>
-          <tr style="${Math.abs(merchNet - posNet) < 0.01 ? 'background:#e8f5e9' : 'background:#fce4ec'}">
+          <tr style="${Math.abs(merchNet - posNet) < 0.01 ? 'background:#e8f5e9' : 'background:#FDECEA'}">
             <td style="font-weight:600">Difference</td>
             <td style="text-align:right">$${money2((data.merchant_sales_total||0)-(data.pos_sales_total||0))}</td>
             <td style="text-align:right">$${money2((data.merchant_credits_total||0)-(data.pos_credits_total||0))}</td>
@@ -5968,7 +5934,7 @@ async function openDayDrilldown(date) {
         <td>${escapeHtml(p.customer || '-')}</td>
         <td style="text-align:right;font-weight:600">${p.dir === 'credit' ? '−' : ''}$${money2(p.amount)}</td>
         <td>${statusCell(p)}</td>
-        <td>${escapeHtml(p.employees || '-')} ${p.id ? `<button onclick="startEditTransaction(${p.id})" style="border:none;background:none;cursor:pointer;color:var(--gold-dk,#b8860b);text-decoration:underline;font-size:.78rem">${p.employees ? 'Edit' : '+ Add'}</button>` : ''}</td>
+        <td>${escapeHtml(p.employees || '-')} ${p.id ? `<button onclick="startEditTransaction(${p.id})" style="border:none;background:none;cursor:pointer;color:var(--accent-deep);text-decoration:underline;font-size:.78rem">${p.employees ? 'Edit' : '+ Add'}</button>` : ''}</td>
       </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No POS card transactions this day</td></tr>';
 
     const merchRows = allMerch.map(m => `
@@ -6173,13 +6139,13 @@ function renderBrandProductPanel(brandKey) {
     <div style="font-weight:700;font-size:.7rem;text-transform:uppercase;color:var(--mid);text-align:right">Min Price</div>
   </div>` + brandProds.map(p => `
     <div style="display:grid;grid-template-columns:auto 1fr 80px 80px;gap:4px 8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
-      <input type="checkbox" ${p.visible !== false ? 'checked' : ''} onchange="toggleProductVisibility('${p.id}',this.checked)" style="accent-color:var(--rose-dk)">
+      <input type="checkbox" ${p.visible !== false ? 'checked' : ''} onchange="toggleProductVisibility('${p.id}',this.checked)" style="accent-color:var(--accent-deep)">
       <div style="min-width:0">
         <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</div>
         <div style="font-size:.7rem;color:var(--mid)">Retail: $${(p.retailPrice || 0).toLocaleString()}</div>
       </div>
       <input type="number" value="${p.price > 0 ? p.price : ''}" step="0.01" min="0" data-id="${p.id}" data-field="price" onchange="saveSinglePrice('${p.id}')" placeholder="${p.retailPrice || '0'}" style="width:100%;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:.8rem;text-align:right;outline:none">
-      <input type="number" value="${p.minPrice > 0 ? p.minPrice : ''}" step="0.01" min="0" data-id="${p.id}" data-field="min_price" onchange="saveSinglePrice('${p.id}')" placeholder="0" style="width:100%;padding:4px 6px;border:1px solid ${p.minPrice > 0 ? 'var(--rose)' : 'var(--border)'};border-radius:4px;font-size:.8rem;text-align:right;outline:none;${p.minPrice > 0 ? 'background:#fff5f5' : ''}">
+      <input type="number" value="${p.minPrice > 0 ? p.minPrice : ''}" step="0.01" min="0" data-id="${p.id}" data-field="min_price" onchange="saveSinglePrice('${p.id}')" placeholder="0" style="width:100%;padding:4px 6px;border:1px solid ${p.minPrice > 0 ? 'var(--accent)' : 'var(--border)'};border-radius:4px;font-size:.8rem;text-align:right;outline:none;${p.minPrice > 0 ? 'background:#fff5f5' : ''}">
     </div>
   `).join('') || '<div style="color:var(--mid);font-family:system-ui,sans-serif;font-size:.85rem;padding:12px;text-align:center">No products in this brand</div>';
 }
@@ -6221,7 +6187,7 @@ function renderCustomProductPanel(panel) {
           <span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</span>
         </div>
         <div style="text-align:right">$${money((p.price || 0))}</div>
-        <div style="text-align:right;${p.minPrice > 0 ? 'color:var(--rose-dk)' : 'color:var(--mid)'}">$${money((p.minPrice || 0))}</div>
+        <div style="text-align:right;${p.minPrice > 0 ? 'color:var(--accent-deep)' : 'color:var(--mid)'}">$${money((p.minPrice || 0))}</div>
         <button onclick="deleteCustomProduct(${p.customId})" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:.9rem">&times;</button>
       </div>
     `).join('');
@@ -6321,11 +6287,11 @@ function renderLeaderboard(employees, containerId) {
     const pct = Math.max(5, (val / maxVal) * 100);
     const medal = i === 0 ? '1st' : i === 1 ? '2nd' : i === 2 ? '3rd' : `${i + 1}th`;
     return `<div style="display:flex;align-items:center;gap:10px;font-family:system-ui,sans-serif;font-size:.85rem">
-      <span style="width:30px;text-align:center;font-weight:700;color:${i < 3 ? 'var(--rose-dk)' : 'var(--mid)'}">${medal}</span>
+      <span style="width:30px;text-align:center;font-weight:700;color:${i < 3 ? 'var(--accent-deep)' : 'var(--mid)'}">${medal}</span>
       <div style="flex:1">
         <div style="font-weight:600;margin-bottom:2px">${e.employee_name}</div>
         <div style="background:var(--border);border-radius:4px;height:8px;overflow:hidden">
-          <div style="width:${pct}%;height:100%;background:var(--rose);border-radius:4px;transition:width .3s"></div>
+          <div style="width:${pct}%;height:100%;background:var(--accent);border-radius:4px;transition:width .3s"></div>
         </div>
       </div>
       <span style="font-weight:700;color:var(--dark);min-width:80px;text-align:right">$${money(val)}</span>
@@ -6547,7 +6513,7 @@ function renderReleased(rows) {
             <td style="font-weight:600">${escapeHtml(c.employee_name)}</td>
             <td style="font-family:monospace">
               <button onclick="findDisputedSale('${escapeHtml(c.receipt_number)}', '${escapeHtml(c.sale_date)}')"
-                style="border:none;background:none;padding:0;font:inherit;color:var(--rose);cursor:pointer;text-decoration:underline">${escapeHtml(c.receipt_number)}</button>
+                style="border:none;background:none;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-decoration:underline">${escapeHtml(c.receipt_number)}</button>
             </td>
             <td>${escapeHtml(c.sale_date)}</td>
             <td>${escapeHtml(c.customer_name || '-')}</td>
@@ -6600,7 +6566,7 @@ function renderPendingChargebacks(rows, alreadyHeld, isManager) {
             <td style="font-family:monospace">
               <button onclick="findDisputedSale('${escapeHtml(c.receipt_number)}', '${escapeHtml(c.sale_date)}')"
                 title="Open this sale in Transactions"
-                style="border:none;background:none;padding:0;font:inherit;color:var(--rose);cursor:pointer;text-decoration:underline">${escapeHtml(c.receipt_number)}</button>
+                style="border:none;background:none;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-decoration:underline">${escapeHtml(c.receipt_number)}</button>
             </td>
             <td>${escapeHtml(c.sale_date)}</td>
             <td>${escapeHtml(c.customer_name || '-')}</td>
@@ -6687,7 +6653,7 @@ function renderEmployeeDetail(data) {
           <td style="font-family:monospace">
             <button onclick="findDisputedSale('${escapeHtml(r.receipt_number)}', '${escapeHtml(r.counts_on)}')"
               title="Open this in Transactions"
-              style="border:none;background:none;padding:0;font:inherit;color:var(--rose);cursor:pointer;text-decoration:underline">${escapeHtml(r.receipt_number)}</button>
+              style="border:none;background:none;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-decoration:underline">${escapeHtml(r.receipt_number)}</button>
           </td>
           <td>${escapeHtml(r.counts_on)}</td>
           ${kind === 'return' ? `<td${r.rung_up !== r.counts_on ? ' style="color:var(--mid)"' : ''}>${escapeHtml(r.rung_up)}</td>` : ''}
@@ -6713,7 +6679,7 @@ function renderEmployeeDetail(data) {
     <tr style="${outside ? 'background:var(--cream)' : ''}">
       <td style="font-family:monospace">
         <button onclick="findDisputedSale('${escapeHtml(c.receipt_number)}', '${escapeHtml(c.sale_date)}')"
-          style="border:none;background:none;padding:0;font:inherit;color:var(--rose);cursor:pointer;text-decoration:underline">${escapeHtml(c.receipt_number)}</button>
+          style="border:none;background:none;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-decoration:underline">${escapeHtml(c.receipt_number)}</button>
       </td>
       <td>${escapeHtml(c.sale_date)}${outside ? '<br><span style="font-size:.72rem;color:var(--mid)">outside these dates</span>' : ''}</td>
       <td>${escapeHtml(c.customer_name || '-')}</td>
@@ -6838,7 +6804,7 @@ function renderChargebackDrilldown() {
           <td style="font-family:monospace">
             <button onclick="findDisputedSale('${escapeHtml(r.receipt_number)}', '${escapeHtml(r.sale_date)}')"
               title="Open this sale in Transactions"
-              style="border:none;background:none;padding:0;font:inherit;color:var(--rose);cursor:pointer;text-decoration:underline">${escapeHtml(r.receipt_number)}</button>
+              style="border:none;background:none;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-decoration:underline">${escapeHtml(r.receipt_number)}</button>
           </td>
           <td>${escapeHtml(r.sale_date)}</td>
           <td>${escapeHtml(r.customer_name || '-')}</td>
@@ -7082,8 +7048,8 @@ function renderPaycheckChips() {
     // screen would read as a missing cheque.
     const note = p.upcoming ? 'Upcoming' : (p.paid ? 'Paid' : 'Not marked paid');
     return `<button class="btn" onclick="selectPaycheck('${p.payday}')" title="Paid ${fmtPayday(p.payday)} for work from ${p.period.start} to ${p.period.end}"
-      style="flex:0 0 auto;text-align:left;line-height:1.25;padding:6px 10px;font-size:.78rem;border:1.5px solid ${on ? 'var(--rose)' : 'var(--border)'};
-             background:${on ? 'var(--rose)' : 'var(--white)'};color:${on ? 'var(--white)' : 'var(--dark)'}">
+      style="flex:0 0 auto;text-align:left;line-height:1.25;padding:6px 10px;font-size:.78rem;border:1.5px solid ${on ? 'var(--accent)' : 'var(--border)'};
+             background:${on ? 'var(--accent)' : 'var(--white)'};color:${on ? 'var(--white)' : 'var(--dark)'}">
       <div style="font-weight:600">${fmtPeriod(p.period)}</div>
       <div style="font-size:.7rem;opacity:.75">${note} ${fmtPayday(p.payday).replace(/, \d{4}$/, '')}</div>
     </button>`;
@@ -7155,7 +7121,7 @@ async function loadPayroll() {
     note.innerHTML = `Paid ${fmtPayday(data.payday)} for work from ${fmtPayday(data.period.start)} to ${fmtPayday(data.period.end)}, across both companies.`
       + (data.paid
         ? ` <b style="color:var(--success)">✓ Paid${data.paid_by ? ' by ' + escapeHtml(data.paid_by) : ''}</b> — figures are locked; anything closing now lands on the next payday.
-            <button class="btn" style="background:none;border:none;color:var(--rose);text-decoration:underline;padding:0;font:inherit;cursor:pointer" onclick="setPayrollPaid(false)">Reopen</button>`
+            <button class="btn" style="background:none;border:none;color:var(--accent);text-decoration:underline;padding:0;font:inherit;cursor:pointer" onclick="setPayrollPaid(false)">Reopen</button>`
         : ` <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:4px 10px;font-size:.78rem" onclick="setPayrollPaid(true)">Mark as paid</button>`);
 
     const rows = (data.employees || []).filter(e => e.commission_earned !== 0 || e.adjustments.length);
@@ -7202,7 +7168,7 @@ async function loadPayroll() {
     const detailLink = (label, person, store) =>
       `<button onclick="openEmployeeDetail('${escapeHtml(String(person)).replace(/'/g, "\\'")}', '${escapeHtml(String(store || '')).replace(/'/g, "\\'")}', '${data.period.start}', '${data.period.end}')"
          title="See the sales, returns and disputes behind this"
-         style="border:none;background:none;padding:0;font:inherit;color:var(--rose);cursor:pointer;text-decoration:underline">${escapeHtml(label)}</button>`;
+         style="border:none;background:none;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-decoration:underline">${escapeHtml(label)}</button>`;
 
     const storeLine = e => `
       <div style="display:flex;justify-content:space-between;font-weight:600;margin-top:4px">
@@ -7236,7 +7202,7 @@ async function loadPayroll() {
           ? ` <button title="Recorded as coming off this paycheck — undo" onclick="setChargebackHeld(${a.chargeback_id}, ${a.employee_id}, false)"
                style="border:none;background:none;color:var(--mid);cursor:pointer;font-size:.72rem;text-decoration:underline;padding:0 2px">held ✓ undo</button>`
           : ` <button title="Record that this came off this paycheck, so it stops coming off later ones" onclick="setChargebackHeld(${a.chargeback_id}, ${a.employee_id}, true)"
-               style="border:none;background:none;color:var(--rose);cursor:pointer;font-size:.72rem;text-decoration:underline;padding:0 2px">mark held</button>`);
+               style="border:none;background:none;color:var(--accent);cursor:pointer;font-size:.72rem;text-decoration:underline;padding:0 2px">mark held</button>`);
         // Marked out from the dispute lines around it, which are automatic and
         // all look alike — otherwise something just typed in lands in the
         // middle of them and is impossible to pick out.
@@ -7262,7 +7228,7 @@ async function loadPayroll() {
       if (allPaid) {
         return `<span style="font-weight:400;font-size:.78rem;color:var(--success)">✓ Paid${
           someone?.paid_by ? ' by ' + escapeHtml(someone.paid_by) : ''}</span>
-          <button class="btn" style="background:none;border:none;color:var(--rose);text-decoration:underline;padding:0;font:inherit;font-size:.78rem;font-weight:400;cursor:pointer"
+          <button class="btn" style="background:none;border:none;color:var(--accent);text-decoration:underline;padding:0;font:inherit;font-size:.78rem;font-weight:400;cursor:pointer"
             onclick="setEmployeePaid('${ids}', false)">Undo</button>`;
       }
       return `<button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:3px 9px;font-size:.75rem;font-weight:600"
@@ -7685,8 +7651,7 @@ async function loadStoreSettings() {
     document.getElementById('settingsReceiptFooter').value = storeSettings.receipt_footer || '';
     document.getElementById('settingsTimezone').value = storeSettings.timezone || 'America/Los_Angeles';
     document.getElementById('settingsTaxRate').value = storeSettings.tax_rate != null ? taxPctStr(storeSettings.tax_rate) : '8.1875';
-    // Restore theme and brands from Postgres (survives redeploys)
-    if (storeSettings.theme) applyTheme(storeSettings.theme);
+    // Restore brands from Postgres (survives redeploys)
     if (storeSettings.brands) {
       const b = typeof storeSettings.brands === 'string' ? JSON.parse(storeSettings.brands) : storeSettings.brands;
       if (Array.isArray(b) && b.length > 0) selectedBrands = b;
@@ -7713,12 +7678,11 @@ async function saveStoreSettings() {
   const timezone = document.getElementById('settingsTimezone').value;
   const taxPct = parseFloat(document.getElementById('settingsTaxRate').value);
   const tax_rate = !isNaN(taxPct) ? taxPct / 100 : 0.0875;
-  const theme = document.getElementById('settingsTheme').value;
   try {
     const resp = await fetch(`${API}/api/pos/settings`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
       body: JSON.stringify({ store_name, store_address, store_city, store_state, store_zip,
-        store_email, store_phone, receipt_footer, timezone, tax_rate, theme }),
+        store_email, store_phone, receipt_footer, timezone, tax_rate }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Save failed');
@@ -7757,22 +7721,7 @@ async function saveBrands() {
   renderProducts();
 }
 
-function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
-  const dd = document.getElementById('settingsTheme');
-  if (dd) dd.value = theme;
-}
 
-async function selectTheme(theme) {
-  applyTheme(theme);
-  localStorage.setItem('glowTheme', theme);
-  try {
-    await Promise.all([
-      fetch(`${API}/auth/theme`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ theme }) }),
-      fetch(`${API}/api/pos/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ theme }) }),
-    ]);
-  } catch (_) {}
-}
 
 async function saveCompanyName() {
   const input = document.getElementById('settingsCompanyName');
@@ -7895,10 +7844,9 @@ async function switchAccount(email) {
     const res = await fetch(`${API}/auth/web-login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ email }) });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Switch failed');
-    currentUser = { email: data.user.email, companyName: data.user.companyName, theme: data.user.theme, brands: data.user.brands };
+    currentUser = { email: data.user.email, companyName: data.user.companyName, brands: data.user.brands };
     selectedBrands = data.user.brands || ['avologi', 'avinichi', 'hydrasphere', 'spacetouch', 'lumieres'];
     addLinkedAccount(currentUser.email, currentUser.companyName);
-    applyTheme(currentUser.theme || 'rose');
     // Drop the previous company's store name before re-titling, or the header
     // keeps showing the store you just switched away from until its settings
     // arrive (loadStoreSettings further down re-applies it).
@@ -7940,7 +7888,7 @@ async function switchAccount(email) {
     applySettingsAccessUI(); // now locked — hides the previous unlock's sections
     document.getElementById('batchResult').style.display = 'none';
 
-    await loadStoreSettings();   // pulls this company's store settings + brands + theme from Postgres
+    await loadStoreSettings();   // pulls this company's store settings + brands from Postgres
     renderBrandCheckboxes();     // sync the Settings-tab brand checkboxes
     refreshMaverickConnState();  // reflect this company's processor connections
     refreshPayarcConnState();

@@ -8,79 +8,25 @@
     /* ── Reset & Base ─────────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    :root, [data-theme="rose"] {
-      --rose:    #c97d8a;
-      --rose-lt: #f2dde2;
-      --rose-dk: #9e5567;
-      --gold:    #c9a96e;
-      --gold-lt: #f5edd9;
-      --cream:   #fdf9f5;
-      --dark:    #2c2022;
-      --mid:     #6b5057;
-      --border:  #e8d5d9;
-      --white:   #ffffff;
-      --shadow:  0 4px 24px rgba(44,32,34,.08);
-      --radius:  14px;
-    }
-
-    [data-theme="earth"] {
-      --rose:    #5a8a7d;
-      --rose-lt: #dceee9;
-      --rose-dk: #3d6b60;
-      --gold:    #a0855b;
-      --gold-lt: #f0e8da;
-      --cream:   #f7f5f0;
-      --dark:    #2a2620;
-      --mid:     #5e5648;
-      --border:  #d4cdc2;
-      --white:   #ffffff;
-      --shadow:  0 4px 24px rgba(42,38,32,.08);
-      --radius:  14px;
-    }
-
-    [data-theme="lavender"] {
-      --rose:    #8b7bb5;
-      --rose-lt: #eee9f7;
-      --rose-dk: #6b5a9e;
-      --gold:    #b0a0d0;
-      --gold-lt: #f0ecf7;
-      --cream:   #f8f6fc;
-      --dark:    #2a2535;
-      --mid:     #6b6080;
-      --border:  #d8d0e8;
-      --white:   #ffffff;
-      --shadow:  0 4px 24px rgba(42,37,53,.08);
-      --radius:  14px;
-    }
-
-    [data-theme="ocean"] {
-      --rose:    #3d7a8a;
-      --rose-lt: #daeef3;
-      --rose-dk: #2c5f6e;
-      --gold:    #5a9aaa;
-      --gold-lt: #e0f0f5;
-      --cream:   #f4f9fb;
-      --dark:    #1e2e33;
-      --mid:     #4a6a72;
-      --border:  #c5dce2;
-      --white:   #ffffff;
-      --shadow:  0 4px 24px rgba(30,46,51,.08);
-      --radius:  14px;
-    }
-
-    [data-theme="sage"] {
-      --rose:    #6b8f71;
-      --rose-lt: #e2ede4;
-      --rose-dk: #4d6e52;
-      --gold:    #8aaa8e;
-      --gold-lt: #e8f0e9;
-      --cream:   #f5f8f5;
-      --dark:    #232e24;
-      --mid:     #556b58;
-      --border:  #c8d8ca;
-      --white:   #ffffff;
-      --shadow:  0 4px 24px rgba(35,46,36,.08);
-      --radius:  14px;
+    /* One palette, no themes. A darker sky blue: every pairing below was
+       measured against WCAG AA (4.5:1 for body text) so the screen stays
+       readable across the counter, not only on the machine it was designed on.
+       The accent names are roles, not colours. */
+    :root {
+      --accent:       #1F6FB2;
+      --accent-soft:  #DCEAF6;
+      --accent-deep:  #0F4C81;
+      --accent2:      #2D6E9E;
+      --accent2-soft: #EAF3FA;
+      --cream:        #F5F8FB;
+      --dark:         #16242E;
+      --mid:          #4A6478;
+      --border:       #CBDCE9;
+      --white:        #ffffff;
+      --success:      #2E7D5B;
+      --danger:       #C0392B;
+      --shadow:       0 4px 24px rgba(22,36,46,.10);
+      --radius:       14px;
     }
 
     body {
@@ -104,7 +50,7 @@
       width: 44px;
       height: 44px;
       border-radius: 50%;
-      background: linear-gradient(135deg, var(--rose), var(--gold));
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
       display: flex;
       align-items: center;
       justify-content: center;
@@ -116,7 +62,7 @@
 
     header h1 {
       font-size: 1.4rem;
-      color: var(--rose-dk);
+      color: var(--accent-deep);
       letter-spacing: .5px;
     }
 
@@ -166,14 +112,14 @@
     }
 
     .step-dot.active .num {
-      background: var(--rose);
-      border-color: var(--rose);
+      background: var(--accent);
+      border-color: var(--accent);
       color: white;
     }
 
     .step-dot.done .num {
-      background: var(--gold);
-      border-color: var(--gold);
+      background: var(--accent2);
+      border-color: var(--accent2);
       color: white;
     }
 
@@ -195,7 +141,7 @@
 
     .card-title {
       font-size: 1.25rem;
-      color: var(--rose-dk);
+      color: var(--accent-deep);
       margin-bottom: 6px;
     }
 
@@ -238,7 +184,7 @@
 
     .field input[type="text"]:focus,
     .field input[type="email"]:focus {
-      border-color: var(--rose);
+      border-color: var(--accent);
       background: var(--white);
     }
 
@@ -289,7 +235,7 @@
       text-decoration: none;
     }
 
-    .brand-url:hover { color: var(--rose); }
+    .brand-url:hover { color: var(--accent); }
 
     /* ── Product grid ─────────────────────────────────────────────────── */
     .product-grid {
@@ -339,7 +285,7 @@
       border-radius: 8px;
       object-fit: cover;
       flex-shrink: 0;
-      background: var(--rose-lt);
+      background: var(--accent-soft);
       border: 1px solid var(--border);
     }
 
@@ -348,29 +294,29 @@
       height: 56px;
       border-radius: 8px;
       flex-shrink: 0;
-      background: linear-gradient(135deg, var(--rose-lt), var(--gold-lt));
+      background: linear-gradient(135deg, var(--accent-soft), var(--accent2-soft));
       border: 1px solid var(--border);
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 20px;
-      color: var(--rose);
+      color: var(--accent);
     }
 
     .product-card:hover {
-      border-color: var(--rose);
-      background: var(--rose-lt);
+      border-color: var(--accent);
+      background: var(--accent-soft);
     }
 
     .product-card.selected {
-      border-color: var(--rose);
-      background: var(--rose-lt);
+      border-color: var(--accent);
+      background: var(--accent-soft);
     }
 
     .product-card input[type="checkbox"] {
       width: 18px;
       height: 18px;
-      accent-color: var(--rose);
+      accent-color: var(--accent);
       cursor: pointer;
       flex-shrink: 0;
       margin-top: 2px;
@@ -404,7 +350,7 @@
     .select-all-btn {
       font-family: system-ui, sans-serif;
       font-size: .78rem;
-      color: var(--rose-dk);
+      color: var(--accent-deep);
       background: none;
       border: none;
       cursor: pointer;
@@ -412,7 +358,7 @@
       padding: 0;
     }
 
-    .select-all-btn:hover { color: var(--rose); }
+    .select-all-btn:hover { color: var(--accent); }
 
     /* ── Buttons ──────────────────────────────────────────────────────── */
     .btn-row {
@@ -434,11 +380,11 @@
     }
 
     .btn-primary {
-      background: var(--rose);
+      background: var(--accent);
       color: white;
     }
 
-    .btn-primary:hover:not(:disabled) { background: var(--rose-dk); }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-deep); }
     .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
 
     .btn-secondary {
@@ -447,14 +393,14 @@
       border: 1.5px solid var(--border);
     }
 
-    .btn-secondary:hover { border-color: var(--rose); color: var(--rose-dk); }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent-deep); }
 
     .btn-send {
-      background: var(--gold);
+      background: var(--accent2);
       color: white;
     }
 
-    .btn-send:hover:not(:disabled) { background: #b8943d; }
+    .btn-send:hover:not(:disabled) { background: #17588F; }
     .btn-send:disabled { opacity: .5; cursor: not-allowed; }
     .btn-send.sent { background: #81c784; }
 
@@ -468,7 +414,7 @@
       width: 44px;
       height: 44px;
       border: 3px solid var(--border);
-      border-top-color: var(--rose);
+      border-top-color: var(--accent);
       border-radius: 50%;
       animation: spin .8s linear infinite;
       margin: 0 auto 16px;
@@ -484,8 +430,8 @@
 
     /* ── Email preview ────────────────────────────────────────────────── */
     .email-meta {
-      background: var(--gold-lt);
-      border: 1px solid #e8d8b0;
+      background: var(--accent2-soft);
+      border: 1px solid #BBD4E8;
       border-radius: 10px;
       padding: 16px 20px;
       margin-bottom: 24px;
@@ -537,7 +483,7 @@
       transition: all .2s;
     }
 
-    .copy-btn:hover { border-color: var(--rose); color: var(--rose-dk); }
+    .copy-btn:hover { border-color: var(--accent); color: var(--accent-deep); }
     .copy-btn.copied { background: #e8f5e9; border-color: #81c784; color: #388e3c; }
 
     textarea#emailBody {
@@ -580,15 +526,15 @@
       border-radius: 20px;
       font-family: system-ui, sans-serif;
       font-size: .75rem;
-      background: var(--rose-lt);
-      color: var(--rose-dk);
-      border: 1px solid #e0b8bf;
+      background: var(--accent-soft);
+      color: var(--accent-deep);
+      border: 1px solid #BBD4E8;
     }
 
     /* ── Error ────────────────────────────────────────────────────────── */
     .error-box {
       background: #fff5f5;
-      border: 1px solid #f5c6c6;
+      border: 1px solid #F3B7B0;
       border-radius: 10px;
       padding: 16px 20px;
       font-family: system-ui, sans-serif;
@@ -613,7 +559,7 @@
       transition: all .2s;
       margin-right: 8px;
     }
-    .settings-btn:hover { border-color: var(--rose); color: var(--rose-dk); }
+    .settings-btn:hover { border-color: var(--accent); color: var(--accent-deep); }
 
     .settings-overlay {
       position: fixed;
@@ -673,14 +619,10 @@
       color: var(--mid);
       margin-bottom: 12px;
     }
-
-    .theme-options {
       display: flex;
       flex-direction: column;
       gap: 12px;
     }
-
-    .theme-option {
       display: flex;
       align-items: center;
       gap: 14px;
@@ -690,31 +632,6 @@
       cursor: pointer;
       transition: all .2s;
       background: var(--white);
-    }
-    .theme-option:hover { border-color: var(--mid); }
-    .theme-option.active { border-color: var(--rose); background: var(--rose-lt); }
-
-    .theme-swatch {
-      display: flex;
-      gap: 4px;
-      flex-shrink: 0;
-    }
-    .theme-swatch span {
-      width: 22px;
-      height: 22px;
-      border-radius: 50%;
-      border: 1px solid rgba(0,0,0,.08);
-    }
-
-    .theme-label {
-      font-size: .88rem;
-      font-weight: 600;
-      color: var(--dark);
-    }
-    .theme-desc {
-      font-size: .75rem;
-      color: var(--mid);
-      margin-top: 2px;
     }
 
     /* ── Sidebar Navigation ──────────────────────────────────────────── */
@@ -764,9 +681,9 @@
     }
 
     .sidebar-nav a.active {
-      background: var(--rose-lt);
-      color: var(--rose-dk);
-      border-left-color: var(--rose);
+      background: var(--accent-soft);
+      color: var(--accent-deep);
+      border-left-color: var(--accent);
       font-weight: 600;
     }
 
@@ -834,8 +751,8 @@
     }
 
     .mobile-nav a.active {
-      color: var(--rose-dk);
-      border-bottom-color: var(--rose);
+      color: var(--accent-deep);
+      border-bottom-color: var(--accent);
       font-weight: 600;
     }
 
@@ -920,7 +837,7 @@
       min-width: 0;
     }
     .company-switcher-btn:hover {
-      border-color: var(--rose);
+      border-color: var(--accent);
       background: var(--cream);
     }
     .company-switcher-btn .cs-company {
@@ -969,12 +886,12 @@
       transition: background .15s;
     }
     .cs-account:hover { background: var(--cream); }
-    .cs-account.active { background: var(--rose-lt); }
+    .cs-account.active { background: var(--accent-soft); }
     .cs-account .cs-check {
       width: 18px;
       flex-shrink: 0;
       text-align: center;
-      color: var(--rose-dk);
+      color: var(--accent-deep);
       font-size: 14px;
     }
     .cs-account-info {
@@ -1007,7 +924,7 @@
       padding: 10px 14px;
       cursor: pointer;
       font-size: .85rem;
-      color: var(--rose-dk);
+      color: var(--accent-deep);
       transition: background .15s;
     }
     .cs-action:hover { background: var(--cream); }
@@ -1033,7 +950,7 @@
       transition: border-color .2s;
     }
     .multiselect-btn:hover, .multiselect-btn.open {
-      border-color: var(--rose);
+      border-color: var(--accent);
     }
     .multiselect-btn::after {
       content: '\25BE';
@@ -1068,7 +985,7 @@
       transition: background .15s;
     }
     .multiselect-dropdown label:hover { background: var(--cream); }
-    .multiselect-dropdown input[type="checkbox"] { accent-color: var(--rose-dk); }
+    .multiselect-dropdown input[type="checkbox"] { accent-color: var(--accent-deep); }
     .multiselect-dropdown .ms-divider {
       border-top: 1px solid var(--border);
       margin: 4px 0;
@@ -1092,7 +1009,7 @@
     }
 
     .campaign-compose .field textarea:focus {
-      border-color: var(--rose);
+      border-color: var(--accent);
       background: var(--white);
     }
 
@@ -1106,7 +1023,7 @@
     }
 
     .campaign-list-item:hover {
-      border-color: var(--rose);
+      border-color: var(--accent);
       box-shadow: var(--shadow);
     }
 
@@ -1161,8 +1078,8 @@
     }
 
     .inbox-subtabs a.active {
-      color: var(--rose-dk);
-      border-bottom-color: var(--rose);
+      color: var(--accent-deep);
+      border-bottom-color: var(--accent);
       font-weight: 600;
     }
 
@@ -1200,8 +1117,8 @@
     }
 
     .section-count {
-      background: var(--rose-lt);
-      color: var(--rose);
+      background: var(--accent-soft);
+      color: var(--accent);
       font-family: system-ui, sans-serif;
       font-size: 11px;
       font-weight: 600;
@@ -1258,7 +1175,7 @@
 
     .email-card.email-unread {
       background: var(--cream);
-      border-color: var(--rose);
+      border-color: var(--accent);
     }
 
     .email-card.email-unread .email-name { font-weight: 700; }
@@ -1272,14 +1189,14 @@
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      background: var(--rose);
+      background: var(--accent);
       flex-shrink: 0;
     }
 
     .email-card.email-unread { padding-left: 22px; }
 
     .email-card:hover {
-      border-color: var(--rose);
+      border-color: var(--accent);
       box-shadow: var(--shadow);
     }
 
@@ -1292,8 +1209,8 @@
       width: 42px;
       height: 42px;
       border-radius: 50%;
-      background: var(--rose-lt);
-      color: var(--rose);
+      background: var(--accent-soft);
+      color: var(--accent);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -1362,10 +1279,10 @@
       letter-spacing: .3px;
     }
 
-    .badge-draft { background: var(--gold-lt); color: var(--gold); }
-    .badge-pending { background: var(--rose-lt); color: var(--rose); }
+    .badge-draft { background: var(--accent2-soft); color: var(--accent2); }
+    .badge-pending { background: var(--accent-soft); color: var(--accent); }
     .badge-sent { background: #e4f0e4; color: var(--success); }
-    .badge-urgent { background: #fce8e8; color: var(--danger); }
+    .badge-urgent { background: #FDECEA; color: var(--danger); }
 
     .email-card .archive-btn-inline {
       position: absolute;
@@ -1396,7 +1313,7 @@
       transition: all .2s;
     }
 
-    .followup-card:hover { border-color: var(--rose); box-shadow: var(--shadow); }
+    .followup-card:hover { border-color: var(--accent); box-shadow: var(--shadow); }
     .followup-card.urgent { border-left: 3px solid var(--danger); }
 
     .followup-top {
@@ -1440,8 +1357,8 @@
     }
 
     .btn-sm:active { background: var(--cream); }
-    .btn-sm.primary { background: var(--rose); color: var(--white); border-color: var(--rose); }
-    .btn-sm.primary:active { background: var(--rose-dk); }
+    .btn-sm.primary { background: var(--accent); color: var(--white); border-color: var(--accent); }
+    .btn-sm.primary:active { background: var(--accent-deep); }
 
     /* ── Archived Cards ───────────────────────────────────────────── */
     .archived-card { opacity: .65; }
@@ -1559,7 +1476,7 @@
 
     .message-outbound {
       align-self: flex-end;
-      background: var(--rose-lt);
+      background: var(--accent-soft);
       border-bottom-right-radius: 4px;
     }
 
@@ -1572,7 +1489,7 @@
       color: var(--mid);
     }
 
-    .message-outbound .message-label { color: var(--rose); }
+    .message-outbound .message-label { color: var(--accent); }
 
     .message-time {
       font-size: 10px;
@@ -1594,7 +1511,7 @@
       font-family: system-ui, sans-serif;
       text-transform: uppercase;
       letter-spacing: .5px;
-      color: var(--gold);
+      color: var(--accent2);
       margin-bottom: 8px;
     }
 
@@ -1615,7 +1532,7 @@
       transition: border-color .15s;
     }
 
-    .draft-textarea:focus { border-color: var(--rose); }
+    .draft-textarea:focus { border-color: var(--accent); }
 
     .draft-footer {
       display: flex;
@@ -1647,8 +1564,8 @@
 
     .btn-action:disabled { opacity: .5; cursor: not-allowed; }
 
-    .btn-send-action { background: var(--rose); color: var(--white); }
-    .btn-send-action:active:not(:disabled) { background: var(--rose-dk); }
+    .btn-send-action { background: var(--accent); color: var(--white); }
+    .btn-send-action:active:not(:disabled) { background: var(--accent-deep); }
 
     .btn-archive-action {
       background: var(--white);
@@ -1772,9 +1689,9 @@
 
 <header>
   <div style="position:relative" id="appSwitcherWrap">
-    <button onclick="toggleAppSwitcher()" title="Switch app" style="width:40px;height:40px;border-radius:10px;border:1.5px solid var(--border);background:var(--white);cursor:pointer;display:grid;grid-template-columns:repeat(3,6px);gap:4px;align-content:center;justify-content:center;transition:all .2s;padding:0" onmouseover="this.style.borderColor='var(--rose)';this.style.background='var(--rose-lt)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--white)'"><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--rose)"></span></button>
+    <button onclick="toggleAppSwitcher()" title="Switch app" style="width:40px;height:40px;border-radius:10px;border:1.5px solid var(--border);background:var(--white);cursor:pointer;display:grid;grid-template-columns:repeat(3,6px);gap:4px;align-content:center;justify-content:center;transition:all .2s;padding:0" onmouseover="this.style.borderColor='var(--accent)';this.style.background='var(--accent-soft)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--white)'"><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span></button>
     <div id="appSwitcherMenu" style="display:none;position:absolute;left:0;top:52px;background:var(--white);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(44,32,34,.12);min-width:200px;z-index:999;overflow:hidden">
-      <a href="/" style="display:flex;align-items:center;gap:10px;padding:14px 16px;text-decoration:none;color:var(--dark);font-family:system-ui,sans-serif;font-size:.88rem;background:var(--rose-lt);border-left:3px solid var(--rose)">
+      <a href="/" style="display:flex;align-items:center;gap:10px;padding:14px 16px;text-decoration:none;color:var(--dark);font-family:system-ui,sans-serif;font-size:.88rem;background:var(--accent-soft);border-left:3px solid var(--accent)">
         <span style="font-size:18px">&#9993;&#65039;</span>
         <div><b>Smart Inbox</b><br><span style="font-size:.75rem;color:var(--mid)">Welcome emails &amp; Smart Inbox</span></div>
       </a>
@@ -1821,34 +1738,34 @@
   <div class="settings-section-label">Websites</div>
   <p style="font-size:.78rem;color:var(--mid);margin-bottom:10px;">Add your company websites. The AI will reference these when customers ask about your website or questions that can be answered online.</p>
   <div id="websitesList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;"></div>
-  <button onclick="addWebsiteField()" style="background:none;border:1.5px dashed var(--border);border-radius:8px;padding:8px 14px;cursor:pointer;color:var(--mid);font-family:system-ui,sans-serif;font-size:.82rem;width:100%;transition:all .2s;margin-bottom:24px;" onmouseover="this.style.borderColor='var(--rose)';this.style.color='var(--rose-dk)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--mid)'">+ Add Website</button>
+  <button onclick="addWebsiteField()" style="background:none;border:1.5px dashed var(--border);border-radius:8px;padding:8px 14px;cursor:pointer;color:var(--mid);font-family:system-ui,sans-serif;font-size:.82rem;width:100%;transition:all .2s;margin-bottom:24px;" onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent-deep)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--mid)'">+ Add Website</button>
 
   <div class="settings-section-label">Brands</div>
   <p style="font-size:.78rem;color:var(--mid);margin-bottom:10px;">Select which product brands appear in your welcome emails and AI draft replies.</p>
   <div id="brandCheckboxes" style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px;">
     <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream);transition:all .2s;">
-      <input type="checkbox" value="avologi" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--rose-dk);" />
+      <input type="checkbox" value="avologi" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--accent-deep);" />
       <div>
         <div style="font-weight:600;font-size:.88rem;color:var(--dark);">Avologi</div>
         <div style="font-size:.76rem;color:var(--mid);margin-top:2px;">Advanced youth-restoring LED and laser devices</div>
       </div>
     </label>
     <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream);transition:all .2s;">
-      <input type="checkbox" value="avinichi" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--rose-dk);" />
+      <input type="checkbox" value="avinichi" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--accent-deep);" />
       <div>
         <div style="font-weight:600;font-size:.88rem;color:var(--dark);">Avinichi</div>
         <div style="font-size:.76rem;color:var(--mid);margin-top:2px;">Noni-infused luxury skincare products</div>
       </div>
     </label>
     <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream);transition:all .2s;">
-      <input type="checkbox" value="hydrasphere" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--rose-dk);" />
+      <input type="checkbox" value="hydrasphere" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--accent-deep);" />
       <div>
         <div style="font-weight:600;font-size:.88rem;color:var(--dark);">HydraSphere Plus</div>
         <div style="font-size:.76rem;color:var(--mid);margin-top:2px;">Hydrogen-infused skincare and SPF products</div>
       </div>
     </label>
     <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream);transition:all .2s;">
-      <input type="checkbox" value="spacetouch" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--rose-dk);" />
+      <input type="checkbox" value="spacetouch" onchange="saveBrands()" style="margin-top:3px;accent-color:var(--accent-deep);" />
       <div>
         <div style="font-weight:600;font-size:.88rem;color:var(--dark);">SpaceTouch</div>
         <div style="font-size:.76rem;color:var(--mid);margin-top:2px;">Full-body LED therapy devices</div>
@@ -1856,67 +1773,9 @@
     </label>
   </div>
 
-  <div class="settings-section-label">Theme</div>
-  <div class="theme-options">
-    <div class="theme-option active" data-theme="rose" onclick="selectTheme('rose')">
-      <div class="theme-swatch">
-        <span style="background:#c97d8a"></span>
-        <span style="background:#f2dde2"></span>
-        <span style="background:#c9a96e"></span>
-      </div>
-      <div>
-        <div class="theme-label">Rose &amp; Gold</div>
-        <div class="theme-desc">Classic pink, rose, and gold tones</div>
-      </div>
-    </div>
-    <div class="theme-option" data-theme="earth" onclick="selectTheme('earth')">
-      <div class="theme-swatch">
-        <span style="background:#5a8a7d"></span>
-        <span style="background:#dceee9"></span>
-        <span style="background:#a0855b"></span>
-      </div>
-      <div>
-        <div class="theme-label">Earth &amp; Turquoise</div>
-        <div class="theme-desc">Brown, teal, and natural earth tones</div>
-      </div>
-    </div>
-    <div class="theme-option" data-theme="lavender" onclick="selectTheme('lavender')">
-      <div class="theme-swatch">
-        <span style="background:#8b7bb5"></span>
-        <span style="background:#eee9f7"></span>
-        <span style="background:#b0a0d0"></span>
-      </div>
-      <div>
-        <div class="theme-label">Lavender Spa</div>
-        <div class="theme-desc">Soft purple, lilac, and calming violet tones</div>
-      </div>
-    </div>
-    <div class="theme-option" data-theme="ocean" onclick="selectTheme('ocean')">
-      <div class="theme-swatch">
-        <span style="background:#3d7a8a"></span>
-        <span style="background:#daeef3"></span>
-        <span style="background:#5a9aaa"></span>
-      </div>
-      <div>
-        <div class="theme-label">Ocean Breeze</div>
-        <div class="theme-desc">Deep teal, aqua, and coastal blue tones</div>
-      </div>
-    </div>
-    <div class="theme-option" data-theme="sage" onclick="selectTheme('sage')">
-      <div class="theme-swatch">
-        <span style="background:#6b8f71"></span>
-        <span style="background:#e2ede4"></span>
-        <span style="background:#8aaa8e"></span>
-      </div>
-      <div>
-        <div class="theme-label">Sage Garden</div>
-        <div class="theme-desc">Muted green, herbal, and botanical tones</div>
-      </div>
-    </div>
-  </div>
 
   <div style="margin-top:32px;padding-top:20px;border-top:1px solid var(--border)">
-    <a href="#" onclick="logout(); return false;" style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.85rem;color:var(--rose-dk);text-decoration:none" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
+    <a href="#" onclick="logout(); return false;" style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.85rem;color:var(--accent-deep);text-decoration:none" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">
       <span style="font-size:16px">&#8594;</span> Sign out
     </a>
   </div>
@@ -2024,7 +1883,7 @@
     <!-- ════════ TAB: Sent Emails ════════ -->
     <div id="tab-sent" hidden>
       <main>
-        <h2 style="font-family:Georgia,serif;color:var(--rose-dk);margin:0 0 4px">Sent Emails</h2>
+        <h2 style="font-family:Georgia,serif;color:var(--accent-deep);margin:0 0 4px">Sent Emails</h2>
         <p style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid);margin:0 0 16px">Every email sent to a customer (welcome emails and receipts). Click one to see exactly what was sent.</p>
         <div style="display:grid;grid-template-columns:320px 1fr;gap:16px;align-items:start">
           <div style="border:1px solid var(--border);border-radius:12px;overflow:hidden;max-height:640px;overflow-y:auto;background:var(--white)" id="sentEmailsList"></div>
@@ -2061,7 +1920,7 @@
           <h2 class="card-title">New Customer Welcome</h2>
           <p class="card-sub">Enter the customer's email and select the products they purchased. We'll generate a personalized welcome email with usage instructions.</p>
 
-          <div id="prefillNote" hidden style="margin-bottom:14px;padding:10px 14px;background:#f2dde2;border:1px solid #e0c3cb;border-radius:8px;font-size:.86rem;color:#6b3a48"></div>
+          <div id="prefillNote" hidden style="margin-bottom:14px;padding:10px 14px;background:var(--accent-soft);border:1px solid #BBD4E8;border-radius:8px;font-size:.86rem;color:var(--accent-deep)"></div>
 
           <!-- Customer Name -->
           <div class="field">
@@ -2092,7 +1951,7 @@
           <!-- Avinichi -->
           <div class="brand-section" id="brand-section-avinichi">
             <div class="brand-header">
-              <span class="brand-badge" style="background:#f5ede0;color:#8b6914;">Avinichi</span>
+              <span class="brand-badge" style="background:#EAF3FA;color:#0F4C81;">Avinichi</span>
               <span class="brand-name">Noni-Infused Luxury Skincare</span>
               <a class="brand-url" href="https://www.avinichi.com/" target="_blank">avinichi.com &#8599;</a>
             </div>
@@ -2134,7 +1993,7 @@
           <!-- Lumieres -->
           <div class="brand-section" id="brand-section-lumieres">
             <div class="brand-header">
-              <span class="brand-badge" style="background:#f3e8ee;color:#7a3b5c;">Lumi&#232;res</span>
+              <span class="brand-badge" style="background:#EAF3FA;color:#0F4C81;">Lumi&#232;res</span>
               <span class="brand-name">Red/NIR/Blue Light Therapy Devices</span>
               <a class="brand-url" href="https://lumiereslights.com/" target="_blank">lumiereslights.com &#8599;</a>
             </div>
@@ -2148,7 +2007,7 @@
           <div id="formError" class="error-box" hidden></div>
 
           <div style="margin-top:16px;margin-bottom:8px;display:flex;align-items:center;gap:8px">
-            <input type="checkbox" id="includeSuggestions" style="width:18px;height:18px;accent-color:var(--rose);cursor:pointer" />
+            <input type="checkbox" id="includeSuggestions" style="width:18px;height:18px;accent-color:var(--accent);cursor:pointer" />
             <label for="includeSuggestions" style="font-size:.9rem;color:var(--dark);cursor:pointer">Include product suggestions for items not in their collection</label>
           </div>
 
@@ -2276,7 +2135,7 @@
               <h2 class="card-title" style="margin-bottom:0">New Campaign</h2>
             </div>
 
-            <div id="campaignRecipientInfo" style="background:var(--gold-lt);border:1px solid #e8d8b0;border-radius:10px;padding:14px 18px;margin-bottom:24px;font-family:system-ui,sans-serif;font-size:.85rem">
+            <div id="campaignRecipientInfo" style="background:var(--accent2-soft);border:1px solid #BBD4E8;border-radius:10px;padding:14px 18px;margin-bottom:24px;font-family:system-ui,sans-serif;font-size:.85rem">
               <strong>Recipients:</strong> <span id="campaignRecipientCount">Loading...</span> <span id="campaignRecipientSource">unique customer emails from your welcome email history.</span>
             </div>
 
@@ -2341,7 +2200,7 @@
             <table class="history-full-table" id="crmTable">
               <thead>
                 <tr>
-                  <th style="width:36px;padding-left:14px"><input type="checkbox" id="crmSelectAll" onchange="toggleAllCustomers(this.checked)" style="accent-color:var(--rose-dk);cursor:pointer" /></th>
+                  <th style="width:36px;padding-left:14px"><input type="checkbox" id="crmSelectAll" onchange="toggleAllCustomers(this.checked)" style="accent-color:var(--accent-deep);cursor:pointer" /></th>
                   <th>Customer</th>
                   <th>Email</th>
                   <th>Products</th>
@@ -2410,7 +2269,7 @@
 </div>
 
 <script>
-  // ── Theme / Settings ────────────────────────────────────────────────────────
+  // ── Settings ───────────────────────────────────────────────────────────────
 
   function toggleSettings() {
     const panel = document.getElementById('settingsPanel');
@@ -2419,28 +2278,7 @@
     overlay.classList.toggle('open');
   }
 
-  function applyTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme);
-    // Update active state on theme options
-    document.querySelectorAll('.theme-option').forEach(el => {
-      el.classList.toggle('active', el.dataset.theme === theme);
-    });
-  }
 
-  async function selectTheme(theme) {
-    applyTheme(theme);
-    localStorage.setItem('glowTheme', theme);
-    // Persist to server
-    try {
-      await fetch('/auth/theme', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme }),
-      });
-    } catch (err) {
-      console.warn('Failed to save theme preference:', err);
-    }
-  }
 
   // ── Auth state ────────────────────────────────────────────────────────────────
 
@@ -2452,23 +2290,15 @@
       if (res.ok) {
         currentUser = await res.json();
         addLinkedAccount(currentUser.email, currentUser.companyName);
-        // Apply user's saved theme preference
-        const theme = currentUser.theme || localStorage.getItem('glowTheme') || 'rose';
-        applyTheme(theme);
         if (!currentUser.hasGmail) {
           showGmailBanner();
         } else {
           showApp();
         }
       } else {
-        // Apply locally saved theme even when logged out
-        const savedTheme = localStorage.getItem('glowTheme');
-        if (savedTheme) applyTheme(savedTheme);
         showLogin();
       }
     } catch {
-      const savedTheme = localStorage.getItem('glowTheme');
-      if (savedTheme) applyTheme(savedTheme);
       showLogin();
     }
   }
@@ -2636,7 +2466,7 @@
         return `<div class="sent-row" onclick="viewSentEmail(${e.id}, this)" style="padding:12px 14px;border-bottom:1px solid var(--border);cursor:pointer">
           <div style="display:flex;justify-content:space-between;gap:8px">
             <span style="font-weight:600;font-family:system-ui,sans-serif;font-size:.86rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtmlSent(e.to_name) || escapeHtmlSent(e.to_email) || '(no name)'}</span>
-            <span style="font-size:.72rem;color:var(--rose-dk);font-family:system-ui,sans-serif;white-space:nowrap">${kindLabel}</span>
+            <span style="font-size:.72rem;color:var(--accent-deep);font-family:system-ui,sans-serif;white-space:nowrap">${kindLabel}</span>
           </div>
           <div style="font-size:.76rem;color:var(--mid);font-family:system-ui,sans-serif;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtmlSent(e.to_email)}</div>
           <div style="font-size:.76rem;color:var(--dark);font-family:system-ui,sans-serif;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtmlSent(e.subject)}</div>
@@ -2655,7 +2485,7 @@
 
   async function viewSentEmail(id, rowEl) {
     document.querySelectorAll('#sentEmailsList .sent-row').forEach(r => r.style.background = '');
-    if (rowEl) rowEl.style.background = 'var(--rose-lt)';
+    if (rowEl) rowEl.style.background = 'var(--accent-soft)';
     const viewEl = document.getElementById('sentEmailView');
     viewEl.innerHTML = '<div style="color:var(--mid);font-family:system-ui,sans-serif;padding:20px;text-align:center">Loading…</div>';
     try {
@@ -2714,8 +2544,6 @@
         document.getElementById('loginCompany').focus();
       } else {
         // Existing user — go straight in
-        const theme = currentUser.theme || 'rose';
-        applyTheme(theme);
         if (!currentUser.hasGmail) {
           showGmailBanner();
         } else {
@@ -2758,9 +2586,6 @@
       currentUser.companyName = data.companyName;
       localStorage.setItem('glowCompany', data.companyName);
       addLinkedAccount(currentUser.email, currentUser.companyName);
-
-      const theme = currentUser.theme || 'rose';
-      applyTheme(theme);
 
       // New user needs Gmail connect
       if (!currentUser.hasGmail) {
@@ -3017,9 +2842,6 @@
 
       currentUser = data.user;
       addLinkedAccount(currentUser.email, currentUser.companyName);
-
-      const theme = currentUser.theme || 'rose';
-      applyTheme(theme);
 
       // Reset tab state
       crmProductsLoaded = false;
@@ -3821,7 +3643,7 @@
       const notesPreview = c.notes ? c.notes.substring(0, 40) + (c.notes.length > 40 ? '...' : '') : '<span style="color:var(--border)">—</span>';
       const checked = crmSelectedIds.has(c.id) ? 'checked' : '';
       return `<tr style="cursor:pointer" onmouseover="this.style.background='var(--cream)'" onmouseout="this.style.background=''">
-        <td style="padding:12px 14px" onclick="event.stopPropagation()"><input type="checkbox" data-customer-id="${c.id}" ${checked} onchange="toggleCustomerSelect(${c.id}, this.checked)" style="accent-color:var(--rose-dk);cursor:pointer" /></td>
+        <td style="padding:12px 14px" onclick="event.stopPropagation()"><input type="checkbox" data-customer-id="${c.id}" ${checked} onchange="toggleCustomerSelect(${c.id}, this.checked)" style="accent-color:var(--accent-deep);cursor:pointer" /></td>
         <td style="padding:12px 14px;font-weight:600" onclick="openCustomerDetail(${c.id})">${escapeHtml(c.name) || '—'}</td>
         <td style="padding:12px 14px" onclick="openCustomerDetail(${c.id})">${escapeHtml(c.email)}</td>
         <td style="padding:12px 14px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(products)}" onclick="openCustomerDetail(${c.id})">${products || '—'}</td>
@@ -3922,7 +3744,7 @@
       const c = data.customer;
       const products = (c.products || []).map(p => {
         const date = new Date(p.purchased_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-        return `<div style="display:inline-block;background:var(--rose-lt);color:var(--rose-dk);padding:4px 10px;border-radius:6px;font-size:.78rem;margin:3px 4px 3px 0">${escapeHtml(p.product_name)} <span style="color:var(--mid);font-size:.7rem">${date}</span></div>`;
+        return `<div style="display:inline-block;background:var(--accent-soft);color:var(--accent-deep);padding:4px 10px;border-radius:6px;font-size:.78rem;margin:3px 4px 3px 0">${escapeHtml(p.product_name)} <span style="color:var(--mid);font-size:.7rem">${date}</span></div>`;
       }).join('');
 
       const modal = document.createElement('div');
@@ -4212,7 +4034,7 @@
         <p style="font-family:system-ui,sans-serif;font-size:.95rem;color:var(--dark);margin-bottom:24px;line-height:1.5">${message}</p>
         <div style="display:flex;gap:10px;justify-content:center">
           <button class="inbox-confirm-cancel" style="padding:10px 20px;border:1.5px solid var(--border);border-radius:8px;background:var(--white);color:var(--mid);font-family:system-ui,sans-serif;font-size:.88rem;cursor:pointer">Go Back</button>
-          <button class="inbox-confirm-ok" style="padding:10px 20px;border:none;border-radius:8px;background:var(--rose);color:white;font-family:system-ui,sans-serif;font-size:.88rem;font-weight:600;cursor:pointer">Leave</button>
+          <button class="inbox-confirm-ok" style="padding:10px 20px;border:none;border-radius:8px;background:var(--accent);color:white;font-family:system-ui,sans-serif;font-size:.88rem;font-weight:600;cursor:pointer">Leave</button>
         </div>
       </div>
     `;
@@ -4354,20 +4176,20 @@
       let fieldsHtml = '';
       if (extracted.phone) {
         fieldsHtml += `<label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:.85rem;cursor:pointer">
-          <input type="checkbox" checked data-field="phone" data-value="${inboxEscHtml(extracted.phone)}" style="accent-color:var(--rose)">
+          <input type="checkbox" checked data-field="phone" data-value="${inboxEscHtml(extracted.phone)}" style="accent-color:var(--accent)">
           <b>Phone:</b> ${inboxEscHtml(extracted.phone)}
         </label>`;
       }
       if (extracted.address) {
         fieldsHtml += `<label style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:.85rem;cursor:pointer">
-          <input type="checkbox" checked data-field="address" data-value="${inboxEscHtml(extracted.address)}" style="accent-color:var(--rose)">
+          <input type="checkbox" checked data-field="address" data-value="${inboxEscHtml(extracted.address)}" style="accent-color:var(--accent)">
           <b>Address:</b> ${inboxEscHtml(extracted.address)}
         </label>`;
       }
 
       const banner = document.createElement('div');
       banner.id = 'crmSuggestionBanner';
-      banner.style.cssText = 'background:var(--cream);border:1.5px solid var(--gold);border-radius:10px;padding:14px 16px;margin-bottom:12px;font-family:system-ui,sans-serif';
+      banner.style.cssText = 'background:var(--cream);border:1.5px solid var(--accent2);border-radius:10px;padding:14px 16px;margin-bottom:12px;font-family:system-ui,sans-serif';
       banner.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <span style="font-size:.82rem;font-weight:600;color:var(--dark)">Contact info detected for ${inboxEscHtml(senderName || senderEmail)}</span>
@@ -4391,7 +4213,7 @@
     });
     try {
       await inboxApi.post('/api/welcome/customers/from-email', payload);
-      banner.innerHTML = '<div style="text-align:center;padding:8px;font-size:.85rem;color:var(--rose-dk);font-weight:600">Added to CRM</div>';
+      banner.innerHTML = '<div style="text-align:center;padding:8px;font-size:.85rem;color:var(--accent-deep);font-weight:600">Added to CRM</div>';
       setTimeout(() => banner.remove(), 2000);
     } catch (e) {
       inboxShowToast('Failed to save to CRM');
