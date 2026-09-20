@@ -6459,11 +6459,11 @@ function renderPaySummary(paycheck) {
 
   const earned = rows.reduce((s, e) => s + Number(e.commission_earned || 0), 0);
   const total = rows.reduce((s, e) => s + Number(e.total || 0), 0);
-  // Every line the paycheck carries, in the order it carries them — including
-  // the 'held' ones, which move no money but are the only record of a dispute
-  // that came off an earlier cheque. Leaving them out made money disappear
-  // between one fortnight and the next with nothing on the page to explain it.
-  const lines = rows.flatMap(e => e.adjustments || []);
+  // Every line that moves money on this paycheck. A 'held' line moves none —
+  // the dispute came off an earlier cheque — and the Chargebacks section
+  // further down this page lists it with the payday it was held on, so
+  // repeating it here only pads the figures it sits among.
+  const lines = rows.flatMap(e => e.adjustments || []).filter(a => a.kind !== 'held');
 
   const label = (a) => {
     if (a.kind === 'manual') return a.note || 'Adjustment';
@@ -6471,7 +6471,6 @@ function renderPaySummary(paycheck) {
     if (a.kind === 'lost') return 'Dispute lost — taken back';
     if (a.kind === 'return') return a.note || 'Returned after this was paid';
     if (a.kind === 'carry') return a.note || 'Negative amount carried from the last paycheck';
-    if (a.kind === 'held') return a.note || 'Dispute opened — already held from an earlier paycheck';
     return 'Held from pay — dispute opened';
   };
   const line = (text, amount, opts = {}) => `
@@ -6482,17 +6481,9 @@ function renderPaySummary(paycheck) {
 
   const html =
     line('Commission earned', `$${money(earned)}`, { top: true })
-    + lines.map(a => {
-        // A held line is a note, not a movement. Grey, and the amount in
-        // brackets, so it can't be read as another deduction off this cheque.
-        if (a.kind === 'held') {
-          return line(escapeHtml(label(a)),
-            `($${money(Math.abs(Number(a.held_amount) || 0))} held)`, { colour: 'var(--mid)' });
-        }
-        return line(escapeHtml(label(a)),
-          `${Number(a.amount) < 0 ? '−' : '+'}$${money(Math.abs(Number(a.amount)))}`,
-          { colour: Number(a.amount) < 0 ? 'var(--danger)' : 'var(--success)' });
-      }).join('')
+    + lines.map(a => line(escapeHtml(label(a)),
+        `${Number(a.amount) < 0 ? '−' : '+'}$${money(Math.abs(Number(a.amount)))}`,
+        { colour: Number(a.amount) < 0 ? 'var(--danger)' : 'var(--success)' })).join('')
     + line('Commission on the upcoming paycheck', `$${money(total)}`, { strong: true });
 
   for (const el of targets) el.innerHTML = html;
