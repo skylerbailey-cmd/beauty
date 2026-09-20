@@ -1508,8 +1508,8 @@ router.post('/reports/payroll/paid', async (req, res) => {
     const settings = await pgDb.getSettings(req.session.userId);
     const run = await pgDb.payrollForPayday(scope, payday, settings);
     const result = await pgDb.setPayrollPaid(scope, payday, true, employee.name);
-    const { held, released } = await recordChequeEffects(run, payday, employee.name);
-    return res.json({ ...result, chargebacks_held: held, chargebacks_released: released });
+    const { held, released, carried_forward } = await recordChequeEffects(scope, run, payday, employee.name);
+    return res.json({ ...result, chargebacks_held: held, chargebacks_released: released, carried_forward });
   }
 
   // Reopening: the cheque never went out, so release what it was holding and
@@ -1524,7 +1524,7 @@ router.post('/reports/payroll/paid', async (req, res) => {
 // are pinned so they aren't taken again, and anything it handed back is
 // recorded so it isn't handed back again. Limited to one person when only they
 // are being paid.
-async function recordChequeEffects(run, payday, by, onlyEmployeeId) {
+async function recordChequeEffects(scope, run, payday, by, onlyEmployeeId) {
   const pairs = (...kinds) => {
     const out = [];
     for (const e of run.employees) {
@@ -1537,9 +1537,16 @@ async function recordChequeEffects(run, payday, by, onlyEmployeeId) {
     }
     return out;
   };
+  // What each cheque being closed came to. A negative one hands over nothing,
+  // so the shortfall has to follow the person onto the next cheque; recording
+  // it here is what makes that possible.
+  const closing = run.employees.filter(e => !onlyEmployeeId || e.employee_id === onlyEmployeeId);
   return {
     held: await pgDb.holdChargebacksFor(pairs('withheld', 'lost'), payday, by),
     released: await pgDb.releaseChargebacksFor(pairs('won'), payday),
+    balances: await pgDb.recordPayrollBalances(scope, payday, closing),
+    carried_forward: closing.filter(e => Number(e.total) < 0)
+      .map(e => ({ employee: e.employee_name, amount: Number(e.total) })),
   };
 }
 
@@ -1575,8 +1582,8 @@ router.post('/reports/payroll/paid-employee', async (req, res) => {
     const run = await pgDb.payrollForPayday(scope, payday, settings);
     if (run.paid) return res.status(400).json({ error: 'That whole payday is already closed.' });
     const result = await pgDb.setEmployeePayrollPaid(scope, payday, empId, true, me.name);
-    const { held, released } = await recordChequeEffects(run, payday, me.name, empId);
-    return res.json({ ...result, chargebacks_held: held, chargebacks_released: released });
+    const { held, released, carried_forward } = await recordChequeEffects(scope, run, payday, me.name, empId);
+    return res.json({ ...result, chargebacks_held: held, chargebacks_released: released, carried_forward });
   }
 
   await pgDb.clearHoldsForPayday(payday, empId);

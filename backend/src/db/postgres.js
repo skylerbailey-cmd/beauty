@@ -400,6 +400,23 @@ async function initSchema() {
     PRIMARY KEY (payday, employee_id)
   )`);
 
+  // What each cheque actually came to when it was handed out.
+  //
+  // A cheque can come out negative — returns and disputes on earlier sales can
+  // exceed what someone earned this fortnight. Nothing is handed over in that
+  // case, so the shortfall is still owed and has to come off the next cheque.
+  // Recorded at the moment of closing rather than recomputed later: once a
+  // payday is settled its figure must stop moving, or a dispute resolved next
+  // month would quietly rewrite what a cheque paid.
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_payroll_balances (
+    payday DATE NOT NULL,
+    employee_id INTEGER NOT NULL REFERENCES pos_employees(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL DEFAULT '',
+    net_total NUMERIC NOT NULL DEFAULT 0,
+    recorded_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (payday, employee_id)
+  )`);
+
   // Which paycheck took each person's share of a dispute, and which gave it
   // back. Per person, not per dispute: most disputes are split between two or
   // three, and paying one of them must not settle it for the others.
@@ -1531,6 +1548,30 @@ async function payrollForPayday(userId, payday, settings) {
     });
   }
 
+  // A cheque that came out negative paid nothing, so the shortfall is still
+  // owed and comes off the next one. It lands on the payday IMMEDIATELY after
+  // the one that ran short — not on the next one still open. If that next
+  // payday has itself been closed, its own recorded figure already absorbed
+  // this shortfall, and whatever IT came to carries on from there. Skipping to
+  // the first open payday instead would take the same money twice.
+  const carried = (await query(
+    `SELECT b.payday::text AS payday, b.employee_id, b.net_total,
+            e.name AS employee_name, e.commission_rate, e.user_id AS company_id
+     FROM pos_payroll_balances b
+     JOIN pos_employees e ON e.id = b.employee_id
+     WHERE b.user_id = ANY($1::text[]) AND b.net_total < 0 AND b.payday < $2::date`,
+    [ids, payday])).rows;
+  for (const c of carried) {
+    if (nextPayday(c.payday, sched) !== payday) continue;
+    const r = row(c.employee_id, c.employee_name, c.commission_rate, c.company_id);
+    const short = Math.abs(round2(Number(c.net_total)))
+      .toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    r.adjustments.push({
+      kind: 'carry', receipt: null, amount: round2(Number(c.net_total)),
+      note: `carried over from the ${c.payday} paycheck — it came to −$${short}, so nothing was paid and that is still owed`,
+    });
+  }
+
   // Manual lines added by hand — bonuses, corrections, advances.
   const manual = (await query(
     `SELECT a.id, a.employee_id, a.amount, a.note, e.name AS employee_name,
@@ -1590,6 +1631,9 @@ async function setPayrollPaid(userId, payday, paid, by) {
   } else {
     await query('DELETE FROM pos_payroll_runs WHERE user_id = ANY($1::text[]) AND payday = $2::date',
       [asCompanyIds(userId), payday]);
+    // Reopening unwinds the carry-over too — the cheque hasn't gone out after
+    // all, so nothing is owed forward from it.
+    await clearPayrollBalances(userId, payday, null);
   }
   return { ok: true, paid: !!paid };
 }
@@ -1772,8 +1816,36 @@ async function setEmployeePayrollPaid(userId, payday, employeeId, paid, by) {
   } else {
     await query('DELETE FROM pos_payroll_employee_runs WHERE payday = $1::date AND employee_id = $2',
       [payday, employeeId]);
+    await clearPayrollBalances(userId, payday, employeeId);
   }
   return { ok: true, paid: !!paid };
+}
+
+// What a cheque came to, kept so a shortfall can follow the person forward.
+// Written as the cheque closes; a reopened payday drops it again so the
+// carry-over disappears with the close that created it.
+async function recordPayrollBalances(userId, payday, rows) {
+  let written = 0;
+  for (const r of rows || []) {
+    if (!r || !r.employee_id) continue;
+    await query(
+      `INSERT INTO pos_payroll_balances (payday, employee_id, user_id, net_total, recorded_at)
+       VALUES ($1::date, $2, $3, $4, NOW())
+       ON CONFLICT (payday, employee_id)
+       DO UPDATE SET net_total = EXCLUDED.net_total, recorded_at = NOW()`,
+      [payday, r.employee_id, r.company_id || asCompanyIds(userId)[0], round2(r.total)]);
+    written++;
+  }
+  return written;
+}
+
+async function clearPayrollBalances(userId, payday, employeeId) {
+  const res = employeeId
+    ? await query('DELETE FROM pos_payroll_balances WHERE payday = $1::date AND employee_id = $2',
+        [payday, employeeId])
+    : await query('DELETE FROM pos_payroll_balances WHERE payday = $1::date AND user_id = ANY($2::text[])',
+        [payday, asCompanyIds(userId)]);
+  return res.rowCount || 0;
 }
 
 // Record that these people's shares of these disputes came off this paycheck.
@@ -3035,6 +3107,8 @@ module.exports = {
   setPayrollPaid,
   adjustmentsForPayday,
   setEmployeePayrollPaid,
+  recordPayrollBalances,
+  clearPayrollBalances,
   holdChargebacksFor,
   setChargebackHold,
   releaseChargebacksFor,

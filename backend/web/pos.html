@@ -6473,6 +6473,7 @@ function renderPaySummary(paycheck) {
     if (a.kind === 'won') return 'Released — dispute won, held back earlier';
     if (a.kind === 'lost') return 'Dispute lost — taken back';
     if (a.kind === 'return') return a.note || 'Returned after this was paid';
+    if (a.kind === 'carry') return a.note || 'Carried over from the last paycheck';
     return 'Held from pay — dispute opened';
   };
   const line = (text, amount, opts = {}) => `
@@ -7189,6 +7190,7 @@ async function loadPayroll() {
         // brackets, so it cannot be read as another deduction.
         const informational = a.kind === 'held';
         const byHand = a.kind === 'manual';
+        const carried = a.kind === 'carry';
         const colour = informational ? 'var(--mid)' : (a.amount < 0 ? 'var(--danger)' : 'var(--success)');
         const figure = informational
           ? `($${money(Math.abs(Number(a.held_amount) || 0))} held)`
@@ -7207,9 +7209,11 @@ async function loadPayroll() {
         // all look alike — otherwise something just typed in lands in the
         // middle of them and is impossible to pick out.
         return `
-        <div style="display:flex;justify-content:space-between;padding-left:${byHand ? '10' : '14'}px;color:${colour};font-size:.8rem;margin-top:3px;${
-          byHand ? 'border-left:3px solid ' + (a.amount < 0 ? 'var(--danger)' : 'var(--success)') + ';font-weight:600;' : ''}">
-          <span>${byHand ? '<span style="color:var(--mid);font-weight:400">added by hand · </span>' : ''}${a.receipt ? '#' + escapeHtml(String(a.receipt)) + ' — ' : ''}${escapeHtml(a.note)}${holdBtn}${
+        <div style="display:flex;justify-content:space-between;padding-left:${byHand || carried ? '10' : '14'}px;color:${colour};font-size:.8rem;margin-top:3px;${
+          byHand ? 'border-left:3px solid ' + (a.amount < 0 ? 'var(--danger)' : 'var(--success)') + ';font-weight:600;'
+          : carried ? 'border-left:3px solid var(--accent-deep);font-weight:600;' : ''}">
+          <span>${byHand ? '<span style="color:var(--mid);font-weight:400">added by hand · </span>' : ''}${
+            carried ? '<span style="color:var(--mid);font-weight:400">brought forward · </span>' : ''}${a.receipt ? '#' + escapeHtml(String(a.receipt)) + ' — ' : ''}${escapeHtml(a.note)}${holdBtn}${
             a.kind === 'manual' && !data.paid
               ? ` <button title="Added by hand to this paycheck only — remove it" onclick="removePayrollAdjustment(${a.id})" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:.9rem;line-height:1;padding:0 2px">&times;</button>`
               : ''}</span>
