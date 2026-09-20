@@ -1537,16 +1537,16 @@ async function recordChequeEffects(scope, run, payday, by, onlyEmployeeId) {
     }
     return out;
   };
-  // What each cheque's commission came to. If that is below zero the shortfall
-  // follows the person onto the next cheque; recording it here is what makes
-  // that possible. Disputes and hand-added lines are not part of the figure.
+  // What each cheque being closed came to. A cheque below zero hands over
+  // nothing, so the shortfall follows the person onto the next one; recording
+  // it here is what makes that possible.
   const closing = run.employees.filter(e => !onlyEmployeeId || e.employee_id === onlyEmployeeId);
   return {
     held: await pgDb.holdChargebacksFor(pairs('withheld', 'lost'), payday, by),
     released: await pgDb.releaseChargebacksFor(pairs('won'), payday),
     balances: await pgDb.recordPayrollBalances(scope, payday, closing),
-    carried_forward: closing.filter(e => Number(e.commission_balance) < 0)
-      .map(e => ({ employee: e.employee_name, amount: Number(e.commission_balance) })),
+    carried_forward: closing.filter(e => Number(e.total) < 0)
+      .map(e => ({ employee: e.employee_name, amount: Number(e.total) })),
   };
 }
 

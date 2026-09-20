@@ -400,14 +400,13 @@ async function initSchema() {
     PRIMARY KEY (payday, employee_id)
   )`);
 
-  // What each cheque's COMMISSION came to when it was handed out — earnings
-  // less returns, and nothing else.
+  // What each cheque came to when it was handed out.
   //
-  // Returns land against the paycheck that paid the sale they undo, so a big
-  // refund can leave commission below zero for a fortnight. That shortfall is
-  // still owed and comes off the next cheque. Disputes and hand-added lines are
-  // excluded on purpose: a dispute may be won and handed back, and an advance
-  // is settled its own way, so neither should roll into next fortnight's pay.
+  // A cheque below zero hands over nothing — returns and disputes against
+  // earlier sales can outrun a fortnight's earnings — so the shortfall is still
+  // owed and comes off the next one. It carries as a single line saying an
+  // amount was brought forward, NOT by repeating the lines that caused it:
+  // those stay on the cheque that already accounted for them.
   //
   // Recorded at the moment of closing rather than recomputed later: once a
   // payday is settled its figure must stop moving, or a return logged next
@@ -1552,11 +1551,11 @@ async function payrollForPayday(userId, payday, settings) {
     });
   }
 
-  // Commission that came out below zero — returns against sales already paid
-  // for, exceeding what was earned this fortnight — is still owed, so it comes
-  // off the next cheque. Only commission: disputes and hand-added lines are
-  // left out of this figure where it is recorded, since a dispute may yet be
-  // won and an advance is settled its own way.
+  // A cheque that came out below zero paid nothing, so what it was short by is
+  // still owed and comes off the next one — as one line, not by repeating the
+  // deductions behind it. Those keep sitting on the cheque that took them (a
+  // dispute shows there as 'already held', worth nothing), so nothing is
+  // deducted twice.
   //
   // It lands on the payday IMMEDIATELY after the one that ran short, not on the
   // next one still open. If that next payday has itself been closed, its own
@@ -1576,7 +1575,7 @@ async function payrollForPayday(userId, payday, settings) {
       .toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     r.adjustments.push({
       kind: 'carry', receipt: null, amount: round2(Number(c.net_total)),
-      note: `commission carried over from the ${c.payday} paycheck — it came to −$${short}`,
+      note: `negative amount carried from the ${c.payday} paycheck — it came to −$${short} and paid nothing`,
     });
   }
 
@@ -1597,15 +1596,9 @@ async function payrollForPayday(userId, payday, settings) {
     r.adjustment_total = round2(r.adjustments.reduce((s, a) => s + a.amount, 0));
     r.total = round2(r.commission_earned + r.adjustment_total);
 
-    // What they earned, and nothing else. This is the figure that carries when
-    // it comes out below zero — commission on the period's sales, less the
-    // commission reversed by returns against sales already paid for, less
-    // anything still owed from last time.
-    //
-    // Deliberately NOT the cheque total. A dispute is money in question that
-    // may yet come back, and a hand-added line like a cash advance is settled
-    // its own way; rolling either into next fortnight's pay would keep
-    // deducting something that was never commission.
+    // Commission alone — earnings less the commission reversed by returns.
+    // Reported alongside the cheque total so the pay figure can be read
+    // against what was actually sold; the carry-over works off the total.
     const CARRIES = new Set(['return', 'carry']);
     r.commission_balance = round2(
       r.commission_earned + r.adjustments.filter(a => CARRIES.has(a.kind))
@@ -1855,8 +1848,7 @@ async function recordPayrollBalances(userId, payday, rows) {
        VALUES ($1::date, $2, $3, $4, NOW())
        ON CONFLICT (payday, employee_id)
        DO UPDATE SET net_total = EXCLUDED.net_total, recorded_at = NOW()`,
-      [payday, r.employee_id, r.company_id || asCompanyIds(userId)[0],
-       round2(r.commission_balance != null ? r.commission_balance : r.total)]);
+      [payday, r.employee_id, r.company_id || asCompanyIds(userId)[0], round2(r.total)]);
     written++;
   }
   return written;
