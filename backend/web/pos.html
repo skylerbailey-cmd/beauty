@@ -4341,6 +4341,8 @@ function exportCustomersCSV() {
 let managerAction = null;   // { type: 'edit'|'delete', txId }
 let managerCreds = null;    // { name, pin } captured after manager verification
 let editTx = null;          // working copy of the transaction being edited
+let txEditRoster = [];      // people creditable on it — the OWNING store's
+let txEditCompany = '';     // set only when that store isn't the one signed in
 
 // Which receipt an id belongs to, per the list currently on screen. Used to
 // name the transaction in the prompt and to confirm the modal opens the one
@@ -4536,6 +4538,12 @@ async function openTxEdit(txId, expectedReceipt) {
       alert(`This opened the wrong transaction — you clicked receipt #${expectedReceipt} but the server returned #${tx.receipt_number} (id ${txId}).\n\nNothing has been changed. Please refresh the page and try again, and let support know both receipt numbers.`);
       return;
     }
+    // A sale belongs to the store that rang it up, and only that store's people
+    // can be credited on it. Editing from the combined list means the roster in
+    // these dropdowns has to be theirs, not the one signed in here — otherwise
+    // the names offered are names the save would refuse.
+    txEditRoster = (data.roster && data.roster.length) ? data.roster : allEmployees;
+    txEditCompany = data.is_other_company ? (data.company_name || '') : '';
     editTx = {
       id: tx.id,
       receipt_number: tx.receipt_number,
@@ -4564,7 +4572,10 @@ async function openTxEdit(txId, expectedReceipt) {
     // Restate the sale being edited, so it's immediately obvious if this isn't
     // the row that was clicked.
     document.getElementById('txEditWho').textContent =
-      `${new Date(tx.created_at).toLocaleString()} · ${tx.customer_name || 'no customer'} · $${money(tx.total)}`;
+      `${new Date(tx.created_at).toLocaleString()} · ${tx.customer_name || 'no customer'} · $${money(tx.total)}`
+      // Name the store when it isn't this one, so an edit made from the
+      // combined list can't be mistaken for an edit to the company on screen.
+      + (txEditCompany ? ` · ${txEditCompany}` : '');
     document.getElementById('txEditCustName').value = editTx.customer_name;
     document.getElementById('txEditCustEmail').value = editTx.customer_email;
     document.getElementById('txEditCustPhone').value = editTx.customer_phone;
@@ -4652,7 +4663,7 @@ function txEditAddItem() {
 function renderTxEditEmployees() {
   const container = document.getElementById('txEditEmployees');
   if (!container || !editTx) return;
-  const activeEmps = allEmployees.filter(e => e.active);
+  const activeEmps = txEditRoster.filter(e => e.active);
   if (editTx.employees.length === 0) {
     container.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);padding:4px 0">No employees assigned</div>';
     return;
@@ -4706,7 +4717,7 @@ function txEditEmpDollar(i, v) {
 function txEditRemoveEmployee(i) { editTx.employees.splice(i, 1); renderTxEditEmployees(); }
 function txEditAddEmployee() {
   const assigned = editTx.employees.map(e => e.employee_id);
-  const available = allEmployees.filter(e => e.active && !assigned.includes(e.id));
+  const available = txEditRoster.filter(e => e.active && !assigned.includes(e.id));
   if (available.length === 0) { alert('All employees are already assigned.'); return; }
   editTx.employees.push({ employee_id: available[0].id, name: available[0].name, commission_type: 'percent', commission_value: 0 });
   const even = Math.round(100 / editTx.employees.length * 100) / 100;

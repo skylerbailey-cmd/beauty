@@ -646,10 +646,36 @@ router.get('/transactions', async (req, res) => {
   res.json({ transactions: await pgDb.getTransactions(req.session.userId, opts) });
 });
 
+// One transaction, and the company that owns it.
+//
+// The history list spans every company the session has been granted, so acting
+// on a row has to reach as far as seeing it did — otherwise a manager on the
+// combined list clicks Edit on the other store's sale and is told the record
+// doesn't exist. Everything downstream (the manager check, the employee roster,
+// the write itself) then works against the OWNING company rather than whichever
+// one happens to be signed in: the sale's own employees are the ones that may
+// be credited on it, and a manager here must also be a manager there.
+async function txInScope(req) {
+  const id = parseInt(req.params.id ?? req.params.txId);
+  if (!Number.isFinite(id)) return null;
+  const tx = await pgDb.getTransaction(id, scopeIds(req));
+  return tx ? { id, tx, owner: tx.user_id } : null;
+}
+
 router.get('/transactions/:id', async (req, res) => {
-  const tx = await pgDb.getTransaction(parseInt(req.params.id), req.session.userId);
-  if (!tx) return res.status(404).json({ error: 'Transaction not found' });
-  res.json({ transaction: tx });
+  const found = await txInScope(req);
+  if (!found) return res.status(404).json({ error: 'Transaction not found' });
+  // The roster that may be credited on THIS sale, which is the owning store's,
+  // not the signed-in one's. Sent alongside so the edit screen offers the
+  // people the save will actually accept.
+  const roster = (await pgDb.getEmployees(found.owner)).filter(e => e.active);
+  const settings = await pgDb.getSettings(found.owner);
+  res.json({
+    transaction: found.tx,
+    roster: roster.map(e => ({ id: e.id, name: e.name, active: e.active })),
+    company_name: settings?.store_name || '',
+    is_other_company: found.owner !== req.session.userId,
+  });
 });
 
 // ─── Employee-scoped Transactions (PIN-protected, read-only) ──────────────
@@ -714,16 +740,17 @@ router.post('/manager/verify', async (req, res) => {
 });
 
 router.put('/transactions/:id', async (req, res) => {
-  const userId = req.session.userId;
+  const found = await txInScope(req);
+  if (!found) return res.status(404).json({ error: 'Transaction not found' });
   const { manager_name, manager_pin } = req.body;
-  const manager = await verifyManager(userId, manager_name, manager_pin);
+  const manager = await verifyManager(found.owner, manager_name, manager_pin);
   if (!manager) return res.status(403).json({ error: 'Only a manager can edit a transaction. Manager name and code did not match.' });
 
-  const employeeError = await validateEmployeeAssignment(userId, req.body.employees, null);
+  const employeeError = await validateEmployeeAssignment(found.owner, req.body.employees, null);
   if (employeeError) return res.status(400).json({ error: employeeError });
 
   try {
-    const tx = await pgDb.updateTransaction(parseInt(req.params.id), userId, req.body);
+    const tx = await pgDb.updateTransaction(found.id, found.owner, req.body);
     if (!tx) return res.status(404).json({ error: 'Transaction not found' });
     res.json({ transaction: tx });
   } catch (err) {
@@ -732,12 +759,13 @@ router.put('/transactions/:id', async (req, res) => {
 });
 
 router.delete('/transactions/:id', async (req, res) => {
-  const userId = req.session.userId;
+  const found = await txInScope(req);
+  if (!found) return res.status(404).json({ error: 'Transaction not found' });
   const { manager_name, manager_pin } = req.body;
-  const manager = await verifyManager(userId, manager_name, manager_pin);
+  const manager = await verifyManager(found.owner, manager_name, manager_pin);
   if (!manager) return res.status(403).json({ error: 'Only a manager can delete a transaction. Manager name and code did not match.' });
 
-  const ok = await pgDb.deleteTransaction(parseInt(req.params.id), userId);
+  const ok = await pgDb.deleteTransaction(found.id, found.owner);
   if (!ok) return res.status(404).json({ error: 'Transaction not found' });
   res.json({ ok: true });
 });
@@ -750,20 +778,25 @@ router.get('/transactions/:id/chargebacks', async (req, res) => {
 
 // Add or update one. Manager-gated like editing, since it moves commission.
 router.post('/transactions/:id/chargebacks', async (req, res) => {
+  const found = await txInScope(req);
+  if (!found) return res.status(404).json({ error: 'Transaction not found' });
   const { manager_name, manager_pin } = req.body;
-  const manager = await verifyManager(req.session.userId, manager_name, manager_pin);
+  const manager = await verifyManager(found.owner, manager_name, manager_pin);
   if (!manager) return res.status(403).json({ error: 'Only a manager can record a chargeback. Manager name and code did not match.' });
-  const result = await pgDb.saveChargeback(parseInt(req.params.id), req.session.userId, req.body);
+  const result = await pgDb.saveChargeback(found.id, found.owner, req.body);
   if (!result) return res.status(404).json({ error: 'Transaction not found' });
   if (result.error) return res.status(400).json({ error: result.error });
   res.json(result);
 });
 
 router.delete('/transactions/:txId/chargebacks/:id', async (req, res) => {
+  // The sale is :txId here; :id is the dispute on it.
+  const found = await pgDb.getTransaction(parseInt(req.params.txId), scopeIds(req));
+  if (!found) return res.status(404).json({ error: 'Transaction not found' });
   const { manager_name, manager_pin } = req.body;
-  const manager = await verifyManager(req.session.userId, manager_name, manager_pin);
+  const manager = await verifyManager(found.user_id, manager_name, manager_pin);
   if (!manager) return res.status(403).json({ error: 'Only a manager can remove a chargeback.' });
-  const ok = await pgDb.deleteChargeback(parseInt(req.params.id), req.session.userId);
+  const ok = await pgDb.deleteChargeback(parseInt(req.params.id), found.user_id);
   if (!ok) return res.status(404).json({ error: 'Chargeback not found' });
   res.json({ ok: true });
 });
@@ -772,13 +805,14 @@ router.delete('/transactions/:txId/chargebacks/:id', async (req, res) => {
 // money) or clear that flag if the dispute is won. Same manager check as
 // editing, since it changes what the books say was collected.
 router.post('/transactions/:id/chargeback', async (req, res) => {
-  const userId = req.session.userId;
+  const found = await txInScope(req);
+  if (!found) return res.status(404).json({ error: 'Transaction not found' });
   const { manager_name, manager_pin, charged_back, note, status, closed_at, amount } = req.body;
-  const manager = await verifyManager(userId, manager_name, manager_pin);
+  const manager = await verifyManager(found.owner, manager_name, manager_pin);
   if (!manager) return res.status(403).json({ error: 'Only a manager can mark a chargeback. Manager name and code did not match.' });
 
   const result = await pgDb.setTransactionChargeback(
-    parseInt(req.params.id), userId, !!charged_back, String(note || '').trim(),
+    found.id, found.owner, !!charged_back, String(note || '').trim(),
     status, closed_at || null, amount);
   if (!result) return res.status(404).json({ error: 'Transaction not found' });
   if (result.error) return res.status(400).json({ error: result.error });
@@ -788,7 +822,9 @@ router.post('/transactions/:id/chargeback', async (req, res) => {
 // Move a sale that was rung up on the wrong company over to the right one,
 // keeping its receipt number, date, items and totals intact.
 router.post('/transactions/:id/move', async (req, res) => {
-  const userId = req.session.userId;
+  const found = await txInScope(req);
+  if (!found) return res.status(404).json({ error: 'Transaction not found' });
+  const userId = found.owner;   // move it OFF the company that holds it
   const { target_email, manager_name, manager_pin } = req.body;
   const manager = await verifyManager(userId, manager_name, manager_pin);
   if (!manager) return res.status(403).json({ error: 'Only a manager can move a transaction. Manager name and code did not match.' });
@@ -1078,15 +1114,19 @@ router.post('/settings/test-sale-alert', async (req, res) => {
 // ─── Email Receipt ─────────────────────────────────────────────────────────
 
 router.post('/transactions/:id/email', async (req, res) => {
-  const tx = await pgDb.getTransaction(parseInt(req.params.id), req.session.userId);
-  if (!tx) return res.status(404).json({ error: 'Transaction not found' });
+  const found = await txInScope(req);
+  if (!found) return res.status(404).json({ error: 'Transaction not found' });
+  const tx = found.tx;
 
   const email = req.body.email || tx.customer_email;
   if (!email) return res.status(400).json({ error: 'Email address required' });
 
-  const user = await getSendingUser(req.session.userId);
+  // The receipt belongs to the store that made the sale, so it carries that
+  // store's name, address and footer, and goes out from that store's mailbox —
+  // not from whichever company happens to be signed in on this browser.
+  const user = await getSendingUser(found.owner);
 
-  const settings = await pgDb.getSettings(req.session.userId);
+  const settings = await pgDb.getSettings(found.owner);
   const storeName = settings.store_name || user?.company_name || 'Glow SF';
   const storeAddress = formatStoreAddress(settings);
   const storeContact = formatStoreContact(settings);
@@ -1182,9 +1222,12 @@ router.post('/transactions/:id/email', async (req, res) => {
 // straight from the transaction's products, and sends it via Gmail.
 
 router.post('/transactions/:id/welcome', async (req, res) => {
-  const userId = req.session.userId;
-  const tx = await pgDb.getTransaction(parseInt(req.params.id), userId);
-  if (!tx) return res.status(404).json({ error: 'Transaction not found' });
+  const found = await txInScope(req);
+  if (!found) return res.status(404).json({ error: 'Transaction not found' });
+  // Everything below — the brands, the store name, the mailbox it leaves from —
+  // belongs to the store that made the sale, not to whoever is signed in.
+  const userId = found.owner;
+  const tx = found.tx;
 
   const email = req.body.email || tx.customer_email;
   if (!email) return res.status(400).json({ error: 'Email address required' });

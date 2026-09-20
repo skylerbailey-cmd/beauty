@@ -814,9 +814,12 @@ async function addTransactionEmployees(transactionId, employees) {
 
 async function getTransaction(id, userId) {
   // When userId is provided, scope by company so one company can't read
-  // another company's transaction by guessing its numeric id.
-  const tx = userId
-    ? (await query('SELECT * FROM pos_transactions WHERE id = $1 AND user_id = $2', [id, userId])).rows[0]
+  // another company's transaction by guessing its numeric id. It takes a list
+  // as well as a single id, because a manager viewing the combined list has to
+  // be able to open the row in front of them.
+  const ids = asCompanyIds(userId);
+  const tx = ids.length
+    ? (await query('SELECT * FROM pos_transactions WHERE id = $1 AND user_id = ANY($2::text[])', [id, ids])).rows[0]
     : (await query('SELECT * FROM pos_transactions WHERE id = $1', [id])).rows[0];
   if (!tx) return null;
   tx.items = (await query('SELECT * FROM pos_transaction_items WHERE transaction_id = $1', [id])).rows;
