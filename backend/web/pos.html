@@ -287,6 +287,16 @@
     }
     .tx-actions button:hover { text-decoration: none; }
 
+    /* A dozen columns can outgrow the card they sit in — one long email
+       address is enough on its own — and the overflow used to paint over the
+       page beside it. Now it scrolls within the card, so whatever is added
+       later stays inside the border. */
+    .table-scroll { overflow-x: auto; }
+
+    /* Nor should one customer's address set the width of the whole table.
+       Truncated, with the full address on hover and in the title. */
+    .email-cell { max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
     .date-range { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; font-family: system-ui, sans-serif; font-size: .85rem; }
     .date-range input, .date-range select { padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-family: system-ui, sans-serif; font-size: .85rem; outline: none; background: var(--white); color: var(--dark); }
     .date-range input:focus, .date-range select:focus { border-color: var(--accent); }
@@ -675,7 +685,7 @@
     <!-- Two ways of reading the same trade: one row per sale, or one row per
          person. They used to be separate tabs, which meant leaving the sale
          you were looking at to find out who bought it. -->
-    <div style="max-width:1000px;margin:0 auto;padding:20px 20px 0">
+    <div style="max-width:1500px;margin:0 auto;padding:20px 20px 0">
       <div class="tx-views">
         <button class="tx-view-btn active" data-view="sales" onclick="switchTxView('sales')">Sales</button>
         <button class="tx-view-btn" data-view="customers" onclick="switchTxView('customers')">Customers</button>
@@ -683,7 +693,7 @@
     </div>
 
     <div id="txViewSales">
-    <div style="max-width:1000px;margin:0 auto;padding:20px">
+    <div style="max-width:1500px;margin:0 auto;padding:20px">
       <div class="date-range" style="flex-wrap:wrap">
         <label>From:</label>
         <input type="date" id="histStart">
@@ -752,16 +762,18 @@
           </div>
         </div>
         <div id="txSummary" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:10px 0"></div>
+        <div class="table-scroll">
         <table class="report-table">
           <thead><tr><th id="txSelectAllHeader" style="display:none;width:28px"><input type="checkbox" id="txSelectAll" onchange="toggleSelectAllTx(this.checked)"></th><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Email</th><th>Items</th><th>Subtotal</th><th>Total</th><th>Payment</th><th id="txCompanyHeader" style="display:none">Company</th><th></th></tr></thead>
           <tbody id="txHistoryBody"></tbody>
         </table>
+        </div>
       </div>
     </div>
     </div><!-- /txViewSales -->
 
   <div id="txViewCustomers" style="display:none">
-    <div style="max-width:1000px;margin:0 auto;padding:20px">
+    <div style="max-width:1500px;margin:0 auto;padding:20px">
       <div class="date-range">
         <label>From:</label>
         <input type="date" id="custStart">
@@ -801,10 +813,12 @@
           </div>
         </div>
         <div id="custFilterSummary" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin-top:8px"></div>
+        <div class="table-scroll">
         <table class="report-table" style="margin-top:8px">
           <thead><tr><th>Customer</th><th>Email</th><th>Last Purchase</th><th>Purchases</th><th>Returns</th><th>Total Spent</th><th>Employee(s)</th><th>Items</th><th></th></tr></thead>
           <tbody id="custReportBody"></tbody>
         </table>
+        </div>
         <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:8px">Click a customer for their full details (phone, address, notes).</p>
       </div>
     </div>
@@ -3987,7 +4001,7 @@ function applyTxFilters() {
       <td><span class="tx-type-${tx.type}">${tx.type.toUpperCase()}</span>${cbBadges(tx)}</td>
       <td>${tx.employees && tx.employees.length > 0 ? tx.employees.map(e => e.employee_name).join(', ') : '-'}</td>
       <td>${tx.customer_name || '-'}</td>
-      <td style="font-size:.82rem">${tx.customer_email ? escapeHtml(tx.customer_email) : '<span style="color:var(--mid)">—</span>'}</td>
+      <td class="email-cell" style="font-size:.82rem" title="${escapeHtml(tx.customer_email || '')}">${tx.customer_email ? escapeHtml(tx.customer_email) : '<span style="color:var(--mid)">—</span>'}</td>
       <td>${tx.items.length}</td>
       <td>$${money((tx.subtotal || 0))}</td>
       <td style="font-weight:600">$${money(tx.total)}</td>
