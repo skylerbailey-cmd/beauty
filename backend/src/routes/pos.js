@@ -1988,30 +1988,40 @@ router.post('/import-transactions', async (req, res) => {
 
   for (const row of rows) {
     try {
-      const location = (row.location || '').trim().toLowerCase();
-      if (location !== storeName) { skippedOther++; continue; }
+      // A location is only a filter when the file actually carries one. The
+      // first version required it and dropped every row without it, which
+      // meant any export that didn't happen to have a Location column
+      // imported precisely nothing.
+      const location = String(row.location || '').trim().toLowerCase();
+      if (location && location !== storeName) { skippedOther++; continue; }
 
-      const receipt = (row.sale_code || '').trim();
+      // The browser sends the normalised shape; the older keys are still read
+      // so anything mid-flight during a deploy still lands.
+      const receipt = String(row.receipt || row.sale_code || '').trim();
       if (!receipt) { skippedOther++; continue; }
       if (await pgDb.receiptExists(receipt, userId)) { skippedDupe++; continue; }
 
-      const isReturn = String(row.type || '').toLowerCase().startsWith('refund') || String(row.type || '').toLowerCase() === 'return';
-      const subtotal = Math.abs(parseNum(row.sub_total));
+      const isReturn = row.type
+        ? String(row.type).toLowerCase() === 'return' || String(row.type).toLowerCase().startsWith('refund')
+        : false;
+      const subtotal = Math.abs(parseNum(row.subtotal != null ? row.subtotal : row.sub_total));
       const tax = Math.abs(parseNum(row.tax));
-      const total = Math.abs(parseNum(row.sale_total)) || (subtotal + tax);
+      const total = Math.abs(parseNum(row.total != null ? row.total : row.sale_total)) || (subtotal + tax);
 
-      // Payment method from the tender columns. Checks used to be lumped in
-      // with store credit as "other" because there was no check method; now
-      // that there is, they import as their own method. Only affects imports
-      // run from here on — rows already brought in stay as "other".
-      let payment = 'card';
-      if (Math.abs(parseNum(row.credit)) > 0) payment = 'card';
-      else if (Math.abs(parseNum(row.cash)) > 0) payment = 'cash';
-      else if (Math.abs(parseNum(row.check)) > 0) payment = 'check';
-      else if (Math.abs(parseNum(row.store_credit)) > 0) payment = 'other';
+      // The browser works the tender out from whichever column the file used;
+      // the old per-tender columns are the fallback.
+      let payment = String(row.payment || '').trim().toLowerCase();
+      if (!PAYMENT_METHODS.includes(payment)) {
+        payment = 'card';
+        if (Math.abs(parseNum(row.credit)) > 0) payment = 'card';
+        else if (Math.abs(parseNum(row.cash)) > 0) payment = 'cash';
+        else if (Math.abs(parseNum(row.check)) > 0) payment = 'check';
+        else if (Math.abs(parseNum(row.store_credit)) > 0) payment = 'other';
+      }
 
-      // Employees (comma-separated names) — match or create
-      const names = String(row.associates || '').split(',').map(s => s.trim()).filter(Boolean);
+      // Staff names, however the file separates them.
+      const names = String(row.employees || row.associates || '')
+        .split(/[,;/|&]| and /i).map(s => s.trim()).filter(Boolean);
       const empIds = [];
       for (const nm of names) {
         const key = nm.toLowerCase();
@@ -2028,16 +2038,23 @@ router.post('/import-transactions', async (req, res) => {
         return { employee_id: id, commission_type: 'percent', commission_value: pct, commission_amount: Math.round(subtotal * pct / 100 * 100) / 100 };
       });
 
-      const items = [{ product_id: 'import', product_name: 'Imported (prior POS)', brand: '', quantity: 1, unit_price: subtotal, discount: 0, line_total: subtotal }];
+      // Name the line after whatever the file called it, when it said.
+      const itemName = String(row.item || '').trim() || 'Imported (prior POS)';
+      const items = [{
+        product_id: 'import', product_name: itemName, brand: '',
+        quantity: 1, unit_price: subtotal, discount: 0, line_total: subtotal,
+      }];
 
       await pgDb.importTransaction({
         type: isReturn ? 'return' : 'sale',
         receipt_number: receipt,
         subtotal, tax_amount: tax, total,
         payment_method: payment,
-        created_at: (row.date || '').trim(),
+        created_at: String(row.date || '').trim(),
         tz,
         customer_name: row.customer || '',
+        customer_email: row.email || '',
+        customer_phone: row.phone || '',
         user_id: userId,
         items, employees: empRecords,
         employee_id: empIds[0] || null,

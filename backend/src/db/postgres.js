@@ -864,13 +864,27 @@ async function receiptExists(receiptNumber, userId) {
 // receipt number and backdated created_at (interpreted in the store timezone).
 async function importTransaction(tx) {
   const rate = tx.subtotal > 0 ? Math.round((tx.tax_amount / tx.subtotal) * 10000) / 10000 : 0;
+
+  // A shop migrating from another system brings its customers with it. Without
+  // this the sales arrive but the CRM stays empty, and the history a shop
+  // switched systems for is only half there.
+  let customerId = null;
+  if (String(tx.customer_name || '').trim() && (tx.customer_email || tx.customer_phone)) {
+    try {
+      const c = await findOrCreateCustomer(tx.customer_name, tx.customer_email || '', tx.user_id, tx.customer_phone || '');
+      customerId = c?.id || null;
+    } catch (_) { /* never lose the sale over the address book */ }
+  }
+
   const result = await query(
     `INSERT INTO pos_transactions
-      (type, employee_id, customer_name, customer_email, subtotal, tax_rate, tax_amount,
-       discount_amount, total, payment_method, card_last4, notes, receipt_number, user_id, created_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14, ($15)::timestamp AT TIME ZONE $16) RETURNING id`,
+      (type, employee_id, customer_id, customer_name, customer_email, customer_phone,
+       subtotal, tax_rate, tax_amount, discount_amount, total, payment_method, card_last4,
+       notes, receipt_number, user_id, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16, ($17)::timestamp AT TIME ZONE $18) RETURNING id`,
     [
-      tx.type || 'sale', tx.employee_id || null, tx.customer_name || '', '',
+      tx.type || 'sale', tx.employee_id || null, customerId,
+      tx.customer_name || '', tx.customer_email || '', tx.customer_phone || '',
       tx.subtotal, rate, tx.tax_amount, 0, tx.total,
       tx.payment_method || 'card', '', 'Imported from prior POS',
       tx.receipt_number, tx.user_id, tx.created_at, tx.tz || 'America/Los_Angeles',

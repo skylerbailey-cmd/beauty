@@ -1593,6 +1593,30 @@
 </div>
 
 <!-- ─── Email Preview Modal (edit before sending) ─── -->
+<!-- Column mapping, shown before any file is imported. Every shop's export
+     is different, so the safe thing is to say out loud what we think each
+     column is and let someone correct it before rows are written. -->
+<div class="modal-overlay" id="importMapModal">
+  <div class="modal" style="max-width:820px">
+    <h2>Check the columns before importing</h2>
+    <p class="sub" id="importMapSummary"></p>
+
+    <div style="max-height:46vh;overflow:auto;border:1px solid var(--border);border-radius:8px">
+      <table class="report-table" style="margin:0">
+        <thead><tr><th style="width:230px">What it is</th><th style="width:230px">Column in your file</th><th>First value</th></tr></thead>
+        <tbody id="importMapBody"></tbody>
+      </table>
+    </div>
+
+    <div id="importMapNotes" style="font-family:system-ui,sans-serif;font-size:.84rem;color:var(--ink,var(--dark));margin-top:14px;line-height:1.5"></div>
+
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeImportMapping()">Cancel</button>
+      <button class="btn btn-confirm" id="importMapGo" onclick="confirmImportMapping()">Import</button>
+    </div>
+  </div>
+</div>
+
 <!-- Which email to send about a sale, asked from the Transactions row. Both
      land in the same edit-before-send preview the register already uses. -->
 <div class="modal-overlay" id="txEmailModal">
@@ -4517,7 +4541,81 @@ function exportTransactionsCSV() {
 }
 
 // ─── Import transactions from a prior-POS CSV ───────────────────────────────
-function parseCSV(text) {
+// ─── Importing a file from another POS ──────────────────────────────────────
+//
+// Every shop arrives with a different export. Column names, delimiter, date
+// order, how a refund is marked, whether there is a location column at all —
+// none of that is standardised, and the first version of this only understood
+// one vendor's file. Anything else imported zero rows.
+//
+// So nothing below is tied to a format. The file is sniffed, the columns are
+// matched by what they mean, and the mapping is shown for correction before a
+// single row is written.
+
+// What we can use, and the header names shops actually ship it under.
+const IMPORT_FIELDS = [
+  { key: 'receipt', label: 'Receipt / order no.',
+    hint: 'Identifies the sale, so importing the same file twice can\'t duplicate it.',
+    syn: ['salecode','saleno','salenumber','sale','receipt','receiptno','receiptnumber','transactionid','transactionno','transaction','orderid','orderno','order','invoice','invoiceno','invoicenumber','ticket','ticketno','reference','ref','refno','docno','documentno','id'] },
+  { key: 'date', label: 'Date', required: true, hint: 'When the sale happened.',
+    syn: ['date','saledate','transactiondate','orderdate','invoicedate','createdat','created','datetime','timestamp','time','posted','posteddate','closed','closedat','day'] },
+  { key: 'total', label: 'Total', required: true, hint: 'What the customer paid, tax included.',
+    syn: ['saletotal','total','grandtotal','totalamount','amount','amountpaid','gross','grossamount','totalpaid','paid','sum','charge'] },
+  { key: 'subtotal', label: 'Subtotal',
+    hint: 'Before tax. Worked out from the total and tax when it isn\'t in the file.',
+    syn: ['subtotal','sub','subtotalamount','net','netamount','netsales','pretax','beforetax','merchandise','merchandisetotal'] },
+  { key: 'tax', label: 'Tax',
+    syn: ['tax','salestax','taxamount','taxtotal','vat','gst','hst'] },
+  { key: 'customer', label: 'Customer',
+    syn: ['customer','customername','client','clientname','name','fullname','buyer','purchaser','guest','patient','account','accountname','billto'] },
+  { key: 'email', label: 'Customer email',
+    syn: ['email','emailaddress','customeremail','clientemail','mail'] },
+  { key: 'phone', label: 'Customer phone',
+    syn: ['phone','phonenumber','telephone','tel','mobile','cell','cellphone','customerphone','clientphone'] },
+  { key: 'employee', label: 'Sold by',
+    hint: 'One name, or several separated by commas, slashes or semicolons.',
+    syn: ['saleassociates','saleassociate','associate','associates','employee','employeename','employees','staff','staffmember','salesperson','salesrep','rep','soldby','seller','servedby','technician','provider','stylist','therapist','cashier','clerk','user'] },
+  { key: 'type', label: 'Sale or return',
+    hint: 'Optional — a negative total is treated as a return on its own.',
+    syn: ['type','transactiontype','saletype','kind','category','status','action','direction'] },
+  { key: 'payment', label: 'Payment method',
+    syn: ['payment','paymentmethod','paymenttype','tender','tendertype','method','paidby','paymentmode','cardtype'] },
+  { key: 'location', label: 'Location',
+    hint: 'Only needed when one file holds more than one shop. Left blank, every row is imported here.',
+    syn: ['location','store','storename','site','branch','shop','company','venue','outlet'] },
+  { key: 'item', label: 'Item sold',
+    hint: 'Shown on the receipt behind the sale. Without it, rows import as a single placeholder line.',
+    syn: ['item','items','product','productname','description','service','servicename','sku','lineitem','treatment'] },
+];
+
+const importNorm = (h) => String(h == null ? '' : h).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+// ── Reading the file ───────────────────────────────────────────────────────
+
+// Excel writes a byte-order mark, which otherwise becomes part of the first
+// header and stops it matching anything at all.
+function stripBom(text) {
+  return text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+}
+
+// Whichever separator appears most often outside quotes on the header line.
+// Semicolons are normal wherever the comma is a decimal point; tabs come from
+// anything pasted out of a spreadsheet.
+function sniffDelimiter(text) {
+  const line = text.split(/\r?\n/).find(l => l.trim().length) || '';
+  let best = ',', bestCount = 0;
+  for (const d of [',', ';', '\t', '|']) {
+    let count = 0, inQuotes = false;
+    for (const ch of line) {
+      if (ch === '"') inQuotes = !inQuotes;
+      else if (ch === d && !inQuotes) count++;
+    }
+    if (count > bestCount) { best = d; bestCount = count; }
+  }
+  return best;
+}
+
+function parseDelimited(text, delim) {
   const rows = [];
   let row = [], field = '', inQuotes = false;
   for (let i = 0; i < text.length; i++) {
@@ -4525,52 +4623,403 @@ function parseCSV(text) {
     if (inQuotes) {
       if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQuotes = false; }
       else field += c;
-    } else {
-      if (c === '"') inQuotes = true;
-      else if (c === ',') { row.push(field); field = ''; }
-      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
-      else if (c === '\r') { /* ignore */ }
-      else field += c;
-    }
+    } else if (c === '"') inQuotes = true;
+    else if (c === delim) { row.push(field); field = ''; }
+    else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+    else if (c === '\r') { /* handled by the \n */ }
+    else field += c;
   }
   if (field.length || row.length) { row.push(field); rows.push(row); }
   return rows;
 }
 
+// Kept for anything still calling it with a plain comma file.
+function parseCSV(text) { return parseDelimited(stripBom(text), ','); }
+
+// ── Reading the values ─────────────────────────────────────────────────────
+
+// Money, in the shapes exports actually use: $1,234.56 · 1.234,56 · (99.00)
+// for a negative · 45.00- · £12 · plain 12.
+function importMoney(v) {
+  if (v == null) return NaN;
+  let s = String(v).trim();
+  if (!s) return NaN;
+  let neg = false;
+  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+  if (/-\s*$/.test(s)) { neg = true; s = s.replace(/-\s*$/, ''); }
+  s = s.replace(/[^0-9.,\-]/g, '');
+  if (s.startsWith('-')) { neg = true; s = s.slice(1); }
+  if (!s) return NaN;
+
+  // Which separator is the decimal point. "1.234,56" and "1,234.56" are the
+  // same amount written two ways, and a lone "1,234" is the dangerous case:
+  // read as a decimal it becomes 1.23, so a twelve-hundred-dollar sale
+  // imports as one dollar twenty-three.
+  const commas = (s.match(/,/g) || []).length;
+  const dots = (s.match(/\./g) || []).length;
+  if (commas && dots) {
+    // Both present: the last one is the decimal point, the other groups.
+    if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.');
+    else s = s.replace(/,/g, '');
+  } else if (commas) {
+    // Several commas can only be grouping; a single one followed by exactly
+    // three digits is grouping too, by the overwhelming convention of
+    // English-language exports.
+    const groupLike = commas > 1 || /,\d{3}$/.test(s);
+    s = groupLike ? s.replace(/,/g, '') : s.replace(',', '.');
+  } else if (dots > 1) {
+    // 1.234.567 — grouping in the European style.
+    s = s.replace(/\./g, '');
+  }
+  const n = parseFloat(s);
+  if (!isFinite(n)) return NaN;
+  return neg ? -n : n;
+}
+
+const IMPORT_MONTHS = { jan:1, feb:2, mar:3, apr:4, may:5, jun:6, jul:7, aug:8, sep:9, sept:9, oct:10, nov:11, dec:12 };
+
+// A date, returned as "YYYY-MM-DD HH:mm:ss" for the store's own clock. Parsed
+// here rather than handed to the database as text: Postgres reads 03/04/2026
+// by its own rules, which is how an import silently lands three months out.
+function importDate(v, dayFirst) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (!s) return null;
+
+  const time = (h, m, sec, ampm) => {
+    let hh = parseInt(h || '0', 10);
+    if (ampm) {
+      const pm = /p/i.test(ampm);
+      if (hh === 12) hh = pm ? 12 : 0; else if (pm) hh += 12;
+    }
+    return `${String(hh).padStart(2, '0')}:${String(parseInt(m || '0', 10)).padStart(2, '0')}:${String(parseInt(sec || '0', 10)).padStart(2, '0')}`;
+  };
+  const out = (y, mo, d, t) => {
+    if (!(mo >= 1 && mo <= 12) || !(d >= 1 && d <= 31)) return null;
+    if (y < 100) y += y < 70 ? 2000 : 1900;
+    return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')} ${t || '00:00:00'}`;
+  };
+
+  // A spreadsheet serial number, as Excel stores dates.
+  if (/^\d{5}(\.\d+)?$/.test(s)) {
+    const serial = parseFloat(s);
+    if (serial > 20000 && serial < 60000) {
+      const ms = Math.round((serial - 25569) * 86400000);
+      const d = new Date(ms);
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')} 00:00:00`;
+    }
+  }
+
+  let m;
+  // 2026-09-24, 2026/09/24, with or without a time
+  if ((m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T ]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?)?/))) {
+    return out(+m[1], +m[2], +m[3], time(m[4], m[5], m[6], m[7]));
+  }
+  // 9/24/2026 or 24/9/2026, with or without a time
+  if ((m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})(?:[T ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?)?/))) {
+    let a = +m[1], b = +m[2];
+    let mo = dayFirst ? b : a, d = dayFirst ? a : b;
+    // Whatever the setting, a value over 12 can only be the day.
+    if (a > 12 && b <= 12) { d = a; mo = b; }
+    else if (b > 12 && a <= 12) { d = b; mo = a; }
+    return out(+m[3], mo, d, time(m[4], m[5], m[6], m[7]));
+  }
+  // 24 Sep 2026 / Sep 24, 2026 / September 24 2026
+  if ((m = s.match(/^(\d{1,2})\s+([A-Za-z]{3,9})\.?,?\s+(\d{2,4})(?:[T ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?)?/))) {
+    const mo = IMPORT_MONTHS[m[2].slice(0, 4).toLowerCase()] || IMPORT_MONTHS[m[2].slice(0, 3).toLowerCase()];
+    return mo ? out(+m[3], mo, +m[1], time(m[4], m[5], m[6], m[7])) : null;
+  }
+  if ((m = s.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2}),?\s+(\d{2,4})(?:[T ,]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([AaPp][Mm])?)?/))) {
+    const mo = IMPORT_MONTHS[m[1].slice(0, 4).toLowerCase()] || IMPORT_MONTHS[m[1].slice(0, 3).toLowerCase()];
+    return mo ? out(+m[3], mo, +m[2], time(m[4], m[5], m[6], m[7])) : null;
+  }
+  // Anything else the browser can make sense of.
+  const d = new Date(s);
+  if (isFinite(d.getTime())) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ` +
+      `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+  }
+  return null;
+}
+
+// 03/04/2026 is the 3rd of April in most of the world and the 4th of March in
+// the US, and nothing in the file says which. Read the whole column: one value
+// with a first number above 12 settles it, and if none does, say so rather
+// than quietly choosing.
+function detectDayFirst(values) {
+  let firstOver12 = 0, secondOver12 = 0;
+  for (const v of values) {
+    const m = String(v || '').trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.]\d{2,4}/);
+    if (!m) continue;
+    if (+m[1] > 12) firstOver12++;
+    if (+m[2] > 12) secondOver12++;
+  }
+  if (firstOver12 && !secondOver12) return { dayFirst: true, certain: true };
+  if (secondOver12 && !firstOver12) return { dayFirst: false, certain: true };
+  return { dayFirst: false, certain: !firstOver12 && !secondOver12 ? false : true };
+}
+
+function importIsReturn(typeText, total) {
+  const t = String(typeText || '').toLowerCase();
+  if (/refund|return|credit|void|reversal|chargeback/.test(t)) return true;
+  if (/^sale|purchase|payment|invoice/.test(t)) return false;
+  return isFinite(total) && total < 0;
+}
+
+function importPayment(text) {
+  const t = String(text || '').trim().toLowerCase();
+  if (!t) return 'card';
+  // Store credit, gift cards and comps never reach the processor. Filing them
+  // as card payments would send the merchant audit looking for them in the
+  // settlement batch, where they will never be, and report them missing every
+  // single day. Checked first, because "store credit" contains "credit".
+  if (/store\s*credit|gift|voucher|loyalty|points|reward|comp\b|house\s*account/.test(t)) return 'other';
+  if (/che(ck|que)/.test(t)) return 'check';
+  if (/\bcash\b|^cash/.test(t)) return 'cash';
+  if (/card|credit|debit|visa|master|amex|discover|swipe|chip|tap|contactless|apple\s*pay|google\s*pay/.test(t)) return 'card';
+  return 'other';
+}
+
+// ── Matching the columns ───────────────────────────────────────────────────
+
+function autoMapColumns(header) {
+  const normed = header.map(importNorm);
+  const taken = new Set();
+  const map = {};
+  // Exact names first, so a file with both "Total" and "Subtotal" doesn't give
+  // "Total" away to a loose match on the other.
+  for (const pass of ['exact', 'loose']) {
+    for (const f of IMPORT_FIELDS) {
+      if (map[f.key] !== undefined) continue;
+      for (let i = 0; i < normed.length; i++) {
+        if (taken.has(i) || !normed[i]) continue;
+        const hit = pass === 'exact'
+          ? f.syn.includes(normed[i])
+          : f.syn.some(sy => sy.length >= 4 && (normed[i].includes(sy) || sy.includes(normed[i])));
+        if (hit) { map[f.key] = i; taken.add(i); break; }
+      }
+    }
+  }
+  return map;
+}
+
+// ── The import ─────────────────────────────────────────────────────────────
+
+let importState = null;   // { header, rows, map, dayFirst, delimiter }
+
 async function handleImportFile(input) {
   const file = input.files[0];
   input.value = '';
   if (!file) return;
-  const store = (storeSettings.store_name || '').trim().toLowerCase();
-  if (!store) { alert('Set this company\'s Store Name in Settings first, so the import knows which rows belong here.'); return; }
 
-  const text = await file.text();
-  const raw = parseCSV(text).filter(r => r.length > 1);
-  if (raw.length < 2) { alert('No rows found in that file.'); return; }
-  const header = raw[0].map(h => h.trim().toUpperCase());
-  const idx = n => header.indexOf(n);
-  const c = {
-    type: idx('TYPE'), location: idx('LOCATION'), date: idx('DATE'), sale_code: idx('SALE CODE'),
-    sub_total: idx('SUB TOTAL'), tax: idx('TAX'), sale_total: idx('SALE TOTAL'),
-    associates: idx('SALE ASSOCIATES'), customer: idx('CUSTOMER'),
-    cash: idx('CASH'), credit: idx('CREDIT'), check: idx('CHECK'), store_credit: idx('STORE CREDIT'),
+  const text = stripBom(await file.text());
+  const delimiter = sniffDelimiter(text);
+  const grid = parseDelimited(text, delimiter).filter(r => r.some(c => String(c).trim() !== ''));
+  if (grid.length < 2) { alert('That file has no rows in it.'); return; }
+
+  const header = grid[0].map(h => String(h).trim());
+  const rows = grid.slice(1).filter(r => r.length > 1);
+  const map = autoMapColumns(header);
+
+  const dateCol = map.date;
+  const day = dateCol === undefined
+    ? { dayFirst: false, certain: true }
+    : detectDayFirst(rows.slice(0, 400).map(r => r[dateCol]));
+
+  importState = { header, rows, map, dayFirst: day.dayFirst, dayCertain: day.certain, delimiter, fileName: file.name };
+  openImportMapping();
+}
+
+function importDelimiterName(d) {
+  return d === ',' ? 'commas' : d === ';' ? 'semicolons' : d === '\t' ? 'tabs' : 'pipes';
+}
+
+function openImportMapping() {
+  const st = importState;
+  const body = document.getElementById('importMapBody');
+  const sample = (col) => {
+    if (col === undefined || col === null || col === '') return '';
+    for (const r of st.rows.slice(0, 40)) {
+      const v = String(r[col] == null ? '' : r[col]).trim();
+      if (v) return v.length > 34 ? v.slice(0, 34) + '…' : v;
+    }
+    return '(blank)';
   };
-  if (c.sale_code < 0 || c.location < 0) { alert('This file doesn\'t look like a sales export (missing SALE CODE / LOCATION columns).'); return; }
 
-  const objs = raw.slice(1).map(r => ({
-    type: r[c.type], location: r[c.location], date: r[c.date], sale_code: r[c.sale_code],
-    sub_total: r[c.sub_total], tax: r[c.tax], sale_total: r[c.sale_total],
-    associates: c.associates >= 0 ? r[c.associates] : '', customer: c.customer >= 0 ? r[c.customer] : '',
-    cash: c.cash >= 0 ? r[c.cash] : '', credit: c.credit >= 0 ? r[c.credit] : '',
-    check: c.check >= 0 ? r[c.check] : '', store_credit: c.store_credit >= 0 ? r[c.store_credit] : '',
-  }));
-  const mine = objs.filter(o => (o.location || '').trim().toLowerCase() === store);
-  if (mine.length === 0) {
-    alert(`None of the ${objs.length} rows match the current company (${storeSettings.store_name}). Switch to the matching company and import again.`);
-    return;
+  document.getElementById('importMapSummary').innerHTML =
+    `<strong>${escapeHtml(st.fileName)}</strong> — ${st.rows.length} row${st.rows.length === 1 ? '' : 's'}, ` +
+    `${st.header.length} columns, separated by ${importDelimiterName(st.delimiter)}. ` +
+    `Check the matches below; anything we guessed wrong can be changed.`;
+
+  body.innerHTML = IMPORT_FIELDS.map(f => {
+    const cur = st.map[f.key];
+    const options = ['<option value="">— not in this file —</option>']
+      .concat(st.header.map((h, i) => `<option value="${i}" ${cur === i ? 'selected' : ''}>${escapeHtml(h || '(column ' + (i + 1) + ')')}</option>`))
+      .join('');
+    return `
+      <tr>
+        <td style="white-space:nowrap">
+          <strong>${escapeHtml(f.label)}</strong>${f.required ? ' <span style="color:var(--danger)">*</span>' : ''}
+          ${f.hint ? `<div style="font-size:.76rem;color:var(--mid);max-width:32ch;white-space:normal;margin-top:2px">${escapeHtml(f.hint)}</div>` : ''}
+        </td>
+        <td>
+          <select data-field="${f.key}" onchange="onImportMapChange(this)"
+            style="width:100%;padding:6px 9px;border:1.5px solid var(--border);border-radius:7px;font-size:.84rem;font-family:system-ui,sans-serif;outline:none;background:var(--white)">${options}</select>
+        </td>
+        <td style="font-family:monospace;font-size:.78rem;color:var(--mid)" id="importSample-${f.key}">${escapeHtml(sample(cur))}</td>
+      </tr>`;
+  }).join('');
+
+  renderImportNotes();
+  document.getElementById('importMapModal').classList.add('show');
+}
+
+function onImportMapChange(sel) {
+  const v = sel.value === '' ? undefined : Number(sel.value);
+  importState.map[sel.dataset.field] = v;
+  const cell = document.getElementById('importSample-' + sel.dataset.field);
+  if (cell) {
+    let shown = '';
+    if (v !== undefined) {
+      for (const r of importState.rows.slice(0, 40)) {
+        const val = String(r[v] == null ? '' : r[v]).trim();
+        if (val) { shown = val.length > 34 ? val.slice(0, 34) + '…' : val; break; }
+      }
+      if (!shown) shown = '(blank)';
+    }
+    cell.textContent = shown;
   }
-  if (!confirm(`Import ${mine.length} transactions for ${storeSettings.store_name}? (${objs.length - mine.length} rows for other companies are skipped; duplicates by sale code are skipped.)`)) return;
-  await importRows(mine);
+  if (sel.dataset.field === 'date') {
+    const col = importState.map.date;
+    const d = col === undefined ? { dayFirst: false, certain: true }
+      : detectDayFirst(importState.rows.slice(0, 400).map(r => r[col]));
+    importState.dayFirst = d.dayFirst;
+    importState.dayCertain = d.certain;
+  }
+  renderImportNotes();
+}
+
+// What the file will actually produce, said before anything is written.
+function renderImportNotes() {
+  const st = importState;
+  const notes = [];
+  const missing = IMPORT_FIELDS.filter(f => f.required && st.map[f.key] === undefined).map(f => f.label);
+
+  const preview = buildImportRows(200);
+  const dated = preview.rows.filter(r => r.date).length;
+  const returns = preview.rows.filter(r => r.type === 'return').length;
+
+  if (st.map.date !== undefined && preview.considered) {
+    const bad = preview.considered - dated;
+    if (bad > 0) notes.push(`<span style="color:var(--danger)">${bad} of the first ${preview.considered} rows have a date we can't read</span> — check the Date column is the right one.`);
+  }
+  if (st.map.date !== undefined && !st.dayCertain) {
+    notes.push(
+      `Dates like <code>03/04/2026</code> are ambiguous and nothing in this file settles it. ` +
+      `Reading them as <strong>${st.dayFirst ? 'day/month' : 'month/day'}</strong> — ` +
+      `<a href="#" onclick="event.preventDefault();toggleImportDayFirst()" style="color:var(--accent)">read as ${st.dayFirst ? 'month/day' : 'day/month'} instead</a>. ` +
+      `First row reads <strong>${escapeHtml(preview.rows[0]?.date ? preview.rows[0].date.slice(0, 10) : '—')}</strong>.`);
+  }
+  if (st.map.receipt === undefined) {
+    notes.push('No receipt or order number, so one is generated per row. Importing the same file twice would bring the rows in twice — import it once.');
+  }
+  if (st.map.location !== undefined) {
+    const here = (storeSettings.store_name || '').trim().toLowerCase();
+    const matching = preview.rows.filter(r => !r.location || r.location.trim().toLowerCase() === here).length;
+    notes.push(`A Location column is set, so only rows for <strong>${escapeHtml(storeSettings.store_name || 'this company')}</strong> are imported — ${matching} of the first ${preview.considered}.`);
+  }
+  if (returns) notes.push(`${returns} of the first ${preview.considered} rows read as returns.`);
+  if (st.map.employee === undefined) notes.push('No "sold by" column, so nothing is credited to a person and these sales won\'t appear in anyone\'s commission.');
+
+  document.getElementById('importMapNotes').innerHTML = missing.length
+    ? `<div style="color:var(--danger)">Pick a column for: <strong>${missing.join(', ')}</strong>. Nothing can be imported without ${missing.length > 1 ? 'those' : 'that'}.</div>`
+    : notes.map(n => `<div style="margin-bottom:6px">${n}</div>`).join('');
+
+  document.getElementById('importMapGo').disabled = missing.length > 0;
+}
+
+function toggleImportDayFirst() {
+  importState.dayFirst = !importState.dayFirst;
+  renderImportNotes();
+}
+
+// Turn the file into rows the server understands. `limit` previews the top of
+// the file without doing the whole thing on every keystroke.
+function buildImportRows(limit) {
+  const st = importState;
+  const m = st.map;
+  const get = (r, key) => (m[key] === undefined ? '' : String(r[m[key]] == null ? '' : r[m[key]]).trim());
+  const source = limit ? st.rows.slice(0, limit) : st.rows;
+  const out = [];
+
+  source.forEach((r, i) => {
+    const totalRaw = importMoney(get(r, 'total'));
+    const subRaw = importMoney(get(r, 'subtotal'));
+    const taxRaw = importMoney(get(r, 'tax'));
+    const hasMoney = isFinite(totalRaw) || isFinite(subRaw);
+    if (!hasMoney && !get(r, 'receipt')) return;   // an empty trailing line
+
+    const total = isFinite(totalRaw) ? Math.abs(totalRaw)
+      : Math.abs((isFinite(subRaw) ? subRaw : 0) + (isFinite(taxRaw) ? taxRaw : 0));
+    const tax = isFinite(taxRaw) ? Math.abs(taxRaw) : 0;
+    const subtotal = isFinite(subRaw) ? Math.abs(subRaw) : Math.max(0, total - tax);
+
+    const date = importDate(get(r, 'date'), st.dayFirst);
+    const isReturn = importIsReturn(get(r, 'type'), isFinite(totalRaw) ? totalRaw : subRaw);
+
+    out.push({
+      // Without an id of its own, a row gets one built from its own contents,
+      // so the same file imported twice is still recognised as a duplicate.
+      receipt: get(r, 'receipt') || `IMP-${(date || '').slice(0, 10).replace(/-/g, '')}-${importRowKey(r)}`,
+      generated_receipt: !get(r, 'receipt'),
+      date, total, subtotal, tax,
+      type: isReturn ? 'return' : 'sale',
+      customer: get(r, 'customer'),
+      email: get(r, 'email'),
+      phone: get(r, 'phone'),
+      employees: get(r, 'employee'),
+      payment: importPayment(get(r, 'payment')),
+      location: get(r, 'location'),
+      item: get(r, 'item'),
+    });
+  });
+  return { rows: out, considered: source.length };
+}
+
+// A short, stable fingerprint of a row's own values.
+function importRowKey(cells) {
+  const s = cells.join('|');
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
+function closeImportMapping() {
+  document.getElementById('importMapModal').classList.remove('show');
+}
+
+async function confirmImportMapping() {
+  const st = importState;
+  const built = buildImportRows(null);
+  let rows = built.rows;
+
+  if (st.map.location !== undefined) {
+    const here = (storeSettings.store_name || '').trim().toLowerCase();
+    const before = rows.length;
+    rows = rows.filter(r => !r.location || r.location.toLowerCase() === here);
+    if (!rows.length) {
+      alert(`None of the ${before} rows are for ${storeSettings.store_name}. Either switch company, or set Location to "not in this file" to import everything here.`);
+      return;
+    }
+  }
+  const undated = rows.filter(r => !r.date).length;
+  if (undated && !confirm(`${undated} of ${rows.length} rows have no readable date and will be skipped. Import the other ${rows.length - undated}?`)) return;
+  rows = rows.filter(r => r.date);
+  if (!rows.length) { alert('No rows had a readable date. Check the Date column.'); return; }
+
+  if (!confirm(`Import ${rows.length} transactions into ${storeSettings.store_name}? Rows whose receipt number is already here are skipped.`)) return;
+  closeImportMapping();
+  await importRows(rows);
 }
 
 async function importRows(rows) {
