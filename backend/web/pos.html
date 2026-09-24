@@ -1377,17 +1377,15 @@
         <label>Date</label>
         <input type="date" id="apptDate" onchange="loadApptSlots()">
       </div>
-      <div class="field">
-        <label>Start time <span id="apptDurationHint" style="text-transform:none;letter-spacing:0;font-weight:400"></span></label>
-        <input type="time" id="apptTime" step="300">
-      </div>
     </div>
 
-    <!-- Free slots for the chosen day. Clicking one fills the time box; staff
-         can still type any time and override the clash if they mean to. -->
-    <div id="apptSlotsWrap" style="margin:-4px 0 14px">
-      <div style="font-family:system-ui,sans-serif;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Open times</div>
-      <div id="apptSlots" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    <!-- The only way to set a time. A typed time meant holding the store's
+         hours, the treatment's length and everyone's bookings in your head at
+         once; these are the times that actually work, so pick one. -->
+    <div class="field" style="margin-bottom:16px">
+      <label>Start time <span id="apptDurationHint" style="text-transform:none;letter-spacing:0;font-weight:400"></span></label>
+      <div id="apptSlots" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:2px"></div>
+      <input type="hidden" id="apptTime">
     </div>
 
     <div class="field">
@@ -8398,6 +8396,10 @@ function openApptModal(id) {
   document.getElementById('apptEmployee').value = appt?.employee_id || '';
   document.getElementById('apptDate').value = appt ? appt.date : calToday();
   document.getElementById('apptTime').value = appt ? calTimeValue(appt.starts_at) : '';
+  calApptSlots = [];
+  calApptCurrent = appt
+    ? { date: appt.date, time: calTimeValue(appt.starts_at), label: appt.time_label }
+    : null;
   document.getElementById('apptSendEmail').checked = true;
   document.getElementById('apptSaveBtn').textContent = appt ? 'Save changes' : 'Book session';
   document.getElementById('apptCancelSessionBtn').style.display = appt && appt.status === 'booked' ? '' : 'none';
@@ -8428,18 +8430,27 @@ function apptDurationMins() {
 
 function onApptTreatmentChange() {
   const mins = apptDurationMins();
-  document.getElementById('apptDurationHint').textContent = `· ${mins} min`;
+  document.getElementById('apptDurationHint').textContent = `· ${mins}-minute sessions`;
   loadApptSlots();
 }
 
-// The open times for the chosen day. Staff aren't limited to them — the time
-// box takes anything — but an appointment offered at a glance beats one worked
-// out on paper.
+// The times that actually work for the chosen day: inside the store's hours,
+// long enough for the treatment, and with someone free to give it. Asked for
+// again whenever the date, treatment or specialist changes, because all three
+// change the answer.
+let calApptSlots = [];        // what's on offer for the day on screen
+let calApptCurrent = null;    // an existing session's own slot, so editing can't move it
+
+function apptSlotNote(text) {
+  return `<span style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)">${escapeHtml(text)}</span>`;
+}
+
 async function loadApptSlots() {
   const date = document.getElementById('apptDate').value;
   const wrap = document.getElementById('apptSlots');
-  if (!date) { wrap.innerHTML = ''; return; }
-  wrap.innerHTML = '<span style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid)">Checking…</span>';
+  const timeField = document.getElementById('apptTime');
+  if (!date) { wrap.innerHTML = apptSlotNote('Pick a date first.'); return; }
+  wrap.innerHTML = apptSlotNote('Checking that day…');
 
   const qs = new URLSearchParams({ date, duration_min: String(apptDurationMins()) });
   const empId = document.getElementById('apptEmployee').value;
@@ -8449,23 +8460,47 @@ async function loadApptSlots() {
   try {
     const resp = await fetch(`${API}/api/pos/appointments/slots?${qs}`, { credentials: 'include' });
     const data = await resp.json();
-    const slots = data.slots || [];
-    if (!slots.length) {
-      wrap.innerHTML = '<span style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid)">Nothing open that day — the store may be closed, or fully booked. You can still type a time.</span>';
+    if (!resp.ok) throw new Error(data.error || 'Could not load times');
+    calApptSlots = (data.slots || []).map(s => ({ time: s.time, label: s.label }));
+
+    // A session booked before the hours changed — or one staff deliberately
+    // squeezed in — keeps its own time on the list. Editing someone's phone
+    // number must never quietly move their appointment.
+    if (calApptCurrent && calApptCurrent.date === date
+        && !calApptSlots.some(s => s.time === calApptCurrent.time)) {
+      calApptSlots.push({ ...calApptCurrent, current: true });
+      calApptSlots.sort((a, b) => a.time.localeCompare(b.time));
+    }
+
+    if (!calApptSlots.length) {
+      timeField.value = '';
+      wrap.innerHTML = apptSlotNote('Nothing open that day — the store is closed, or every session is taken. Try another date, or a shorter treatment.');
       return;
     }
-    const chosen = document.getElementById('apptTime').value;
-    wrap.innerHTML = slots.map(s => `
-      <button type="button" onclick="pickApptSlot('${s.time}')"
-        style="font-family:system-ui,sans-serif;font-size:.8rem;font-weight:600;padding:6px 11px;border-radius:7px;cursor:pointer;border:1.5px solid ${s.time === chosen ? 'var(--accent)' : 'var(--border)'};background:${s.time === chosen ? 'var(--accent)' : 'var(--white)'};color:${s.time === chosen ? '#fff' : 'var(--accent-deep)'}">${escapeHtml(s.label)}</button>`).join('');
+    // Don't leave a time selected that this day can no longer honour.
+    if (timeField.value && !calApptSlots.some(s => s.time === timeField.value)) timeField.value = '';
+    renderApptSlots();
   } catch (err) {
-    wrap.innerHTML = '';
+    calApptSlots = [];
+    wrap.innerHTML = apptSlotNote('Could not load the open times: ' + err.message);
   }
+}
+
+function renderApptSlots() {
+  const chosen = document.getElementById('apptTime').value;
+  document.getElementById('apptSlots').innerHTML = calApptSlots.map(s => {
+    const on = s.time === chosen;
+    return `<button type="button" onclick="pickApptSlot('${s.time}')" title="${s.current ? 'The time this session is booked for' : ''}"
+      style="font-family:system-ui,sans-serif;font-size:.82rem;font-weight:600;padding:8px 13px;border-radius:8px;cursor:pointer;
+      border:1.5px solid ${on ? 'var(--accent)' : 'var(--border)'};background:${on ? 'var(--accent)' : 'var(--white)'};
+      color:${on ? '#fff' : 'var(--accent-deep)'}">${escapeHtml(s.label)}${s.current && !on ? ' ·' : ''}</button>`;
+  }).join('');
 }
 
 function pickApptSlot(time) {
   document.getElementById('apptTime').value = time;
-  loadApptSlots();
+  renderApptSlots();   // no refetch — the day's list hasn't changed
+  apptError('');
 }
 
 function apptError(msg) {
@@ -8479,7 +8514,8 @@ async function saveAppointment() {
   const date = document.getElementById('apptDate').value;
   const time = document.getElementById('apptTime').value;
   if (!name) return apptError('Who is the session for?');
-  if (!date || !time) return apptError('Pick a date and a start time.');
+  if (!date) return apptError('Pick a date.');
+  if (!time) return apptError('Choose one of the open times.');
 
   const treatmentId = document.getElementById('apptTreatment').value;
   const body = {
