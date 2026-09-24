@@ -189,6 +189,16 @@
     .checkout-btn:disabled { opacity: .5; cursor: not-allowed; pointer-events: none; }
 
     /* ── Modals ─── */
+    /* Sales / Customers inside the Transactions tab. */
+    .tx-views { display: flex; gap: 4px; border-bottom: 1.5px solid var(--border); }
+    .tx-view-btn {
+      font-family: system-ui, sans-serif; font-size: .88rem; font-weight: 600;
+      padding: 9px 18px; border: none; background: none; cursor: pointer;
+      color: var(--mid); border-bottom: 2.5px solid transparent; margin-bottom: -1.5px;
+    }
+    .tx-view-btn:hover { color: var(--accent-deep); }
+    .tx-view-btn.active { color: var(--accent-deep); border-bottom-color: var(--accent); }
+
     .modal-overlay {
       display: none; position: fixed; inset: 0; background: rgba(44,32,34,.5);
       z-index: 1000; align-items: center; justify-content: center;
@@ -526,7 +536,6 @@
   <div class="pos-subtabs" id="posSubtabs">
     <button class="active" data-tab="register" onclick="switchTab('register')">Register</button>
     <button data-tab="reports" onclick="switchTab('reports')">Reports</button>
-    <button data-tab="customers" onclick="switchTab('customers')">Customers</button>
     <button data-tab="calendar" onclick="switchTab('calendar')">Calendar</button>
     <button data-tab="emails" onclick="switchTab('emails')">Emails</button>
     <button data-tab="history" onclick="switchTab('history')">Transactions</button>
@@ -663,6 +672,17 @@
 
   <!-- ─── TRANSACTIONS TAB ─── -->
   <div class="tab-content" id="tab-history">
+    <!-- Two ways of reading the same trade: one row per sale, or one row per
+         person. They used to be separate tabs, which meant leaving the sale
+         you were looking at to find out who bought it. -->
+    <div style="max-width:1000px;margin:0 auto;padding:20px 20px 0">
+      <div class="tx-views">
+        <button class="tx-view-btn active" data-view="sales" onclick="switchTxView('sales')">Sales</button>
+        <button class="tx-view-btn" data-view="customers" onclick="switchTxView('customers')">Customers</button>
+      </div>
+    </div>
+
+    <div id="txViewSales">
     <div style="max-width:1000px;margin:0 auto;padding:20px">
       <div class="date-range" style="flex-wrap:wrap">
         <label>From:</label>
@@ -733,11 +753,62 @@
         </div>
         <div id="txSummary" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:10px 0"></div>
         <table class="report-table">
-          <thead><tr><th id="txSelectAllHeader" style="display:none;width:28px"><input type="checkbox" id="txSelectAll" onchange="toggleSelectAllTx(this.checked)"></th><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Items</th><th>Subtotal</th><th>Total</th><th>Payment</th><th id="txCompanyHeader" style="display:none">Company</th><th></th></tr></thead>
+          <thead><tr><th id="txSelectAllHeader" style="display:none;width:28px"><input type="checkbox" id="txSelectAll" onchange="toggleSelectAllTx(this.checked)"></th><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Email</th><th>Items</th><th>Subtotal</th><th>Total</th><th>Payment</th><th id="txCompanyHeader" style="display:none">Company</th><th></th></tr></thead>
           <tbody id="txHistoryBody"></tbody>
         </table>
       </div>
     </div>
+    </div><!-- /txViewSales -->
+
+  <div id="txViewCustomers" style="display:none">
+    <div style="max-width:1000px;margin:0 auto;padding:20px">
+      <div class="date-range">
+        <label>From:</label>
+        <input type="date" id="custStart">
+        <label>To:</label>
+        <input type="date" id="custEnd">
+        <button class="btn btn-confirm" onclick="loadCustomers()">Update</button>
+        <button class="btn half-month" onclick="setHalfMonth('custStart','custEnd','first',loadCustomers)" title="1st to 15th of the month in the From box">1st–15th</button>
+        <button class="btn half-month" onclick="setHalfMonth('custStart','custEnd','second',loadCustomers)" title="16th to the end of the month in the From box">16th–End</button>
+      </div>
+
+      <div class="report-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <h3 style="margin:0">Customers</h3>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <!-- Searches everything on the row — name, email, phone, address,
+                 notes, what they bought and who served them — because the thing
+                 someone half-remembers about a customer is rarely their name. -->
+            <input type="search" id="custSearch" oninput="applyCustomerFilters()"
+              placeholder="Search name, email, phone, item…"
+              style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none;min-width:230px">
+            <label style="font-size:.8rem;color:var(--mid);font-family:system-ui,sans-serif">Sort:</label>
+            <select id="custSort" onchange="applyCustomerFilters()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none">
+              <option value="recent">Most recent purchase</option>
+              <option value="oldest">Longest since purchase</option>
+              <option value="spent">Total spent</option>
+              <option value="name">Name (A–Z)</option>
+            </select>
+            <label style="font-size:.8rem;color:var(--mid);font-family:system-ui,sans-serif">Purchased:</label>
+            <select id="custProductFilter" onchange="applyCustomerFilters()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none;max-width:220px">
+              <option value="">All items</option>
+            </select>
+            <label style="font-size:.8rem;color:var(--mid);font-family:system-ui,sans-serif">Employee:</label>
+            <select id="custEmployeeFilter" onchange="applyCustomerFilters()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none;max-width:220px">
+              <option value="">All employees</option>
+            </select>
+            <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportCustomersCSV()">Export CSV</button>
+          </div>
+        </div>
+        <div id="custFilterSummary" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin-top:8px"></div>
+        <table class="report-table" style="margin-top:8px">
+          <thead><tr><th>Customer</th><th>Email</th><th>Last Purchase</th><th>Purchases</th><th>Returns</th><th>Total Spent</th><th>Employee(s)</th><th>Items</th><th></th></tr></thead>
+          <tbody id="custReportBody"></tbody>
+        </table>
+        <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:8px">Click a customer for their full details (phone, address, notes).</p>
+      </div>
+    </div>
+  </div>
   </div>
 
   <!-- ─── REPORTS TAB ─── -->
@@ -912,58 +983,6 @@
     </div>
   </div>
 
-  <!-- ─── CUSTOMERS TAB ─── -->
-  <div class="tab-content" id="tab-customers">
-    <div style="max-width:1000px;margin:0 auto;padding:20px">
-      <div class="date-range">
-        <label>From:</label>
-        <input type="date" id="custStart">
-        <label>To:</label>
-        <input type="date" id="custEnd">
-        <button class="btn btn-confirm" onclick="loadCustomers()">Update</button>
-        <button class="btn half-month" onclick="setHalfMonth('custStart','custEnd','first',loadCustomers)" title="1st to 15th of the month in the From box">1st–15th</button>
-        <button class="btn half-month" onclick="setHalfMonth('custStart','custEnd','second',loadCustomers)" title="16th to the end of the month in the From box">16th–End</button>
-      </div>
-
-      <div class="report-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-          <h3 style="margin:0">Customers</h3>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <!-- Searches everything on the row — name, email, phone, address,
-                 notes, what they bought and who served them — because the thing
-                 someone half-remembers about a customer is rarely their name. -->
-            <input type="search" id="custSearch" oninput="applyCustomerFilters()"
-              placeholder="Search name, email, phone, item…"
-              style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none;min-width:230px">
-            <label style="font-size:.8rem;color:var(--mid);font-family:system-ui,sans-serif">Sort:</label>
-            <select id="custSort" onchange="applyCustomerFilters()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none">
-              <option value="recent">Most recent purchase</option>
-              <option value="oldest">Longest since purchase</option>
-              <option value="spent">Total spent</option>
-              <option value="name">Name (A–Z)</option>
-            </select>
-            <label style="font-size:.8rem;color:var(--mid);font-family:system-ui,sans-serif">Purchased:</label>
-            <select id="custProductFilter" onchange="applyCustomerFilters()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none;max-width:220px">
-              <option value="">All items</option>
-            </select>
-            <label style="font-size:.8rem;color:var(--mid);font-family:system-ui,sans-serif">Employee:</label>
-            <select id="custEmployeeFilter" onchange="applyCustomerFilters()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none;max-width:220px">
-              <option value="">All employees</option>
-            </select>
-            <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportCustomersCSV()">Export CSV</button>
-            <button class="btn" style="padding:7px 14px;font-size:.82rem;background:var(--accent2);color:#fff" onclick="openMassEmail()">Mass Email</button>
-          </div>
-        </div>
-        <div id="custFilterSummary" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin-top:8px"></div>
-        <table class="report-table" style="margin-top:8px">
-          <thead><tr><th>Customer</th><th>Email</th><th>Last Purchase</th><th>Purchases</th><th>Returns</th><th>Total Spent</th><th>Employee(s)</th><th>Items</th><th></th></tr></thead>
-          <tbody id="custReportBody"></tbody>
-        </table>
-        <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:8px">Click a customer for their full details (phone, address, notes).</p>
-      </div>
-    </div>
-  </div>
-
   <!-- ─── CALENDAR TAB (treatment sessions) ─── -->
   <div class="tab-content" id="tab-calendar">
     <div style="max-width:1000px;margin:0 auto;padding:20px">
@@ -1060,7 +1079,14 @@
 
   <!-- ─── EMAILS TAB (embedded Email Suite) ─── -->
   <div class="tab-content" id="tab-emails">
-    <iframe id="emailsFrame" data-src="/?embed=1" title="Emails" style="width:100%;height:calc(100vh - 120px);border:0;display:block"></iframe>
+    <!-- Mass Email lives here rather than with the customer list: it is a
+         thing you send, and this is where sending lives. It still goes to
+         whoever the Customers view is filtered to. -->
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:10px 20px 0;flex-wrap:wrap">
+      <span id="massEmailHint" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid)"></span>
+      <button class="btn" style="padding:7px 14px;font-size:.82rem;background:var(--accent2);color:#fff" onclick="openMassEmail()">Mass Email</button>
+    </div>
+    <iframe id="emailsFrame" data-src="/?embed=1" title="Emails" style="width:100%;height:calc(100vh - 160px);border:0;display:block"></iframe>
   </div>
 
   <!-- ─── SETTINGS TAB ─── -->
@@ -1369,6 +1395,18 @@
         <label>Treatment</label>
         <select id="apptTreatment" onchange="onApptTreatmentChange()" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.95rem;font-family:system-ui,sans-serif;outline:none"></select>
       </div>
+      <!-- Starts at the treatment's own length and can be overridden for this
+           one booking — a client who needs ninety minutes of a sixty-minute
+           treatment shouldn't need a second treatment on the menu. -->
+      <div class="field">
+        <label>Length <span style="text-transform:none;letter-spacing:0;font-weight:400">(this session)</span></label>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="number" id="apptDuration" min="5" step="5" onchange="onApptDurationChange()" style="width:90px">
+          <span style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid)">minutes</span>
+          <button type="button" id="apptDurationReset" onclick="resetApptDuration()" title="Back to the treatment's usual length"
+            style="display:none;background:none;border:none;cursor:pointer;color:var(--accent);font-family:system-ui,sans-serif;font-size:.78rem;text-decoration:underline;padding:0">reset</button>
+        </div>
+      </div>
       <div class="field">
         <label>With</label>
         <select id="apptEmployee" onchange="loadApptSlots()" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.95rem;font-family:system-ui,sans-serif;outline:none"></select>
@@ -1541,6 +1579,28 @@
 </div>
 
 <!-- ─── Email Preview Modal (edit before sending) ─── -->
+<!-- Which email to send about a sale, asked from the Transactions row. Both
+     land in the same edit-before-send preview the register already uses. -->
+<div class="modal-overlay" id="txEmailModal">
+  <div class="modal" style="max-width:440px">
+    <h2>Send an email</h2>
+    <p class="sub" id="txEmailAbout"></p>
+    <div class="field">
+      <label>To</label>
+      <input type="email" id="txEmailAddress" placeholder="name@example.com">
+    </div>
+    <div id="txEmailError" style="display:none;font-family:system-ui,sans-serif;font-size:.85rem;color:#7A2129;background:#F8EBEC;border:1px solid #E4C4C8;border-radius:8px;padding:10px 12px;margin-bottom:8px"></div>
+    <p style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin-bottom:4px">You'll see it and can edit it before anything is sent.</p>
+    <div class="modal-actions" style="justify-content:space-between">
+      <button class="btn btn-cancel" onclick="closeTxEmail()">Cancel</button>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-cancel" id="txEmailReceiptBtn" onclick="txEmailCompose('email')">Receipt</button>
+        <button class="btn btn-confirm" id="txEmailWelcomeBtn" onclick="txEmailCompose('welcome')">Welcome email</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="emailPreviewModal">
   <div class="modal" style="max-width:600px">
     <h2>Preview Email</h2>
@@ -3242,6 +3302,69 @@ async function sendReceiptEmailOrInstructions() {
   }
 }
 
+// ─── Emailing a customer about one sale (from the Transactions row) ────────
+let txEmailTx = null;
+
+function openTxEmail(txId) {
+  const tx = (filteredTransactions || []).find(t => t.id === txId)
+    || (histTransactions || []).find(t => t.id === txId);
+  if (!tx) return alert('That transaction is no longer on screen. Reload the list and try again.');
+  txEmailTx = tx;
+  document.getElementById('txEmailAbout').innerHTML =
+    `About receipt <strong>${escapeHtml(tx.receipt_number)}</strong>${tx.customer_name ? ' for ' + escapeHtml(tx.customer_name) : ''}.`;
+  document.getElementById('txEmailAddress').value = tx.customer_email || '';
+  document.getElementById('txEmailError').style.display = 'none';
+  // A welcome email is built from the products on the sale, and an imported
+  // one carries only a placeholder line — so there is nothing to build from.
+  const importable = (tx.items || []).some(i => i.product_id && !/^imported/i.test(i.product_id));
+  const welcomeBtn = document.getElementById('txEmailWelcomeBtn');
+  welcomeBtn.disabled = !importable || tx.type !== 'sale';
+  welcomeBtn.title = welcomeBtn.disabled
+    ? 'No catalog products on this sale to build a welcome email from'
+    : '';
+  document.getElementById('txEmailModal').classList.add('show');
+}
+
+function closeTxEmail() {
+  document.getElementById('txEmailModal').classList.remove('show');
+  txEmailTx = null;
+}
+
+// Ask the server to build it, then hand it to the preview so staff can edit it
+// before a word goes out.
+async function txEmailCompose(kind) {
+  if (!txEmailTx) return;
+  const email = document.getElementById('txEmailAddress').value.trim();
+  const errEl = document.getElementById('txEmailError');
+  const show = (msg) => { errEl.textContent = msg; errEl.style.display = 'block'; };
+  if (!email) return show('Enter an email address.');
+
+  const endpoint = kind === 'welcome'
+    ? `${API}/api/pos/transactions/${txEmailTx.id}/welcome`
+    : `${API}/api/pos/transactions/${txEmailTx.id}/email`;
+  const customerName = txEmailTx.customer_name || '';
+  const btns = [document.getElementById('txEmailReceiptBtn'), document.getElementById('txEmailWelcomeBtn')];
+  btns.forEach(b => b.disabled = true);
+  errEl.style.display = 'none';
+
+  try {
+    const resp = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email, customer_name: customerName, preview: true }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    closeTxEmail();
+    openEmailPreview({ endpoint, email, customerName, subject: data.subject, html: data.html });
+  } catch (err) {
+    show(err.message);
+  } finally {
+    btns.forEach(b => b.disabled = false);
+  }
+}
+
 // ─── Email Preview (edit-before-send) ───────────────────────────────────────
 let emailPreviewTarget = null; // { endpoint, email, customerName }
 
@@ -3284,9 +3407,17 @@ async function confirmSendPreviewedEmail() {
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error);
     closeEmailPreview();
+    // Which email this was is read off the endpoint, not off emailMode: sent
+    // from a Transactions row, emailMode still says whatever the register was
+    // last doing. And the status line lives inside the receipt modal, which is
+    // shut when sending from the list — so say it in a toast as well.
+    const kind = /\/welcome$/.test(endpoint) ? 'Welcome email' : 'Receipt';
+    showSuccessToast(`${kind} sent to ${email}`);
     const statusEl = document.getElementById('emailStatus');
-    statusEl.style.color = 'var(--success)';
-    statusEl.textContent = `${emailMode === 'welcome' ? 'Welcome email' : 'Receipt'} sent to ${email}`;
+    if (statusEl) {
+      statusEl.style.color = 'var(--success)';
+      statusEl.textContent = `${kind} sent to ${email}`;
+    }
   } catch (err) {
     errEl.textContent = err.message;
     btn.disabled = false;
@@ -3856,6 +3987,7 @@ function applyTxFilters() {
       <td><span class="tx-type-${tx.type}">${tx.type.toUpperCase()}</span>${cbBadges(tx)}</td>
       <td>${tx.employees && tx.employees.length > 0 ? tx.employees.map(e => e.employee_name).join(', ') : '-'}</td>
       <td>${tx.customer_name || '-'}</td>
+      <td style="font-size:.82rem">${tx.customer_email ? escapeHtml(tx.customer_email) : '<span style="color:var(--mid)">—</span>'}</td>
       <td>${tx.items.length}</td>
       <td>$${money((tx.subtotal || 0))}</td>
       <td style="font-weight:600">$${money(tx.total)}</td>
@@ -3864,6 +3996,7 @@ function applyTxFilters() {
       <td>
         <div class="tx-actions">
           <button onclick="viewReceipt(${tx.id})" style="color:var(--accent)">View</button>
+          <button onclick="openTxEmail(${tx.id})" style="color:var(--accent2)" title="Send this customer their receipt or welcome email">Email</button>
           ${canManage ? `
           <button onclick="startEditTransaction(${tx.id})" style="color:var(--accent-deep)">Edit</button>
           <button onclick="startDeleteTransaction(${tx.id})" style="color:var(--danger)">Delete</button>
@@ -3871,7 +4004,7 @@ function applyTxFilters() {
         </div>
       </td>
     </tr>
-  `).join('') || `<tr><td colspan="${(canManage ? 11 : 10) + (multiCompany ? 1 : 0)}" style="text-align:center;color:var(--mid)">No transactions in this date range. Click <b>Show All</b> above to see historical/imported transactions.</td></tr>`;
+  `).join('') || `<tr><td colspan="${(canManage ? 12 : 11) + (multiCompany ? 1 : 0)}" style="text-align:center;color:var(--mid)">No transactions in this date range. Click <b>Show All</b> above to see historical/imported transactions.</td></tr>`;
   updateBulkDeleteUI();
 
   // Summary line — pre-tax subtotals, so this reconciles with the Reports tab
@@ -5407,10 +5540,18 @@ async function saveCustomerDetail() {
 }
 
 // ─── Mass Email ─────────────────────────────────────────────────────────────
-function openMassEmail() {
+async function openMassEmail() {
+  // Reachable from the Emails tab now, where nothing has loaded a customer
+  // list yet. Fetch one rather than reporting nobody to send to.
+  if (!custReportData.length) {
+    const hint = document.getElementById('massEmailHint');
+    if (hint) hint.textContent = 'Loading customers…';
+    try { await loadCustomers(); } catch (_) {}
+    if (hint) hint.textContent = '';
+  }
   const recipients = (custFiltered || []).filter(c => c.customer_email);
   if (recipients.length === 0) {
-    alert('No customers with an email address in the current filter.');
+    alert('No customers with an email address to send to. Open Transactions → Customers to widen the dates or clear the filters.');
     return;
   }
   document.getElementById('massEmailCount').textContent = `This will send a separate email to ${recipients.length} customer${recipients.length !== 1 ? 's' : ''} in your current filter.`;
@@ -6226,6 +6367,7 @@ function switchTab(tabName) {
     openTxAuth();
     return;
   }
+  if (tabName !== 'calendar') stopCalendarPolling();
   if (tabName !== 'history') { txAccess = null; txCreds = null; selectedTxIds.clear(); }
   // Settings is re-locked the same way, for the same reason.
   if (tabName !== 'settings') { settingsAccess = null; settingsCreds = null; }
@@ -6248,13 +6390,27 @@ function switchTab(tabName) {
 function loadTabData(tabName) {
   if (tabName === 'history') loadTransactions();
   if (tabName === 'reports') { loadReports(); loadTodayLeaderboard(); }
-  if (tabName === 'customers') loadCustomers();
+  if (tabName === 'history' && txView === 'customers') loadCustomers();
   if (tabName === 'calendar') loadCalendar();
   if (tabName === 'emails') {
     const f = document.getElementById('emailsFrame');
     if (f && !f.src) f.src = f.dataset.src; // load once, on first open
   }
   if (tabName === 'settings') applySettingsAccessUI();
+}
+
+// Which half of the Transactions tab is showing. Sales is one row per sale;
+// Customers is one row per person, with what they've spent across all of them.
+let txView = 'sales';
+
+function switchTxView(view) {
+  txView = view;
+  document.getElementById('txViewSales').style.display = view === 'sales' ? '' : 'none';
+  document.getElementById('txViewCustomers').style.display = view === 'customers' ? '' : 'none';
+  document.querySelectorAll('.tx-view-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  // Loaded the first time it's asked for, not on every tab open — the customer
+  // report is a heavier query than the sales list.
+  if (view === 'customers' && !custReportData.length) loadCustomers();
 }
 
 // Everything on screen that belongs to a single company. Wiped the moment a
@@ -8161,6 +8317,7 @@ async function loadCalendar() {
 
     if (!calWeekStart) calWeekStart = calSundayOf(calToday());
     await loadCalendarWeek();
+    startCalendarPolling();
   } catch (err) {
     document.getElementById('calWeekSummary').textContent = 'Could not load the calendar: ' + err.message;
   }
@@ -8171,14 +8328,74 @@ function calShiftWeek(dir) {
   loadCalendarWeek();
 }
 
-async function loadCalendarWeek() {
+async function loadCalendarWeek(opts = {}) {
   const end = calAddDays(calWeekStart, 6);
   document.getElementById('calWeekLabel').textContent =
     `${calDayLabel(calWeekStart, { weekday: undefined })} – ${calDayLabel(end, { weekday: undefined, year: 'numeric' })}`;
+  const before = new Map(calAppointments.map(a => [a.id, a]));
   const resp = await fetch(`${API}/api/pos/appointments?start=${calWeekStart}&end=${end}`, { credentials: 'include' });
   const data = await resp.json();
   calAppointments = data.appointments || [];
   renderCalendarWeek();
+  if (opts.silent) announceCalendarChanges(before, calAppointments);
+}
+
+// ─── Keeping the week current ───────────────────────────────────────────────
+//
+// Customers reschedule and cancel from their own email, so the book on screen
+// goes stale on its own — without this, whoever has the Calendar open is
+// reading yesterday's answer until they think to refresh.
+
+const CAL_POLL_MS = 30000;
+let calPollTimer = null;
+
+function startCalendarPolling() {
+  stopCalendarPolling();
+  calPollTimer = setInterval(pollCalendar, CAL_POLL_MS);
+  // Coming back to the tab or the window is exactly when you want it current,
+  // rather than up to half a minute behind.
+  document.addEventListener('visibilitychange', calRefreshIfVisible);
+  window.addEventListener('focus', calRefreshIfVisible);
+}
+
+function stopCalendarPolling() {
+  if (calPollTimer) clearInterval(calPollTimer);
+  calPollTimer = null;
+  document.removeEventListener('visibilitychange', calRefreshIfVisible);
+  window.removeEventListener('focus', calRefreshIfVisible);
+}
+
+function calRefreshIfVisible() {
+  if (document.visibilityState === 'visible') pollCalendar();
+}
+
+async function pollCalendar() {
+  // Never move the ground under someone mid-edit, and don't poll a tab that
+  // isn't on screen.
+  if (document.getElementById('apptModal')?.classList.contains('show')) return;
+  if (!document.getElementById('tab-calendar')?.classList.contains('show')) return;
+  try { await loadCalendarWeek({ silent: true }); } catch (_) { /* try again next tick */ }
+}
+
+// Say what actually changed. A week that silently redraws itself is worse than
+// no refresh at all — you'd never know the 3pm had gone.
+function announceCalendarChanges(before, after) {
+  if (!before.size) return;   // first load of this week; nothing to compare
+  const changes = [];
+  after.forEach(a => {
+    const old = before.get(a.id);
+    if (!old) {
+      if (a.status === 'booked') changes.push(`${a.customer_name} booked ${a.time_label}`);
+      return;
+    }
+    if (old.status !== 'cancelled' && a.status === 'cancelled') {
+      changes.push(`${a.customer_name} cancelled ${old.time_label}`);
+    } else if (new Date(old.starts_at).getTime() !== new Date(a.starts_at).getTime()) {
+      changes.push(`${a.customer_name} moved to ${a.time_label}`);
+    }
+  });
+  if (!changes.length) return;
+  showSuccessToast(changes.length === 1 ? changes[0] : `${changes[0]} · and ${changes.length - 1} more`);
 }
 
 function renderCalendarWeek() {
@@ -8396,6 +8613,7 @@ function openApptModal(id) {
   document.getElementById('apptEmployee').value = appt?.employee_id || '';
   document.getElementById('apptDate').value = appt ? appt.date : calToday();
   document.getElementById('apptTime').value = appt ? calTimeValue(appt.starts_at) : '';
+  document.getElementById('apptDuration').value = String(appt?.duration_min || 60);
   calApptSlots = [];
   calApptCurrent = appt
     ? { date: appt.date, time: calTimeValue(appt.starts_at), label: appt.time_label }
@@ -8406,9 +8624,8 @@ function openApptModal(id) {
   document.getElementById('apptResendBtn').style.display = appt ? '' : 'none';
   document.getElementById('apptError').style.display = 'none';
 
-  onApptTreatmentChange();
+  onApptDurationChange();   // draws the hint and asks for the day's open times
   document.getElementById('apptModal').classList.add('show');
-  loadApptSlots();
 }
 
 // The HH:MM an instant falls on, on the store's clock — what the time input wants.
@@ -8423,15 +8640,39 @@ function closeApptModal() {
   calEditingId = null;
 }
 
+// The length this session will actually run for — the treatment's own length
+// unless someone has typed a different one for this booking.
 function apptDurationMins() {
+  return Math.max(5, parseInt(document.getElementById('apptDuration').value, 10) || 60);
+}
+
+// What the chosen treatment normally takes.
+function apptTreatmentMins() {
   const opt = document.getElementById('apptTreatment').selectedOptions[0];
   return parseInt(opt?.dataset.mins, 10) || 60;
 }
 
+// Picking a treatment resets the length to that treatment's own. Anyone who
+// wants a different length says so after choosing, not before.
 function onApptTreatmentChange() {
+  document.getElementById('apptDuration').value = String(apptTreatmentMins());
+  onApptDurationChange();
+}
+
+function onApptDurationChange() {
   const mins = apptDurationMins();
-  document.getElementById('apptDurationHint').textContent = `· ${mins}-minute sessions`;
+  const usual = apptTreatmentMins();
+  document.getElementById('apptDurationHint').textContent = `· ${mins}-minute session`;
+  // Only offer the reset once the length differs from the treatment's own.
+  const reset = document.getElementById('apptDurationReset');
+  reset.style.display = mins === usual ? 'none' : '';
+  reset.textContent = `reset to ${usual}`;
   loadApptSlots();
+}
+
+function resetApptDuration() {
+  document.getElementById('apptDuration').value = String(apptTreatmentMins());
+  onApptDurationChange();
 }
 
 // The times that actually work for the chosen day: inside the store's hours,

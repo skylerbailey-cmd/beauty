@@ -76,6 +76,32 @@
     font-family: system-ui, sans-serif; font-size: .85rem; line-height: 1.55;
     padding: 12px 14px; border-radius: 9px; margin-top: 16px;
   }
+  .pager {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; margin: 18px 0 2px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+  }
+  .pager-label {
+    font-family: system-ui, sans-serif; font-size: .82rem; font-weight: 600;
+    color: var(--mid); text-align: center; flex: 1 1 auto;
+  }
+  /* Says what you picked, right above the button that confirms it — on a phone
+     the chosen time may have scrolled out of sight by the time you reach it. */
+  .chosen-bar {
+    font-family: system-ui, sans-serif; font-size: .9rem; font-weight: 600;
+    color: var(--accent-deep); background: var(--accent-soft);
+    border: 1px solid var(--border); border-radius: 9px;
+    padding: 11px 14px; margin-top: 18px;
+  }
+  /* The confirm button rides at the bottom of the viewport rather than at the
+     bottom of the list, so picking a time never means a long scroll to act
+     on it. */
+  .sticky-actions {
+    position: sticky; bottom: 0; background: var(--white);
+    margin-top: 6px; padding-top: 12px;
+    padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--border);
+  }
+  .sticky-actions .actions { margin-top: 12px; }
   .note.err { background: #F8EBEC; color: #7A2129; border: 1px solid #E4C4C8; }
   .note.ok { background: var(--accent-soft); color: var(--accent-deep); border: 1px solid var(--border); }
   [hidden] { display: none !important; }
@@ -120,11 +146,23 @@
     <div class="card" id="rescheduleCard" hidden>
       <h1>Choose a new time</h1>
       <p class="sub" id="rescheduleSub"></p>
+
+      <!-- A few days at a time, so the confirm button stays within reach
+           instead of sitting below six weeks of buttons. -->
+      <div class="pager" id="slotPager" hidden>
+        <button class="btn btn-outline btn-small" id="slotPrev" onclick="slotPage(-1)">&larr; Earlier</button>
+        <span class="pager-label" id="slotPageLabel"></span>
+        <button class="btn btn-outline btn-small" id="slotNext" onclick="slotPage(1)">Later &rarr;</button>
+      </div>
+
       <div id="slotList"></div>
       <div class="note err" id="slotError" hidden></div>
-      <div class="actions">
-        <button class="btn btn-primary" id="confirmMove" onclick="confirmReschedule()" disabled>Confirm new time</button>
-        <button class="btn btn-outline btn-small" onclick="closePanels()">Never mind</button>
+      <div class="sticky-actions">
+        <div class="chosen-bar" id="chosenBar" hidden></div>
+        <div class="actions">
+          <button class="btn btn-primary" id="confirmMove" onclick="confirmReschedule()" disabled>Confirm new time</button>
+          <button class="btn btn-outline btn-small" onclick="closePanels()">Never mind</button>
+        </div>
       </div>
     </div>
 
@@ -219,12 +257,16 @@ function closePanels() {
   show('cancelCard', false);
   show('slotError', false);
   show('cancelError', false);
+  show('chosenBar', false);
 }
 
 async function showReschedule() {
   closePanels();
   chosenSlot = null;
+  slotPages = [];
+  slotPageIndex = 0;
   $('confirmMove').disabled = true;
+  show('slotPager', false);
   show('rescheduleCard', true);
   $('rescheduleSub').textContent = 'Loading available times…';
   $('slotList').innerHTML = '';
@@ -240,9 +282,17 @@ async function showReschedule() {
   }
 }
 
+// Days with something free, three to a page. Six weeks of open times in one
+// list pushed the confirm button far below the fold.
+const DAYS_PER_PAGE = 2;
+let slotPages = [];
+let slotPageIndex = 0;
+
 function renderSlots(slots) {
   if (!slots.length) {
     $('rescheduleSub').textContent = 'We don\'t have any open times in the next few weeks. Please give us a call and we\'ll find you one.';
+    $('slotList').innerHTML = '';
+    show('slotPager', false);
     return;
   }
   $('rescheduleSub').textContent =
@@ -255,11 +305,26 @@ function renderSlots(slots) {
     byDate.get(s.date).push(s);
   });
 
-  $('slotList').innerHTML = [...byDate.entries()].map(([date, list]) => `
+  const days = [...byDate.entries()];
+  slotPages = [];
+  for (let i = 0; i < days.length; i += DAYS_PER_PAGE) slotPages.push(days.slice(i, i + DAYS_PER_PAGE));
+
+  // Open on the page holding the time already chosen, so coming back from an
+  // error doesn't dump you at the start again.
+  const chosenPage = chosenSlot
+    ? slotPages.findIndex(p => p.some(([, list]) => list.some(s => s.start === chosenSlot)))
+    : -1;
+  slotPageIndex = chosenPage >= 0 ? chosenPage : 0;
+  renderSlotPage();
+}
+
+function renderSlotPage() {
+  const page = slotPages[slotPageIndex] || [];
+  $('slotList').innerHTML = page.map(([date, list]) => `
     <div class="day">
       <h3>${esc(dayHeading(date))}</h3>
       <div class="slots">
-        ${list.map(s => `<button type="button" class="slot" data-start="${esc(s.start)}">${esc(s.label)}</button>`).join('')}
+        ${list.map(s => `<button type="button" class="slot${s.start === chosenSlot ? ' chosen' : ''}" data-start="${esc(s.start)}" data-label="${esc(s.label)}" data-date="${esc(s.date)}">${esc(s.label)}</button>`).join('')}
       </div>
     </div>`).join('');
 
@@ -270,7 +335,36 @@ function renderSlots(slots) {
       chosenSlot = btn.dataset.start;
       $('confirmMove').disabled = false;
       show('slotError', false);
+      showChosen(btn.dataset.date, btn.dataset.label);
     });
+  });
+
+  show('slotPager', slotPages.length > 1);
+  $('slotPrev').disabled = slotPageIndex === 0;
+  $('slotNext').disabled = slotPageIndex >= slotPages.length - 1;
+  const first = page[0]?.[0];
+  const last = page[page.length - 1]?.[0];
+  $('slotPageLabel').textContent = !first ? ''
+    : first === last ? dayHeading(first)
+    : `${shortDay(first)} – ${shortDay(last)}`;
+}
+
+function slotPage(step) {
+  slotPageIndex = Math.min(slotPages.length - 1, Math.max(0, slotPageIndex + step));
+  renderSlotPage();
+  $('rescheduleCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function showChosen(date, label) {
+  $('chosenBar').textContent = `Chosen: ${dayHeading(date)} at ${label}`;
+  show('chosenBar', true);
+}
+
+// "Thu 24 Sep" — the compact form, for the pager label.
+function shortDay(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', {
+    timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric',
   });
 }
 
