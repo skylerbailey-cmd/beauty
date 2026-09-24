@@ -15,6 +15,7 @@ const { router: welcomeRoutes } = require('./routes/welcome');
 const posRoutes = require('./routes/pos');
 const bookingRoutes = require('./routes/booking');
 const { initSchema: initPostgres } = require('./db/postgres');
+const { hardenRouter } = require('./lib/safe-async');
 const { getAllUsers } = require('./db');
 const { setupGmailWatch } = require('./services/gmail');
 
@@ -117,15 +118,17 @@ app.use(express.static(fs.existsSync(webDir) ? webDir : webDirAlt, {
   },
 }));
 
-app.use('/auth', authRoutes);
-app.use('/api/emails', emailRoutes);
-app.use('/api/welcome', welcomeRoutes);
-app.use('/api/pos', posRoutes);
+// hardenRouter: a rejected promise inside an async handler must come back as a
+// 500, not end the process. See lib/safe-async.js.
+app.use('/auth', hardenRouter(authRoutes));
+app.use('/api/emails', hardenRouter(emailRoutes));
+app.use('/api/welcome', hardenRouter(welcomeRoutes));
+app.use('/api/pos', hardenRouter(posRoutes));
 // Public — the customer's reschedule/cancel page, reached from a link in their
 // confirmation email. Mounted outside /api/pos precisely because everything
 // under there requires a signed-in session.
-app.use('/api/booking', bookingRoutes);
-app.use('/webhook', webhookRoutes);
+app.use('/api/booking', hardenRouter(bookingRoutes));
+app.use('/webhook', hardenRouter(webhookRoutes));
 
 // Health check
 app.get('/health', async (req, res) => {
@@ -151,6 +154,17 @@ app.use((err, req, res, _next) => {
   res.status(err.status || 500).json({
     error: err.message || 'Internal server error',
   });
+});
+
+// ─── Never exit on a stray rejection ─────────────────────────────────────────
+//
+// The routers above hand request-time rejections to the error handler. This
+// catches the rest — a timer, the keep-alive ping, a background restore —
+// which Node would otherwise end the process over. A POS that disappears
+// mid-sale is worse than one carrying a logged fault.
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[server] Unhandled rejection (kept running):', reason?.stack || reason);
 });
 
 // ─── Startup: restore Gmail watches ───────────────────────────────────────────

@@ -369,6 +369,25 @@ router.post('/transactions', async (req, res) => {
     return res.status(400).json({ error: 'At least one item required' });
   }
 
+  // Every money and count field has to be a real number before any of it is
+  // added up. A line that arrived without a unit_price made the subtotal NaN,
+  // which Postgres rejected on insert — and, before the routers were hardened,
+  // took the server down with it. Say which line is wrong instead.
+  for (const [i, item] of items.entries()) {
+    const where = `Item ${i + 1}${item?.product_name ? ` (${item.product_name})` : ''}`;
+    const price = Number(item?.unit_price);
+    if (!Number.isFinite(price)) {
+      return res.status(400).json({ error: `${where} has no valid price.` });
+    }
+    const qty = item?.quantity === undefined ? 1 : Number(item.quantity);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      return res.status(400).json({ error: `${where} has an invalid quantity.` });
+    }
+    if (item?.discount !== undefined && !Number.isFinite(Number(item.discount))) {
+      return res.status(400).json({ error: `${where} has an invalid discount.` });
+    }
+  }
+
   // An employee must be assigned before a transaction can be completed.
   const employeeError = await validateEmployeeAssignment(userId, employeeAssignments, employee_id);
   if (employeeError) {
