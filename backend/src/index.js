@@ -16,6 +16,7 @@ const posRoutes = require('./routes/pos');
 const bookingRoutes = require('./routes/booking');
 const { initSchema: initPostgres } = require('./db/postgres');
 const { hardenRouter } = require('./lib/safe-async');
+const { tenantMiddleware, cookieDomainFor } = require('./lib/tenancy');
 const { getAllUsers } = require('./db');
 const { setupGmailWatch } = require('./services/gmail');
 
@@ -46,6 +47,21 @@ app.use(session({
     maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
   },
 }));
+
+// ─── One session across the shop addresses ───────────────────────────────────
+// Set per request rather than in the session config: on the Railway hostname
+// there is no app domain to scope to, and a cookie pinned to the wrong domain
+// is a cookie the browser throws away.
+
+app.use((req, res, next) => {
+  const domain = cookieDomainFor(req);
+  if (domain && req.session?.cookie) req.session.cookie.domain = domain;
+  next();
+});
+
+// Which shop this address names, and a stop on reading one shop's data from
+// another's address. Before the routes, after the session.
+app.use(tenantMiddleware());
 
 // ─── Persistent auth: restore session from signed cookie after redeploy ───────
 // The session store is in-memory and SQLite is ephemeral on Railway,
@@ -192,8 +208,18 @@ app.listen(PORT, async () => {
   // Initialize Postgres schema for POS/CRM
   try {
     await initPostgres();
+    // Every named shop gets its own address on the app domain, assigned once.
+    await require('./db/postgres').ensureCompanySlugs();
   } catch (err) {
     console.error('[startup] Postgres init error:', err.message);
+  }
+
+  const emailLoginOpen = process.env.LEGACY_EMAIL_LOGIN === '1'
+    || (process.env.LEGACY_EMAIL_LOGIN !== '0' && !process.env.APP_DOMAIN);
+  if (emailLoginOpen) {
+    console.warn('[server] Email-only sign-in is OPEN: an email address alone signs a company in. Set LEGACY_EMAIL_LOGIN=0 once Google sign-in is confirmed.');
+  } else {
+    console.log('[server] Email-only sign-in is closed; Google sign-in only.');
   }
 
   // Restore watches after server is ready

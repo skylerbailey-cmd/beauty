@@ -16,9 +16,36 @@ const OAUTH_SCOPES = [
 ];
 
 // ─── POST /auth/web-login ─────────────────────────────────────────────────────
-// Simple email-based login for the web UI (no password)
+//
+// Email-only sign-in: type a company's address and you are that company. That
+// was survivable while the app lived at an unguessable Railway URL and nothing
+// linked to it. It is not survivable on a published address with a Sign in
+// button pointing at it — the shop's customer list, bookings and register sit
+// behind it, and a company's email address is not a secret.
+//
+// Google sign-in (/auth/google?from=web) is the way in now. This route stays
+// only while LEGACY_EMAIL_LOGIN is set, so an existing bookmark keeps working
+// through the changeover; clear that variable to close it for good.
+
+// Explicitly on or off if the variable says so; otherwise it closes exactly
+// when the app becomes publicly addressable. Deploying this changes nothing
+// while the app still lives at the Railway hostname — nobody gets locked out
+// of a register mid-shift — and the door shuts the moment APP_DOMAIN points a
+// guessable address at it.
+function emailLoginAllowed() {
+  const flag = process.env.LEGACY_EMAIL_LOGIN;
+  if (flag === '1') return true;
+  if (flag === '0') return false;
+  return !process.env.APP_DOMAIN;
+}
 
 router.post('/web-login', (req, res) => {
+  if (!emailLoginAllowed()) {
+    return res.status(403).json({
+      error: 'Sign in with Google.',
+      useGoogle: true,
+    });
+  }
   const { email, companyName } = req.body;
   if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
     return res.status(400).json({ error: 'Valid email is required' });
@@ -39,12 +66,15 @@ router.post('/web-login', (req, res) => {
   req.session.companyScope = null;
 
   // Set long-lived signed cookies so login persists across Railway redeploys
+  const { cookieDomainFor } = require('../lib/tenancy');
   const cookieOpts = {
     maxAge: 365 * 24 * 60 * 60 * 1000, // 1 year
     httpOnly: true,
     signed: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
+    // Undefined on the Railway hostname, which keeps today's behaviour.
+    domain: cookieDomainFor(req),
   };
   res.cookie('glow_user_email', user.email, cookieOpts);
   // Refresh ALL preference cookies to THIS company's values on every login/switch.
@@ -198,9 +228,22 @@ router.get('/google/callback', async (req, res) => {
     // Tokens are persisted per-company in Postgres instead.
 
     if (isWebLogin) {
-      // Redirect back to where the flow started (e.g. /pos.html), else the web UI
       const dest = req.session.oauthReturn || '/';
       delete req.session.oauthReturn;
+
+      // Signing in centrally at app.sky-sale.com: send them on to their own
+      // shop's address, so the tab they end up working in says which shop it
+      // is. Already on a shop's address — or no address configured — and this
+      // does nothing.
+      try {
+        const { slugFromHost, companyUrl, appDomain } = require('../lib/tenancy');
+        if (appDomain() && !slugFromHost(req)) {
+          const slug = await require('../db/postgres').getCompanySlug(userId);
+          if (slug) return res.redirect(companyUrl(slug, dest.startsWith('/') ? dest : '/pos.html'));
+        }
+      } catch (e) {
+        console.error('[auth] Could not route to the company address:', e.message);
+      }
       return res.redirect(dest);
     }
 

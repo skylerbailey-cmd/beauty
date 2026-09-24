@@ -591,6 +591,12 @@ async function initSchema() {
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS booking_slot_step INTEGER DEFAULT 30');
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS booking_lead_hours INTEGER DEFAULT 2');
 
+  // Each company's own address on sky-sale.com — glowsf.sky-sale.com. Kept
+  // here rather than derived from the store name on the fly, so renaming a shop
+  // doesn't silently move everyone's bookmark.
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS slug TEXT DEFAULT ''");
+  await migrate('CREATE UNIQUE INDEX IF NOT EXISTS idx_pg_settings_slug ON pos_settings(slug) WHERE TRIM(COALESCE(slug, \'\')) <> \'\'');
+
   // One-time data migrations, tracked so they run exactly once.
   await migrate('CREATE TABLE IF NOT EXISTS pos_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW())');
   try {
@@ -3356,6 +3362,53 @@ async function getGmailAccount(userId) {
   return r.rows[0] || null;
 }
 
+// ─── Company addresses (subdomains) ─────────────────────────────────────────
+
+// "Glow SF" → "glowsf". Letters and digits only: a subdomain is typed by
+// customers and staff, and a hyphen in the wrong place is a support call.
+function slugify(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 40);
+}
+
+async function getCompanyBySlug(slug) {
+  const s = String(slug || '').toLowerCase().trim();
+  if (!s) return null;
+  const r = await query(
+    `SELECT user_id, store_name, slug FROM pos_settings WHERE LOWER(slug) = $1 LIMIT 1`, [s]);
+  return r.rows[0] || null;
+}
+
+async function getCompanySlug(userId) {
+  const r = await query('SELECT slug FROM pos_settings WHERE user_id = $1', [userId]);
+  return r.rows[0]?.slug || '';
+}
+
+// Give every named company an address, once, without ever reassigning one that
+// is already in use — a slug that moved between companies would send a
+// bookmarked login into somebody else's shop.
+async function ensureCompanySlugs() {
+  if (!pool) return;
+  const rows = (await query(
+    `SELECT user_id, store_name FROM pos_settings
+     WHERE TRIM(COALESCE(store_name,'')) <> '' AND TRIM(COALESCE(slug,'')) = ''`)).rows;
+  for (const row of rows) {
+    const base = slugify(row.store_name);
+    if (!base) continue;
+    let candidate = base;
+    for (let n = 2; n < 50; n++) {
+      const taken = await getCompanyBySlug(candidate);
+      if (!taken) break;
+      candidate = `${base}${n}`;
+    }
+    try {
+      await query('UPDATE pos_settings SET slug = $1 WHERE user_id = $2', [candidate, row.user_id]);
+      console.log(`[postgres] ${row.store_name} is now ${candidate}.<domain>`);
+    } catch (e) {
+      console.error('[postgres] Could not assign a slug to', row.store_name, e.message);
+    }
+  }
+}
+
 module.exports = {
   pool,
   initSchema,
@@ -3491,4 +3544,9 @@ module.exports = {
   cancelAppointment,
   bookingCapacity,
   getGmailAccount,
+  // Company addresses
+  slugify,
+  getCompanyBySlug,
+  getCompanySlug,
+  ensureCompanySlugs,
 };
