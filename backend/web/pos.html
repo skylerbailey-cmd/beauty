@@ -190,6 +190,24 @@
 
     /* ── Modals ─── */
     /* Sales / Customers inside the Transactions tab. */
+    .mass-label {
+      display: block; font-family: system-ui, sans-serif; font-size: .72rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .5px; color: var(--mid); margin-bottom: 5px;
+    }
+    .mass-input {
+      padding: 8px 11px; border: 1.5px solid var(--border); border-radius: 8px;
+      font-size: .86rem; font-family: system-ui, sans-serif; outline: none;
+      background: var(--white); color: var(--dark);
+    }
+    .mass-input:focus { border-color: var(--accent); }
+    .mass-preset {
+      font-family: system-ui, sans-serif; font-size: .82rem; font-weight: 600;
+      padding: 8px 13px; border-radius: 20px; cursor: pointer;
+      border: 1.5px solid var(--border); background: var(--white); color: var(--accent-deep);
+    }
+    .mass-preset:hover { border-color: var(--accent); background: var(--accent-soft); }
+    .mass-preset.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+
     .tx-views { display: flex; gap: 4px; border-bottom: 1.5px solid var(--border); }
     .tx-view-btn {
       font-family: system-ui, sans-serif; font-size: .88rem; font-weight: 600;
@@ -1096,14 +1114,85 @@
 
   <!-- ─── EMAILS TAB (embedded Email Suite) ─── -->
   <div class="tab-content" id="tab-emails">
-    <!-- Mass Email lives here rather than with the customer list: it is a
-         thing you send, and this is where sending lives. It still goes to
-         whoever the Customers view is filtered to. -->
-    <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:10px 20px 0;flex-wrap:wrap">
-      <span id="massEmailHint" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid)"></span>
-      <button class="btn" style="padding:7px 14px;font-size:.82rem;background:var(--accent2);color:#fff" onclick="openMassEmail()">Mass Email</button>
+    <div style="max-width:1500px;margin:0 auto;padding:20px 20px 0">
+      <div class="tx-views">
+        <button class="tx-view-btn active" data-emailview="welcome" onclick="switchEmailView('welcome')">Welcome emails</button>
+        <button class="tx-view-btn" data-emailview="mass" onclick="switchEmailView('mass')">Mass email</button>
+      </div>
     </div>
-    <iframe id="emailsFrame" data-src="/?embed=1" title="Emails" style="width:100%;height:calc(100vh - 160px);border:0;display:block"></iframe>
+
+    <div id="emailViewWelcome">
+      <iframe id="emailsFrame" data-src="/?embed=1" title="Emails" style="width:100%;height:calc(100vh - 170px);border:0;display:block"></iframe>
+    </div>
+
+    <!-- Mass email. The audience is chosen here rather than inherited from
+         whatever the Customers list happened to be filtered to — writing to
+         "everyone who bought a device and hasn't been back in six months"
+         shouldn't mean setting up a report somewhere else first. -->
+    <div id="emailViewMass" style="display:none">
+      <div style="max-width:1500px;margin:0 auto;padding:20px">
+
+        <div class="report-card">
+          <h3>Who it goes to</h3>
+          <p style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin:4px 0 12px">
+            Start from one of these, then narrow it below. Only customers with an email address can be written to.
+          </p>
+          <div id="massPresets" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+
+          <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">
+            <div>
+              <label class="mass-label">Bought</label>
+              <select id="massProduct" onchange="applyMassFilters()" class="mass-input" style="max-width:240px"><option value="">anything</option></select>
+            </div>
+            <div>
+              <label class="mass-label">Served by</label>
+              <select id="massEmployee" onchange="applyMassFilters()" class="mass-input" style="max-width:200px"><option value="">anyone</option></select>
+            </div>
+            <div>
+              <label class="mass-label">Last bought after</label>
+              <input type="date" id="massFrom" onchange="onMassFilterEdited()" class="mass-input">
+            </div>
+            <div>
+              <label class="mass-label">Last bought before</label>
+              <input type="date" id="massTo" onchange="onMassFilterEdited()" class="mass-input">
+            </div>
+            <div>
+              <label class="mass-label">Spent at least</label>
+              <input type="number" id="massMinSpend" min="0" step="100" placeholder="any" oninput="onMassFilterEdited()" class="mass-input" style="width:110px">
+            </div>
+            <div>
+              <label class="mass-label">Birthday in</label>
+              <select id="massBirthMonth" onchange="onMassFilterEdited()" class="mass-input" style="max-width:150px"></select>
+            </div>
+            <button class="btn btn-cancel" style="padding:8px 14px;font-size:.82rem" onclick="resetMassFilters()">Clear</button>
+          </div>
+
+          <div id="massCount" style="font-family:system-ui,sans-serif;font-size:.9rem;margin-top:16px"></div>
+          <div id="massPreview" style="margin-top:10px"></div>
+        </div>
+
+        <div class="report-card">
+          <h3>The message</h3>
+          <div class="field" style="margin-top:10px">
+            <label class="mass-label">Subject</label>
+            <input type="text" id="massSubject" class="mass-input" style="width:100%" placeholder="A little something for you, {name}" oninput="renderMassSample()">
+          </div>
+          <div class="field">
+            <label class="mass-label">Message</label>
+            <textarea id="massBody" rows="9" class="mass-input" style="width:100%;resize:vertical" placeholder="Hi {name},&#10;&#10;Write your message here…" oninput="renderMassSample()"></textarea>
+            <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:6px">
+              <code>{name}</code> becomes each customer's own name. Everyone gets their own separate email — nobody sees anyone else's address.
+            </p>
+          </div>
+          <div id="massSample" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);background:var(--cream);border:1px solid var(--border);border-radius:8px;padding:12px;display:none"></div>
+          <div id="massStatus" style="font-family:system-ui,sans-serif;font-size:.85rem;min-height:1.2em;margin-top:12px"></div>
+          <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+            <button class="btn btn-confirm" id="massSendBtn" onclick="sendMassEmailNow()">Send</button>
+          </div>
+        </div>
+
+      </div>
+    </div>
   </div>
 
   <!-- ─── SETTINGS TAB ─── -->
@@ -1881,26 +1970,6 @@
 </div>
 
 <!-- ─── Mass Email Modal ─── -->
-<div class="modal-overlay" id="massEmailModal">
-  <div class="modal" style="max-width:560px">
-    <h2>Mass Email</h2>
-    <p class="sub" id="massEmailCount" style="font-family:system-ui,sans-serif;font-size:.84rem;color:var(--mid);margin-bottom:12px"></p>
-    <div class="field">
-      <label>Subject</label>
-      <input type="text" id="massEmailSubject" placeholder="e.g. A little something for you, {name}!">
-    </div>
-    <div class="field">
-      <label>Message</label>
-      <textarea id="massEmailBody" rows="8" placeholder="Hi {name},&#10;&#10;Write your message here…" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.9rem;font-family:system-ui,sans-serif;outline:none;resize:vertical"></textarea>
-      <div style="font-size:.74rem;color:var(--mid);font-family:system-ui,sans-serif;margin-top:4px">Use <b>{name}</b> to insert each customer's name. Everyone gets their own separate email (they won't see each other).</div>
-    </div>
-    <div id="massEmailStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;min-height:1em;margin-top:4px"></div>
-    <div class="modal-actions">
-      <button class="btn btn-cancel" onclick="closeMassEmail()">Cancel</button>
-      <button class="btn btn-confirm" id="massEmailSendBtn" onclick="sendMassEmail()">Send</button>
-    </div>
-  </div>
-</div>
 
 <!-- ─── Batch Mismatch Drill-down Modal ─── -->
 <div class="modal-overlay" id="dayDrilldownModal">
@@ -6169,63 +6238,7 @@ async function saveCustomerDetail() {
 }
 
 // ─── Mass Email ─────────────────────────────────────────────────────────────
-async function openMassEmail() {
-  // Reachable from the Emails tab now, where nothing has loaded a customer
-  // list yet. Fetch one rather than reporting nobody to send to.
-  if (!custReportData.length) {
-    const hint = document.getElementById('massEmailHint');
-    if (hint) hint.textContent = 'Loading customers…';
-    try { await loadCustomers(); } catch (_) {}
-    if (hint) hint.textContent = '';
-  }
-  const recipients = (custFiltered || []).filter(c => c.customer_email);
-  if (recipients.length === 0) {
-    alert('No customers with an email address to send to. Open Transactions → Customers to widen the dates or clear the filters.');
-    return;
-  }
-  document.getElementById('massEmailCount').textContent = `This will send a separate email to ${recipients.length} customer${recipients.length !== 1 ? 's' : ''} in your current filter.`;
-  document.getElementById('massEmailSubject').value = '';
-  document.getElementById('massEmailBody').value = '';
-  document.getElementById('massEmailStatus').textContent = '';
-  document.getElementById('massEmailSendBtn').textContent = `Send to ${recipients.length}`;
-  document.getElementById('massEmailSendBtn').disabled = false;
-  document.getElementById('massEmailModal').classList.add('show');
-}
-function closeMassEmail() {
-  document.getElementById('massEmailModal').classList.remove('show');
-}
 
-async function sendMassEmail() {
-  const subject = document.getElementById('massEmailSubject').value.trim();
-  const message = document.getElementById('massEmailBody').value.trim();
-  const statusEl = document.getElementById('massEmailStatus');
-  if (!subject || !message) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Enter a subject and message.'; return; }
-
-  const recipients = (custFiltered || []).filter(c => c.customer_email)
-    .map(c => ({ name: c.customer_name, email: c.customer_email }));
-  if (recipients.length === 0) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'No recipients.'; return; }
-
-  const btn = document.getElementById('massEmailSendBtn');
-  btn.disabled = true;
-  statusEl.style.color = 'var(--mid)';
-  statusEl.textContent = `Sending to ${recipients.length}…`;
-  try {
-    const resp = await fetch(`${API}/api/pos/mass-email`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ recipients, subject, message }),
-    });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error);
-    statusEl.style.color = 'var(--success)';
-    statusEl.textContent = `Sent ${data.sent} of ${data.total}.` + (data.errors && data.errors.length ? ` Some failed: ${data.errors.join('; ')}` : '');
-    if (!data.errors || data.errors.length === 0) setTimeout(closeMassEmail, 1500);
-    else btn.disabled = false;
-  } catch (err) {
-    statusEl.style.color = 'var(--danger)';
-    statusEl.textContent = 'Failed: ' + err.message;
-    btn.disabled = false;
-  }
-}
 
 // ─── Sale text alerts ───────────────────────────────────────────────────────
 // Carriers whose gateway domains no longer resolve — checked against DNS, not
@@ -8875,6 +8888,251 @@ async function switchAccount(email) {
 function addNewAccount() {
   document.getElementById('companySwitcherMenu').classList.remove('show');
   window.location.href = '/';
+}
+
+// ─── Mass email ─────────────────────────────────────────────────────────────
+//
+// Choosing the audience is the whole job. "Everyone who bought a device and
+// hasn't been back in six months" is a real thing a shop wants to write to,
+// and it shouldn't mean building a report somewhere else first.
+
+let massCustomers = null;     // every customer of this shop, with their history
+let massLoading = false;
+let massPreset = 'all';
+
+// Each one is a question a shop actually asks, not a filter combination.
+const MASS_PRESETS = [
+  { key: 'all', label: 'Everyone', apply: () => ({}) },
+  { key: 'recent30', label: 'Bought in the last 30 days',
+    apply: () => ({ from: massDaysAgo(30) }) },
+  { key: 'recent6m', label: 'Bought in the last 6 months',
+    apply: () => ({ from: massDaysAgo(182) }) },
+  { key: 'lapsed6m', label: "Haven't been back in 6 months",
+    apply: () => ({ to: massDaysAgo(182) }) },
+  { key: 'lapsed12m', label: 'Gone quiet for a year',
+    apply: () => ({ to: massDaysAgo(365) }) },
+  { key: 'new', label: 'First bought this month',
+    apply: () => ({ firstFrom: massMonthStart() }) },
+  { key: 'spenders', label: 'Spent $2,000 or more',
+    apply: () => ({ minSpend: 2000 }) },
+  { key: 'birthday', label: 'Birthday this month',
+    apply: () => ({ birthMonth: new Date().getMonth() + 1 }) },
+  { key: 'onceonly', label: 'Bought once and never again',
+    apply: () => ({ maxPurchases: 1 }) },
+];
+
+const massDaysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+const massMonthStart = () => new Date().toISOString().slice(0, 8) + '01';
+const MASS_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function switchEmailView(view) {
+  document.getElementById('emailViewWelcome').style.display = view === 'welcome' ? '' : 'none';
+  document.getElementById('emailViewMass').style.display = view === 'mass' ? '' : 'none';
+  document.querySelectorAll('.tx-view-btn[data-emailview]').forEach(b =>
+    b.classList.toggle('active', b.dataset.emailview === view));
+  if (view === 'welcome') {
+    const f = document.getElementById('emailsFrame');
+    if (f && !f.src) f.src = f.dataset.src;
+  }
+  if (view === 'mass') loadMassEmail();
+}
+
+async function loadMassEmail() {
+  if (massCustomers || massLoading) { applyMassFilters(); return; }
+  massLoading = true;
+  const countEl = document.getElementById('massCount');
+  countEl.textContent = 'Loading your customers…';
+
+  // The whole history, not a date window — the audience is chosen by the
+  // filters below, and "hasn't been back in six months" can only be answered
+  // by looking further back than six months.
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    const resp = await fetch(`${API}/api/pos/reports/customers?start=2000-01-01T00:00:00&end=${today}T23:59:59&all=0`, { credentials: 'include' });
+    massCustomers = (await resp.json()).report || [];
+  } catch (err) {
+    countEl.textContent = 'Could not load customers: ' + err.message;
+    massLoading = false;
+    return;
+  }
+  massLoading = false;
+
+  renderMassPresets();
+  populateMassFilters();
+  applyMassFilters();
+}
+
+function renderMassPresets() {
+  document.getElementById('massPresets').innerHTML = MASS_PRESETS.map(p =>
+    `<button type="button" class="mass-preset${p.key === massPreset ? ' on' : ''}" data-preset="${p.key}" onclick="pickMassPreset('${p.key}')">${escapeHtml(p.label)}</button>`).join('');
+}
+
+function populateMassFilters() {
+  const prod = document.getElementById('massProduct');
+  const map = new Map();
+  massCustomers.forEach(c => (c.products || []).forEach(p => { if (!map.has(p.product_id)) map.set(p.product_id, p.product_name); }));
+  prod.innerHTML = '<option value="">anything</option>' +
+    [...map.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1])))
+      .map(([id, name]) => `<option value="${escapeHtml(id)}">${escapeHtml(name)}</option>`).join('');
+
+  const emp = document.getElementById('massEmployee');
+  const emap = new Map();
+  massCustomers.forEach(c => (c.employees || []).forEach(e => { if (!emap.has(e.id)) emap.set(e.id, e.name); }));
+  emp.innerHTML = '<option value="">anyone</option>' +
+    [...emap.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1])))
+      .map(([id, name]) => `<option value="${id}">${escapeHtml(name)}</option>`).join('');
+
+  document.getElementById('massBirthMonth').innerHTML = '<option value="">any month</option>' +
+    MASS_MONTHS.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('');
+}
+
+function pickMassPreset(key) {
+  massPreset = key;
+  const p = MASS_PRESETS.find(x => x.key === key);
+  const f = p ? p.apply() : {};
+  document.getElementById('massFrom').value = f.from || '';
+  document.getElementById('massTo').value = f.to || '';
+  document.getElementById('massMinSpend').value = f.minSpend || '';
+  document.getElementById('massBirthMonth').value = f.birthMonth || '';
+  massExtra = { firstFrom: f.firstFrom || '', maxPurchases: f.maxPurchases || 0 };
+  renderMassPresets();
+  applyMassFilters();
+}
+
+// The two conditions with no control of their own, carried by the preset.
+let massExtra = { firstFrom: '', maxPurchases: 0 };
+
+// Touching a control by hand means you are no longer *on* a preset — but what
+// the preset put in the boxes stays, so "haven't been back in six months" plus
+// a product is "lapsed customers who bought that product", which is the whole
+// point. The conditions with no box of their own have to survive the same way,
+// or two of the presets would quietly lose their meaning the moment you
+// narrowed them.
+function onMassFilterEdited() {
+  massPreset = '';
+  renderMassPresets();
+  applyMassFilters();
+}
+
+function resetMassFilters() {
+  document.getElementById('massProduct').value = '';
+  document.getElementById('massEmployee').value = '';
+  pickMassPreset('all');
+}
+
+function massMatches() {
+  if (!massCustomers) return [];
+  const productId = document.getElementById('massProduct').value;
+  const employeeId = document.getElementById('massEmployee').value;
+  const from = document.getElementById('massFrom').value;
+  const to = document.getElementById('massTo').value;
+  const minSpend = parseFloat(document.getElementById('massMinSpend').value);
+  const birthMonth = document.getElementById('massBirthMonth').value;
+
+  return massCustomers.filter(c => {
+    const last = (c.last_purchase || '').slice(0, 10);
+    if (from && (!last || last < from)) return false;
+    if (to && (!last || last > to)) return false;
+    if (massExtra.firstFrom) {
+      const first = (c.first_purchase || '').slice(0, 10);
+      if (!first || first < massExtra.firstFrom) return false;
+    }
+    if (massExtra.maxPurchases && Number(c.purchases || 0) > massExtra.maxPurchases) return false;
+    if (isFinite(minSpend) && Number(c.total_spent || 0) < minSpend) return false;
+    if (productId && !(c.products || []).some(p => String(p.product_id) === productId)) return false;
+    if (employeeId && !(c.employees || []).some(e => String(e.id) === employeeId)) return false;
+    if (birthMonth) {
+      const b = String(c.birthday || '').slice(0, 10);
+      if (!b || String(parseInt(b.slice(5, 7), 10)) !== birthMonth) return false;
+    }
+    return true;
+  });
+}
+
+function applyMassFilters() {
+  if (!massCustomers) return;
+  const all = massMatches();
+  const withEmail = all.filter(c => String(c.customer_email || '').trim());
+  const countEl = document.getElementById('massCount');
+
+  countEl.innerHTML = withEmail.length === 0
+    ? `<span style="color:var(--danger)">Nobody matches${all.length ? ` — ${all.length} customer${all.length === 1 ? '' : 's'} fit, but none has an email address` : ''}.</span>`
+    : `<strong>${withEmail.length}</strong> customer${withEmail.length === 1 ? '' : 's'} will get this email` +
+      (all.length > withEmail.length ? ` <span style="color:var(--mid)">· ${all.length - withEmail.length} match but have no email address</span>` : '') +
+      ` <span style="color:var(--mid)">· out of ${massCustomers.length} on file</span>`;
+
+  const shown = withEmail.slice(0, 12);
+  document.getElementById('massPreview').innerHTML = shown.length ? `
+    <div style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid)">
+      ${shown.map(c => `<span style="display:inline-block;background:var(--cream);border:1px solid var(--border);border-radius:14px;padding:3px 10px;margin:0 6px 6px 0">${escapeHtml(c.customer_name || c.customer_email)}</span>`).join('')}
+      ${withEmail.length > shown.length ? `<span>and ${withEmail.length - shown.length} more</span>` : ''}
+    </div>` : '';
+
+  renderMassSample();
+  document.getElementById('massSendBtn').disabled = withEmail.length === 0;
+}
+
+// What the first person on the list will actually receive.
+function renderMassSample() {
+  const el = document.getElementById('massSample');
+  const subject = document.getElementById('massSubject').value;
+  const body = document.getElementById('massBody').value;
+  const who = massMatches().filter(c => String(c.customer_email || '').trim())[0];
+  if (!who || (!subject.trim() && !body.trim())) { el.style.display = 'none'; return; }
+  const fill = (t) => String(t).replace(/\{name\}/g, (who.customer_name || '').split(' ')[0] || 'there');
+  el.style.display = 'block';
+  el.innerHTML =
+    `<div style="font-size:.72rem;letter-spacing:.5px;text-transform:uppercase;color:var(--mid);margin-bottom:6px">` +
+    `What ${escapeHtml(who.customer_name || who.customer_email)} receives</div>` +
+    `<div style="color:var(--dark);font-weight:600;margin-bottom:6px">${escapeHtml(fill(subject)) || '<em style="font-weight:400">(no subject)</em>'}</div>` +
+    `<div style="white-space:pre-wrap;color:var(--dark)">${escapeHtml(fill(body))}</div>`;
+}
+
+async function sendMassEmailNow() {
+  const subject = document.getElementById('massSubject').value.trim();
+  const message = document.getElementById('massBody').value.trim();
+  const statusEl = document.getElementById('massStatus');
+  const btn = document.getElementById('massSendBtn');
+
+  if (!subject || !message) {
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = 'Give it a subject and a message first.';
+    return;
+  }
+  const recipients = massMatches()
+    .filter(c => String(c.customer_email || '').trim())
+    .map(c => ({ name: c.customer_name || '', email: c.customer_email }));
+  if (!recipients.length) {
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = 'Nobody in this audience has an email address.';
+    return;
+  }
+
+  const who = MASS_PRESETS.find(p => p.key === massPreset);
+  if (!confirm(
+    `Send to ${recipients.length} customer${recipients.length === 1 ? '' : 's'}${who && who.key !== 'all' ? ` — ${who.label.toLowerCase()}` : ''}?\n\n` +
+    `Each gets their own separate email. This can't be unsent.`)) return;
+
+  btn.disabled = true;
+  statusEl.style.color = 'var(--mid)';
+  statusEl.textContent = `Sending to ${recipients.length}…`;
+  try {
+    const resp = await fetch(`${API}/api/pos/mass-email`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ recipients, subject, message }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Send failed');
+    statusEl.style.color = 'var(--success)';
+    statusEl.textContent = `Sent ${data.sent} of ${data.total}.` +
+      (data.errors && data.errors.length ? ` Some failed: ${data.errors.join('; ')}` : '');
+    if (data.sent) showSuccessToast(`Sent to ${data.sent} customer${data.sent === 1 ? '' : 's'}`);
+  } catch (err) {
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = 'Failed: ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ─── Calendar: treatment sessions ───────────────────────────────────────────
