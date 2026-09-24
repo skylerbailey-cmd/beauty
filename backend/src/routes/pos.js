@@ -3044,6 +3044,63 @@ router.get('/reconciliation-day', async (req, res) => {
   });
 });
 
+// ─── Importing a client list ────────────────────────────────────────────────
+//
+// A shop moving systems brings its customers as their own file, separate from
+// the sales. Someone already on file is updated rather than duplicated —
+// matched on email, or on phone when there is no email.
+
+router.post('/import-customers', async (req, res) => {
+  const userId = req.session.userId;
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
+  if (!rows) return res.status(400).json({ error: 'rows array required' });
+
+  let created = 0, updated = 0, skipped = 0, failed = 0;
+
+  for (const row of rows) {
+    try {
+      const name = String(row.name || '').trim();
+      if (!name) { skipped++; continue; }
+
+      const email = String(row.email || '').trim();
+      const phone = String(row.phone || '').trim();
+
+      // Someone with neither can't be matched against anyone, and matching on
+      // a blank would pull back whichever contact-less customer happened to be
+      // first and overwrite them. The browser warns about these; if they were
+      // sent anyway, insert without matching.
+      const existing = await pgDb.findCustomerIdByContact(userId, email, phone);
+
+      const extras = {};
+      if (row.address) extras.address = String(row.address).trim();
+      if (row.notes) extras.notes = String(row.notes).trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(String(row.birthday || ''))) extras.birthday = row.birthday;
+
+      if (existing) {
+        // Only fill what's missing — a file shouldn't blank a phone number
+        // somebody typed in by hand because its own column was empty.
+        const fields = { ...extras };
+        if (email && !String(existing.email || '').trim()) fields.email = email;
+        if (phone && !String(existing.phone || '').trim()) fields.phone = phone;
+        if (name && !String(existing.name || '').trim()) fields.name = name;
+        for (const k of ['address', 'notes']) {
+          if (fields[k] && String(existing[k] || '').trim()) delete fields[k];
+        }
+        if (extras.birthday && existing.birthday) delete fields.birthday;
+        if (Object.keys(fields).length) await pgDb.updateCustomer(existing.id, fields);
+        updated++;
+      } else {
+        await pgDb.createCustomerRecord(userId, { name, email, phone, ...extras });
+        created++;
+      }
+    } catch (e) {
+      failed++;
+    }
+  }
+
+  res.json({ ok: true, created, updated, skipped, failed });
+});
+
 // ─── Treatment calendar ─────────────────────────────────────────────────────
 //
 // Staff side. Everything is scoped to the signed-in company: the two stores

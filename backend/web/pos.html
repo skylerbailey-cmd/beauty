@@ -295,9 +295,7 @@
 
     /* Nor should one customer's address set the width of the whole table.
        Truncated, with the full address on hover and in the title. */
-    .email-cell { max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-    .date-range { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; font-family: system-ui, sans-serif; font-size: .85rem; }
+      .date-range { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; font-family: system-ui, sans-serif; font-size: .85rem; }
     .date-range input, .date-range select { padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 8px; font-family: system-ui, sans-serif; font-size: .85rem; outline: none; background: var(--white); color: var(--dark); }
     .date-range input:focus, .date-range select:focus { border-color: var(--accent); }
     /* Half-month shortcuts — secondary to the filter's own Update button. */
@@ -754,7 +752,7 @@
           <h3 style="margin:0">Transaction History</h3>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span id="importStatus" style="font-family:system-ui,sans-serif;font-size:.8rem"></span>
-            <input type="file" id="importFile" accept=".csv" style="display:none" onchange="handleImportFile(this)">
+            <input type="file" id="importFile" accept=".csv" style="display:none" onchange="handleImportFile(this, 'transactions')">
             <button class="btn" id="importCsvBtn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:7px 14px;font-size:.82rem" onclick="document.getElementById('importFile').click()">Import CSV</button>
             <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportTransactionsCSV()">Export CSV</button>
             <button class="btn" id="chargebackSelectedBtn" style="background:var(--accent2);color:#fff;padding:7px 14px;font-size:.82rem;display:none" onclick="openBulkChargeback()">Set Chargeback Status</button>
@@ -764,7 +762,7 @@
         <div id="txSummary" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:10px 0"></div>
         <div class="table-scroll">
         <table class="report-table">
-          <thead><tr><th id="txSelectAllHeader" style="display:none;width:28px"><input type="checkbox" id="txSelectAll" onchange="toggleSelectAllTx(this.checked)"></th><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Email</th><th>Items</th><th>Subtotal</th><th>Total</th><th>Payment</th><th id="txCompanyHeader" style="display:none">Company</th><th></th></tr></thead>
+          <thead><tr><th id="txSelectAllHeader" style="display:none;width:28px"><input type="checkbox" id="txSelectAll" onchange="toggleSelectAllTx(this.checked)"></th><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Items</th><th>Subtotal</th><th>Total</th><th>Payment</th><th id="txCompanyHeader" style="display:none">Company</th><th></th></tr></thead>
           <tbody id="txHistoryBody"></tbody>
         </table>
         </div>
@@ -809,10 +807,15 @@
             <select id="custEmployeeFilter" onchange="applyCustomerFilters()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.82rem;font-family:system-ui,sans-serif;outline:none;max-width:220px">
               <option value="">All employees</option>
             </select>
+            <input type="file" id="custImportFile" accept=".csv,.tsv,.txt" style="display:none" onchange="handleImportFile(this, 'customers')">
+            <button class="btn" style="padding:7px 14px;font-size:.82rem;background:var(--cream);color:var(--dark);border:1px solid var(--border)" onclick="document.getElementById('custImportFile').click()">Import CSV</button>
             <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportCustomersCSV()">Export CSV</button>
           </div>
         </div>
-        <div id="custFilterSummary" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin-top:8px"></div>
+        <div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-top:8px">
+          <div id="custFilterSummary" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid)"></div>
+          <span id="custImportStatus" style="font-family:system-ui,sans-serif;font-size:.8rem"></span>
+        </div>
         <div class="table-scroll">
         <table class="report-table" style="margin-top:8px">
           <thead><tr><th>Customer</th><th>Email</th><th>Last Purchase</th><th>Purchases</th><th>Returns</th><th>Total Spent</th><th>Employee(s)</th><th>Items</th><th></th></tr></thead>
@@ -1598,7 +1601,7 @@
      column is and let someone correct it before rows are written. -->
 <div class="modal-overlay" id="importMapModal">
   <div class="modal" style="max-width:820px">
-    <h2>Check the columns before importing</h2>
+    <h2 id="importMapTitle">Check the columns before importing</h2>
     <p class="sub" id="importMapSummary"></p>
 
     <div style="max-height:46vh;overflow:auto;border:1px solid var(--border);border-radius:8px">
@@ -4025,7 +4028,6 @@ function applyTxFilters() {
       <td><span class="tx-type-${tx.type}">${tx.type.toUpperCase()}</span>${cbBadges(tx)}</td>
       <td>${tx.employees && tx.employees.length > 0 ? tx.employees.map(e => e.employee_name).join(', ') : '-'}</td>
       <td>${tx.customer_name || '-'}</td>
-      <td class="email-cell" style="font-size:.82rem" title="${escapeHtml(tx.customer_email || '')}">${tx.customer_email ? escapeHtml(tx.customer_email) : '<span style="color:var(--mid)">—</span>'}</td>
       <td>${tx.items.length}</td>
       <td>$${money((tx.subtotal || 0))}</td>
       <td style="font-weight:600">$${money(tx.total)}</td>
@@ -4042,7 +4044,7 @@ function applyTxFilters() {
         </div>
       </td>
     </tr>
-  `).join('') || `<tr><td colspan="${(canManage ? 12 : 11) + (multiCompany ? 1 : 0)}" style="text-align:center;color:var(--mid)">No transactions in this date range. Click <b>Show All</b> above to see historical/imported transactions.</td></tr>`;
+  `).join('') || `<tr><td colspan="${(canManage ? 11 : 10) + (multiCompany ? 1 : 0)}" style="text-align:center;color:var(--mid)">No transactions in this date range. Click <b>Show All</b> above to see historical/imported transactions.</td></tr>`;
   updateBulkDeleteUI();
 
   // Summary line — pre-tax subtotals, so this reconciles with the Reports tab
@@ -4553,7 +4555,7 @@ function exportTransactionsCSV() {
 // single row is written.
 
 // What we can use, and the header names shops actually ship it under.
-const IMPORT_FIELDS = [
+const IMPORT_TRANSACTION_FIELDS = [
   { key: 'receipt', label: 'Receipt / order no.',
     hint: 'Identifies the sale, so importing the same file twice can\'t duplicate it.',
     syn: ['salecode','saleno','salenumber','sale','receipt','receiptno','receiptnumber','transactionid','transactionno','transaction','orderid','orderno','order','invoice','invoiceno','invoicenumber','ticket','ticketno','reference','ref','refno','docno','documentno','id'] },
@@ -4587,6 +4589,33 @@ const IMPORT_FIELDS = [
     hint: 'Shown on the receipt behind the sale. Without it, rows import as a single placeholder line.',
     syn: ['item','items','product','productname','description','service','servicename','sku','lineitem','treatment'] },
 ];
+
+// A client list, which arrives on its own when a shop moves systems.
+const IMPORT_CUSTOMER_FIELDS = [
+  { key: 'name', label: 'Full name',
+    hint: 'Or leave this and use the two name columns below.',
+    syn: ['name','customername','clientname','fullname','customer','client','contact','contactname','patient','guest','account','accountname'] },
+  { key: 'first', label: 'First name',
+    hint: 'Only needed when the file splits the name in two.',
+    syn: ['firstname','first','forename','givenname','fname'] },
+  { key: 'last', label: 'Last name',
+    syn: ['lastname','last','surname','familyname','lname'] },
+  { key: 'email', label: 'Email',
+    hint: 'Used to recognise someone already on file, so importing twice updates rather than duplicates.',
+    syn: ['email','emailaddress','customeremail','clientemail','mail','e'] },
+  { key: 'phone', label: 'Phone',
+    hint: 'Used to match when there is no email.',
+    syn: ['phone','phonenumber','telephone','tel','mobile','cell','cellphone','customerphone','clientphone','homephone','contactnumber'] },
+  { key: 'birthday', label: 'Birthday',
+    syn: ['birthday','birthdate','dateofbirth','dob','born'] },
+  { key: 'address', label: 'Address',
+    syn: ['address','address1','streetaddress','street','mailingaddress','addressline1','location'] },
+  { key: 'notes', label: 'Notes',
+    syn: ['notes','note','comments','comment','remarks','memo','description','details'] },
+];
+
+const IMPORT_FIELD_SETS = { transactions: IMPORT_TRANSACTION_FIELDS, customers: IMPORT_CUSTOMER_FIELDS };
+const importFields = () => IMPORT_FIELD_SETS[(importState && importState.kind) || 'transactions'];
 
 const importNorm = (h) => String(h == null ? '' : h).toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -4782,14 +4811,15 @@ function importPayment(text) {
 
 // ── Matching the columns ───────────────────────────────────────────────────
 
-function autoMapColumns(header) {
+function autoMapColumns(header, fields) {
+  const set = fields || IMPORT_TRANSACTION_FIELDS;
   const normed = header.map(importNorm);
   const taken = new Set();
   const map = {};
   // Exact names first, so a file with both "Total" and "Subtotal" doesn't give
   // "Total" away to a loose match on the other.
   for (const pass of ['exact', 'loose']) {
-    for (const f of IMPORT_FIELDS) {
+    for (const f of set) {
       if (map[f.key] !== undefined) continue;
       for (let i = 0; i < normed.length; i++) {
         if (taken.has(i) || !normed[i]) continue;
@@ -4807,10 +4837,11 @@ function autoMapColumns(header) {
 
 let importState = null;   // { header, rows, map, dayFirst, delimiter }
 
-async function handleImportFile(input) {
+async function handleImportFile(input, kind) {
   const file = input.files[0];
   input.value = '';
   if (!file) return;
+  kind = kind || 'transactions';
 
   const text = stripBom(await file.text());
   const delimiter = sniffDelimiter(text);
@@ -4819,14 +4850,16 @@ async function handleImportFile(input) {
 
   const header = grid[0].map(h => String(h).trim());
   const rows = grid.slice(1).filter(r => r.length > 1);
-  const map = autoMapColumns(header);
+  const map = autoMapColumns(header, IMPORT_FIELD_SETS[kind]);
 
-  const dateCol = map.date;
+  // Both kinds of file carry a date — a sale's, or a birthday — and both are
+  // ambiguous in the same way.
+  const dateCol = kind === 'customers' ? map.birthday : map.date;
   const day = dateCol === undefined
     ? { dayFirst: false, certain: true }
     : detectDayFirst(rows.slice(0, 400).map(r => r[dateCol]));
 
-  importState = { header, rows, map, dayFirst: day.dayFirst, dayCertain: day.certain, delimiter, fileName: file.name };
+  importState = { kind, header, rows, map, dayFirst: day.dayFirst, dayCertain: day.certain, delimiter, fileName: file.name };
   openImportMapping();
 }
 
@@ -4846,12 +4879,14 @@ function openImportMapping() {
     return '(blank)';
   };
 
+  document.getElementById('importMapTitle').textContent =
+    st.kind === 'customers' ? 'Check the columns before importing customers' : 'Check the columns before importing sales';
   document.getElementById('importMapSummary').innerHTML =
     `<strong>${escapeHtml(st.fileName)}</strong> — ${st.rows.length} row${st.rows.length === 1 ? '' : 's'}, ` +
     `${st.header.length} columns, separated by ${importDelimiterName(st.delimiter)}. ` +
     `Check the matches below; anything we guessed wrong can be changed.`;
 
-  body.innerHTML = IMPORT_FIELDS.map(f => {
+  body.innerHTML = importFields().map(f => {
     const cur = st.map[f.key];
     const options = ['<option value="">— not in this file —</option>']
       .concat(st.header.map((h, i) => `<option value="${i}" ${cur === i ? 'selected' : ''}>${escapeHtml(h || '(column ' + (i + 1) + ')')}</option>`))
@@ -4889,8 +4924,8 @@ function onImportMapChange(sel) {
     }
     cell.textContent = shown;
   }
-  if (sel.dataset.field === 'date') {
-    const col = importState.map.date;
+  if (sel.dataset.field === 'date' || sel.dataset.field === 'birthday') {
+    const col = importState.kind === 'customers' ? importState.map.birthday : importState.map.date;
     const d = col === undefined ? { dayFirst: false, certain: true }
       : detectDayFirst(importState.rows.slice(0, 400).map(r => r[col]));
     importState.dayFirst = d.dayFirst;
@@ -4902,8 +4937,9 @@ function onImportMapChange(sel) {
 // What the file will actually produce, said before anything is written.
 function renderImportNotes() {
   const st = importState;
+  if (st.kind === 'customers') return renderCustomerImportNotes();
   const notes = [];
-  const missing = IMPORT_FIELDS.filter(f => f.required && st.map[f.key] === undefined).map(f => f.label);
+  const missing = importFields().filter(f => f.required && st.map[f.key] === undefined).map(f => f.label);
 
   const preview = buildImportRows(200);
   const dated = preview.rows.filter(r => r.date).length;
@@ -4947,6 +4983,7 @@ function toggleImportDayFirst() {
 // the file without doing the whole thing on every keystroke.
 function buildImportRows(limit) {
   const st = importState;
+  if (st.kind === 'customers') return buildImportCustomerRows(limit);
   const m = st.map;
   const get = (r, key) => (m[key] === undefined ? '' : String(r[m[key]] == null ? '' : r[m[key]]).trim());
   const source = limit ? st.rows.slice(0, limit) : st.rows;
@@ -4994,12 +5031,141 @@ function importRowKey(cells) {
   return h.toString(36);
 }
 
+// ── A client list ──────────────────────────────────────────────────────────
+
+function buildImportCustomerRows(limit) {
+  const st = importState;
+  const m = st.map;
+  const get = (r, key) => (m[key] === undefined ? '' : String(r[m[key]] == null ? '' : r[m[key]]).trim());
+  const source = limit ? st.rows.slice(0, limit) : st.rows;
+  const out = [];
+
+  for (const r of source) {
+    // A file that splits the name in two is as common as one that doesn't.
+    const name = get(r, 'name') || [get(r, 'first'), get(r, 'last')].filter(Boolean).join(' ');
+    const email = get(r, 'email');
+    const phone = get(r, 'phone');
+    if (!name && !email && !phone) continue;   // a blank trailing line
+
+    const birthdayRaw = get(r, 'birthday');
+    const birthday = birthdayRaw ? (importDate(birthdayRaw, st.dayFirst) || '').slice(0, 10) : '';
+
+    out.push({
+      name, email, phone,
+      birthday: birthday || '',
+      address: get(r, 'address'),
+      notes: get(r, 'notes'),
+      // Someone with neither an email nor a phone can't be matched against
+      // the people already on file, so importing twice would duplicate them.
+      contactable: !!(email || phone),
+    });
+  }
+  return { rows: out, considered: source.length };
+}
+
+function renderCustomerImportNotes() {
+  const st = importState;
+  const notes = [];
+  const preview = buildImportCustomerRows(400);
+  const named = preview.rows.filter(r => r.name).length;
+  const noContact = preview.rows.filter(r => r.name && !r.contactable).length;
+  const withEmail = preview.rows.filter(r => r.email).length;
+  const withBirthday = preview.rows.filter(r => r.birthday).length;
+  const hasName = st.map.name !== undefined || st.map.first !== undefined || st.map.last !== undefined;
+
+  if (!hasName) {
+    document.getElementById('importMapNotes').innerHTML =
+      '<div style="color:var(--danger)">Pick a column for the <strong>name</strong> — either Full name, or First and Last. Nothing can be imported without it.</div>';
+    document.getElementById('importMapGo').disabled = true;
+    return;
+  }
+
+  if (named < preview.considered) {
+    notes.push(`<span style="color:var(--danger)">${preview.considered - named} of the first ${preview.considered} rows have no name</span> and will be skipped.`);
+  }
+  notes.push(`${withEmail} of the first ${preview.considered} have an email address.`);
+  if (noContact) {
+    notes.push(`<span style="color:var(--danger)">${noContact} have neither an email nor a phone</span>, so they can't be matched against anyone already on file — importing this file twice would enter them twice. They'll be skipped unless you say otherwise at the next step.`);
+  }
+  if (st.map.birthday !== undefined) {
+    const unread = preview.rows.filter(r => r.birthday === '').length;
+    notes.push(`${withBirthday} have a birthday we can read${unread ? `, ${unread} don't` : ''}.`);
+    if (!st.dayCertain) {
+      notes.push(`Birthdays like <code>03/04/1990</code> are ambiguous. Reading them as <strong>${st.dayFirst ? 'day/month' : 'month/day'}</strong> — <a href="#" onclick="event.preventDefault();toggleImportDayFirst()" style="color:var(--accent)">read as ${st.dayFirst ? 'month/day' : 'day/month'} instead</a>.`);
+    }
+  }
+  notes.push('Someone already on file is updated rather than duplicated — matched on email, or on phone when there is no email.');
+
+  document.getElementById('importMapNotes').innerHTML = notes.map(n => `<div style="margin-bottom:6px">${n}</div>`).join('');
+  document.getElementById('importMapGo').disabled = false;
+}
+
+async function confirmCustomerImport() {
+  const built = buildImportCustomerRows(null);
+  let rows = built.rows.filter(r => r.name);
+  if (!rows.length) { alert('No rows had a name in them. Check the name column.'); return; }
+
+  const noContact = rows.filter(r => !r.contactable);
+  if (noContact.length) {
+    const keep = confirm(
+      `${noContact.length} of ${rows.length} have neither an email nor a phone number.\n\n` +
+      `They can't be matched against people already on file, so importing this file again would enter them a second time.\n\n` +
+      `OK — import them anyway.\nCancel — skip those ${noContact.length} and import the other ${rows.length - noContact.length}.`);
+    if (!keep) rows = rows.filter(r => r.contactable);
+    if (!rows.length) { alert('Nothing left to import.'); return; }
+  }
+
+  if (!confirm(`Import ${rows.length} customer${rows.length === 1 ? '' : 's'} into ${storeSettings.store_name}? Anyone already on file is updated, not duplicated.`)) return;
+  closeImportMapping();
+  await importCustomerRows(rows);
+}
+
+async function importCustomerRows(rows) {
+  const statusEl = document.getElementById('custImportStatus');
+  const totals = { created: 0, updated: 0, skipped: 0, failed: 0 };
+  const CHUNK = 100;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    if (statusEl) {
+      statusEl.style.color = 'var(--mid)';
+      statusEl.textContent = `Importing ${Math.min(i + CHUNK, rows.length)} / ${rows.length}…`;
+    }
+    try {
+      const resp = await fetch(`${API}/api/pos/import-customers`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ rows: rows.slice(i, i + CHUNK) }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Import failed');
+      totals.created += data.created || 0;
+      totals.updated += data.updated || 0;
+      totals.skipped += data.skipped || 0;
+      totals.failed += data.failed || 0;
+    } catch (err) {
+      if (statusEl) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Failed: ' + err.message; }
+      return;
+    }
+  }
+  if (statusEl) {
+    statusEl.style.color = 'var(--success)';
+    statusEl.textContent = `${totals.created} added, ${totals.updated} updated${totals.skipped ? `, ${totals.skipped} skipped` : ''}${totals.failed ? `, ${totals.failed} failed` : ''}.`;
+  }
+  alert(
+    `Customer import finished:\n\n` +
+    `• Added: ${totals.created}\n` +
+    `• Already on file, updated: ${totals.updated}\n` +
+    (totals.skipped ? `• Skipped: ${totals.skipped}\n` : '') +
+    (totals.failed ? `• Failed: ${totals.failed}\n` : ''));
+  custReportData = [];      // force the list to come back from the server
+  loadCustomers();
+}
+
 function closeImportMapping() {
   document.getElementById('importMapModal').classList.remove('show');
 }
 
 async function confirmImportMapping() {
   const st = importState;
+  if (st.kind === 'customers') return confirmCustomerImport();
   const built = buildImportRows(null);
   let rows = built.rows;
 

@@ -3376,6 +3376,41 @@ async function getGmailAccount(userId) {
   return r.rows[0] || null;
 }
 
+// ─── Importing a client list ────────────────────────────────────────────────
+
+// The customer an email address or phone number belongs to, with their id, so
+// an import can update them rather than enter them again.
+//
+// Deliberately returns nothing when given neither: matching on a blank would
+// find whichever contact-less customer happened to be first and overwrite
+// somebody who has nothing to do with the row being imported.
+async function findCustomerIdByContact(userId, email, phone) {
+  const e = String(email || '').trim().toLowerCase();
+  const digits = String(phone || '').replace(/\D/g, '');
+  const p = digits.length >= 10 ? digits.slice(-10) : '';
+  if (!e && !p) return null;
+
+  const r = await query(
+    `SELECT * FROM customers
+     WHERE user_id = $1
+       AND ( ($2 <> '' AND LOWER(TRIM(email)) = $2)
+          OR ($3 <> '' AND RIGHT(REGEXP_REPLACE(COALESCE(phone,''), '\D', '', 'g'), 10) = $3) )
+     ORDER BY updated_at DESC
+     LIMIT 1`,
+    [userId, e, p]);
+  return r.rows[0] || null;
+}
+
+// A plain insert, for a row with no contact details to match on.
+async function createCustomerRecord(userId, c) {
+  const r = await query(
+    `INSERT INTO customers (name, email, phone, birthday, address, notes, user_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+    [String(c.name || '').trim(), String(c.email || '').trim(), String(c.phone || '').trim(),
+     c.birthday || null, String(c.address || '').trim(), String(c.notes || '').trim(), userId]);
+  return r.rows[0];
+}
+
 // ─── Company addresses (subdomains) ─────────────────────────────────────────
 
 // "Glow SF" → "glowsf". Letters and digits only: a subdomain is typed by
@@ -3558,6 +3593,8 @@ module.exports = {
   cancelAppointment,
   bookingCapacity,
   getGmailAccount,
+  findCustomerIdByContact,
+  createCustomerRecord,
   // Company addresses
   slugify,
   getCompanyBySlug,
