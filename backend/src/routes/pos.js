@@ -3008,4 +3008,312 @@ router.get('/reconciliation-day', async (req, res) => {
   });
 });
 
+// ─── Treatment calendar ─────────────────────────────────────────────────────
+//
+// Staff side. Everything is scoped to the signed-in company: the two stores
+// keep separate hours, separate treatment menus and separate books, the same
+// way their settings and KPIs already do.
+
+const apptSvc = require('../services/appointments');
+
+// Availability — the weekly opening hours a booking has to sit inside.
+
+router.get('/availability', async (req, res) => {
+  try {
+    const [days, closed, settings] = await Promise.all([
+      pgDb.getAvailability(req.session.userId),
+      pgDb.getClosedDates(req.session.userId),
+      pgDb.getSettings(req.session.userId),
+    ]);
+    res.json({
+      days,
+      closed_dates: closed,
+      slot_step: settings?.booking_slot_step || 30,
+      lead_hours: settings?.booking_lead_hours ?? 2,
+      timezone: settings?.timezone || 'America/Denver',
+      capacity: await pgDb.bookingCapacity(req.session.userId),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/availability', async (req, res) => {
+  const { days, slot_step, lead_hours } = req.body || {};
+  try {
+    // A day that opens after it closes would silently offer nothing; say so
+    // rather than saving hours that can never produce a slot.
+    for (const d of days || []) {
+      if (!d.open) continue;
+      const bad = !/^\d{1,2}:\d{2}$/.test(d.start_time || '') || !/^\d{1,2}:\d{2}$/.test(d.end_time || '');
+      if (bad) return res.status(400).json({ error: `${apptSvc.DAY_NAMES[d.weekday]}: times must look like 09:30.` });
+      if (d.end_time <= d.start_time) {
+        return res.status(400).json({ error: `${apptSvc.DAY_NAMES[d.weekday]} closes before it opens.` });
+      }
+    }
+    await pgDb.setAvailability(req.session.userId, days);
+    const settings = {};
+    if (slot_step !== undefined) settings.booking_slot_step = Math.max(5, parseInt(slot_step, 10) || 30);
+    if (lead_hours !== undefined) settings.booking_lead_hours = Math.max(0, parseInt(lead_hours, 10) || 0);
+    if (Object.keys(settings).length) await pgDb.updateSettings(req.session.userId, settings);
+    res.json({ success: true, days: await pgDb.getAvailability(req.session.userId) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/availability/closed-dates', async (req, res) => {
+  const { date, reason } = req.body || {};
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) {
+    return res.status(400).json({ error: 'Pick a date to close.' });
+  }
+  try {
+    res.json({ success: true, closed_dates: await pgDb.addClosedDate(req.session.userId, date, reason) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/availability/closed-dates/:id', async (req, res) => {
+  try {
+    await pgDb.deleteClosedDate(req.session.userId, req.params.id);
+    res.json({ success: true, closed_dates: await pgDb.getClosedDates(req.session.userId) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Treatments — the menu of what can be booked, and how long each one takes.
+
+router.get('/treatments', async (req, res) => {
+  try {
+    res.json({ treatments: await pgDb.getTreatments(req.session.userId, req.query.all === '1') });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/treatments', async (req, res) => {
+  const { name, duration_min } = req.body || {};
+  if (!String(name || '').trim()) return res.status(400).json({ error: 'Name the treatment.' });
+  try {
+    res.json({ success: true, treatment: await pgDb.createTreatment(req.session.userId, name, duration_min) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/treatments/:id', async (req, res) => {
+  try {
+    res.json({ success: true, treatment: await pgDb.updateTreatment(req.params.id, req.session.userId, req.body || {}) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/treatments/:id', async (req, res) => {
+  try {
+    await pgDb.retireTreatment(req.params.id, req.session.userId);
+    res.json({ success: true, treatments: await pgDb.getTreatments(req.session.userId) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// The calendar itself.
+
+router.get('/appointments', async (req, res) => {
+  const { start, end } = req.query;
+  try {
+    const settings = await pgDb.getSettings(req.session.userId);
+    const tz = settings?.timezone || 'America/Denver';
+    // Bare dates from the browser are read on the STORE's clock. Read as UTC
+    // they'd pull in the previous evening's bookings and drop the last of the
+    // day — the same off-by-six-hours that bit the sales reports.
+    const from = start ? apptSvc.localToUtc(start, '00:00', tz) : apptSvc.localToUtc(apptSvc.localDate(new Date(), tz), '00:00', tz);
+    const to = end ? apptSvc.localToUtc(end, '23:59', tz) : new Date(from.getTime() + 28 * 86400000);
+    const rows = await pgDb.getAppointments(req.session.userId, from.toISOString(), to.toISOString());
+    res.json({
+      appointments: rows.map(a => ({
+        ...a,
+        date: apptSvc.localDate(a.starts_at, tz),
+        time_label: apptSvc.localTimeLabel(a.starts_at, tz),
+        when: apptSvc.localDateTimeLabel(a.starts_at, tz),
+        manage_url: apptSvc.manageUrl(a.token),
+      })),
+      timezone: tz,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// The times staff can offer while a customer is standing at the counter.
+router.get('/appointments/slots', async (req, res) => {
+  try {
+    const duration = req.query.duration_min
+      ? parseInt(req.query.duration_min, 10)
+      : (await pgDb.getTreatment(req.query.treatment_id, req.session.userId))?.duration_min || 60;
+    const result = await apptSvc.availableSlots(req.session.userId, {
+      durationMin: duration,
+      employeeId: req.query.employee_id || null,
+      excludeAppointmentId: req.query.exclude_id || null,
+      fromDate: req.query.date || null,
+      // A single named day when the form asks for one; otherwise a month.
+      days: req.query.date ? 1 : (parseInt(req.query.days, 10) || 30),
+      // Staff booking in person aren't held to the customer's notice period.
+      leadHours: 0,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/appointments', async (req, res) => {
+  const b = req.body || {};
+  const email = String(b.customer_email || '').trim();
+  if (!String(b.customer_name || '').trim()) return res.status(400).json({ error: 'Who is the appointment for?' });
+  if (!b.starts_at) return res.status(400).json({ error: 'Pick a date and time.' });
+
+  try {
+    const userId = req.session.userId;
+    const settings = await pgDb.getSettings(userId);
+    const tz = settings?.timezone || 'America/Denver';
+    const treatment = b.treatment_id ? await pgDb.getTreatment(b.treatment_id, userId) : null;
+    const duration = parseInt(b.duration_min, 10) || treatment?.duration_min || 60;
+    const employee = b.employee_id ? await pgDb.getEmployee(b.employee_id) : null;
+    const start = apptSvc.parseStoreInstant(b.starts_at, tz);
+    if (!start) return res.status(400).json({ error: 'That date and time didn\'t parse.' });
+    const startsAt = start.toISOString();
+
+    const hours = await apptSvc.withinOpenHours(userId, startsAt, duration);
+    if (!hours.ok && !b.force) return res.status(409).json({ error: hours.reason, overridable: true });
+
+    const free = await apptSvc.slotIsFree(userId, startsAt, duration, employee?.id);
+    if (!free.free && !b.force) return res.status(409).json({ error: free.reason, overridable: true });
+
+    // Keep the CRM in step: a booking is often the first time we have this
+    // person's email, and the customers tab is where staff go looking.
+    let customerId = b.customer_id || null;
+    if (!customerId && (email || b.customer_phone)) {
+      try {
+        const c = await pgDb.findOrCreateCustomer(b.customer_name, email, userId, b.customer_phone);
+        customerId = c?.id || null;
+      } catch (_) { /* a CRM hiccup must not lose the booking */ }
+    }
+
+    const appt = await pgDb.createAppointment({
+      user_id: userId,
+      customer_id: customerId,
+      customer_name: String(b.customer_name).trim(),
+      customer_email: email,
+      customer_phone: b.customer_phone || '',
+      employee_id: employee?.id || null,
+      employee_name: employee?.name || '',
+      treatment_id: treatment?.id || null,
+      treatment_name: treatment?.name || String(b.treatment_name || '').trim(),
+      duration_min: duration,
+      starts_at: startsAt,
+      notes: b.notes || '',
+    });
+
+    const mail = email && b.send_email !== false
+      ? await apptSvc.sendAppointmentEmail(userId, appt, 'confirmed')
+      : { emailed: false, reason: email ? 'Not requested' : 'No email address' };
+
+    res.json({ success: true, appointment: appt, emailed: mail.emailed, email_error: mail.reason || null });
+  } catch (err) {
+    console.error('[pos] create appointment:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/appointments/:id', async (req, res) => {
+  const b = req.body || {};
+  try {
+    const userId = req.session.userId;
+    const existing = await pgDb.getAppointment(req.params.id, userId);
+    if (!existing) return res.status(404).json({ error: 'Appointment not found' });
+
+    const fields = {};
+    for (const k of ['customer_name', 'customer_email', 'customer_phone', 'notes']) {
+      if (b[k] !== undefined) fields[k] = b[k];
+    }
+    if (b.treatment_id !== undefined) {
+      const t = b.treatment_id ? await pgDb.getTreatment(b.treatment_id, userId) : null;
+      fields.treatment_id = t?.id || null;
+      fields.treatment_name = t?.name || '';
+      if (t) fields.duration_min = t.duration_min;
+    }
+    if (b.duration_min !== undefined) fields.duration_min = parseInt(b.duration_min, 10) || existing.duration_min;
+    if (b.employee_id !== undefined) {
+      const e = b.employee_id ? await pgDb.getEmployee(b.employee_id) : null;
+      fields.employee_id = e?.id || null;
+      fields.employee_name = e?.name || '';
+    }
+    if (b.starts_at !== undefined) {
+      const settings = await pgDb.getSettings(userId);
+      const start = apptSvc.parseStoreInstant(b.starts_at, settings?.timezone || 'America/Denver');
+      if (!start) return res.status(400).json({ error: 'That date and time didn\'t parse.' });
+      fields.starts_at = start.toISOString();
+    }
+
+    const startsAt = fields.starts_at || existing.starts_at;
+    const duration = fields.duration_min || existing.duration_min;
+    const employeeId = fields.employee_id !== undefined ? fields.employee_id : existing.employee_id;
+    const moved = fields.starts_at && fields.starts_at !== new Date(existing.starts_at).toISOString();
+
+    if (moved || fields.duration_min || fields.employee_id !== undefined) {
+      const hours = await apptSvc.withinOpenHours(userId, startsAt, duration);
+      if (!hours.ok && !b.force) return res.status(409).json({ error: hours.reason, overridable: true });
+      const free = await apptSvc.slotIsFree(userId, startsAt, duration, employeeId, existing.id);
+      if (!free.free && !b.force) return res.status(409).json({ error: free.reason, overridable: true });
+    }
+
+    const updated = await pgDb.updateAppointment(existing.id, fields);
+
+    // Only tell the customer when something they'd turn up for has changed.
+    // An edited phone number is not worth an email.
+    const worthTelling = moved || fields.employee_id !== undefined || fields.treatment_id !== undefined;
+    const mail = b.send_email === true || (b.send_email !== false && worthTelling)
+      ? await apptSvc.sendAppointmentEmail(userId, updated, moved ? 'rescheduled' : 'confirmed')
+      : { emailed: false };
+
+    res.json({ success: true, appointment: updated, emailed: mail.emailed, email_error: mail.reason || null });
+  } catch (err) {
+    console.error('[pos] update appointment:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/appointments/:id/cancel', async (req, res) => {
+  try {
+    const existing = await pgDb.getAppointment(req.params.id, req.session.userId);
+    if (!existing) return res.status(404).json({ error: 'Appointment not found' });
+    const updated = await pgDb.cancelAppointment(existing.id, req.body?.by || 'staff');
+    const mail = req.body?.send_email === false
+      ? { emailed: false }
+      : await apptSvc.sendAppointmentEmail(req.session.userId, updated, 'cancelled');
+    res.json({ success: true, appointment: updated, emailed: mail.emailed, email_error: mail.reason || null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Resend the confirmation — for the customer who deleted it, or for a booking
+// made before Gmail was connected.
+router.post('/appointments/:id/resend', async (req, res) => {
+  try {
+    const appt = await pgDb.getAppointment(req.params.id, req.session.userId);
+    if (!appt) return res.status(404).json({ error: 'Appointment not found' });
+    const kind = appt.status === 'cancelled' ? 'cancelled' : 'confirmed';
+    const mail = await apptSvc.sendAppointmentEmail(req.session.userId, appt, kind);
+    if (!mail.emailed) return res.status(400).json({ error: mail.reason || 'Could not send' });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

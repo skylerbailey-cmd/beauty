@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Your appointment</title>
+<style>
+  :root {
+    --accent: #1F6FB2;
+    --accent-soft: #DCEAF6;
+    --accent-deep: #0F4C81;
+    --cream: #F5F8FB;
+    --white: #fff;
+    --dark: #16242E;
+    --mid: #4A6478;
+    --border: #CBDCE9;
+    --danger: #A8323C;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: Georgia, serif; background: var(--cream); color: var(--dark);
+    min-height: 100vh; padding: 28px 16px 60px;
+    padding-top: calc(28px + env(safe-area-inset-top, 0px));
+  }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .card {
+    background: var(--white); border: 1px solid var(--border);
+    border-radius: 14px; padding: 26px 24px; margin-bottom: 16px;
+  }
+  .store { font-size: 1.35rem; font-weight: 700; color: var(--accent-deep); }
+  .rule { height: 3px; width: 46px; background: var(--accent); border-radius: 2px; margin: 12px 0 18px; }
+  h1 { font-size: 1.2rem; font-weight: 400; margin-bottom: 8px; }
+  .sub, .muted {
+    font-family: system-ui, -apple-system, sans-serif; font-size: .88rem;
+    line-height: 1.6; color: var(--mid);
+  }
+  .muted { font-size: .78rem; }
+  .details { background: var(--cream); border: 1px solid var(--border); border-radius: 10px; padding: 4px 16px; margin: 18px 0 4px; }
+  .row { display: flex; gap: 14px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .row:last-child { border-bottom: 0; }
+  .row dt { font-family: system-ui, sans-serif; font-size: .78rem; color: var(--mid); width: 92px; flex: none; padding-top: 2px; }
+  .row dd { font-family: system-ui, sans-serif; font-size: .95rem; font-weight: 600; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 22px; }
+  .btn {
+    font-family: system-ui, sans-serif; font-size: .92rem; font-weight: 600;
+    padding: 12px 22px; border-radius: 9px; border: 1.5px solid transparent;
+    cursor: pointer; transition: filter .15s, background .15s; flex: 1 1 auto; min-width: 140px;
+  }
+  .btn:hover { filter: brightness(1.07); }
+  .btn:disabled { opacity: .55; cursor: default; filter: none; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-outline { background: var(--white); color: var(--accent-deep); border-color: var(--border); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-small { flex: 0 0 auto; min-width: 0; padding: 9px 16px; font-size: .84rem; }
+  .pill {
+    display: inline-block; font-family: system-ui, sans-serif; font-size: .72rem;
+    font-weight: 700; letter-spacing: .5px; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 20px; background: var(--accent-soft); color: var(--accent-deep);
+  }
+  .pill.off { background: #F3E3E5; color: var(--danger); }
+  .day { margin-top: 20px; }
+  .day h3 {
+    font-family: system-ui, sans-serif; font-size: .8rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .6px; color: var(--mid); margin-bottom: 9px;
+  }
+  .slots { display: flex; flex-wrap: wrap; gap: 8px; }
+  .slot {
+    font-family: system-ui, sans-serif; font-size: .88rem; font-weight: 600;
+    padding: 10px 14px; border-radius: 8px; cursor: pointer;
+    background: var(--white); color: var(--accent-deep); border: 1.5px solid var(--border);
+  }
+  .slot:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .slot.chosen { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .note {
+    font-family: system-ui, sans-serif; font-size: .85rem; line-height: 1.55;
+    padding: 12px 14px; border-radius: 9px; margin-top: 16px;
+  }
+  .note.err { background: #F8EBEC; color: #7A2129; border: 1px solid #E4C4C8; }
+  .note.ok { background: var(--accent-soft); color: var(--accent-deep); border: 1px solid var(--border); }
+  [hidden] { display: none !important; }
+  footer { text-align: center; margin-top: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="card" id="loading">
+    <p class="sub">Loading your appointment…</p>
+  </div>
+
+  <!-- Nothing to show: a bad, expired or mistyped link. -->
+  <div class="card" id="broken" hidden>
+    <h1>We couldn't find that booking</h1>
+    <p class="sub" id="brokenMsg">The link may have expired. Please call the studio and we'll sort it out.</p>
+  </div>
+
+  <div id="main" hidden>
+    <div class="card">
+      <div class="store" id="storeName"></div>
+      <div class="rule"></div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+        <h1 id="heading">Your appointment</h1>
+        <span class="pill" id="statusPill" hidden></span>
+      </div>
+      <p class="sub" id="intro"></p>
+
+      <dl class="details" id="details"></dl>
+
+      <div class="actions" id="mainActions">
+        <button class="btn btn-primary" onclick="showReschedule()">Reschedule</button>
+        <button class="btn btn-outline" onclick="showCancel()">Cancel appointment</button>
+      </div>
+
+      <div class="note ok" id="mainNote" hidden></div>
+      <p class="muted" style="margin-top:16px" id="storeContact"></p>
+    </div>
+
+    <!-- Reschedule -->
+    <div class="card" id="rescheduleCard" hidden>
+      <h1>Choose a new time</h1>
+      <p class="sub" id="rescheduleSub"></p>
+      <div id="slotList"></div>
+      <div class="note err" id="slotError" hidden></div>
+      <div class="actions">
+        <button class="btn btn-primary" id="confirmMove" onclick="confirmReschedule()" disabled>Confirm new time</button>
+        <button class="btn btn-outline btn-small" onclick="closePanels()">Never mind</button>
+      </div>
+    </div>
+
+    <!-- Cancel -->
+    <div class="card" id="cancelCard" hidden>
+      <h1>Cancel this appointment?</h1>
+      <p class="sub">This frees the slot for someone else. If you'd rather move it, choose a new time instead — you keep your place.</p>
+      <div class="note err" id="cancelError" hidden></div>
+      <div class="actions">
+        <button class="btn btn-danger" id="confirmCancelBtn" onclick="confirmCancel()">Yes, cancel it</button>
+        <button class="btn btn-outline" onclick="closePanels(); showReschedule();">Reschedule instead</button>
+        <button class="btn btn-outline btn-small" onclick="closePanels()">Keep it</button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="muted" id="poweredBy"></footer>
+</div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const TOKEN = params.get('t') || '';
+let appt = null;
+let chosenSlot = null;
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+function show(id, on = true) { const el = $(id); if (el) el.hidden = !on; }
+
+function fail(msg) {
+  show('loading', false);
+  show('main', false);
+  show('broken', true);
+  if (msg) $('brokenMsg').textContent = msg;
+}
+
+async function api(path, options) {
+  const resp = await fetch(`/api/booking/${encodeURIComponent(TOKEN)}${path}`, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || 'Something went wrong.');
+  return data;
+}
+
+function render() {
+  const cancelled = appt.status === 'cancelled';
+  const past = appt.past;
+
+  $('storeName').textContent = appt.store.name || 'Your appointment';
+  $('heading').textContent = cancelled ? 'This appointment is cancelled'
+    : past ? 'This appointment has passed'
+    : 'Your appointment';
+
+  $('statusPill').hidden = !(cancelled || past);
+  $('statusPill').textContent = cancelled ? 'Cancelled' : past ? 'Past' : '';
+  $('statusPill').className = 'pill' + (cancelled ? ' off' : '');
+
+  $('intro').textContent = cancelled
+    ? 'Nothing further is needed. Call us any time and we\'ll find you another slot.'
+    : past
+    ? 'We hope it went well. Give us a call to book your next session.'
+    : `Hello${appt.customer_name ? ' ' + appt.customer_name.split(' ')[0] : ''} — here's what we have for you.`;
+
+  const rows = [
+    ['When', appt.when],
+    appt.treatment_name ? ['Treatment', appt.treatment_name] : null,
+    appt.employee_name ? ['With', appt.employee_name] : null,
+    appt.duration_min ? ['Length', appt.duration_min + ' minutes'] : null,
+    appt.store.address ? ['Where', appt.store.address] : null,
+  ].filter(Boolean);
+  $('details').innerHTML = rows.map(([k, v]) =>
+    `<div class="row"><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('');
+
+  // A cancelled or past booking can't be moved — the only honest thing the
+  // page can offer is the phone number.
+  show('mainActions', !cancelled && !past);
+
+  const contact = [appt.store.phone, appt.store.email].filter(Boolean).join('  ·  ');
+  $('storeContact').textContent = contact;
+  $('poweredBy').textContent = appt.store.name ? `${appt.store.name}` : '';
+
+  show('loading', false);
+  show('main', true);
+}
+
+function closePanels() {
+  show('rescheduleCard', false);
+  show('cancelCard', false);
+  show('slotError', false);
+  show('cancelError', false);
+}
+
+async function showReschedule() {
+  closePanels();
+  chosenSlot = null;
+  $('confirmMove').disabled = true;
+  show('rescheduleCard', true);
+  $('rescheduleSub').textContent = 'Loading available times…';
+  $('slotList').innerHTML = '';
+  $('rescheduleCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  try {
+    const data = await api('/slots?days=45');
+    renderSlots(data.slots || []);
+  } catch (e) {
+    $('rescheduleSub').textContent = '';
+    $('slotError').textContent = e.message;
+    show('slotError', true);
+  }
+}
+
+function renderSlots(slots) {
+  if (!slots.length) {
+    $('rescheduleSub').textContent = 'We don\'t have any open times in the next few weeks. Please give us a call and we\'ll find you one.';
+    return;
+  }
+  $('rescheduleSub').textContent =
+    `${appt.duration_min} minutes${appt.employee_name ? ' with ' + appt.employee_name : ''}. Pick a time that suits you.`;
+
+  // Group by day, in the order the server sent them (already chronological).
+  const byDate = new Map();
+  slots.forEach(s => {
+    if (!byDate.has(s.date)) byDate.set(s.date, []);
+    byDate.get(s.date).push(s);
+  });
+
+  $('slotList').innerHTML = [...byDate.entries()].map(([date, list]) => `
+    <div class="day">
+      <h3>${esc(dayHeading(date))}</h3>
+      <div class="slots">
+        ${list.map(s => `<button type="button" class="slot" data-start="${esc(s.start)}">${esc(s.label)}</button>`).join('')}
+      </div>
+    </div>`).join('');
+
+  $('slotList').querySelectorAll('.slot').forEach(btn => {
+    btn.addEventListener('click', () => {
+      $('slotList').querySelectorAll('.slot').forEach(b => b.classList.remove('chosen'));
+      btn.classList.add('chosen');
+      chosenSlot = btn.dataset.start;
+      $('confirmMove').disabled = false;
+      show('slotError', false);
+    });
+  });
+}
+
+// "Friday, October 3" — built from the date parts so the browser's own
+// timezone can't shunt it onto the day before.
+function dayHeading(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US', {
+    timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric',
+  });
+}
+
+async function confirmReschedule() {
+  if (!chosenSlot) return;
+  const btn = $('confirmMove');
+  btn.disabled = true;
+  btn.textContent = 'Moving…';
+  show('slotError', false);
+  try {
+    const data = await api('/reschedule', { method: 'POST', body: JSON.stringify({ start: chosenSlot }) });
+    appt = data.appointment;
+    closePanels();
+    render();
+    $('mainNote').textContent = data.emailed
+      ? 'Done — your appointment has been moved and a new confirmation is on its way.'
+      : 'Done — your appointment has been moved.';
+    show('mainNote', true);
+    $('mainNote').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch (e) {
+    $('slotError').textContent = e.message;
+    show('slotError', true);
+    // Whatever went wrong, the times on screen are now stale — reload them so
+    // the next click isn't aimed at a slot that has since gone.
+    try { renderSlots((await api('/slots?days=45')).slots || []); } catch (_) {}
+  } finally {
+    btn.textContent = 'Confirm new time';
+    btn.disabled = !chosenSlot;
+  }
+}
+
+function showCancel() {
+  closePanels();
+  show('cancelCard', true);
+  $('cancelCard').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+async function confirmCancel() {
+  const btn = $('confirmCancelBtn');
+  btn.disabled = true;
+  btn.textContent = 'Cancelling…';
+  show('cancelError', false);
+  try {
+    const data = await api('/cancel', { method: 'POST' });
+    appt = data.appointment;
+    closePanels();
+    render();
+    $('mainNote').textContent = data.alreadyCancelled
+      ? 'This appointment was already cancelled.'
+      : 'Your appointment has been cancelled. Thank you for letting us know.';
+    show('mainNote', true);
+  } catch (e) {
+    $('cancelError').textContent = e.message;
+    show('cancelError', true);
+  } finally {
+    btn.textContent = 'Yes, cancel it';
+    btn.disabled = false;
+  }
+}
+
+(async function init() {
+  if (!TOKEN) return fail('This link is missing its booking reference.');
+  try {
+    const data = await api('');
+    appt = data.appointment;
+    render();
+    // The email's two buttons land here with the panel already chosen, so a
+    // customer who meant to cancel doesn't have to hunt for the button twice.
+    const action = params.get('action');
+    if (appt.status === 'booked' && !appt.past) {
+      if (action === 'reschedule') showReschedule();
+      if (action === 'cancel') showCancel();
+    }
+  } catch (e) {
+    fail(e.message);
+  }
+})();
+</script>
+</body>
+</html>

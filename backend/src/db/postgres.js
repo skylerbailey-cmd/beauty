@@ -527,6 +527,70 @@ async function initSchema() {
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS payarc_merchant_id TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS payarc_env TEXT DEFAULT 'live'");
 
+  // ─── Treatment calendar ───────────────────────────────────────────────────
+  // One row per weekday per store. The store's opening hours are the outer
+  // bound on everything bookable; a closed weekday simply has open = false.
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_availability (
+    user_id TEXT NOT NULL,
+    weekday INTEGER NOT NULL,
+    open BOOLEAN DEFAULT FALSE,
+    start_time TEXT DEFAULT '10:00',
+    end_time TEXT DEFAULT '18:00',
+    PRIMARY KEY (user_id, weekday)
+  )`);
+
+  // Holidays and one-off closures. Takes precedence over the weekly hours.
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_closed_dates (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    closed_on DATE NOT NULL,
+    reason TEXT DEFAULT '',
+    UNIQUE (user_id, closed_on)
+  )`);
+
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_treatments (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    duration_min INTEGER NOT NULL DEFAULT 60,
+    active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  await migrate('CREATE INDEX IF NOT EXISTS idx_pg_treat_user ON pos_treatments(user_id)');
+
+  // The treatment and employee NAMES are copied onto the appointment, not just
+  // referenced. A customer holding a confirmation email for "HydraSphere Facial
+  // with Dana" must still read that way after the treatment is renamed or the
+  // employee leaves — the id can go stale, the printed booking cannot.
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_appointments (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    token TEXT UNIQUE NOT NULL,
+    customer_id INTEGER,
+    customer_name TEXT DEFAULT '',
+    customer_email TEXT DEFAULT '',
+    customer_phone TEXT DEFAULT '',
+    employee_id INTEGER,
+    employee_name TEXT DEFAULT '',
+    treatment_id INTEGER,
+    treatment_name TEXT DEFAULT '',
+    duration_min INTEGER NOT NULL DEFAULT 60,
+    starts_at TIMESTAMPTZ NOT NULL,
+    status TEXT NOT NULL DEFAULT 'booked',
+    notes TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    cancelled_at TIMESTAMPTZ,
+    cancelled_by TEXT DEFAULT ''
+  )`);
+  await migrate('CREATE INDEX IF NOT EXISTS idx_pg_appt_user_start ON pos_appointments(user_id, starts_at)');
+  await migrate('CREATE INDEX IF NOT EXISTS idx_pg_appt_token ON pos_appointments(token)');
+
+  // How far apart the offered start times sit, and how much notice a customer
+  // must give before booking themselves into a slot.
+  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS booking_slot_step INTEGER DEFAULT 30');
+  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS booking_lead_hours INTEGER DEFAULT 2');
+
   // One-time data migrations, tracked so they run exactly once.
   await migrate('CREATE TABLE IF NOT EXISTS pos_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ DEFAULT NOW())');
   try {
@@ -2686,7 +2750,8 @@ async function getSettings(userId) {
 
 async function updateSettings(userId, fields) {
   const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip',
-    'store_email', 'store_phone', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'payarc_token', 'payarc_merchant_id', 'payarc_env', 'payroll_paydays', 'payroll_lag', 'sale_alert_phone', 'sale_alert_carrier', 'sale_alert_enabled', 'sale_alert_recipients'];
+    'store_email', 'store_phone', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'payarc_token', 'payarc_merchant_id', 'payarc_env', 'payroll_paydays', 'payroll_lag', 'sale_alert_phone', 'sale_alert_carrier', 'sale_alert_enabled', 'sale_alert_recipients',
+    'booking_slot_step', 'booking_lead_hours'];
   const sets = [];
   const params = [];
   let idx = 1;
@@ -3096,6 +3161,201 @@ async function bridgeLegacyData(newUserId, companyName) {
   console.log(`[postgres] Bridged legacy POS data ${target} -> ${newUserId} (${companyName || 'unnamed'})`);
 }
 
+// ─── Treatment calendar ─────────────────────────────────────────────────────
+
+const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
+
+// Always seven rows back, whether or not the store has ever saved its hours.
+// The caller renders a week, so a missing Wednesday must read as "closed"
+// rather than vanish from the form.
+async function getAvailability(userId) {
+  const rows = (await query('SELECT * FROM pos_availability WHERE user_id = $1', [userId])).rows;
+  const byDay = new Map(rows.map(r => [r.weekday, r]));
+  return WEEKDAYS.map(weekday => {
+    const r = byDay.get(weekday);
+    return {
+      weekday,
+      open: r ? !!r.open : false,
+      start_time: r?.start_time || '10:00',
+      end_time: r?.end_time || '18:00',
+    };
+  });
+}
+
+async function setAvailability(userId, days) {
+  for (const d of days || []) {
+    const weekday = Number(d.weekday);
+    if (!WEEKDAYS.includes(weekday)) continue;
+    await query(
+      `INSERT INTO pos_availability (user_id, weekday, open, start_time, end_time)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (user_id, weekday)
+       DO UPDATE SET open = EXCLUDED.open, start_time = EXCLUDED.start_time, end_time = EXCLUDED.end_time`,
+      [userId, weekday, !!d.open, String(d.start_time || '10:00'), String(d.end_time || '18:00')]
+    );
+  }
+  return getAvailability(userId);
+}
+
+async function getClosedDates(userId) {
+  return (await query(
+    `SELECT id, TO_CHAR(closed_on, 'YYYY-MM-DD') AS closed_on, reason
+     FROM pos_closed_dates WHERE user_id = $1 ORDER BY closed_on`, [userId])).rows;
+}
+
+async function addClosedDate(userId, date, reason) {
+  await query(
+    `INSERT INTO pos_closed_dates (user_id, closed_on, reason) VALUES ($1, $2, $3)
+     ON CONFLICT (user_id, closed_on) DO UPDATE SET reason = EXCLUDED.reason`,
+    [userId, date, String(reason || '')]
+  );
+  return getClosedDates(userId);
+}
+
+async function deleteClosedDate(userId, id) {
+  if (asId(id) === null) return;
+  await query('DELETE FROM pos_closed_dates WHERE id = $1 AND user_id = $2', [asId(id), userId]);
+}
+
+async function getTreatments(userId, includeInactive) {
+  const sql = includeInactive
+    ? 'SELECT * FROM pos_treatments WHERE user_id = $1 ORDER BY name'
+    : 'SELECT * FROM pos_treatments WHERE user_id = $1 AND active ORDER BY name';
+  return (await query(sql, [userId])).rows;
+}
+
+// An id straight off a query string can be '' (an unset <select>) or nonsense.
+// Postgres refuses to compare those to an integer column, so a blank treatment
+// would take out the whole slot list rather than simply matching nothing.
+const asId = (v) => {
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : null;
+};
+
+async function getTreatment(id, userId) {
+  const n = asId(id);
+  if (n === null) return undefined;
+  return (await query('SELECT * FROM pos_treatments WHERE id = $1 AND user_id = $2', [n, userId])).rows[0];
+}
+
+async function createTreatment(userId, name, durationMin) {
+  return (await query(
+    `INSERT INTO pos_treatments (user_id, name, duration_min) VALUES ($1, $2, $3) RETURNING *`,
+    [userId, String(name).trim(), Math.max(5, parseInt(durationMin, 10) || 60)]
+  )).rows[0];
+}
+
+async function updateTreatment(id, userId, fields) {
+  const sets = [];
+  const params = [];
+  let i = 1;
+  if (fields.name !== undefined) { sets.push(`name = $${i++}`); params.push(String(fields.name).trim()); }
+  if (fields.duration_min !== undefined) { sets.push(`duration_min = $${i++}`); params.push(Math.max(5, parseInt(fields.duration_min, 10) || 60)); }
+  if (fields.active !== undefined) { sets.push(`active = $${i++}`); params.push(!!fields.active); }
+  if (!sets.length) return getTreatment(id, userId);
+  if (asId(id) === null) return undefined;
+  params.push(asId(id), userId);
+  return (await query(
+    `UPDATE pos_treatments SET ${sets.join(', ')} WHERE id = $${i++} AND user_id = $${i} RETURNING *`, params)).rows[0];
+}
+
+// Retired, not deleted: appointments carry their own copy of the name, but a
+// treatment that has been booked still needs its row for the reports behind it.
+async function retireTreatment(id, userId) {
+  if (asId(id) === null) return;
+  await query('UPDATE pos_treatments SET active = FALSE WHERE id = $1 AND user_id = $2', [asId(id), userId]);
+}
+
+// A URL-safe token the customer's email carries. It is the only credential on
+// the reschedule/cancel page, so it is long and random rather than guessable —
+// an incrementing id would let anyone walk the calendar.
+function appointmentToken() {
+  return require('crypto').randomBytes(24).toString('base64url');
+}
+
+async function createAppointment(a) {
+  const token = appointmentToken();
+  return (await query(
+    `INSERT INTO pos_appointments
+      (user_id, token, customer_id, customer_name, customer_email, customer_phone,
+       employee_id, employee_name, treatment_id, treatment_name, duration_min, starts_at, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+    [a.user_id, token, a.customer_id || null, a.customer_name || '', a.customer_email || '',
+     a.customer_phone || '', a.employee_id || null, a.employee_name || '', a.treatment_id || null,
+     a.treatment_name || '', a.duration_min || 60, a.starts_at, a.notes || '']
+  )).rows[0];
+}
+
+async function getAppointment(id, userId) {
+  const n = asId(id);
+  if (n === null) return undefined;
+  const sql = userId
+    ? 'SELECT * FROM pos_appointments WHERE id = $1 AND user_id = $2'
+    : 'SELECT * FROM pos_appointments WHERE id = $1';
+  return (await query(sql, userId ? [n, userId] : [n])).rows[0];
+}
+
+async function getAppointmentByToken(token) {
+  return (await query('SELECT * FROM pos_appointments WHERE token = $1', [String(token || '')])).rows[0];
+}
+
+// Every appointment that starts inside the window, cancelled ones included —
+// the calendar greys them out rather than pretending they never happened.
+async function getAppointments(userId, startIso, endIso) {
+  return (await query(
+    `SELECT * FROM pos_appointments
+     WHERE user_id = $1 AND starts_at >= $2 AND starts_at < $3
+     ORDER BY starts_at`, [userId, startIso, endIso])).rows;
+}
+
+// Just the live bookings, for working out what a slot collides with.
+async function getBookedAppointments(userId, startIso, endIso) {
+  return (await query(
+    `SELECT id, employee_id, starts_at, duration_min FROM pos_appointments
+     WHERE user_id = $1 AND status = 'booked' AND starts_at >= $2 AND starts_at < $3
+     ORDER BY starts_at`, [userId, startIso, endIso])).rows;
+}
+
+async function updateAppointment(id, fields) {
+  const allowed = ['customer_name', 'customer_email', 'customer_phone', 'employee_id',
+    'employee_name', 'treatment_id', 'treatment_name', 'duration_min', 'starts_at', 'notes', 'status'];
+  const sets = [];
+  const params = [];
+  let i = 1;
+  for (const key of allowed) {
+    if (fields[key] !== undefined) { sets.push(`${key} = $${i++}`); params.push(fields[key]); }
+  }
+  if (!sets.length) return getAppointment(id);
+  if (asId(id) === null) return undefined;
+  sets.push('updated_at = NOW()');
+  params.push(asId(id));
+  return (await query(`UPDATE pos_appointments SET ${sets.join(', ')} WHERE id = $${i} RETURNING *`, params)).rows[0];
+}
+
+async function cancelAppointment(id, by) {
+  return (await query(
+    `UPDATE pos_appointments
+     SET status = 'cancelled', cancelled_at = NOW(), cancelled_by = $2, updated_at = NOW()
+     WHERE id = $1 RETURNING *`, [asId(id), String(by || '')])).rows[0];
+}
+
+// How many appointments the store can run at once: one per person on the
+// roster. Two staff in, two customers on the table.
+async function bookingCapacity(userId) {
+  const r = await query(
+    `SELECT COUNT(*)::int AS n FROM pos_employees WHERE user_id = $1 AND COALESCE(active, 1) = 1`, [userId]);
+  return Math.max(1, r.rows[0]?.n || 0);
+}
+
+// Both halves of a company's Gmail connection, read straight from Postgres.
+// The public reschedule page has no session and no SQLite to fall back on
+// (it is wiped on every deploy), so the sending identity has to live here.
+async function getGmailAccount(userId) {
+  if (!userId) return null;
+  const r = await query('SELECT refresh_token, email FROM pos_gmail_tokens WHERE user_id = $1', [userId]);
+  return r.rows[0] || null;
+}
+
 module.exports = {
   pool,
   initSchema,
@@ -3211,4 +3471,24 @@ module.exports = {
   // Product Visibility
   getProductVisibility,
   setProductVisibility,
+  // Treatment calendar
+  getAvailability,
+  setAvailability,
+  getClosedDates,
+  addClosedDate,
+  deleteClosedDate,
+  getTreatments,
+  getTreatment,
+  createTreatment,
+  updateTreatment,
+  retireTreatment,
+  createAppointment,
+  getAppointment,
+  getAppointmentByToken,
+  getAppointments,
+  getBookedAppointments,
+  updateAppointment,
+  cancelAppointment,
+  bookingCapacity,
+  getGmailAccount,
 };

@@ -527,6 +527,7 @@
     <button class="active" data-tab="register" onclick="switchTab('register')">Register</button>
     <button data-tab="reports" onclick="switchTab('reports')">Reports</button>
     <button data-tab="customers" onclick="switchTab('customers')">Customers</button>
+    <button data-tab="calendar" onclick="switchTab('calendar')">Calendar</button>
     <button data-tab="emails" onclick="switchTab('emails')">Emails</button>
     <button data-tab="history" onclick="switchTab('history')">Transactions</button>
     <button data-tab="settings" onclick="switchTab('settings')">Settings</button>
@@ -963,6 +964,100 @@
     </div>
   </div>
 
+  <!-- ─── CALENDAR TAB (treatment sessions) ─── -->
+  <div class="tab-content" id="tab-calendar">
+    <div style="max-width:1000px;margin:0 auto;padding:20px">
+
+      <!-- The week's book -->
+      <div class="report-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+          <h3 style="margin:0" id="calWeekLabel">This week</h3>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-cancel" style="padding:7px 14px;font-size:.82rem" onclick="calShiftWeek(-1)">&larr; Previous</button>
+            <button class="btn btn-cancel" style="padding:7px 14px;font-size:.82rem" onclick="calShiftWeek(0)">This week</button>
+            <button class="btn btn-cancel" style="padding:7px 14px;font-size:.82rem" onclick="calShiftWeek(1)">Next &rarr;</button>
+            <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="openApptModal()">+ New session</button>
+          </div>
+        </div>
+        <div id="calWeekSummary" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin-top:8px"></div>
+        <div id="calWeekBody" style="margin-top:14px"></div>
+      </div>
+
+      <!-- Availability: the hours a session can be booked into -->
+      <div class="report-card">
+        <h3>Available hours</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin:6px 0 14px">
+          Sessions can only be booked inside these hours. The store can run
+          <strong id="calCapacity">—</strong> at once — one per person on the roster.
+        </p>
+        <table class="report-table">
+          <thead><tr><th style="width:120px">Day</th><th style="width:90px">Open</th><th>From</th><th>To</th></tr></thead>
+          <tbody id="calAvailBody"></tbody>
+        </table>
+        <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;margin-top:16px">
+          <div>
+            <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Offer times every</label>
+            <select id="calSlotStep" style="padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none">
+              <option value="15">15 minutes</option>
+              <option value="20">20 minutes</option>
+              <option value="30">30 minutes</option>
+              <option value="60">60 minutes</option>
+            </select>
+          </div>
+          <div>
+            <label style="display:block;font-family:system-ui,sans-serif;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px" title="How much notice a customer must give when they rebook themselves">Customer notice</label>
+            <select id="calLeadHours" style="padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none">
+              <option value="0">None</option>
+              <option value="2">2 hours</option>
+              <option value="12">12 hours</option>
+              <option value="24">24 hours</option>
+              <option value="48">48 hours</option>
+            </select>
+          </div>
+          <button class="btn btn-confirm" style="padding:9px 20px;font-size:.85rem" onclick="saveAvailability()">Save hours</button>
+          <span id="calAvailStatus" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid)"></span>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" id="calLowerGrid">
+        <!-- Treatments -->
+        <div class="report-card">
+          <h3>Treatments</h3>
+          <p style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin:6px 0 12px">
+            What can be booked, and how long each one takes.
+          </p>
+          <table class="report-table">
+            <thead><tr><th>Treatment</th><th style="width:110px">Minutes</th><th style="width:70px"></th></tr></thead>
+            <tbody id="calTreatmentBody"></tbody>
+          </table>
+          <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+            <input type="text" id="calNewTreatmentName" placeholder="Treatment name" style="flex:1;min-width:140px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+            <input type="number" id="calNewTreatmentMins" value="60" min="5" step="5" style="width:80px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+            <button class="btn btn-confirm" style="padding:8px 16px;font-size:.82rem" onclick="addTreatment()">Add</button>
+          </div>
+        </div>
+
+        <!-- Closed dates -->
+        <div class="report-card">
+          <h3>Closed dates</h3>
+          <p style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin:6px 0 12px">
+            Holidays and one-offs. These beat the weekly hours above.
+          </p>
+          <table class="report-table">
+            <thead><tr><th style="width:130px">Date</th><th>Reason</th><th style="width:70px"></th></tr></thead>
+            <tbody id="calClosedBody"></tbody>
+          </table>
+          <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+            <input type="date" id="calNewClosedDate" style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+            <input type="text" id="calNewClosedReason" placeholder="Reason (optional)" style="flex:1;min-width:120px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+            <button class="btn btn-confirm" style="padding:8px 16px;font-size:.82rem" onclick="addClosedDate()">Add</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
   <!-- ─── EMAILS TAB (embedded Email Suite) ─── -->
   <div class="tab-content" id="tab-emails">
     <iframe id="emailsFrame" data-src="/?embed=1" title="Emails" style="width:100%;height:calc(100vh - 120px);border:0;display:block"></iframe>
@@ -1251,6 +1346,73 @@
 </div>
 
 <!-- ─── Price Edit Modal ─── -->
+<!-- Book or edit a treatment session -->
+<div class="modal-overlay" id="apptModal">
+  <div class="modal" style="max-width:560px">
+    <h2 id="apptModalTitle">New session</h2>
+    <p class="sub" id="apptModalSub">The customer gets a confirmation email with buttons to reschedule or cancel.</p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="field" style="grid-column:1 / -1">
+        <label>Customer name</label>
+        <input type="text" id="apptName" placeholder="Full name" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input type="email" id="apptEmail" placeholder="name@example.com" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Phone</label>
+        <input type="tel" id="apptPhone" placeholder="(505) 555-0123" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Treatment</label>
+        <select id="apptTreatment" onchange="onApptTreatmentChange()" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.95rem;font-family:system-ui,sans-serif;outline:none"></select>
+      </div>
+      <div class="field">
+        <label>With</label>
+        <select id="apptEmployee" onchange="loadApptSlots()" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.95rem;font-family:system-ui,sans-serif;outline:none"></select>
+      </div>
+      <div class="field">
+        <label>Date</label>
+        <input type="date" id="apptDate" onchange="loadApptSlots()">
+      </div>
+      <div class="field">
+        <label>Start time <span id="apptDurationHint" style="text-transform:none;letter-spacing:0;font-weight:400"></span></label>
+        <input type="time" id="apptTime" step="300">
+      </div>
+    </div>
+
+    <!-- Free slots for the chosen day. Clicking one fills the time box; staff
+         can still type any time and override the clash if they mean to. -->
+    <div id="apptSlotsWrap" style="margin:-4px 0 14px">
+      <div style="font-family:system-ui,sans-serif;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:6px">Open times</div>
+      <div id="apptSlots" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
+
+    <div class="field">
+      <label>Notes <span style="text-transform:none;letter-spacing:0;font-weight:400">(staff only — not in the email)</span></label>
+      <input type="text" id="apptNotes" placeholder="Anything the specialist should know">
+    </div>
+
+    <label style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid);cursor:pointer">
+      <input type="checkbox" id="apptSendEmail" checked style="width:16px;height:16px;cursor:pointer">
+      Email the customer their confirmation
+    </label>
+
+    <div id="apptError" style="display:none;font-family:system-ui,sans-serif;font-size:.85rem;color:#A8323C;background:#F8EBEC;border:1px solid #E4C4C8;border-radius:8px;padding:10px 12px;margin-top:14px"></div>
+
+    <div class="modal-actions" style="justify-content:space-between">
+      <button class="btn btn-cancel" id="apptCancelSessionBtn" style="display:none;background:#F8EBEC;color:#7A2129;border-color:#E4C4C8 !important" onclick="cancelAppointment()">Cancel session</button>
+      <div style="display:flex;gap:10px;margin-left:auto">
+        <button class="btn btn-cancel" id="apptResendBtn" style="display:none" onclick="resendAppointment()">Resend email</button>
+        <button class="btn btn-cancel" onclick="closeApptModal()">Close</button>
+        <button class="btn btn-confirm" id="apptSaveBtn" onclick="saveAppointment()">Book session</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="priceEditModal">
   <div class="modal" style="max-width:380px">
     <h2 id="priceEditName">Set Price</h2>
@@ -6089,6 +6251,7 @@ function loadTabData(tabName) {
   if (tabName === 'history') loadTransactions();
   if (tabName === 'reports') { loadReports(); loadTodayLeaderboard(); }
   if (tabName === 'customers') loadCustomers();
+  if (tabName === 'calendar') loadCalendar();
   if (tabName === 'emails') {
     const f = document.getElementById('emailsFrame');
     if (f && !f.src) f.src = f.dataset.src; // load once, on first open
@@ -6101,9 +6264,10 @@ function loadTabData(tabName) {
 // company's data loads — or while a PIN-gated tab waits to be unlocked.
 function clearCompanyScopedViews() {
   ['txHistoryBody', 'custReportBody', 'empReportBody', 'prodReportBody', 'leaderboard',
-   'todayLeaderboard', 'empPersonalBody', 'flaggedReturnsBody', 'salesSummary', 'batchBody']
+   'todayLeaderboard', 'empPersonalBody', 'flaggedReturnsBody', 'salesSummary', 'batchBody',
+   'calWeekBody', 'calAvailBody', 'calTreatmentBody', 'calClosedBody']
     .forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
-  ['txSummary', 'custFilterSummary', 'importStatus', 'batchStatus']
+  ['txSummary', 'custFilterSummary', 'importStatus', 'batchStatus', 'calWeekSummary']
     .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ''; });
   const flagged = document.getElementById('flaggedReturnsCard');
   if (flagged) flagged.style.display = 'none';
@@ -7928,6 +8092,486 @@ async function switchAccount(email) {
 function addNewAccount() {
   document.getElementById('companySwitcherMenu').classList.remove('show');
   window.location.href = '/';
+}
+
+// ─── Calendar: treatment sessions ───────────────────────────────────────────
+//
+// Dates here are plain YYYY-MM-DD strings on the STORE's clock, never Date
+// objects built from the browser's. A laptop set to another timezone must not
+// shift which day a session lands on.
+
+let calWeekStart = null;        // Sunday of the week on screen, YYYY-MM-DD
+let calTimezone = 'America/Denver';
+let calAppointments = [];
+let calTreatments = [];
+let calEmployees = [];
+let calAvailability = [];
+let calClosedDates = [];
+let calEditingId = null;        // the session open in the modal, if it exists already
+
+const CAL_DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// Today, on the store's clock.
+function calToday() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: calTimezone });
+}
+
+// Date arithmetic on the string itself, via noon UTC — the one hour of the day
+// that is the same date in every timezone the stores could ever run in.
+function calAddDays(dateStr, n) {
+  const d = new Date(`${dateStr}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function calWeekdayOf(dateStr) {
+  return new Date(`${dateStr}T12:00:00Z`).getUTCDay();
+}
+
+function calSundayOf(dateStr) {
+  return calAddDays(dateStr, -calWeekdayOf(dateStr));
+}
+
+function calDayLabel(dateStr, opts) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-US',
+    Object.assign({ timeZone: 'UTC', weekday: 'long', month: 'short', day: 'numeric' }, opts || {}));
+}
+
+async function loadCalendar() {
+  try {
+    const [availResp, treatResp, empResp] = await Promise.all([
+      fetch(`${API}/api/pos/availability`, { credentials: 'include' }),
+      fetch(`${API}/api/pos/treatments`, { credentials: 'include' }),
+      fetch(`${API}/api/pos/employees`, { credentials: 'include' }),
+    ]);
+    const avail = await availResp.json();
+    calTimezone = avail.timezone || calTimezone;
+    calAvailability = avail.days || [];
+    calClosedDates = avail.closed_dates || [];
+    calTreatments = (await treatResp.json()).treatments || [];
+    calEmployees = ((await empResp.json()).employees || []).filter(e => e.active);
+
+    document.getElementById('calCapacity').textContent =
+      `${avail.capacity} session${avail.capacity === 1 ? '' : 's'}`;
+    document.getElementById('calSlotStep').value = String(avail.slot_step || 30);
+    document.getElementById('calLeadHours').value = String(avail.lead_hours ?? 2);
+
+    renderAvailability();
+    renderTreatments();
+    renderClosedDates();
+
+    if (!calWeekStart) calWeekStart = calSundayOf(calToday());
+    await loadCalendarWeek();
+  } catch (err) {
+    document.getElementById('calWeekSummary').textContent = 'Could not load the calendar: ' + err.message;
+  }
+}
+
+function calShiftWeek(dir) {
+  calWeekStart = dir === 0 ? calSundayOf(calToday()) : calAddDays(calWeekStart, dir * 7);
+  loadCalendarWeek();
+}
+
+async function loadCalendarWeek() {
+  const end = calAddDays(calWeekStart, 6);
+  document.getElementById('calWeekLabel').textContent =
+    `${calDayLabel(calWeekStart, { weekday: undefined })} – ${calDayLabel(end, { weekday: undefined, year: 'numeric' })}`;
+  const resp = await fetch(`${API}/api/pos/appointments?start=${calWeekStart}&end=${end}`, { credentials: 'include' });
+  const data = await resp.json();
+  calAppointments = data.appointments || [];
+  renderCalendarWeek();
+}
+
+function renderCalendarWeek() {
+  const today = calToday();
+  const closed = new Set(calClosedDates.map(c => c.closed_on));
+  const booked = calAppointments.filter(a => a.status === 'booked');
+  document.getElementById('calWeekSummary').textContent =
+    booked.length === 0 ? 'Nothing booked this week.'
+      : `${booked.length} session${booked.length === 1 ? '' : 's'} booked`;
+
+  const days = [];
+  for (let i = 0; i < 7; i++) days.push(calAddDays(calWeekStart, i));
+
+  document.getElementById('calWeekBody').innerHTML = days.map(date => {
+    const dayAppts = calAppointments.filter(a => a.date === date);
+    const hours = calAvailability.find(a => a.weekday === calWeekdayOf(date));
+    const isClosed = closed.has(date) || !hours?.open;
+    const closedReason = calClosedDates.find(c => c.closed_on === date)?.reason;
+    const isToday = date === today;
+
+    const rows = dayAppts.length ? dayAppts.map(a => {
+      const cancelled = a.status === 'cancelled';
+      return `
+        <div onclick="openApptModal(${a.id})" style="display:flex;gap:12px;align-items:baseline;padding:8px 10px;border-radius:8px;cursor:pointer;background:${cancelled ? 'transparent' : 'var(--accent-soft)'};${cancelled ? 'opacity:.55' : ''}" onmouseover="this.style.outline='1.5px solid var(--accent)'" onmouseout="this.style.outline='none'">
+          <span style="font-family:system-ui,sans-serif;font-size:.85rem;font-weight:700;color:var(--accent-deep);min-width:76px">${escapeHtml(a.time_label)}</span>
+          <span style="font-family:system-ui,sans-serif;font-size:.85rem;${cancelled ? 'text-decoration:line-through' : ''}">
+            <strong>${escapeHtml(a.customer_name)}</strong>${a.treatment_name ? ' · ' + escapeHtml(a.treatment_name) : ''}${a.employee_name ? ' · with ' + escapeHtml(a.employee_name) : ''}
+          </span>
+          ${cancelled ? '<span style="font-family:system-ui,sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--danger)">Cancelled</span>' : ''}
+        </div>`;
+    }).join('') : `<div style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);padding:6px 10px">${isClosed ? (closedReason ? 'Closed — ' + escapeHtml(closedReason) : 'Closed') : 'Nothing booked'}</div>`;
+
+    return `
+      <div style="border-top:1px solid var(--border);padding:10px 0">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+          <div style="font-family:system-ui,sans-serif;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:${isToday ? 'var(--accent)' : 'var(--mid)'}">
+            ${escapeHtml(calDayLabel(date))}${isToday ? ' · today' : ''}
+          </div>
+          <div style="font-family:system-ui,sans-serif;font-size:.75rem;color:var(--mid)">
+            ${isClosed ? '' : escapeHtml(`${hours.start_time}–${hours.end_time}`)}
+          </div>
+        </div>
+        ${rows}
+      </div>`;
+  }).join('');
+}
+
+// ─── Availability ───────────────────────────────────────────────────────────
+
+function renderAvailability() {
+  document.getElementById('calAvailBody').innerHTML = calAvailability.map(d => `
+    <tr>
+      <td style="font-weight:600">${CAL_DAY_NAMES[d.weekday]}</td>
+      <td><input type="checkbox" id="calOpen${d.weekday}" ${d.open ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer"></td>
+      <td><input type="time" id="calFrom${d.weekday}" value="${d.start_time}" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none"></td>
+      <td><input type="time" id="calTo${d.weekday}" value="${d.end_time}" style="padding:6px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none"></td>
+    </tr>`).join('');
+}
+
+async function saveAvailability() {
+  const status = document.getElementById('calAvailStatus');
+  const days = calAvailability.map(d => ({
+    weekday: d.weekday,
+    open: document.getElementById(`calOpen${d.weekday}`).checked,
+    start_time: document.getElementById(`calFrom${d.weekday}`).value || '10:00',
+    end_time: document.getElementById(`calTo${d.weekday}`).value || '18:00',
+  }));
+  status.textContent = 'Saving…';
+  try {
+    const resp = await fetch(`${API}/api/pos/availability`, {
+      method: 'PUT', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        days,
+        slot_step: document.getElementById('calSlotStep').value,
+        lead_hours: document.getElementById('calLeadHours').value,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Save failed');
+    calAvailability = data.days || days;
+    status.textContent = '';
+    showSuccessToast('Hours saved');
+    renderCalendarWeek();
+  } catch (err) {
+    status.textContent = err.message;
+  }
+}
+
+// ─── Closed dates ───────────────────────────────────────────────────────────
+
+function renderClosedDates() {
+  const body = document.getElementById('calClosedBody');
+  if (!calClosedDates.length) {
+    body.innerHTML = '<tr><td colspan="3" style="color:var(--mid);font-family:system-ui,sans-serif;font-size:.82rem">None — the weekly hours apply all year.</td></tr>';
+    return;
+  }
+  body.innerHTML = calClosedDates.map(c => `
+    <tr>
+      <td>${escapeHtml(calDayLabel(c.closed_on, { weekday: 'short', year: 'numeric' }))}</td>
+      <td style="color:var(--mid)">${escapeHtml(c.reason || '')}</td>
+      <td><button class="btn btn-cancel" style="padding:4px 10px;font-size:.75rem" onclick="removeClosedDate(${c.id})">Remove</button></td>
+    </tr>`).join('');
+}
+
+async function addClosedDate() {
+  const date = document.getElementById('calNewClosedDate').value;
+  if (!date) return alert('Pick a date to close.');
+  const reason = document.getElementById('calNewClosedReason').value;
+  const resp = await fetch(`${API}/api/pos/availability/closed-dates`, {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ date, reason }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) return alert(data.error || 'Could not add that date');
+  calClosedDates = data.closed_dates || [];
+  document.getElementById('calNewClosedDate').value = '';
+  document.getElementById('calNewClosedReason').value = '';
+  renderClosedDates();
+  renderCalendarWeek();
+}
+
+async function removeClosedDate(id) {
+  const resp = await fetch(`${API}/api/pos/availability/closed-dates/${id}`, {
+    method: 'DELETE', credentials: 'include',
+  });
+  const data = await resp.json();
+  if (!resp.ok) return alert(data.error || 'Could not remove that date');
+  calClosedDates = data.closed_dates || [];
+  renderClosedDates();
+  renderCalendarWeek();
+}
+
+// ─── Treatments ─────────────────────────────────────────────────────────────
+
+function renderTreatments() {
+  const body = document.getElementById('calTreatmentBody');
+  if (!calTreatments.length) {
+    body.innerHTML = '<tr><td colspan="3" style="color:var(--mid);font-family:system-ui,sans-serif;font-size:.82rem">No treatments yet. Add one below.</td></tr>';
+    return;
+  }
+  body.innerHTML = calTreatments.map(t => `
+    <tr>
+      <td><input type="text" value="${escapeHtml(t.name)}" onchange="updateTreatment(${t.id}, 'name', this.value)" style="width:100%;padding:5px 8px;border:1.5px solid transparent;border-radius:6px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none;background:transparent" onfocus="this.style.borderColor='var(--border)'" onblur="this.style.borderColor='transparent'"></td>
+      <td><input type="number" min="5" step="5" value="${t.duration_min}" onchange="updateTreatment(${t.id}, 'duration_min', this.value)" style="width:70px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none"></td>
+      <td><button class="btn btn-cancel" style="padding:4px 10px;font-size:.75rem" onclick="retireTreatment(${t.id}, '${escapeHtml(t.name).replace(/'/g, "\\'")}')">Retire</button></td>
+    </tr>`).join('');
+}
+
+async function addTreatment() {
+  const name = document.getElementById('calNewTreatmentName').value.trim();
+  const mins = document.getElementById('calNewTreatmentMins').value;
+  if (!name) return alert('Name the treatment.');
+  const resp = await fetch(`${API}/api/pos/treatments`, {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, duration_min: mins }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) return alert(data.error || 'Could not add that treatment');
+  calTreatments.push(data.treatment);
+  calTreatments.sort((a, b) => a.name.localeCompare(b.name));
+  document.getElementById('calNewTreatmentName').value = '';
+  document.getElementById('calNewTreatmentMins').value = '60';
+  renderTreatments();
+}
+
+async function updateTreatment(id, field, value) {
+  const resp = await fetch(`${API}/api/pos/treatments/${id}`, {
+    method: 'PATCH', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ [field]: value }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) return alert(data.error || 'Could not save that change');
+  const i = calTreatments.findIndex(t => t.id === id);
+  if (i >= 0) calTreatments[i] = data.treatment;
+}
+
+// Retired, not deleted: sessions already booked keep their own copy of the
+// name, and the ones in the book behind us still need to read correctly.
+async function retireTreatment(id, name) {
+  if (!confirm(`Retire "${name}"? Sessions already booked keep it; it just stops being offered.`)) return;
+  const resp = await fetch(`${API}/api/pos/treatments/${id}`, { method: 'DELETE', credentials: 'include' });
+  const data = await resp.json();
+  if (!resp.ok) return alert(data.error || 'Could not retire that treatment');
+  calTreatments = data.treatments || [];
+  renderTreatments();
+}
+
+// ─── Booking a session ──────────────────────────────────────────────────────
+
+function openApptModal(id) {
+  const appt = id ? calAppointments.find(a => a.id === id) : null;
+  calEditingId = appt ? appt.id : null;
+
+  document.getElementById('apptModalTitle').textContent = appt ? 'Session' : 'New session';
+  document.getElementById('apptModalSub').textContent = appt
+    ? (appt.status === 'cancelled' ? 'This session is cancelled.' : 'Changing the time emails the customer a fresh confirmation.')
+    : 'The customer gets a confirmation email with buttons to reschedule or cancel.';
+
+  document.getElementById('apptTreatment').innerHTML =
+    '<option value="">— none —</option>' +
+    calTreatments.map(t => `<option value="${t.id}" data-mins="${t.duration_min}">${escapeHtml(t.name)} · ${t.duration_min} min</option>`).join('');
+  document.getElementById('apptEmployee').innerHTML =
+    '<option value="">Anyone</option>' +
+    calEmployees.map(e => `<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('');
+
+  document.getElementById('apptName').value = appt?.customer_name || '';
+  document.getElementById('apptEmail').value = appt?.customer_email || '';
+  document.getElementById('apptPhone').value = appt?.customer_phone || '';
+  document.getElementById('apptNotes').value = appt?.notes || '';
+  document.getElementById('apptTreatment').value = appt?.treatment_id || '';
+  document.getElementById('apptEmployee').value = appt?.employee_id || '';
+  document.getElementById('apptDate').value = appt ? appt.date : calToday();
+  document.getElementById('apptTime').value = appt ? calTimeValue(appt.starts_at) : '';
+  document.getElementById('apptSendEmail').checked = true;
+  document.getElementById('apptSaveBtn').textContent = appt ? 'Save changes' : 'Book session';
+  document.getElementById('apptCancelSessionBtn').style.display = appt && appt.status === 'booked' ? '' : 'none';
+  document.getElementById('apptResendBtn').style.display = appt ? '' : 'none';
+  document.getElementById('apptError').style.display = 'none';
+
+  onApptTreatmentChange();
+  document.getElementById('apptModal').classList.add('show');
+  loadApptSlots();
+}
+
+// The HH:MM an instant falls on, on the store's clock — what the time input wants.
+function calTimeValue(iso) {
+  return new Date(iso).toLocaleTimeString('en-GB', {
+    timeZone: calTimezone, hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+}
+
+function closeApptModal() {
+  document.getElementById('apptModal').classList.remove('show');
+  calEditingId = null;
+}
+
+function apptDurationMins() {
+  const opt = document.getElementById('apptTreatment').selectedOptions[0];
+  return parseInt(opt?.dataset.mins, 10) || 60;
+}
+
+function onApptTreatmentChange() {
+  const mins = apptDurationMins();
+  document.getElementById('apptDurationHint').textContent = `· ${mins} min`;
+  loadApptSlots();
+}
+
+// The open times for the chosen day. Staff aren't limited to them — the time
+// box takes anything — but an appointment offered at a glance beats one worked
+// out on paper.
+async function loadApptSlots() {
+  const date = document.getElementById('apptDate').value;
+  const wrap = document.getElementById('apptSlots');
+  if (!date) { wrap.innerHTML = ''; return; }
+  wrap.innerHTML = '<span style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid)">Checking…</span>';
+
+  const qs = new URLSearchParams({ date, duration_min: String(apptDurationMins()) });
+  const empId = document.getElementById('apptEmployee').value;
+  if (empId) qs.set('employee_id', empId);
+  if (calEditingId) qs.set('exclude_id', String(calEditingId));
+
+  try {
+    const resp = await fetch(`${API}/api/pos/appointments/slots?${qs}`, { credentials: 'include' });
+    const data = await resp.json();
+    const slots = data.slots || [];
+    if (!slots.length) {
+      wrap.innerHTML = '<span style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid)">Nothing open that day — the store may be closed, or fully booked. You can still type a time.</span>';
+      return;
+    }
+    const chosen = document.getElementById('apptTime').value;
+    wrap.innerHTML = slots.map(s => `
+      <button type="button" onclick="pickApptSlot('${s.time}')"
+        style="font-family:system-ui,sans-serif;font-size:.8rem;font-weight:600;padding:6px 11px;border-radius:7px;cursor:pointer;border:1.5px solid ${s.time === chosen ? 'var(--accent)' : 'var(--border)'};background:${s.time === chosen ? 'var(--accent)' : 'var(--white)'};color:${s.time === chosen ? '#fff' : 'var(--accent-deep)'}">${escapeHtml(s.label)}</button>`).join('');
+  } catch (err) {
+    wrap.innerHTML = '';
+  }
+}
+
+function pickApptSlot(time) {
+  document.getElementById('apptTime').value = time;
+  loadApptSlots();
+}
+
+function apptError(msg) {
+  const el = document.getElementById('apptError');
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+
+async function saveAppointment() {
+  const name = document.getElementById('apptName').value.trim();
+  const date = document.getElementById('apptDate').value;
+  const time = document.getElementById('apptTime').value;
+  if (!name) return apptError('Who is the session for?');
+  if (!date || !time) return apptError('Pick a date and a start time.');
+
+  const treatmentId = document.getElementById('apptTreatment').value;
+  const body = {
+    customer_name: name,
+    customer_email: document.getElementById('apptEmail').value.trim(),
+    customer_phone: document.getElementById('apptPhone').value.trim(),
+    treatment_id: treatmentId || null,
+    employee_id: document.getElementById('apptEmployee').value || null,
+    duration_min: apptDurationMins(),
+    // Sent without a timezone on purpose: the server reads it on the store's
+    // clock, so a laptop travelling with someone can't move the booking.
+    starts_at: `${date}T${time}`,
+    notes: document.getElementById('apptNotes').value.trim(),
+    send_email: document.getElementById('apptSendEmail').checked,
+  };
+
+  const btn = document.getElementById('apptSaveBtn');
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+  apptError('');
+
+  try {
+    let data = await postAppointment(body);
+    // The server refuses a clash or an out-of-hours time, but says when it is
+    // a judgement call rather than a mistake — so staff can insist.
+    if (data.overridable) {
+      btn.disabled = false;
+      btn.textContent = original;
+      if (!confirm(`${data.error}\n\nBook it anyway?`)) return apptError(data.error);
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      data = await postAppointment({ ...body, force: true });
+    }
+    if (data.error) throw new Error(data.error);
+
+    closeApptModal();
+    await loadCalendarWeek();
+    showSuccessToast(data.emailed
+      ? (calEditingId ? 'Session updated — customer emailed' : 'Session booked — customer emailed')
+      : (calEditingId ? 'Session updated' : 'Session booked'));
+    if (body.customer_email && body.send_email && !data.emailed) {
+      alert('The session is booked, but the email didn\'t go out: ' + (data.email_error || 'unknown reason') +
+        '\n\nYou can resend it from the session once that\'s sorted.');
+    }
+  } catch (err) {
+    apptError(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
+async function postAppointment(body) {
+  const url = calEditingId ? `${API}/api/pos/appointments/${calEditingId}` : `${API}/api/pos/appointments`;
+  const resp = await fetch(url, {
+    method: calEditingId ? 'PATCH' : 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return resp.json();
+}
+
+async function cancelAppointment() {
+  if (!calEditingId) return;
+  const appt = calAppointments.find(a => a.id === calEditingId);
+  const tellThem = appt?.customer_email
+    ? confirm(`Cancel this session?\n\nOK — cancel and email ${appt.customer_email}.\nCancel — go back without changing anything.`)
+    : confirm('Cancel this session?');
+  if (!tellThem) return;
+
+  const resp = await fetch(`${API}/api/pos/appointments/${calEditingId}/cancel`, {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ by: 'staff' }),
+  });
+  const data = await resp.json();
+  if (!resp.ok) return apptError(data.error || 'Could not cancel');
+  closeApptModal();
+  await loadCalendarWeek();
+  showSuccessToast(data.emailed ? 'Session cancelled — customer emailed' : 'Session cancelled');
+}
+
+async function resendAppointment() {
+  if (!calEditingId) return;
+  const resp = await fetch(`${API}/api/pos/appointments/${calEditingId}/resend`, {
+    method: 'POST', credentials: 'include',
+  });
+  const data = await resp.json();
+  if (!resp.ok) return apptError(data.error || 'Could not resend');
+  showSuccessToast('Confirmation resent');
 }
 
 // ─── Logout ─────────────────────────────────────────────────────────────────

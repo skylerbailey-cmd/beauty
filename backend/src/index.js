@@ -13,6 +13,7 @@ const emailRoutes = require('./routes/emails');
 const webhookRoutes = require('./routes/webhook');
 const { router: welcomeRoutes } = require('./routes/welcome');
 const posRoutes = require('./routes/pos');
+const bookingRoutes = require('./routes/booking');
 const { initSchema: initPostgres } = require('./db/postgres');
 const { getAllUsers } = require('./db');
 const { setupGmailWatch } = require('./services/gmail');
@@ -120,6 +121,10 @@ app.use('/auth', authRoutes);
 app.use('/api/emails', emailRoutes);
 app.use('/api/welcome', welcomeRoutes);
 app.use('/api/pos', posRoutes);
+// Public — the customer's reschedule/cancel page, reached from a link in their
+// confirmation email. Mounted outside /api/pos precisely because everything
+// under there requires a signed-in session.
+app.use('/api/booking', bookingRoutes);
 app.use('/webhook', webhookRoutes);
 
 // Health check
