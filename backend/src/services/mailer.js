@@ -13,20 +13,98 @@
 
 const nodemailer = require('nodemailer');
 
-// The address shops receive sign-in links from. Gmail refuses to send as an
-// address the account does not own, so this is the account the app password
-// belongs to.
-const from = () => (process.env.PLATFORM_EMAIL || '').trim();
+// Two ways to send, tried in that order.
+//
+// OAuth first, because it is the credential this server already holds and
+// keeps working: a refresh token is tied to an account that can tell us its
+// own address, so nothing has to be configured twice and nothing can drift
+// out of agreement with itself. An app password, by contrast, is a bare
+// secret with no way to ask who it belongs to — name the wrong sender beside
+// it and Gmail simply answers "username and password not accepted", which is
+// indistinguishable from a revoked password.
+//
+// SMTP stays as the fallback for a deployment that has an app password and no
+// OAuth client.
+
+const refreshToken = () => (process.env.PLATFORM_GMAIL_REFRESH_TOKEN
+  || process.env.GLOW_GMAIL_REFRESH_TOKEN || '').trim();
+const hasOAuth = () => Boolean(
+  refreshToken() && process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET,
+);
+
+// The address shops receive sign-in links from. Under OAuth this is
+// discovered from the account itself; PLATFORM_EMAIL only overrides it.
+let discovered = null;
+const from = () => (process.env.PLATFORM_EMAIL || '').trim() || discovered || '';
 const appPassword = () => (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
 
 function configured() {
-  return Boolean(from() && appPassword());
+  return hasOAuth() || Boolean(from() && appPassword());
+}
+
+function gmailClient() {
+  const { google } = require('googleapis');
+  const auth = new google.auth.OAuth2(
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    process.env.GOOGLE_REDIRECT_URI,
+  );
+  auth.setCredentials({ refresh_token: refreshToken() });
+  return google.gmail({ version: 'v1', auth });
+}
+
+/** Ask the account who it is, so the From line cannot disagree with it. */
+async function senderAddress() {
+  if (process.env.PLATFORM_EMAIL) return process.env.PLATFORM_EMAIL.trim();
+  if (discovered) return discovered;
+  const res = await gmailClient().users.getProfile({ userId: 'me' });
+  discovered = res.data.emailAddress;
+  return discovered;
+}
+
+const b64url = (s) => Buffer.from(s).toString('base64')
+  .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+async function sendViaOAuth({ to, subject, text, html }) {
+  const address = await senderAddress();
+  // multipart/alternative: plenty of shop inboxes strip HTML, and a sign-in
+  // mail whose only content is a styled button arrives empty.
+  const boundary = 'skysale-' + Math.random().toString(36).slice(2);
+  const raw = [
+    `From: "SkySale" <${address}>`,
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    `Reply-To: ${process.env.SUPPORT_EMAIL || address}`,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/plain; charset=utf-8',
+    '',
+    text,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/html; charset=utf-8',
+    '',
+    html,
+    '',
+    `--${boundary}--`,
+  ].join('\r\n');
+
+  await gmailClient().users.messages.send({
+    userId: 'me',
+    requestBody: { raw: b64url(raw) },
+  });
+  return { messageId: 'gmail' };
 }
 
 let cached = null;
 function transport() {
   if (cached) return cached;
-  if (!configured()) {
+  // Specifically the SMTP credentials — configured() is also true when only
+  // OAuth is set up, and building a transport with an empty password would
+  // fail far away from here with a confusing message.
+  if (!(from() && appPassword())) {
     const e = new Error('Email is not configured on this server.');
     e.status = 503;
     throw e;
@@ -41,21 +119,39 @@ function transport() {
 /** Does the configured mailbox actually accept us? Used by the health check. */
 async function verifyMailer() {
   if (!configured()) {
-    return { ok: false, reason: 'PLATFORM_EMAIL or GMAIL_APP_PASSWORD is not set.' };
+    return {
+      ok: false,
+      reason: 'Neither a Gmail refresh token nor PLATFORM_EMAIL + GMAIL_APP_PASSWORD is set.',
+    };
+  }
+  if (hasOAuth()) {
+    try {
+      return { ok: true, via: 'oauth', from: await senderAddress() };
+    } catch (e) {
+      // A refresh token that has been revoked fails here rather than on the
+      // first shop trying to sign in. Fall through to SMTP if there is one.
+      if (!(from() && appPassword())) return { ok: false, reason: 'OAuth: ' + e.message };
+    }
   }
   try {
     await transport().verify();
-    return { ok: true, from: from() };
+    return { ok: true, via: 'smtp', from: from() };
   } catch (e) {
-    // An app password that has been revoked fails here rather than on the
-    // first person trying to sign in.
     cached = null;
-    return { ok: false, reason: e.message };
+    return { ok: false, reason: 'SMTP: ' + e.message };
   }
 }
 
 async function send({ to, subject, text, html }) {
-  const info = await transport().sendMail({
+  if (hasOAuth()) {
+    try {
+      return await sendViaOAuth({ to, subject, text, html });
+    } catch (e) {
+      console.warn('[mail] OAuth send failed, trying SMTP:', e.message);
+      if (!(from() && appPassword())) throw e;
+    }
+  }
+  return transport().sendMail({
     from: `SkySale <${from()}>`,
     to,
     subject,
@@ -65,7 +161,6 @@ async function send({ to, subject, text, html }) {
     // for help, and they should reach a person rather than bounce.
     replyTo: process.env.SUPPORT_EMAIL || from(),
   });
-  return info;
 }
 
 const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => (
