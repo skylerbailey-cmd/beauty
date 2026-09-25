@@ -58,9 +58,13 @@ function emailLoginAllowed() {
 
 router.post('/web-login', (req, res) => {
   if (!emailLoginAllowed()) {
+    // Names the way in that actually exists. Google is still offered, but
+    // the link is what most shops will use and what the sign-in screen leads
+    // with, and pointing at the wrong one reads as "you cannot get in".
     return res.status(403).json({
-      error: 'Sign in with Google.',
+      error: 'Signing in with an email address alone is no longer possible. Ask for a sign-in link instead.',
       useGoogle: true,
+      signInUrl: '/signup.html',
     });
   }
   const { email, companyName } = req.body;
