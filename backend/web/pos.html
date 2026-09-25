@@ -1504,58 +1504,11 @@
       <div class="report-card" data-sgroup="brands" style="margin-top:16px">
         <h3>Product Brands &amp; Catalog</h3>
         <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Select brands and configure which products are available. Set prices and minimum price thresholds.</p>
-        <div id="brandCheckboxes" style="display:flex;flex-direction:column;gap:10px">
-          <div class="brand-config-row" data-brand-key="avologi">
-            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
-              <input type="checkbox" value="avologi" onchange="saveBrands()" style="accent-color:var(--accent-deep)" />
-              <div style="flex:1"><div style="font-weight:600;font-size:.88rem;color:var(--dark)">Avologi</div><div style="font-size:.72rem;color:var(--mid)">LED and laser devices</div></div>
-              <button onclick="toggleBrandProducts('avologi')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--accent-deep)">Products</button>
-            </div>
-            <div class="brand-products-panel" id="brandPanel-avologi" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:400px;overflow-y:auto"></div>
-          </div>
-          <div class="brand-config-row" data-brand-key="avinichi">
-            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
-              <input type="checkbox" value="avinichi" onchange="saveBrands()" style="accent-color:var(--accent-deep)" />
-              <div style="flex:1"><div style="font-weight:600;font-size:.88rem;color:var(--dark)">Avinichi</div><div style="font-size:.72rem;color:var(--mid)">Noni-infused luxury skincare</div></div>
-              <button onclick="toggleBrandProducts('avinichi')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--accent-deep)">Products</button>
-            </div>
-            <div class="brand-products-panel" id="brandPanel-avinichi" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:400px;overflow-y:auto"></div>
-          </div>
-          <div class="brand-config-row" data-brand-key="hydrasphere">
-            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
-              <input type="checkbox" value="hydrasphere" onchange="saveBrands()" style="accent-color:var(--accent-deep)" />
-              <div style="flex:1"><div style="font-weight:600;font-size:.88rem;color:var(--dark)">HydraSphere Plus</div><div style="font-size:.72rem;color:var(--mid)">Hydrogen-infused skincare &amp; SPF</div></div>
-              <button onclick="toggleBrandProducts('hydrasphere')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--accent-deep)">Products</button>
-            </div>
-            <div class="brand-products-panel" id="brandPanel-hydrasphere" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:400px;overflow-y:auto"></div>
-          </div>
-          <div class="brand-config-row" data-brand-key="spacetouch">
-            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
-              <input type="checkbox" value="spacetouch" onchange="saveBrands()" style="accent-color:var(--accent-deep)" />
-              <div style="flex:1"><div style="font-weight:600;font-size:.88rem;color:var(--dark)">SpaceTouch</div><div style="font-size:.72rem;color:var(--mid)">Full-body LED therapy devices</div></div>
-              <button onclick="toggleBrandProducts('spacetouch')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--accent-deep)">Products</button>
-            </div>
-            <div class="brand-products-panel" id="brandPanel-spacetouch" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:400px;overflow-y:auto"></div>
-          </div>
-          <div class="brand-config-row" data-brand-key="lumieres">
-            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
-              <input type="checkbox" value="lumieres" onchange="saveBrands()" style="accent-color:var(--accent-deep)" />
-              <div style="flex:1"><div style="font-weight:600;font-size:.88rem;color:var(--dark)">Lumières</div><div style="font-size:.72rem;color:var(--mid)">Red/NIR/blue light therapy devices</div></div>
-              <button onclick="toggleBrandProducts('lumieres')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--accent-deep)">Products</button>
-            </div>
-            <div class="brand-products-panel" id="brandPanel-lumieres" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:400px;overflow-y:auto"></div>
-          </div>
-          <!-- Custom Products inline -->
-          <div class="brand-config-row">
-            <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
-              <input type="checkbox" checked disabled style="accent-color:var(--accent-deep)" />
-              <div style="flex:1"><div style="font-weight:600;font-size:.88rem;color:var(--dark)">Custom Products</div><div style="font-size:.72rem;color:var(--mid)">Your own products</div></div>
-              <button onclick="toggleBrandProducts('custom')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--accent-deep)">Manage</button>
-            </div>
-            <div class="brand-products-panel" id="brandPanel-custom" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:500px;overflow-y:auto">
-            </div>
-          </div>
-        </div>
+        <!-- Built from what this shop actually has. It used to be six rows of
+             markup naming the brands this server carries, which for a shop
+             that imported its own range is a list of other people's
+             suppliers with nothing of theirs in it. -->
+        <div id="brandCheckboxes" style="display:flex;flex-direction:column;gap:10px"></div>
       </div>
 
       <!-- Maverick Payments connection (for batch reconciliation) -->
@@ -2482,6 +2435,9 @@ async function loadProducts() {
   }
   renderBrandFilters();
   renderProducts();
+  // The Settings panel is built from these too — it lists the shop's own
+  // suppliers, which are only knowable once the products are in.
+  renderBrandCheckboxes();
 }
 
 const BRAND_KEY_MAP = { 'Avologi': 'avologi', 'Avinichi': 'avinichi', 'HydraSphere Plus': 'hydrasphere', 'SpaceTouch': 'spacetouch', 'Lumières': 'lumieres' };
@@ -7447,9 +7403,13 @@ function toggleBrandProducts(brandKey) {
 function renderBrandProductPanel(brandKey) {
   const panel = document.getElementById(`brandPanel-${brandKey}`);
 
-  // Custom products panel
+  // Custom products panel — everything they added, or one supplier's worth.
   if (brandKey === 'custom') {
     renderCustomProductPanel(panel);
+    return;
+  }
+  if (brandKey.startsWith('own:')) {
+    renderCustomProductPanel(panel, brandKey.slice(4));
     return;
   }
 
@@ -7472,8 +7432,8 @@ function renderBrandProductPanel(brandKey) {
   `).join('') || '<div style="color:var(--mid);font-family:system-ui,sans-serif;font-size:.85rem;padding:12px;text-align:center">No products in this brand</div>';
 }
 
-function renderCustomProductPanel(panel) {
-  const customs = products.filter(p => p.isCustom);
+function renderCustomProductPanel(panel, onlyBrand) {
+  const customs = products.filter(p => p.isCustom && (!onlyBrand || p.brand === onlyBrand));
 
   let html = `
     <div style="margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--border)">
@@ -9031,10 +8991,71 @@ async function saveStoreSettings() {
 }
 
 // ─── Brands ─────────────────────────────────────────────────────────────────
+// The brands SkySale itself carries. Optional extras for a shop that happens
+// to stock them, and nothing to do with a shop that imported its own range —
+// which is why they are no longer the first thing on this screen.
+const CATALOG_BRANDS = [
+  ['avologi', 'Avologi', 'LED and laser devices'],
+  ['avinichi', 'Avinichi', 'Noni-infused luxury skincare'],
+  ['hydrasphere', 'HydraSphere Plus', 'Hydrogen-infused skincare & SPF'],
+  ['spacetouch', 'SpaceTouch', 'Full-body LED therapy devices'],
+  ['lumieres', 'Lumières', 'Red/NIR/blue light therapy devices'],
+];
+
+const brandRow = (key, name, sub, opts = {}) => `
+  <div class="brand-config-row" data-brand-key="${key}">
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
+      ${opts.fixed
+        ? '<input type="checkbox" checked disabled style="accent-color:var(--accent-deep)">'
+        : `<input type="checkbox" value="${key}" ${opts.on ? 'checked' : ''} onchange="saveBrands()" style="accent-color:var(--accent-deep)">`}
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:.88rem;color:var(--dark)">${escapeHtml(name)}</div>
+        <div style="font-size:.72rem;color:var(--mid)">${escapeHtml(sub)}</div>
+      </div>
+      <button onclick="toggleBrandProducts('${key}')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--accent-deep)">${opts.fixed ? 'Manage' : 'Products'}</button>
+    </div>
+    <div class="brand-products-panel" id="brandPanel-${key}" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:500px;overflow-y:auto"></div>
+  </div>`;
+
+const sectionLabel = (text) =>
+  `<div style="font-family:system-ui,sans-serif;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin:6px 0 2px">${text}</div>`;
+
 function renderBrandCheckboxes() {
-  document.querySelectorAll('#brandCheckboxes input[type=checkbox]').forEach(cb => {
-    cb.checked = selectedBrands.includes(cb.value);
-  });
+  const box = document.getElementById('brandCheckboxes');
+  if (!box) return;
+
+  // Their own range, named by the suppliers their products actually came from.
+  const ownBrands = [...new Set(products.filter(p => p.isCustom).map(p => p.brand).filter(Boolean))].sort();
+  const anyCatalogOn = CATALOG_BRANDS.some(([key]) => selectedBrands.includes(key));
+
+  let html = '';
+  html += sectionLabel('Your products');
+  if (ownBrands.length) {
+    for (const b of ownBrands) {
+      const n = products.filter(p => p.isCustom && p.brand === b).length;
+      html += brandRow(`own:${b}`, b, `${n} product${n === 1 ? '' : 's'} you added or imported`, { fixed: true });
+    }
+  }
+  html += brandRow('custom', 'All your products', 'Everything you added or imported, in one list', { fixed: true });
+
+  // Ours, second, and out of the way unless they use them.
+  html += `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+      ${sectionLabel('Also available from SkySale')}
+      <div style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-bottom:8px">
+        Ranges we carry. Switch on any you stock; leave them off and your register shows only your own.
+      </div>
+      <div id="catalogBrands" style="display:${anyCatalogOn ? 'flex' : 'none'};flex-direction:column;gap:10px">
+        ${CATALOG_BRANDS.map(([key, name, sub]) => brandRow(key, name, sub, { on: selectedBrands.includes(key) })).join('')}
+      </div>
+      ${anyCatalogOn ? '' : `<button onclick="showCatalogBrands(this)" style="background:none;border:none;padding:0;cursor:pointer;color:var(--accent-deep);font-family:system-ui,sans-serif;font-size:.8rem;text-decoration:underline">Show the ${CATALOG_BRANDS.length} ranges we carry</button>`}
+    </div>`;
+
+  box.innerHTML = html;
+}
+
+function showCatalogBrands(btn) {
+  document.getElementById('catalogBrands').style.display = 'flex';
+  btn.remove();
 }
 
 async function saveBrands() {
