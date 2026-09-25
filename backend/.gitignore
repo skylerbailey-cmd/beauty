@@ -1,1 +1,7 @@
 node_modules/
+
+# Test harness leavings: a SQLite file literally named ":memory:" appears
+# when the harness runs from the wrong directory, and the harness copies
+# itself into backend/ to reach node_modules.
+:memory:
+*-tmp.js
