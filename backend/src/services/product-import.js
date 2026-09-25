@@ -241,19 +241,35 @@ const stripTags = (html) => decodeEntities(String(html || '').replace(/<[^>]*>/g
   .replace(/\s+/g, ' ')
   .trim();
 
+// Why a feed probe failed, for the last call. Silent nulls are why a shop
+// whose feed works from one machine and not another has nothing to go on —
+// and why this took a round of guessing rather than a look at a log line.
+let lastFeedProblem = null;
+
 async function fetchJson(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(url, {
       signal: controller.signal,
+      // Says who we are, plainly. Dressing this up as a browser was tried and
+      // is worse: benelift.com's firewall answers the honest bot agent with
+      // the feed and a Mozilla-flavoured one with a 403. A site that wants to
+      // refuse us can, and a site that does not should not have to guess.
       headers: { 'User-Agent': 'SkySale-ProductImport/1.0 (+https://sky-sale.com)', Accept: 'application/json' },
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      lastFeedProblem = `${url.replace(/\?.*$/, '')} answered ${res.status}`;
+      return null;
+    }
     const type = res.headers.get('content-type') || '';
-    if (!/json/i.test(type)) return null;
+    if (!/json/i.test(type)) {
+      lastFeedProblem = `${url.replace(/\?.*$/, '')} answered ${res.status} as ${type.split(';')[0] || 'no content-type'}, not JSON`;
+      return null;
+    }
     return await res.json();
-  } catch (_) {
+  } catch (err) {
+    lastFeedProblem = `${url.replace(/\?.*$/, '')} could not be reached: ${err.message}`;
     return null;
   } finally {
     clearTimeout(timer);
@@ -326,12 +342,19 @@ async function readShopifyFeed(origin) {
 /** The catalogue straight from the shop's platform, or null if it has none. */
 async function readProductFeed(pageUrl) {
   const origin = new URL(pageUrl).origin;
+  lastFeedProblem = null;
   for (const read of [readWooFeed, readShopifyFeed]) {
     try {
       const rows = (await read(origin)).filter((p) => p.name);
       if (rows.length) return rows;
-    } catch (_) { /* try the next platform */ }
+    } catch (err) {
+      lastFeedProblem = `${read.name}: ${err.message}`;
+    }
   }
+  // Said out loud rather than swallowed. A feed that works from a laptop and
+  // not from the server — a firewall refusing the datacenter, usually — looks
+  // identical to a site with no feed at all unless this is written down.
+  if (lastFeedProblem) console.log(`[product-import] No product feed at ${origin} — ${lastFeedProblem}`);
   return null;
 }
 
