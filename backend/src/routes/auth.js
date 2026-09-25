@@ -269,12 +269,19 @@ router.get('/google/callback', async (req, res) => {
     delete req.session.oauthFrom;
 
     // Set persistent signed cookie with email so login survives redeploys
+    const { cookieDomainFor: googleCookieDomain } = require('../lib/tenancy');
     const cookieOpts = {
       maxAge: 365 * 24 * 60 * 60 * 1000,
       httpOnly: true,
       signed: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
+      // Scoped to the whole domain, as the email door already does. Signing in
+      // happens at app.sky-sale.com and the shop is then sent to its own
+      // address; a cookie pinned to the sign-in host alone would not travel
+      // there, and the first redeploy — which empties the session store —
+      // would drop them back to a login screen.
+      domain: googleCookieDomain(req),
     };
     res.cookie('glow_user_email', cookieEmail, cookieOpts);
     // NOTE: the Gmail refresh token is intentionally NOT stored in a cookie —
@@ -500,13 +507,20 @@ router.post('/logout', (req, res) => {
       console.error('[auth] Session destroy error:', err);
       return res.status(500).json({ error: 'Logout failed' });
     }
-    res.clearCookie('connect.sid');
-    res.clearCookie('glow_user_email');
-    res.clearCookie('glow_company_name');
-    res.clearCookie('glow_gmail_refresh');
-    res.clearCookie('glow_theme');
-    res.clearCookie('glow_brands');
-    res.clearCookie('glow_websites');
+    // A cookie is only cleared by a matching domain. These are written scoped
+    // to the whole app domain, so clearing them unscoped leaves every one of
+    // them in place — and glow_user_email alone silently signs the browser
+    // straight back in on the next request, which is not a logout at all.
+    // Both spellings are cleared because sessions started on the Railway
+    // hostname have host-only cookies that the scoped clear would miss.
+    const { cookieDomainFor } = require('../lib/tenancy');
+    const domain = cookieDomainFor(req);
+    const NAMES = ['connect.sid', 'glow_user_email', 'glow_company_name',
+      'glow_gmail_refresh', 'glow_theme', 'glow_brands', 'glow_websites'];
+    for (const name of NAMES) {
+      res.clearCookie(name);
+      if (domain) res.clearCookie(name, { domain });
+    }
     res.json({ success: true });
   });
 });
