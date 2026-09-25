@@ -251,6 +251,13 @@ router.post('/products',
           // should have the till follow, and we are not in the business of
           // rehosting their catalogue.
           image: String(p?.image || '').trim(),
+          // What the welcome email needs to place the product in a routine
+          // and tell the customer how to use it. Dropped here and the shop
+          // would have to retype every one of them by hand in Settings.
+          usage_frequency: String(p?.frequency || '').trim(),
+          routine_step: String(p?.routine_step || '').trim(),
+          benefits: String(p?.benefits || '').trim(),
+          ingredients: String(p?.ingredients || '').trim(),
           source_url: String(p?.source_url || '').trim(),
         }, userId);
         saved++;

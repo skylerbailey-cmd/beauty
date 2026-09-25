@@ -687,7 +687,7 @@ const ROUTINE_STEPS = {
     { key: 'serum', label: 'Serum', matches: ['serum', 'AM Routine'] },
     { key: 'eye', label: 'Eye Treatment', matches: ['eye serum', 'eye cream', 'eye treatment'] },
     { key: 'moisturizer', label: 'Moisturize', matches: ['moisturizer'] },
-    { key: 'spf', label: 'Sun Protection', matches: ['AM Routine'] },
+    { key: 'spf', label: 'Sun Protection', matches: ['AM Routine', 'sunscreen'] },
   ],
   pm: [
     { key: 'cleanser', label: 'Cleanse', matches: ['cleanser', 'PM Routine'] },
@@ -907,21 +907,30 @@ function customAsEmailProducts(customProducts) {
       name: cp.name,
       brand: cp.brand || 'Custom',
       retailPrice: cp.price || 0,
-      cardDescription: String(cp.description || '').slice(0, 220),
+      // What it does for them, falling back to what it is. The email shows one
+      // line per product, so the shop's own summary is the more useful of the
+      // two when they have written one.
+      cardDescription: String(cp.benefits || cp.description || '').slice(0, 220),
+      // What the shop wrote under "what it does for them". The catalogue's own
+      // products have a hand-written line each; this is its equivalent.
+      loveLine: String(cp.benefits || '').trim(),
       description: cp.description || '',
-      benefits: '',
-      ingredients: '',
+      benefits: cp.benefits || '',
+      ingredients: cp.ingredients || '',
       // Frequency first: it is the one thing a customer has to remember, and
       // it is usually the thing a supplier's page buries in a paragraph.
       howToUse: [every, steps].filter(Boolean).join(' '),
-      step: cp.category || 'product',
+      // What decides whether this lands in the morning routine, the evening
+      // one, or the weekly list. Falls back to the loose category only when
+      // no proper step was captured.
+      step: cp.routine_step || cp.category || 'product',
       image: cp.image || '',
       url: cp.source_url || '',
     };
   });
 }
 
-function generateWelcomeEmailBody({ customerEmail, customerName, selectedProductIds: rawProductIds, includeSuggestions, userId, storeName, brands, customProducts }) {
+function generateWelcomeEmailBody({ customerEmail, customerName, selectedProductIds: rawProductIds, includeSuggestions, userId, storeName, storeCity, brands, customProducts }) {
   // A bundle isn't a real product — swap it for the items it stands for.
   const selectedProductIds = expandBundles(rawProductIds);
 
@@ -1001,7 +1010,11 @@ function generateWelcomeEmailBody({ customerEmail, customerName, selectedProduct
 
   // ── 2. Your New Products ──────────────────────────────────────────────
   const productsHtml = selectedProducts.map(p =>
-    `<p style="margin-bottom:12px">✨ ${productLink(p, userTheme)} — ${LOVE_LINES[p.id] || shortDescription(p)}</p>`
+    // A hand-written line for a catalogue product; for a shop's own product,
+    // whatever they wrote under "what it does for them"; otherwise the opening
+    // of its description. Deliberately in that order, so the catalogue's
+    // existing emails read exactly as they did.
+    `<p style="margin-bottom:12px">✨ ${productLink(p, userTheme)} — ${LOVE_LINES[p.id] || p.loveLine || shortDescription(p)}</p>`
   ).join('\n');
 
   const newProductsSection = `<div style="margin-top:24px;padding:20px;background:${tc.productsBg};border-left:4px solid ${tc.productsBorder};border-radius:8px"><p style="margin-bottom:12px;font-size:20px"><b>🛍️ Your New Products</b></p>\n${productsHtml}</div>`;
@@ -1243,31 +1256,61 @@ function generateWelcomeEmailBody({ customerEmail, customerName, selectedProduct
     : '';
 
   // ── 5. Sign-off (randomly selected) ────────────────────────────────────
+  // Every sign-off used to invite the customer to visit the shop in Santa Fe,
+  // which is one particular shop's city. Sent from anywhere else it tells a
+  // customer to call in somewhere the shop has never been — and it puts
+  // another company's location in a stranger's mail. The invitation now only
+  // appears when we know where this shop actually is.
+  const city = String(storeCity || '').trim();
+  const visitLine = (template) =>
+    city ? `<p style="margin-bottom:16px">${template.replace(/CITY/g, city)}</p>` : '';
+
   const SIGNOFFS = [
     `<p style="margin-top:24px;margin-bottom:16px">Thank you so much for choosing ${companyName}, ${name}. We're truly honored to be part of your skincare journey. If you ever have questions about your products, your routine, or just want personalized advice — don't hesitate to reply to this email. We're always here for you!</p>
-<p style="margin-bottom:16px">We'd also love to see you in person at our store in Santa Fe. Come say hi anytime — we're always happy to help you find your next favorite product. 💕</p>
+${visitLine("We'd also love to see you in person at our store in CITY. Come say hi anytime — we're always happy to help you find your next favorite product. 💕")}
 <p style="margin-bottom:8px">With love,<br><b>The ${companyName} Team</b></p>`,
 
     `<p style="margin-top:24px;margin-bottom:16px">${name}, we're so grateful you chose ${companyName}. Your skin is in great hands! If you ever need help with your routine, have questions about a product, or just want to chat about skincare — we're only an email away.</p>
-<p style="margin-bottom:16px">And if you're ever in Santa Fe, come visit us! We'd love to meet you in person and help you discover even more products you'll love. 🌟</p>
+${visitLine("And if you're ever in CITY, come visit us! We'd love to meet you in person and help you discover even more products you'll love. 🌟")}
 <p style="margin-bottom:8px">Cheers to your glow,<br><b>The ${companyName} Team</b></p>`,
 
     `<p style="margin-top:24px;margin-bottom:16px">We can't wait to hear how you love your new products, ${name}! Remember, beautiful skin is a journey — and we're right here with you every step of the way. Reply anytime with questions or just to share your results!</p>
-<p style="margin-bottom:16px">Don't forget, our doors in Santa Fe are always open. Stop by for a personalized consultation or just to say hello — we love connecting with our customers in person. 💖</p>
+${visitLine("Don't forget, our doors in CITY are always open. Stop by for a personalized consultation or just to say hello — we love connecting with our customers in person. 💖")}
 <p style="margin-bottom:8px">Here's to your best skin ever,<br><b>The ${companyName} Team</b></p>`,
 
     `<p style="margin-top:24px;margin-bottom:16px">Thank you for trusting us with your skincare, ${name} — it means the world to us! We're always here if you need advice, want to tweak your routine, or are curious about a new product. Just hit reply and we'll get back to you personally.</p>
-<p style="margin-bottom:16px">If you're ever passing through Santa Fe, our store is your home away from home. We'd love to pamper you in person! ✨</p>
+${visitLine("If you're ever passing through CITY, our store is your home away from home. We'd love to pamper you in person! ✨")}
 <p style="margin-bottom:8px">Warmly,<br><b>The ${companyName} Team</b></p>`,
 
     `<p style="margin-top:24px;margin-bottom:16px">${name}, starting a new skincare routine is exciting — and we're honored to be part of yours! If anything comes up along the way, whether it's a question, a concern, or you just want to share your glow-up progress — please reach out. We genuinely care.</p>
-<p style="margin-bottom:16px">And whenever you're in the Santa Fe area, come see us! There's nothing we love more than helping our customers find their perfect routine in person. 🌸</p>
+${visitLine("And whenever you're in the CITY area, come see us! There's nothing we love more than helping our customers find their perfect routine in person. 🌸")}
 <p style="margin-bottom:8px">With love and good vibes,<br><b>The ${companyName} Team</b></p>`,
   ];
   const signOffHtml = SIGNOFFS[Math.floor(Math.random() * SIGNOFFS.length)];
 
+  // ── Anything that found no home ───────────────────────────────────────
+  //
+  // Every section above picks its products by what kind of thing they are.
+  // Something that is none of those kinds — a gift set, a supplement, a tool,
+  // or simply a product nobody has told us where it belongs — matched no
+  // section and was dropped in silence. The customer then got a welcome email
+  // that did not mention something they had just paid for.
+  const placed = [welcomeHtml, synergyHtml, newProductsSection, routineSection].filter(Boolean).join('\n');
+  const orphans = selectedProducts.filter((p) => !placed.includes(p.name));
+  const orphanHtml = orphans.length
+    ? `<p style="margin-top:20px;margin-bottom:8px"><b>Also in your order</b></p>`
+      + orphans.map((p) =>
+          `<p style="margin-bottom:8px">✅ ${productLink(p, userTheme)}${p.howToUse ? ` — ${p.howToUse}` : ''}</p>`
+        ).join('')
+    : '';
+
   // ── Assemble ──────────────────────────────────────────────────────────
-  const emailBody = [welcomeHtml, synergyHtml, routineSection, tipsHtml, consultationHtml, signOffHtml].filter(Boolean).join('\n\n');
+  // newProductsSection was built and then left out of this list, so the
+  // "Your New Products" block never reached a customer — and with it the
+  // whole hand-written LOVE_LINES table, which exists for nothing else. It is
+  // also the only place a product's own summary appears, which is why a shop
+  // editing one in Settings saw no change in the email.
+  const emailBody = [welcomeHtml, synergyHtml, newProductsSection, routineSection, orphanHtml, tipsHtml, consultationHtml, signOffHtml].filter(Boolean).join('\n\n');
 
   return {
     customerEmail,
@@ -1286,6 +1329,7 @@ router.post('/generate', async (req, res) => {
       : [];
     const result = generateWelcomeEmailBody({
       ...req.body, userId: req.session?.userId, storeName: settings?.store_name,
+      storeCity: settings?.store_city,
       brands: settings?.brands, customProducts,
     });
     res.json({

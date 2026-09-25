@@ -145,6 +145,9 @@ router.get('/products', async (req, res) => {
       // and edit it rather than it being invisible until a customer gets it.
       usageNotes: cp.usage_notes || '',
       usageFrequency: cp.usage_frequency || '',
+      routineStep: cp.routine_step || '',
+      benefits: cp.benefits || '',
+      ingredients: cp.ingredients || '',
       category: cp.category || '',
     });
   }
@@ -1279,6 +1282,7 @@ router.post('/transactions/:id/welcome', async (req, res) => {
       // Sign the email with the store the customer actually bought from, and
       // use the brands that store's Settings page actually shows.
       storeName: settings?.store_name,
+      storeCity: settings?.store_city,
       brands: settings?.brands,
       customProducts,
     }));
@@ -3494,6 +3498,10 @@ router.post('/close-account', async (req, res) => {
 // thing a customer actually needs to remember.
 
 const USAGE_FREQUENCIES = ['daily', 'weekly', 'monthly', ''];
+// The same list the welcome email's routine builder matches against. Anything
+// else would save fine and then never place the product in a routine.
+const ROUTINE_STEP_VALUES = ['cleanser', 'toner', 'serum', 'eye treatment', 'moisturizer',
+  'sunscreen', 'exfoliant', 'mask', 'device treatment', 'treatment cream', ''];
 
 router.patch('/custom-products/:id', async (req, res) => {
   const id = Number(req.params.id);
@@ -3506,6 +3514,13 @@ router.patch('/custom-products/:id', async (req, res) => {
   const fields = {};
   if (req.body.description !== undefined) fields.description = String(req.body.description).slice(0, 4000);
   if (req.body.usage_notes !== undefined) fields.usage_notes = String(req.body.usage_notes).slice(0, 4000);
+  if (req.body.benefits !== undefined) fields.benefits = String(req.body.benefits).slice(0, 1000);
+  if (req.body.ingredients !== undefined) fields.ingredients = String(req.body.ingredients).slice(0, 1000);
+  if (req.body.routine_step !== undefined) {
+    const step = String(req.body.routine_step).toLowerCase().trim();
+    if (!ROUTINE_STEP_VALUES.includes(step)) return res.status(400).json({ error: 'Not a routine step we know.' });
+    fields.routine_step = step;
+  }
   if (req.body.usage_frequency !== undefined) {
     const f = String(req.body.usage_frequency).toLowerCase().trim();
     if (!USAGE_FREQUENCIES.includes(f)) return res.status(400).json({ error: 'Daily, weekly or monthly.' });

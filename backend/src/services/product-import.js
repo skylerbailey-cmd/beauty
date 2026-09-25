@@ -120,6 +120,12 @@ function readableText(html) {
 // composed would look perfectly reasonable and point at nothing.
 const MAX_IMAGES = 120;
 
+// The only steps the welcome email knows how to place a product into. Kept
+// here as well as in the tool schema because the model's answer is untrusted
+// input like any other.
+const ROUTINE_STEPS = ['cleanser', 'toner', 'serum', 'eye treatment', 'moisturizer',
+  'sunscreen', 'exfoliant', 'mask', 'device treatment', 'treatment cream'];
+
 // A shop page is mostly furniture: logos, payment badges, flags, sprites.
 const JUNK = /logo|icon|sprite|badge|payment|visa|mastercard|paypal|amex|flag|avatar|placeholder|spacer|pixel|tracking|loader|spinner|arrow|chevron|star-rating|swatch/i;
 
@@ -218,6 +224,25 @@ const PRODUCT_TOOL = {
               type: ['string', 'null'],
               description: 'How the customer uses it — steps, frequency, order of application. This becomes the guidance in their welcome email. null if the page does not say.',
             },
+            frequency: {
+              type: ['string', 'null'],
+              // No enum: a strict tool schema will not take one alongside a
+              // nullable type. The answer is checked against the same list
+              // below, which is where it has to be checked anyway.
+              description: 'How often the customer uses it. Exactly one of: daily, weekly, monthly. null if the page does not say — never guess from the product type.',
+            },
+            routine_step: {
+              type: ['string', 'null'],
+              description: 'Where it belongs in a skincare routine. Exactly one of: cleanser, toner, serum, eye treatment, moisturizer, sunscreen, exfoliant, mask, device treatment, treatment cream. null if it is none of these (a supplement, a tool, a gift set).',
+            },
+            benefits: {
+              type: ['string', 'null'],
+              description: 'What it does for the customer, as a short comma-separated list drawn from the page. null if the page claims nothing.',
+            },
+            ingredients: {
+              type: ['string', 'null'],
+              description: 'Key ingredients named on the page, comma separated. null if none are given.',
+            },
             image: {
               type: ['string', 'null'],
               description: 'The picture of this product, copied EXACTLY from the numbered image list supplied with the page. Never write a URL that is not on that list, and never adapt one. null if no listed image shows this product.',
@@ -243,7 +268,11 @@ Rules, in order of importance:
 
 5. image must be copied character for character from the numbered image list, or be null. The list is the only source of pictures. A URL you composed, adjusted, or guessed will point at nothing and leave a broken picture on a till, which is worse than no picture at all. Match by what the alt text and surrounding words say, not by position in the list, and leave it null rather than attaching a picture you are unsure of. Two products must not share an image.
 
-6. usage is the field that matters most after price. It becomes the guidance a customer receives by email after buying, so capture how the product is actually used — the steps, how often, what it goes with — whenever the page says.
+6. routine_step is what lets the welcome email put the product in the right place in a morning, evening or weekly routine, so it is worth care. Choose from the list given and nothing else. A face wash is a cleanser whatever the page calls it; a night cream is a moisturizer; a device or wand is a device treatment. If it is genuinely none of them — a supplement, a tool, a gift set — return null rather than forcing it.
+
+7. frequency is only what the page states. "Use daily" is daily, "twice a week" is weekly, "once a month" is monthly. A page that does not say gets null: a customer told to use something daily when the maker says weekly is being given advice we invented.
+
+8. usage is the field that matters most after price. It becomes the guidance a customer receives by email after buying, so capture how the product is actually used — the steps, how often, what it goes with — whenever the page says.
 
 If the page sells nothing, record an empty list. That is a valid answer.`;
 
@@ -314,6 +343,15 @@ async function extractProductsFromUrl(rawUrl) {
       category: p?.category ? String(p.category).trim().slice(0, 100) : '',
       description: p?.description ? String(p.description).trim().slice(0, 1200) : '',
       usage: p?.usage ? String(p.usage).trim().slice(0, 2000) : '',
+      // Coerced against the same vocabulary the email's routine builder uses,
+      // so a value outside it becomes blank rather than a product that is
+      // listed but silently never placed in a routine.
+      frequency: ['daily', 'weekly', 'monthly'].includes(String(p?.frequency || '').toLowerCase())
+        ? String(p.frequency).toLowerCase() : '',
+      routine_step: ROUTINE_STEPS.includes(String(p?.routine_step || '').toLowerCase())
+        ? String(p.routine_step).toLowerCase() : '',
+      benefits: p?.benefits ? String(p.benefits).trim().slice(0, 1000) : '',
+      ingredients: p?.ingredients ? String(p.ingredients).trim().slice(0, 1000) : '',
       image: (() => {
         const src = p?.image ? String(p.image).trim() : '';
         // Not offered, or already spoken for — a page whose every card shares

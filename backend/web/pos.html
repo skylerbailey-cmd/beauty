@@ -7495,24 +7495,24 @@ function renderCustomProductPanel(panel) {
     </div>`;
 
   if (customs.length > 0) {
-    html += `<div style="display:grid;grid-template-columns:1fr 80px 80px auto;gap:4px 8px;align-items:center;font-family:system-ui,sans-serif;font-size:.8rem;padding:4px 0">
+    html += `<div style="display:grid;grid-template-columns:1fr 80px 80px 96px;gap:4px 8px;align-items:center;font-family:system-ui,sans-serif;font-size:.8rem;padding:4px 0">
       <div style="font-weight:700;font-size:.7rem;text-transform:uppercase;color:var(--mid)">Product</div>
       <div style="font-weight:700;font-size:.7rem;text-transform:uppercase;color:var(--mid);text-align:right">Price</div>
       <div style="font-weight:700;font-size:.7rem;text-transform:uppercase;color:var(--mid);text-align:right">Min Price</div>
-      <div></div>
+      <div style="font-weight:700;font-size:.7rem;text-transform:uppercase;color:var(--mid);text-align:center">Welcome email</div>
     </div>`;
     html += customs.map(p => `
-      <div style="display:grid;grid-template-columns:1fr 80px 80px auto;gap:4px 8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
+      <div style="display:grid;grid-template-columns:1fr 80px 80px 96px;gap:4px 8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
         <div style="display:flex;align-items:center;gap:6px;min-width:0">
           ${p.image ? `<img src="${p.image}" style="width:28px;height:28px;border-radius:4px;object-fit:cover;flex-shrink:0" onerror="this.style.display='none'">` : ''}
           <span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</span>
         </div>
         <div style="text-align:right">$${money((p.price || 0))}</div>
         <div style="text-align:right;${p.minPrice > 0 ? 'color:var(--accent-deep)' : 'color:var(--mid)'}">$${money((p.minPrice || 0))}</div>
-        <div style="display:flex;gap:4px;align-items:center">
-          <button onclick="toggleProductDetail(${p.customId})" title="What the customer is told about this"
-                  style="background:none;border:1px solid var(--border);border-radius:6px;cursor:pointer;color:var(--accent-deep);font-size:.72rem;padding:3px 8px;font-family:system-ui,sans-serif">Email</button>
-          <button onclick="deleteCustomProduct(${p.customId})" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:.9rem">&times;</button>
+        <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end">
+          <button onclick="toggleProductDetail(${p.customId})" title="What the customer is told about this product"
+                  style="background:none;border:1px solid var(--border);border-radius:6px;cursor:pointer;color:var(--accent-deep);font-size:.72rem;padding:4px 9px;font-family:system-ui,sans-serif;white-space:nowrap">Edit</button>
+          <button onclick="deleteCustomProduct(${p.customId})" title="Remove this product" style="background:none;border:none;cursor:pointer;color:var(--danger);font-size:.9rem">&times;</button>
         </div>
       </div>
       <div id="prodDetail-${p.customId}" style="display:none;grid-column:1 / -1;padding:12px 10px 16px;background:var(--cream);border-bottom:1px solid var(--border)"></div>
@@ -10544,6 +10544,17 @@ function toggleProductDetail(customId) {
       A product is one of the three. Ticking one clears the others; ticking the same one again leaves the email saying nothing about frequency.
     </div>
 
+    <label style="display:block;font-family:system-ui,sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:4px">Where it goes in a routine</label>
+    <select id="routineStep-${customId}" onchange="patchProduct(${customId},{routine_step:this.value},'prodDetailStatus-${customId}')"
+      style="width:100%;max-width:280px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.84rem;font-family:system-ui,sans-serif;outline:none;background:var(--white)">
+      ${['', 'cleanser', 'toner', 'serum', 'eye treatment', 'moisturizer', 'sunscreen',
+         'exfoliant', 'mask', 'device treatment', 'treatment cream']
+        .map((v) => `<option value="${v}" ${(p.routineStep || '') === v ? 'selected' : ''}>${v ? v.replace(/^./, c => c.toUpperCase()) : "— not part of a routine —"}</option>`).join('')}
+    </select>
+    <div style="font-family:system-ui,sans-serif;font-size:.74rem;color:var(--mid);margin:4px 0 14px">
+      This is what puts the product in the customer's morning, evening or weekly routine. Without it the product is still named in the email, but never placed in one.
+    </div>
+
     <label style="display:block;font-family:system-ui,sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:4px">How to use it</label>
     <textarea id="usageNotes-${customId}" rows="4"
       style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.84rem;font-family:system-ui,sans-serif;outline:none;resize:vertical"
@@ -10556,6 +10567,11 @@ function toggleProductDetail(customId) {
     <textarea id="prodDesc-${customId}" rows="3"
       style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.84rem;font-family:system-ui,sans-serif;outline:none;resize:vertical"
       placeholder="A sentence or two on what it does.">${escapeHtml(p.description || '')}</textarea>
+
+    <label style="display:block;font-family:system-ui,sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin:14px 0 4px">What it does for them</label>
+    <textarea id="prodBenefits-${customId}" rows="2"
+      style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.84rem;font-family:system-ui,sans-serif;outline:none;resize:vertical"
+      placeholder="Brightens, evens tone, reduces the look of fine lines">${escapeHtml(p.benefits || '')}</textarea>
 
     <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
       <button class="btn btn-confirm" style="padding:6px 16px;font-size:.82rem" onclick="saveProductDetail(${customId})">Save</button>
@@ -10578,6 +10594,7 @@ async function saveProductDetail(customId) {
   await patchProduct(customId, {
     usage_notes: document.getElementById(`usageNotes-${customId}`).value,
     description: document.getElementById(`prodDesc-${customId}`).value,
+    benefits: document.getElementById(`prodBenefits-${customId}`).value,
   }, `prodDetailStatus-${customId}`);
 }
 
@@ -10598,6 +10615,8 @@ async function patchProduct(customId, fields, statusId) {
       if (fields.usage_notes !== undefined) p.usageNotes = fields.usage_notes;
       if (fields.description !== undefined) p.description = fields.description;
       if (fields.usage_frequency !== undefined) p.usageFrequency = fields.usage_frequency;
+      if (fields.routine_step !== undefined) p.routineStep = fields.routine_step;
+      if (fields.benefits !== undefined) p.benefits = fields.benefits;
     }
     if (status) { status.style.color = 'var(--success)'; status.textContent = 'Saved.'; }
   } catch (err) {
