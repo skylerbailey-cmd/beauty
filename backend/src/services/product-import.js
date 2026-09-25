@@ -69,6 +69,10 @@ async function fetchPage(url) {
         // their logs and recognise it rather than guess at a scraper.
         'User-Agent': 'SkySale-ProductImport/1.0 (+https://sky-sale.com)',
         'Accept': 'text/html,application/xhtml+xml',
+        // Without this a site serves whatever locale it guesses from the
+        // server's address — a shop in Colorado got a Japanese page and would
+        // have got yen prices with it.
+        'Accept-Language': 'en-US,en;q=0.9',
       },
     });
     if (!resp.ok) {
@@ -177,8 +181,14 @@ async function extractProductsFromUrl(rawUrl) {
   const html = await fetchPage(url);
   const { title, text } = readableText(html);
 
-  if (text.replace(/\s/g, '').length < 200) {
-    const e = new Error('There was almost no text on that page — it may need JavaScript to load. Try a direct product or catalogue page.');
+  // A page that is mostly markup and barely any words is one whose content
+  // arrives by JavaScript. We can't run that, and guessing at what it would
+  // have said is exactly what this must never do.
+  const words = text.replace(/\s/g, '').length;
+  const looksScripted = html.length > 40000 && words < html.length * 0.02;
+
+  if (words < 200) {
+    const e = new Error('There was almost no readable text on that page — it probably builds itself with JavaScript. Try the catalogue or collection page that lists several products.');
     e.status = 422; throw e;
   }
 
@@ -224,6 +234,12 @@ async function extractProductsFromUrl(rawUrl) {
     pageTitle: title || '',
     model: MODEL,
     usage: response.usage || null,
+    // Nothing found on a page that is nearly all markup is a different problem
+    // from nothing found on a page that simply sells nothing, and the shop can
+    // act on the difference.
+    hint: products.length === 0 && looksScripted
+      ? 'That page builds its content with JavaScript, so there was nothing for us to read. Try the catalogue page that lists several products, or add this one by hand.'
+      : null,
   };
 }
 

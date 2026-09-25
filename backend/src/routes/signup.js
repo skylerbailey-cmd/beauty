@@ -204,6 +204,7 @@ router.post('/read-products',
         products: result.products,
         source_url: result.sourceUrl,
         page_title: result.pageTitle,
+        hint: result.hint || null,
         // Said plainly, because the next screen asks them to check it.
         note: 'Read from the page — check every price before saving.',
       });
