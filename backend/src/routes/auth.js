@@ -270,6 +270,13 @@ router.get('/google/callback', async (req, res) => {
 
     // Store userId in session
     req.session.userId = userId;
+    // Signing in with Google proves this address too, so the company joins the
+    // set this browser may switch between without another round trip.
+    {
+      const list = Array.isArray(req.session.authedCompanies) ? req.session.authedCompanies : [];
+      if (!list.includes(userId)) list.push(userId);
+      req.session.authedCompanies = list;
+    }
     delete req.session.oauthFrom;
 
     // Set persistent signed cookie with email so login survives redeploys

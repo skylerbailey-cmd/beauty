@@ -141,6 +141,11 @@ router.get('/products', async (req, res) => {
       visible: true,
       isCustom: true,
       customId: cp.id,
+      // What the welcome email is built from, so the Settings screen can show
+      // and edit it rather than it being invisible until a customer gets it.
+      usageNotes: cp.usage_notes || '',
+      usageFrequency: cp.usage_frequency || '',
+      category: cp.category || '',
     });
   }
   // Bundles ride along so the Emails picker doesn't have to hardcode what a
@@ -1256,11 +1261,14 @@ router.post('/transactions/:id/welcome', async (req, res) => {
 
   const user = await getSendingUser(userId);
 
-  // Only catalog products can drive the personalized routine (custom products
-  // have no usage data). Use the transaction's line items.
+  // The transaction's line items, catalogue and own-range alike. A shop's own
+  // products carry usage notes and a frequency now, set on the Settings page,
+  // so they drive the routine exactly as catalogue products do — and for a
+  // shop that imported its range they are the only products there are.
   const selectedProductIds = tx.items.map(i => i.product_id);
 
   const settings = await pgDb.getSettings(userId);
+  const customProducts = await pgDb.getCustomProducts(userId).catch(() => []);
   let emailBody, selectedProducts;
   try {
     ({ emailBody, selectedProducts } = generateWelcomeEmailBody({
@@ -1272,6 +1280,7 @@ router.post('/transactions/:id/welcome', async (req, res) => {
       // use the brands that store's Settings page actually shows.
       storeName: settings?.store_name,
       brands: settings?.brands,
+      customProducts,
     }));
   } catch (err) {
     return res.status(400).json({ error: err.message });
@@ -3474,6 +3483,38 @@ router.post('/close-account', async (req, res) => {
     res.json({ ok: true, rowsRemoved: removed, slug: result.slug });
   };
   if (req.session?.destroy) req.session.destroy(finish); else finish();
+});
+
+// ─── What a customer is told about a product ────────────────────────────────
+//
+// The description and usage notes here are the welcome email. They arrive
+// read off a supplier's page, which is a starting point and not the shop's
+// own words, so they have to be editable — and the frequency, which the page
+// often buries in a paragraph, is worth stating plainly because it is the one
+// thing a customer actually needs to remember.
+
+const USAGE_FREQUENCIES = ['daily', 'weekly', 'monthly', ''];
+
+router.patch('/custom-products/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Which product?' });
+
+  // A product belongs to a company; an id in the URL does not prove it.
+  const mine = (await pgDb.getCustomProducts(req.session.userId)).find((p) => p.id === id);
+  if (!mine) return res.status(404).json({ error: 'No such product here.' });
+
+  const fields = {};
+  if (req.body.description !== undefined) fields.description = String(req.body.description).slice(0, 4000);
+  if (req.body.usage_notes !== undefined) fields.usage_notes = String(req.body.usage_notes).slice(0, 4000);
+  if (req.body.usage_frequency !== undefined) {
+    const f = String(req.body.usage_frequency).toLowerCase().trim();
+    if (!USAGE_FREQUENCIES.includes(f)) return res.status(400).json({ error: 'Daily, weekly or monthly.' });
+    fields.usage_frequency = f;
+  }
+  if (!Object.keys(fields).length) return res.status(400).json({ error: 'Nothing to change.' });
+
+  const updated = await pgDb.updateCustomProduct(id, fields);
+  res.json({ ok: true, product: updated });
 });
 
 module.exports = router;

@@ -123,6 +123,7 @@ router.get('/link/:token',
     try { await pgDb.rememberUser(user.id); } catch (_) {}
 
     req.session.userId = user.id;
+    rememberAuthenticated(req, user.id);
     res.cookie('glow_user_email', user.email, {
       maxAge: 365 * 24 * 60 * 60 * 1000,
       httpOnly: true,
@@ -140,5 +141,115 @@ router.get('/link/:token',
     if (appDomain()) return res.redirect(companyUrl(slug, '/pos.html'));
     return res.redirect('/pos.html');
   });
+
+// ─── Which companies this browser has actually proved it can open ──────────
+//
+// A shop with two locations wants to move between them without a round trip
+// to an inbox each time. But a session is per company, and the old switcher
+// simply asserted the new company's email and was let in — which was only
+// ever possible because email alone used to be a credential. It is not.
+//
+// So: proving an address adds that company to a list on the session, and
+// switching is allowed only to a company already on it. One sign-in per
+// company per browser session, then move freely. Adding a new one needs a
+// fresh link, because that is what proving an address means.
+
+function rememberAuthenticated(req, userId) {
+  if (!req.session || !userId) return;
+  const list = Array.isArray(req.session.authedCompanies) ? req.session.authedCompanies : [];
+  if (!list.includes(userId)) list.push(userId);
+  req.session.authedCompanies = list;
+}
+
+function hasAuthenticated(req, userId) {
+  return Array.isArray(req.session?.authedCompanies) && req.session.authedCompanies.includes(userId);
+}
+
+const idForEmail = (email) => {
+  const { v5: uuidv5 } = require('uuid');
+  return uuidv5('mailto:' + String(email).trim().toLowerCase(), uuidv5.URL);
+};
+
+// ─── POST /auth/switch ──────────────────────────────────────────────────────
+// Move to another company this browser has already signed in to.
+
+router.post('/switch', async (req, res) => {
+  const email = normalise(req.body?.email);
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Which company?' });
+
+  const userId = idForEmail(email);
+  if (!hasAuthenticated(req, userId)) {
+    // Never says whether the company exists — only that this browser has not
+    // proved it can open it.
+    return res.status(403).json({
+      error: 'Sign in to that company first.',
+      needsSignIn: true,
+      email,
+    });
+  }
+
+  const { getUser } = require('../db');
+  req.session.userId = userId;
+  // A multi-company report view was authorised against the previous company's
+  // manager PIN. It does not carry across.
+  req.session.companyScope = null;
+
+  let user = null;
+  try { user = getUser(userId); } catch (_) {}
+  // SQLite is wiped on every deploy, so the row may not be there even though
+  // the company plainly is. The address is what identifies it.
+  if (!user) {
+    const { findOrCreateUserByEmail } = require('../db');
+    user = findOrCreateUserByEmail(email, null).user;
+  }
+
+  res.cookie('glow_user_email', user.email, {
+    maxAge: 365 * 24 * 60 * 60 * 1000,
+    httpOnly: true, signed: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    domain: cookieDomainFor(req),
+  });
+
+  // The shop's name and address live in Postgres, which survives a deploy.
+  // SQLite's company_name is a leftover that is usually empty, and reading it
+  // here left the switcher listing an address where a name should be.
+  let slug = null, storeName = null;
+  try {
+    const st = await pgDb.getSettings(userId);
+    slug = st?.slug || null;
+    storeName = st?.store_name || null;
+  } catch (_) {}
+
+  res.json({
+    ok: true,
+    user: {
+      id: userId,
+      email: user.email,
+      companyName: storeName || user.company_name || null,
+      brands: JSON.parse(user.brands || '[]'),
+    },
+    slug,
+    url: slug && appDomain() ? companyUrl(slug, '/pos.html') : null,
+  });
+});
+
+// ─── GET /auth/companies ────────────────────────────────────────────────────
+// Which ones this browser can switch to without signing in again.
+
+router.get('/companies', async (req, res) => {
+  const ids = Array.isArray(req.session?.authedCompanies) ? req.session.authedCompanies : [];
+  const out = [];
+  for (const id of ids) {
+    let name = null, slug = null;
+    try {
+      const st = await pgDb.getSettings(id);
+      name = st?.store_name || null;
+      slug = st?.slug || null;
+    } catch (_) {}
+    out.push({ id, companyName: name, slug, current: id === req.session?.userId });
+  }
+  res.json({ companies: out });
+});
 
 module.exports = router;

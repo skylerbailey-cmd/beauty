@@ -892,7 +892,36 @@ const TIPS_BANK = [
 // Build the personalized welcome email HTML for a set of products.
 // Shared by the /generate route and the POS welcome-email endpoint.
 // Throws an Error (with a user-friendly message) on invalid input.
-function generateWelcomeEmailBody({ customerEmail, customerName, selectedProductIds: rawProductIds, includeSuggestions, userId, storeName, brands }) {
+// A shop's own products, in the shape the email template expects.
+//
+// Without this the welcome email could only ever talk about the built-in
+// catalogue — so a shop that imported its range from its supplier had nothing
+// to send, and since a new shop now starts with no catalogue brands at all,
+// every welcome email it tried to build failed outright.
+function customAsEmailProducts(customProducts) {
+  return (customProducts || []).map((cp) => {
+    const every = { daily: 'Use it every day.', weekly: 'Use it once a week.', monthly: 'Use it once a month.' }[cp.usage_frequency] || '';
+    const steps = String(cp.usage_notes || '').trim();
+    return {
+      id: `custom-${cp.id}`,
+      name: cp.name,
+      brand: cp.brand || 'Custom',
+      retailPrice: cp.price || 0,
+      cardDescription: String(cp.description || '').slice(0, 220),
+      description: cp.description || '',
+      benefits: '',
+      ingredients: '',
+      // Frequency first: it is the one thing a customer has to remember, and
+      // it is usually the thing a supplier's page buries in a paragraph.
+      howToUse: [every, steps].filter(Boolean).join(' '),
+      step: cp.category || 'product',
+      image: cp.image || '',
+      url: cp.source_url || '',
+    };
+  });
+}
+
+function generateWelcomeEmailBody({ customerEmail, customerName, selectedProductIds: rawProductIds, includeSuggestions, userId, storeName, brands, customProducts }) {
   // A bundle isn't a real product — swap it for the items it stands for.
   const selectedProductIds = expandBundles(rawProductIds);
 
@@ -936,7 +965,10 @@ function generateWelcomeEmailBody({ customerEmail, customerName, selectedProduct
     || DEFAULT_BRANDS;
   const allProducts = Object.entries(PRODUCTS)
     .filter(([key]) => userBrands.includes(key))
-    .flatMap(([, products]) => products);
+    .flatMap(([, products]) => products)
+    // The shop's own range is never filtered by the catalogue brand list —
+    // their supplier is not in our catalogue, so it would remove all of it.
+    .concat(customAsEmailProducts(customProducts));
   const selectedIds = new Set(selectedProductIds);
   const selectedProducts = selectedProductIds
     .map(id => allProducts.find(p => p.id === id))
@@ -1249,9 +1281,12 @@ function generateWelcomeEmailBody({ customerEmail, customerName, selectedProduct
 router.post('/generate', async (req, res) => {
   try {
     const settings = req.session?.userId ? await pgDb.getSettings(req.session.userId) : null;
+    const customProducts = req.session?.userId
+      ? await pgDb.getCustomProducts(req.session.userId).catch(() => [])
+      : [];
     const result = generateWelcomeEmailBody({
       ...req.body, userId: req.session?.userId, storeName: settings?.store_name,
-      brands: settings?.brands,
+      brands: settings?.brands, customProducts,
     });
     res.json({
       success: true,

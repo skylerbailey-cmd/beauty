@@ -609,6 +609,10 @@ async function initSchema() {
   // a customer gets after buying, which is the email people actually read.
   await migrate("ALTER TABLE pos_custom_products ADD COLUMN IF NOT EXISTS category TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_custom_products ADD COLUMN IF NOT EXISTS usage_notes TEXT DEFAULT ''");
+  // How often the customer is meant to use it. Kept as a plain word rather
+  // than a number of days: the welcome email says it in a sentence, and
+  // "every 30 days" is not what anyone writes to a customer.
+  await migrate("ALTER TABLE pos_custom_products ADD COLUMN IF NOT EXISTS usage_frequency TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_custom_products ADD COLUMN IF NOT EXISTS source_url TEXT DEFAULT ''");
 
   // Each company's own address on sky-sale.com — glowsf.sky-sale.com. Kept
@@ -3049,11 +3053,12 @@ async function getCustomProducts(userId) {
 async function createCustomProduct(fields, userId) {
   const result = await query(
     `INSERT INTO pos_custom_products
-      (name, brand, description, image, price, min_price, category, usage_notes, source_url, user_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+      (name, brand, description, image, price, min_price, category, usage_notes, usage_frequency, source_url, user_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
     [fields.name, fields.brand || 'Custom', fields.description || '', fields.image || '',
      fields.price || 0, fields.min_price || 0, fields.category || '',
-     fields.usage || fields.usage_notes || '', fields.source_url || '', userId]
+     fields.usage || fields.usage_notes || '', fields.usage_frequency || '',
+     fields.source_url || '', userId]
   );
   return result.rows[0];
 }
@@ -3066,7 +3071,10 @@ async function countTransactions(userId) {
 }
 
 async function updateCustomProduct(id, fields) {
-  const allowed = ['name', 'brand', 'description', 'image', 'price', 'min_price', 'active'];
+  const allowed = ['name', 'brand', 'description', 'image', 'price', 'min_price', 'active',
+    // What the welcome email is built from. Editable, because the words that
+    // go to a customer are the shop's, not whatever we read off a web page.
+    'usage_notes', 'usage_frequency', 'category'];
   const sets = [];
   const params = [];
   let idx = 1;
