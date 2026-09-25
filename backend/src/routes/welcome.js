@@ -1068,7 +1068,10 @@ function generateWelcomeEmailBody({ customerEmail, customerName, selectedProduct
     .filter(Boolean);
 
   if (selectedProducts.length === 0) {
-    throw new Error('No valid products matched the selected IDs');
+    // Reachable from the till: a sale made up entirely of one-off "build your
+    // own" lines has nothing in the catalogue behind it, so there is no
+    // routine to write. Say that, rather than naming internal ids.
+    throw new Error('None of these items are products in your catalogue, so there is no routine to send. Welcome emails are built from products.');
   }
 
   const name = customerName.trim();

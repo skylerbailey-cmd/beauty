@@ -126,6 +126,21 @@
     .product-tile .p-price { font-family: system-ui, sans-serif; font-size: 1rem; font-weight: 700; color: var(--accent-deep); }
     .product-tile .p-no-price { font-family: system-ui, sans-serif; font-size: .78rem; color: var(--danger); font-style: italic; }
     .product-tile img { width: 100%; height: 100px; object-fit: cover; border-radius: 8px; margin-bottom: 8px; background: var(--accent-soft); }
+    /* The one-off tile. Dashed, because what it rings up isn't in the
+       catalogue — a package, a touch-up, a gift basket someone made up at the
+       counter. Always the first tile, so it's there when a search finds
+       nothing. */
+    .product-tile.one-off {
+      border-style: dashed; background: var(--cream);
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      text-align: center; min-height: 104px;
+    }
+    .product-tile.one-off .oo-plus {
+      font-family: system-ui, sans-serif; font-size: 1.6rem; font-weight: 300;
+      line-height: 1; color: var(--accent); margin-bottom: 6px;
+    }
+    .product-tile.one-off .p-name { margin-bottom: 2px; }
+    .product-tile.one-off .oo-sub { font-family: system-ui, sans-serif; font-size: .72rem; color: var(--mid); }
 
     /* ── Cart ─── */
     .cart-header { padding: 16px 20px; border-bottom: 1px solid var(--border); font-family: system-ui, sans-serif; }
@@ -1852,6 +1867,54 @@
   </div>
 </div>
 
+<!-- ─── Build your own: a line the till makes up on the spot ───
+     Not a catalogue product and deliberately not saved as one — a package, a
+     touch-up, a gift basket assembled at the counter. It rings up, discounts,
+     taxes, commissions and prints exactly like any other line. Products the
+     shop actually sells belong in Settings → Products, where they keep their
+     photo, their minimum price and their welcome-email notes. -->
+<div class="modal-overlay" id="customItemModal">
+  <div class="modal" style="max-width:420px">
+    <h2>Build Your Own</h2>
+    <p class="sub">Ring up something that isn't in the catalogue. It won't be saved as a product.</p>
+    <div class="field">
+      <label>What is it?</label>
+      <input type="text" id="ciName" maxlength="80" placeholder="Gift basket, custom package, touch-up…">
+    </div>
+    <div class="field">
+      <label>Brand or category <span style="font-weight:400;color:var(--mid)">(optional)</span></label>
+      <input type="text" id="ciBrand" maxlength="40" placeholder="Custom">
+    </div>
+    <div style="display:flex;gap:10px">
+      <div class="field" style="flex:1">
+        <label>Regular price</label>
+        <div style="display:flex;align-items:center;gap:4px">
+          <span style="font-size:1.05rem;font-weight:600">$</span>
+          <input type="number" id="ciPrice" step="0.01" min="0" oninput="updateCustomItemPreview()" style="font-weight:600">
+        </div>
+      </div>
+      <div class="field" style="flex:1">
+        <label>Discount price <span style="font-weight:400;color:var(--mid)">(optional)</span></label>
+        <div style="display:flex;align-items:center;gap:4px">
+          <span style="font-size:1.05rem;font-weight:600">$</span>
+          <input type="number" id="ciDiscPrice" step="0.01" min="0" oninput="updateCustomItemPreview()" style="font-weight:600">
+        </div>
+      </div>
+    </div>
+    <div class="field" style="max-width:140px">
+      <label>Quantity</label>
+      <input type="number" id="ciQty" step="1" min="1" value="1" oninput="updateCustomItemPreview()">
+    </div>
+    <div id="ciPreview" style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid);margin:2px 0 4px">
+      Leave the discount price blank to charge the regular price.
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeCustomItem()">Cancel</button>
+      <button class="btn btn-confirm" onclick="confirmCustomItem()">Add to Cart</button>
+    </div>
+  </div>
+</div>
+
 <!-- ─── Chargeback status ─── -->
 <div class="modal-overlay" id="chargebackModal">
   <div class="modal" style="max-width:440px">
@@ -2503,7 +2566,16 @@ function renderProducts() {
     return true;
   });
 
-  grid.innerHTML = filtered.map(p => `
+  // The one-off tile leads the grid and ignores the brand filter and the
+  // search box, because the thing it rings up is by definition not in either.
+  const oneOff = `
+    <div class="product-tile one-off" onclick="openCustomItem()" title="Ring up something that isn't in the catalogue">
+      <div class="oo-plus">+</div>
+      <div class="p-name">Build your own</div>
+      <div class="oo-sub">Name it, price it, discount it</div>
+    </div>`;
+
+  grid.innerHTML = oneOff + filtered.map(p => `
     <div class="product-tile" onclick="addToCart('${p.id}')" title="${p.description || ''}">
       ${p.image ? `<img src="${p.image}" alt="${p.name}" onerror="this.style.display='none'">` : ''}
       <div class="p-brand">${p.brand}</div>
@@ -2584,6 +2656,133 @@ document.addEventListener('keydown', e => {
   }
 });
 
+// ─── Build your own ─────────────────────────────────────────────────────────
+// A line the till makes up on the spot: a package, a touch-up, a basket put
+// together at the counter. It is a line, not a product — nothing is written to
+// the catalogue, because a thing the shop actually stocks belongs in Settings
+// → Products where it keeps a photo, a minimum price and its email notes.
+//
+// The id comes from the name, so the same made-up thing rung up twice lands on
+// one row of the product report instead of two.
+const ONE_OFF_PREFIX = 'one-off:';
+
+function oneOffId(name) {
+  const slug = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return ONE_OFF_PREFIX + (slug || 'item');
+}
+
+function openCustomItem() {
+  // If they searched for something the catalogue doesn't have, that search is
+  // almost certainly what they are about to ring up. Start them with it.
+  const search = document.getElementById('searchInput').value.trim();
+  const foundNothing = !document.querySelector('#productGrid .product-tile:not(.one-off)');
+  document.getElementById('ciName').value = (search && foundNothing) ? search : '';
+  document.getElementById('ciBrand').value = '';
+  document.getElementById('ciPrice').value = '';
+  document.getElementById('ciDiscPrice').value = '';
+  document.getElementById('ciQty').value = '1';
+  updateCustomItemPreview();
+  document.getElementById('customItemModal').classList.add('show');
+  setTimeout(() => {
+    const name = document.getElementById('ciName');
+    name.focus();
+    name.select();
+  }, 100);
+}
+
+function closeCustomItem() {
+  document.getElementById('customItemModal').classList.remove('show');
+}
+
+// What the register will actually charge, read back before they commit to it.
+function updateCustomItemPreview() {
+  const el = document.getElementById('ciPreview');
+  const price = parseFloat(document.getElementById('ciPrice').value);
+  const rawDisc = document.getElementById('ciDiscPrice').value.trim();
+  const disc = parseFloat(rawDisc);
+  const qty = Math.max(1, Math.floor(Number(document.getElementById('ciQty').value) || 1));
+
+  if (!Number.isFinite(price) || price < 0) {
+    el.style.color = 'var(--mid)';
+    el.textContent = 'Leave the discount price blank to charge the regular price.';
+    return;
+  }
+  if (rawDisc !== '' && (!Number.isFinite(disc) || disc < 0)) {
+    el.style.color = 'var(--danger)';
+    el.textContent = 'The discount price is not a number.';
+    return;
+  }
+  if (rawDisc !== '' && disc > price) {
+    el.style.color = 'var(--danger)';
+    el.textContent = 'The discount price is higher than the regular price.';
+    return;
+  }
+  const charged = rawDisc === '' ? price : disc;
+  const saved = round2((price - charged) * qty);
+  el.style.color = 'var(--mid)';
+  el.textContent = saved > 0
+    ? `Charges $${money(charged * qty)}${qty > 1 ? ` (${qty} × $${money(charged)})` : ''} — a $${money(saved)} discount off $${money(price * qty)}.`
+    : `Charges $${money(charged * qty)}${qty > 1 ? ` (${qty} × $${money(charged)})` : ''}, before tax.`;
+}
+
+function confirmCustomItem() {
+  const name = document.getElementById('ciName').value.trim();
+  if (!name) {
+    alert('Give the item a name — it goes on the receipt and on the sales report.');
+    return;
+  }
+  const price = parseFloat(document.getElementById('ciPrice').value);
+  if (!Number.isFinite(price) || price < 0) {
+    alert('Enter a regular price for this item.');
+    return;
+  }
+  const rawDisc = document.getElementById('ciDiscPrice').value.trim();
+  let charged = price;
+  if (rawDisc !== '') {
+    const disc = parseFloat(rawDisc);
+    if (!Number.isFinite(disc) || disc < 0) {
+      alert('The discount price is not a valid amount. Clear it to charge the regular price.');
+      return;
+    }
+    if (disc > price) {
+      alert('The discount price has to be lower than the regular price.');
+      return;
+    }
+    charged = disc;
+  }
+  const qty = Math.max(1, Math.floor(Number(document.getElementById('ciQty').value) || 1));
+
+  // Same shape as a catalogue line: the full price is what the line is worth
+  // and the difference is carried as a discount, so the receipt shows the
+  // markdown instead of quietly making the lower figure the price.
+  const productId = oneOffId(name);
+  const brand = document.getElementById('ciBrand').value.trim() || 'Custom';
+  const discountPerUnit = round2(price - charged);
+
+  const existing = cart.find(c => c.product_id === productId && c.unit_price === price && (c.discount_per_unit || 0) === discountPerUnit);
+  if (existing) {
+    existing.quantity += qty;
+  } else {
+    cart.push({
+      product_id: productId,
+      product_name: name,
+      brand,
+      unit_price: price,
+      quantity: qty,
+      discount_per_unit: discountPerUnit,
+    });
+  }
+  closeCustomItem();
+  renderCart();
+}
+
+// Enter confirms, the same as the price modal does.
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.getElementById('customItemModal').classList.contains('show')) {
+    confirmCustomItem();
+  }
+});
+
 function removeFromCart(idx) {
   cart.splice(idx, 1);
   renderCart();
@@ -2648,8 +2847,8 @@ function renderCart() {
       return `
       <div class="cart-item">
         <div class="ci-info">
-          <div class="ci-name">${item.product_name}</div>
-          <div class="ci-brand">${item.brand}</div>
+          <div class="ci-name">${escapeHtml(item.product_name)}</div>
+          <div class="ci-brand">${escapeHtml(item.brand)}</div>
         </div>
         <div class="ci-qty">
           <button onclick="changeQty(${i}, -1)">&minus;</button>
@@ -2800,7 +2999,7 @@ async function lookupReceipt() {
     document.getElementById('returnItemsBody').innerHTML = tx.items.map((item, i) => `
       <tr>
         <td>${canReturn ? `<input type="checkbox" checked data-idx="${i}" class="return-item-cb" style="width:16px;height:16px;accent-color:var(--danger)">` : ''}</td>
-        <td>${item.product_name}<br><span style="font-size:.72rem;color:var(--mid)">${item.brand}</span></td>
+        <td>${escapeHtml(item.product_name)}<br><span style="font-size:.72rem;color:var(--mid)">${escapeHtml(item.brand)}</span></td>
         <td>${item.quantity}</td>
         <td>$${money(item.unit_price)}</td>
         <td>$${money(item.line_total)}</td>
@@ -3464,10 +3663,10 @@ function showReceipt(tx, reprint) {
   for (const item of tx.items) {
     if ((item.discount || 0) > 0.001) {
       const original = item.unit_price * item.quantity;
-      html += `<div class="r-row"><span>${item.product_name} x${item.quantity}</span><span class="r-strike">$${money(original)}</span></div>`;
+      html += `<div class="r-row"><span>${escapeHtml(item.product_name)} x${item.quantity}</span><span class="r-strike">$${money(original)}</span></div>`;
       html += `<div class="r-row"><span style="padding-left:10px;font-size:.85rem;color:var(--mid)">Sale price</span><span>$${money(item.line_total)}</span></div>`;
     } else {
-      html += `<div class="r-row"><span>${item.product_name} x${item.quantity}</span><span>$${money(item.line_total)}</span></div>`;
+      html += `<div class="r-row"><span>${escapeHtml(item.product_name)} x${item.quantity}</span><span>$${money(item.line_total)}</span></div>`;
     }
   }
 
@@ -5950,7 +6149,7 @@ function renderTxEditItems() {
   } else {
     c.innerHTML = editTx.items.map((it, i) => `
       <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;font-family:system-ui,sans-serif;font-size:.82rem">
-        <div style="flex:1">${it.product_name}<br><span style="font-size:.7rem;color:var(--mid)">${it.brand || ''}</span></div>
+        <div style="flex:1">${escapeHtml(it.product_name)}<br><span style="font-size:.7rem;color:var(--mid)">${escapeHtml(it.brand || '')}</span></div>
         <input type="number" min="1" value="${it.quantity}" onchange="txEditItemQty(${i},this.value)" style="width:48px;padding:5px;border:1px solid var(--border);border-radius:6px;text-align:center;outline:none">
         <span style="color:var(--mid)">×&nbsp;$</span>
         <input type="number" min="0" step="0.01" value="${it.charged}" onchange="txEditItemPrice(${i},this.value)" style="width:78px;padding:5px;border:1px solid var(--border);border-radius:6px;text-align:right;outline:none">
@@ -6200,8 +6399,8 @@ async function loadReports() {
   lastEmployeesReport = employees;
   lastProductsHtml = prods.map(p => `
     <tr>
-      <td style="font-weight:600">${p.product_name}</td>
-      <td>${p.brand}</td>
+      <td style="font-weight:600">${escapeHtml(p.product_name)}</td>
+      <td>${escapeHtml(p.brand)}</td>
       <td>${p.units_sold}</td>
       <td style="font-weight:600">$${money(p.revenue)}</td>
     </tr>
