@@ -745,6 +745,79 @@ Answer for every product, using the number it was given.`,
   return products;
 }
 
+
+/**
+ * Fill in what a welcome email needs for ONE product, from whatever is known
+ * about it — usually just a name typed at the till.
+ *
+ * A product added by hand used to arrive with a name, a price and nothing
+ * else, so the welcome email had no idea what it was or where it went in a
+ * routine. The shop would only find out when a customer received a mail that
+ * named the product and said nothing about it.
+ *
+ * Returns the fields to save, or {} — never throws, because a product must
+ * save whether or not this works.
+ */
+async function describeOneProduct({ name, brand, description, category }) {
+  if (!process.env.ANTHROPIC_API_KEY || !String(name || '').trim()) return {};
+
+  const TOOL = {
+    name: 'describe_product', strict: true,
+    description: 'Say where this product belongs in a routine and how it is used.',
+    input_schema: {
+      type: 'object', additionalProperties: false,
+      required: ['routine_step', 'frequency', 'usage', 'benefits', 'confident'],
+      properties: {
+        routine_step: { type: ['string', 'null'], description: `One of: ${ROUTINE_STEPS.join(', ')}. null if none fit.` },
+        frequency: { type: ['string', 'null'], description: 'daily, weekly or monthly — what is ordinary for this kind of product. null if the kind is unclear.' },
+        usage: { type: ['string', 'null'], description: 'How the customer uses it, one or two plain sentences, no claims. null if you cannot tell what kind of product it is.' },
+        benefits: { type: ['string', 'null'], description: 'What it does for them, only if the name or description actually says. null otherwise — never guess a claim.' },
+        confident: { type: 'boolean', description: 'false when the name is too vague to tell what kind of product this is.' },
+      },
+    },
+  };
+
+  try {
+    const response = await client().messages.create({
+      model: MODEL,
+      max_tokens: 2000,
+      system: `A shop has just added a product to its register, and a welcome email will be sent to whoever buys it. Say where it belongs in a routine and how it is used.
+
+You are usually given only a name. That is enough for a kind of product — a cleanser goes on damp skin and is rinsed, a serum goes on before moisturiser — and that is what to write: the ordinary handling for the kind of thing this is.
+
+Never invent a claim. benefits comes only from what the name or description actually says; otherwise null. Saying nothing about what a product does is correct, and inventing it puts a false promise in a customer's mail.
+
+If the name does not say what kind of product it is — a gift set, a tool, a code, something ambiguous — set confident false and return nulls rather than guessing.`,
+      tools: [TOOL],
+      tool_choice: { type: 'tool', name: 'describe_product' },
+      messages: [{
+        role: 'user',
+        content: [`Product: ${name}`, brand ? `Brand: ${brand}` : '', category ? `Category: ${category}` : '',
+                  description ? `Description: ${String(description).slice(0, 1200)}` : '']
+          .filter(Boolean).join('\n'),
+      }],
+    });
+
+    const call = response.content.find((b) => b.type === 'tool_use');
+    const out = call?.input;
+    if (!out || out.confident === false) return {};
+
+    const fields = {};
+    const step = String(out.routine_step || '').toLowerCase();
+    if (ROUTINE_STEPS.includes(step)) fields.routine_step = step;
+    const freq = String(out.frequency || '').toLowerCase();
+    if (['daily', 'weekly', 'monthly'].includes(freq)) fields.usage_frequency = freq;
+    if (out.usage) fields.usage_notes = String(out.usage).slice(0, 2000);
+    if (out.benefits) fields.benefits = String(out.benefits).slice(0, 1000);
+    return fields;
+  } catch (err) {
+    // The product is already saved. Losing its usage notes is a smaller loss
+    // than losing the product, and the shop can write them in Settings.
+    console.error('[product-import] Could not describe a new product:', err.message);
+    return {};
+  }
+}
+
 /**
  * Read a page and return the products on it — and if it has none, find the
  * page on that site that does.
@@ -851,7 +924,7 @@ async function extractProductsFromUrl(rawUrl, onProgress) {
     // Blaming the pages when the site simply refused us sends a shop looking
     // for a better page that does not exist. Say which it was.
     hint: feedWasRefused()
-      ? `That supplier's website is blocking us. Its product list is there, but their firewall turns away requests that do not come from a browser, so we cannot read it — nothing you can change at your end. Add these by hand, or ask them to allow SkySale.`
+      ? `That supplier's website is blocking us. Its product list is there, but their firewall turns away requests that do not come from a browser, so we cannot read it — there is nothing to change at your end and another page will not help. Add the products by hand below, or write to support@sky-sale.com with the address and we will get them in for you.`
       : (tried > 1
         ? `We looked at ${tried} pages on that site — including the ones it links to as its shop — and could not read a product list from any of them. Try the page that lists several products directly, or add them by hand.`
         : (result?.hint || 'Nothing on that page looked like a product for sale.')),
@@ -860,5 +933,5 @@ async function extractProductsFromUrl(rawUrl, onProgress) {
   };
 }
 
-module.exports = { extractProductsFromUrl, readOnePage, assertFetchable, readableText,
+module.exports = { extractProductsFromUrl, describeOneProduct, readOnePage, assertFetchable, readableText,
   imageCatalogue, productPageCandidates, readProductFeed, wooPrice, feedWasRefused, lastFeedNote };

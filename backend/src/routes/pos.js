@@ -209,7 +209,36 @@ router.post('/products/visibility/bulk', async (req, res) => {
 
 router.post('/products/custom', async (req, res) => {
   const product = await pgDb.createCustomProduct(req.body, req.session.userId);
-  res.json({ product });
+
+  // Work out what it is, so the welcome email has something to say about it.
+  //
+  // A product added by hand used to arrive with a name and a price and
+  // nothing else, so a customer who bought it received a mail that named it
+  // and said nothing — and the shop found out when the customer did. A
+  // product read off a supplier's page has had this done since the import
+  // was built; one typed at the till had not.
+  //
+  // Only where the shop left the fields blank: their own words always win.
+  let enriched = product;
+  const blank = !String(product.usage_notes || '').trim()
+    && !String(product.routine_step || '').trim();
+  if (blank) {
+    try {
+      const { describeOneProduct } = require('../services/product-import');
+      const fields = await describeOneProduct({
+        name: product.name, brand: product.brand,
+        description: product.description, category: product.category,
+      });
+      if (Object.keys(fields).length) {
+        enriched = await pgDb.updateCustomProduct(product.id, fields) || product;
+      }
+    } catch (err) {
+      // Never fails the add: the product is already on the shelf.
+      console.error('[pos] Could not describe a new product:', err.message);
+    }
+  }
+
+  res.json({ product: enriched });
 });
 
 router.put('/products/custom/:id', async (req, res) => {
