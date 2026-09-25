@@ -351,7 +351,8 @@ async function readPage() {
       seen.add(key);
       extracted.push({ ...p, keep: true });
     }
-    sources.push({ url: r.source_url, title: r.page_title, added: extracted.length - before });
+    sources.push({ url: r.source_url, title: r.page_title, added: extracted.length - before,
+                   foundElsewhere: !!r.found_elsewhere });
     reviewProducts();
   } catch (e) {
     $('err').textContent = e.message;
@@ -371,6 +372,11 @@ function reviewProducts() {
         : `${sources.length} pages`}.
       These become the prices on your register, so read them like you'd read a delivery note.
     </p>
+    ${sources.some((x) => x.foundElsewhere)
+      ? `<div class="notice notice-info">That address had no product list on it, so we followed it to
+         <span class="addr" style="font-size:.85rem">${esc(sources.filter((x) => x.foundElsewhere).map((x) => x.url).join(', '))}</span>
+         and read these from there.</div>`
+      : ''}
     ${missingPrice ? `<div class="notice notice-warn"><strong>${missingPrice}</strong> ${missingPrice === 1 ? 'product has' : 'products have'} no price — the page didn't state one, and we don't guess. Type them in or untick them.</div>` : ''}
     <div class="scroller">
       <table>

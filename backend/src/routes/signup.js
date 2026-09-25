@@ -216,6 +216,11 @@ router.post('/read-products',
         source_url: result.sourceUrl,
         page_title: result.pageTitle,
         hint: result.hint || null,
+        // They typed the front door and we read the shop page. Saying so
+        // matters: a list of products from an address they did not ask for
+        // looks wrong until you name where it came from.
+        found_elsewhere: !!result.foundElsewhere,
+        searched: (result.searched || []).map((x) => x.url),
         // Said plainly, because the next screen asks them to check it.
         note: 'Read from the page — check every price before saving.',
       });

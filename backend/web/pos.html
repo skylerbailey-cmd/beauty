@@ -10343,7 +10343,9 @@ async function importFromUrl() {
     }
     impProducts = data.products.map((p) => ({ ...p, keep: true }));
     status.style.color = 'var(--mid)';
-    status.textContent = `${impProducts.length} product${impProducts.length === 1 ? '' : 's'} read. Check them before saving.`;
+    status.textContent = data.found_elsewhere
+      ? `That address had no product list, so we followed it to ${data.source_url} — ${impProducts.length} product${impProducts.length === 1 ? '' : 's'} read. Check them before saving.`
+      : `${impProducts.length} product${impProducts.length === 1 ? '' : 's'} read. Check them before saving.`;
     renderImportReview();
   } catch (err) {
     status.style.color = 'var(--danger)';

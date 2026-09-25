@@ -119,6 +119,12 @@ function readableText(html) {
 // picks from that list by name. It is never asked for a URL, because a URL it
 // composed would look perfectly reasonable and point at nothing.
 const MAX_IMAGES = 120;
+// How far to look when the page they gave us has nothing on it. Fetching is
+// cheap, so several addresses get a glance; reading one costs a model call and
+// most of a minute of someone's time, so only the ones that actually carry
+// prices are read, and at most two of those.
+const MAX_PAGES_TO_CHECK = 6;
+const MAX_PAGES_TO_READ = 2;
 
 // The only steps the welcome email knows how to place a product into. Kept
 // here as well as in the tool schema because the model's answer is untrusted
@@ -185,6 +191,100 @@ function imageCatalogue(html, pageUrl) {
   });
 
   return out;
+}
+
+
+
+// Is this page worth spending a model call on?
+//
+// Following three candidate pages means three fetches and three model calls,
+// which is a shop watching a spinner for minutes and a bill for pages that
+// were never going to work. A product listing has prices on it — several,
+// close together. Counting them costs nothing and skips the About page before
+// it costs anything.
+function looksLikeProductList(text) {
+  const prices = text.match(/(?:[$£€]\s?\d[\d,]*(?:\.\d{2})?)|(?:\d[\d,]*\.\d{2}\s?(?:USD|EUR|GBP))/gi) || [];
+  // Three is enough to tell a listing from a page that mentions a price once.
+  return prices.length >= 3;
+}
+
+// ─── Where the products actually live ───────────────────────────────────────
+//
+// People paste the address they know, which is the front door: avologi.com,
+// not avologi.com/collections/all. A homepage sells nothing in a form we can
+// read — it has a hero image, a story, and a link to the shop — so the honest
+// answer used to be "nothing on that page looked like a product", which is
+// true and useless.
+//
+// This reads the front door's own links and works out where it keeps its
+// products, the same way a person would: by looking for the one that says
+// Shop.
+
+// Paths worth trying on any site, in the order a guess is worth making.
+// /collections/all is Shopify's, which is a large share of the trade.
+const COMMON_PRODUCT_PATHS = [
+  '/collections/all', '/shop', '/products', '/store', '/catalog', '/all-products',
+];
+
+// Anchor text that names a product listing, and text that only looks like it.
+const SHOP_WORDS = /^(shop|shop all|shop now|all products|products|our products|store|catalog|catalogue|browse|the collection|collections|shop the range)$/i;
+const NOT_SHOP = /cart|basket|checkout|account|login|wishlist|compare|blog|news|about|contact|faq|policy|terms|privacy|shipping|returns|careers|press/i;
+
+function productPageCandidates(html, pageUrl) {
+  const cheerio = require('cheerio');
+  const $ = cheerio.load(html);
+  const base = new URL(pageUrl);
+  const scored = new Map();
+
+  const consider = (href, score) => {
+    if (!href) return;
+    let u;
+    try { u = new URL(href, base); } catch (_) { return; }
+    // Same site only. Following a link off-site would turn "read my shop" into
+    // "read whatever my shop links to", and the address guard exists for a
+    // reason.
+    if (u.hostname.toLowerCase() !== base.hostname.toLowerCase()) return;
+    if (!/^https?:$/.test(u.protocol)) return;
+    u.hash = '';
+    const path = u.pathname.toLowerCase();
+    if (NOT_SHOP.test(path)) return;
+    if (path === base.pathname.toLowerCase() && u.search === base.search) return;
+    const key = u.toString();
+    scored.set(key, Math.max(scored.get(key) || 0, score));
+  };
+
+  $('a[href]').each((_, el) => {
+    const $el = $(el);
+    const href = $el.attr('href');
+    const label = $el.text().replace(/\s+/g, ' ').trim();
+    if (NOT_SHOP.test(label)) return;
+
+    // What it says is the strongest signal: a link a person would click.
+    if (SHOP_WORDS.test(label)) consider(href, 100);
+    else if (/\b(shop|products|catalog|collection)\b/i.test(label) && label.length < 40) consider(href, 60);
+
+    // Then what the address looks like.
+    try {
+      const path = new URL(href, base).pathname.toLowerCase();
+      if (/^\/collections\/all\/?$/.test(path)) consider(href, 95);
+      else if (/^\/(shop|products|store|catalog)\/?$/.test(path)) consider(href, 85);
+      else if (/^\/collections\/[^/]+\/?$/.test(path)) consider(href, 55);
+      else if (/^\/product-category\//.test(path)) consider(href, 55);
+    } catch (_) { /* not a usable href */ }
+  });
+
+  // The conventional addresses, whether or not anything links to them —
+  // except the one we are standing on, which has already been read.
+  const here = base.pathname.replace(/\/+$/, '').toLowerCase();
+  for (const [i, path] of COMMON_PRODUCT_PATHS.entries()) {
+    if (path.replace(/\/+$/, '').toLowerCase() === here) continue;
+    const u = new URL(path, base);
+    if (!scored.has(u.toString())) scored.set(u.toString(), 40 - i);
+  }
+
+  return [...scored.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([href]) => href);
 }
 
 // The shape a product has to be in for the register to sell it and for the
@@ -282,9 +382,10 @@ If the page sells nothing, record an empty list. That is a valid answer.`;
  * Returns { products, sourceUrl, pageTitle, model }. Never throws for "no
  * products found" — an empty list is an answer the caller shows plainly.
  */
-async function extractProductsFromUrl(rawUrl) {
+// Read one page, and one page only.
+async function readOnePage(rawUrl, opts = {}) {
   const url = assertFetchable(rawUrl);
-  const html = await fetchPage(url);
+  const html = opts.html || await fetchPage(url);
   const { title, text } = readableText(html);
   const images = imageCatalogue(html, url.toString());
 
@@ -296,7 +397,13 @@ async function extractProductsFromUrl(rawUrl) {
 
   if (words < 200) {
     const e = new Error('There was almost no readable text on that page — it probably builds itself with JavaScript. Try the catalogue or collection page that lists several products.');
-    e.status = 422; throw e;
+    e.status = 422;
+    // Marked so the search below can move on to another page instead of
+    // stopping: a homepage that renders itself with JavaScript is exactly the
+    // case where the products are one link away.
+    e.nothingHere = true;
+    e.html = html;
+    throw e;
   }
 
   const response = await client().messages.create({
@@ -338,7 +445,16 @@ async function extractProductsFromUrl(rawUrl) {
   const products = raw
     .map((p) => ({
       name: String(p?.name || '').trim().slice(0, 200),
-      price: Number.isFinite(Number(p?.price)) && Number(p?.price) >= 0 ? Number(p.price) : null,
+      // Number(null) is 0, and 0 is finite and not negative — so every product
+      // the page gave no price for was arriving priced at nothing, which is
+      // precisely the invented value the whole extraction is built to refuse.
+      // A missing price has to stay missing, so the review screen can flag it.
+      price: (() => {
+        const raw = p?.price;
+        if (raw === null || raw === undefined || raw === '') return null;
+        const n = Number(raw);
+        return Number.isFinite(n) && n > 0 ? n : null;
+      })(),
       brand: p?.brand ? String(p.brand).trim().slice(0, 100) : '',
       category: p?.category ? String(p.category).trim().slice(0, 100) : '',
       description: p?.description ? String(p.description).trim().slice(0, 1200) : '',
@@ -365,6 +481,7 @@ async function extractProductsFromUrl(rawUrl) {
 
   return {
     products,
+    html,
     sourceUrl: url.toString(),
     pageTitle: title || '',
     model: MODEL,
@@ -378,4 +495,94 @@ async function extractProductsFromUrl(rawUrl) {
   };
 }
 
-module.exports = { extractProductsFromUrl, assertFetchable, readableText, imageCatalogue };
+
+/**
+ * Read a page and return the products on it — and if it has none, find the
+ * page on that site that does.
+ *
+ * Returns { products, sourceUrl, pageTitle, model, searched }. Never throws
+ * for "no products found": an empty list is an answer the caller shows.
+ */
+async function extractProductsFromUrl(rawUrl) {
+  const first = assertFetchable(rawUrl);
+  const searched = [];
+
+  let result = null;
+  let firstHtml = null;
+  try {
+    result = await readOnePage(first.toString());
+    firstHtml = result.html;
+    searched.push({ url: result.sourceUrl, found: result.products.length });
+    // Products with no price at all is what a homepage gives: it names the
+    // range in a banner without selling anything. Worth keeping if the shop
+    // page turns up nothing better, but not worth stopping the search for.
+    if (result.products.some((p) => p.price != null)) return { ...result, searched };
+  } catch (err) {
+    if (!err.nothingHere) throw err;
+    firstHtml = err.html || null;
+    searched.push({ url: first.toString(), found: 0 });
+  }
+
+  // Nothing on the page they gave us. Work out where this site keeps its
+  // products and try there, best guess first. Capped, because each attempt
+  // costs a model call and a shop waiting on a spinner is not helped by the
+  // eighth one.
+  if (!firstHtml) return result ? { ...result, searched } : { products: [], sourceUrl: first.toString(), pageTitle: '', searched };
+
+  const candidates = productPageCandidates(firstHtml, first.toString()).slice(0, MAX_PAGES_TO_CHECK);
+  let read = 0;
+  for (const candidate of candidates) {
+    if (read >= MAX_PAGES_TO_READ) break;
+    try {
+      // Fetch first and look for prices. A page with none is an About page or
+      // a 404 dressed as one, and sending it to the model would cost a minute
+      // of someone's time to be told what a regular expression already knew.
+      let candidateHtml;
+      try {
+        candidateHtml = await fetchPage(assertFetchable(candidate));
+      } catch (fetchErr) {
+        searched.push({ url: candidate, found: 0, problem: fetchErr.message });
+        continue;
+      }
+      if (!looksLikeProductList(readableText(candidateHtml).text)) {
+        searched.push({ url: candidate, found: 0, problem: 'no prices on it' });
+        continue;
+      }
+      read++;
+      const attempt = await readOnePage(candidate, { html: candidateHtml });
+      searched.push({ url: attempt.sourceUrl, found: attempt.products.length });
+      if (attempt.products.some((p) => p.price != null)) {
+        return {
+          ...attempt,
+          searched,
+          // Say plainly which page this came from. They typed a different one,
+          // and a list of products from an address they did not ask for is
+          // confusing until you say where it came from.
+          foundElsewhere: true,
+        };
+      }
+    } catch (err) {
+      searched.push({ url: candidate, found: 0, problem: err.message });
+      if (!err.nothingHere && err.status !== 400 && err.status !== 404) continue;
+    }
+  }
+
+  // Nothing better anywhere. Whatever the first page did give is still worth
+  // handing over — unpriced rows are flagged on the review screen and a shop
+  // can type the prices in, which beats starting from an empty list.
+  const tried = searched.length;
+  if (result?.products?.length) {
+    return { ...result, searched, hint: 'None of the pages we could read stated prices, so these need them typed in.' };
+  }
+  return {
+    products: [],
+    sourceUrl: first.toString(),
+    pageTitle: result?.pageTitle || '',
+    searched,
+    hint: tried > 1
+      ? `We looked at ${tried} pages on that site — including the ones it links to as its shop — and could not read a product list from any of them. Try the page that lists several products directly, or add them by hand.`
+      : (result?.hint || 'Nothing on that page looked like a product for sale.'),
+  };
+}
+
+module.exports = { extractProductsFromUrl, readOnePage, assertFetchable, readableText, imageCatalogue, productPageCandidates };
