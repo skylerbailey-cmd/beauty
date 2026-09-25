@@ -200,6 +200,62 @@ router.post('/admin',
 
 // Reading a supplier's page costs a paid API call and fetches a URL on the
 // server's behalf, so this is the tightest budget on the server.
+// ─── Reading a supplier's pages, out loud ───────────────────────────────────
+//
+// This can take a minute, sometimes two if we have to find the product list
+// ourselves. A spinner for that long reads as broken, so the same work is
+// also available as a stream: it says which page it is looking at, and hands
+// products over as soon as it has them.
+
+router.get('/read-products-stream',
+  requireSignedIn,
+  rateLimit({
+    limit: 8, windowMs: 60 * 60 * 1000, name: 'read-products',
+    message: 'That\'s enough page reads for now. Add the rest by hand or upload a file, and try again in an hour.',
+  }),
+  async (req, res) => {
+    res.set({
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      // Railway's proxy buffers responses by default, which would hold every
+      // event back until the end and defeat the entire point of streaming.
+      'X-Accel-Buffering': 'no',
+    });
+    res.flushHeaders?.();
+
+    const send = (event, data) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    // A browser that gave up mid-read should stop the work, not have it
+    // finish into a closed socket.
+    let aborted = false;
+    req.on('close', () => { aborted = true; });
+
+    const { extractProductsFromUrl } = require('../services/product-import');
+    try {
+      const result = await extractProductsFromUrl(req.body?.url || req.query.url, (event) => {
+        if (!aborted) send('progress', event);
+      });
+      if (aborted) return;
+      send('done', {
+        ok: true,
+        products: result.products,
+        source_url: result.sourceUrl,
+        page_title: result.pageTitle,
+        hint: result.hint || null,
+        found_elsewhere: !!result.foundElsewhere,
+        via_feed: !!result.viaFeed,
+        searched: (result.searched || []).map((x) => x.url),
+      });
+    } catch (err) {
+      if (!aborted) send('failed', { error: err.message || 'That page could not be read.' });
+    } finally {
+      res.end();
+    }
+  });
+
 router.post('/read-products',
   requireSignedIn,
   rateLimit({

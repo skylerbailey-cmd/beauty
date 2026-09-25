@@ -328,21 +328,43 @@ function stepProducts() {
   if (adding) $('backToList').addEventListener('click', () => reviewProducts());
 }
 
-async function readPage() {
+// Reading takes a minute, sometimes two. Rather than a spinner for all of it,
+// this listens to the server as it works: which page it is on, and the
+// products themselves the moment they exist.
+function readPage() {
   const url = $('url').value.trim();
   if (!url) { $('err').textContent = 'Paste the address of the page first.'; return; }
   const btn = $('go');
-  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> reading…';
-  $('err').textContent = '';
-  try {
-    const r = await api('/read-products', { method: 'POST', body: JSON.stringify({ url }) });
-    if (!r.products.length) {
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span> reading…';
+  $('err').style.color = 'var(--mid)';
+  $('err').textContent = 'This can take a minute.';
+
+  const src = new EventSource(`${API}/api/signup/read-products-stream?url=${encodeURIComponent(url)}`);
+  let finished = false;
+
+  src.addEventListener('progress', (ev) => {
+    const d = JSON.parse(ev.data);
+    if (d.stage === 'feed') $('err').textContent = 'Looking for this shop\u2019s own product list…';
+    else if (d.stage === 'looking') $('err').textContent = `Reading ${d.url}…`;
+    else if (d.stage === 'found') {
+      // The names appear here, before the slower part, so it is obvious
+      // something is happening and obvious what was found.
+      $('err').innerHTML = `Found <b>${d.count}</b> product${d.count === 1 ? '' : 's'}. Reading how each one is used\u2026`
+        + `<div style="margin-top:6px;font-size:.8rem;color:var(--mid)">${d.products.slice(0, 8).map((p) => esc(p.name)).join(' \u00b7 ')}${d.count > 8 ? ` \u00b7 and ${d.count - 8} more` : ''}</div>`;
+    } else if (d.stage === 'reading') $('err').textContent = `Reading how each of the ${d.count} is used\u2026`;
+  });
+
+  src.addEventListener('done', (ev) => {
+    finished = true; src.close();
+    btn.disabled = false; btn.textContent = 'Read the page';
+    $('err').style.color = ''; $('err').textContent = '';
+    const r = JSON.parse(ev.data);
+    if (!r.products || !r.products.length) {
+      $('err').style.color = 'var(--danger)';
       $('err').textContent = r.hint || 'Nothing on that page looked like a product for sale.';
       return;
     }
-    // Shops buy from more than one supplier, so a second page adds to the
-    // list rather than replacing it. Matching on name and brand, because the
-    // same product read twice from two pages is one product.
     const before = extracted.length;
     const seen = new Set(extracted.map((p) => (p.name + '|' + (p.brand || '')).toLowerCase()));
     for (const p of r.products) {
@@ -354,9 +376,22 @@ async function readPage() {
     sources.push({ url: r.source_url, title: r.page_title, added: extracted.length - before,
                    foundElsewhere: !!r.found_elsewhere });
     reviewProducts();
-  } catch (e) {
-    $('err').textContent = e.message;
-  } finally { btn.disabled = false; btn.textContent = 'Read the page'; }
+  });
+
+  src.addEventListener('failed', (ev) => {
+    finished = true; src.close();
+    btn.disabled = false; btn.textContent = 'Read the page';
+    $('err').style.color = 'var(--danger)';
+    $('err').textContent = JSON.parse(ev.data).error;
+  });
+
+  src.onerror = () => {
+    if (finished) return;
+    src.close();
+    btn.disabled = false; btn.textContent = 'Read the page';
+    $('err').style.color = 'var(--danger)';
+    $('err').textContent = 'The connection dropped while reading. Try again.';
+  };
 }
 
 // Every row editable, every row checkable, nothing saved until they say so.

@@ -208,6 +208,133 @@ function looksLikeProductList(text) {
   return prices.length >= 3;
 }
 
+
+// ─── The shop's own product feed ────────────────────────────────────────────
+//
+// Reading words off a page is the last resort, not the first. Most shops run
+// on a platform that will simply hand over its catalogue — name, exact price,
+// images, description — as JSON. That is faster than a model call, costs
+// nothing, cannot misread a price, and works on the pages that defeat text
+// extraction entirely: a listing built by JavaScript has no words for us to
+// read, but the feed behind it is right there.
+//
+// Two platforms cover most of the trade. WooCommerce (WordPress) exposes a
+// Store API; Shopify exposes products.json. Both are public read-only
+// endpoints that the shop's own storefront uses.
+
+const FEED_PAGE_SIZE = 100;
+const FEED_MAX_PAGES = 5;
+
+// Feeds hand back HTML-encoded text, names included: a product really called
+// "Barrier Support & Recovery" arrives as "Barrier Support &#038; Recovery"
+// and would go on the shelf, and onto a receipt, spelled exactly like that.
+const decodeEntities = (str) => String(str || '')
+  .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+  .replace(/&#x([0-9a-f]+);/gi, (_, n) => String.fromCodePoint(parseInt(n, 16)))
+  .replace(/&nbsp;/g, ' ')
+  .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+  .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+  // Ampersand last, so "&amp;#038;" cannot become an ampersand twice over.
+  .replace(/&amp;/g, '&');
+
+const stripTags = (html) => decodeEntities(String(html || '').replace(/<[^>]*>/g, ' '))
+  .replace(/\s+/g, ' ')
+  .trim();
+
+async function fetchJson(url) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'SkySale-ProductImport/1.0 (+https://sky-sale.com)', Accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+    const type = res.headers.get('content-type') || '';
+    if (!/json/i.test(type)) return null;
+    return await res.json();
+  } catch (_) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// WooCommerce prices arrive as integers scaled by currency_minor_unit: "11950"
+// with a minor unit of 0 is $11,950, and with 2 it is $119.50. Reading it as a
+// plain number gets the price wrong by a factor of a hundred, in whichever
+// direction is worse.
+function wooPrice(prices) {
+  if (!prices) return null;
+  const raw = Number(prices.price);
+  if (!Number.isFinite(raw)) return null;
+  const unit = Number(prices.currency_minor_unit);
+  const scaled = Number.isFinite(unit) ? raw / Math.pow(10, unit) : raw;
+  return scaled > 0 ? scaled : null;
+}
+
+async function readWooFeed(origin) {
+  const out = [];
+  for (let page = 1; page <= FEED_MAX_PAGES; page++) {
+    const rows = await fetchJson(`${origin}/wp-json/wc/store/v1/products?per_page=${FEED_PAGE_SIZE}&page=${page}`);
+    if (!Array.isArray(rows) || !rows.length) break;
+    for (const r of rows) {
+      // A variation is the same product in another size; the parent is the
+      // product. Listing both puts the range in twice.
+      if (r.type === 'variation') continue;
+      out.push({
+        name: decodeEntities(r.name).trim(),
+        price: wooPrice(r.prices),
+        brand: decodeEntities((r.brands && r.brands[0] && r.brands[0].name) || ''),
+        category: decodeEntities((r.categories || []).map((c) => c.name).filter((n) => !/^products?$/i.test(n))[0] || ''),
+        description: stripTags(r.short_description || r.description).slice(0, 1200),
+        usage: '',
+        image: (r.images && r.images[0] && r.images[0].src) || '',
+        source_url: r.permalink || '',
+      });
+    }
+    if (rows.length < FEED_PAGE_SIZE) break;
+  }
+  return out;
+}
+
+async function readShopifyFeed(origin) {
+  const out = [];
+  for (let page = 1; page <= FEED_MAX_PAGES; page++) {
+    const body = await fetchJson(`${origin}/products.json?limit=250&page=${page}`);
+    const rows = body && Array.isArray(body.products) ? body.products : null;
+    if (!rows || !rows.length) break;
+    for (const r of rows) {
+      const variant = (r.variants || [])[0];
+      const price = variant ? Number(variant.price) : NaN;
+      out.push({
+        name: decodeEntities(r.title).trim(),
+        price: Number.isFinite(price) && price > 0 ? price : null,
+        brand: decodeEntities(r.vendor || ''),
+        category: decodeEntities(r.product_type || ''),
+        description: stripTags(r.body_html).slice(0, 1200),
+        usage: '',
+        image: (r.images && r.images[0] && r.images[0].src) || '',
+        source_url: `${origin}/products/${r.handle}`,
+      });
+    }
+    if (rows.length < 250) break;
+  }
+  return out;
+}
+
+/** The catalogue straight from the shop's platform, or null if it has none. */
+async function readProductFeed(pageUrl) {
+  const origin = new URL(pageUrl).origin;
+  for (const read of [readWooFeed, readShopifyFeed]) {
+    try {
+      const rows = (await read(origin)).filter((p) => p.name);
+      if (rows.length) return rows;
+    } catch (_) { /* try the next platform */ }
+  }
+  return null;
+}
+
 // ─── Where the products actually live ───────────────────────────────────────
 //
 // People paste the address they know, which is the front door: avologi.com,
@@ -496,6 +623,83 @@ async function readOnePage(rawUrl, opts = {}) {
 }
 
 
+
+// What a feed does not carry.
+//
+// A platform feed gives the facts — name, price, picture, description — and
+// says nothing about how a customer should use the thing, which is what the
+// welcome email is made of. That is a reading job, so it is one model call
+// over the descriptions we already have rather than a fetch per product.
+async function describeForEmail(products, say) {
+  if (!process.env.ANTHROPIC_API_KEY || !products.length) return products;
+  say && say({ stage: 'reading', count: products.length });
+
+  const TOOL = {
+    name: 'describe_products',
+    description: 'For each product, say where it belongs in a routine and how it is used.',
+    strict: true,
+    input_schema: {
+      type: 'object', additionalProperties: false, required: ['products'],
+      properties: {
+        products: {
+          type: 'array',
+          items: {
+            type: 'object', additionalProperties: false,
+            required: ['index', 'routine_step', 'frequency', 'usage', 'benefits'],
+            properties: {
+              index: { type: 'integer', description: 'The number this product was given in the list.' },
+              routine_step: { type: ['string', 'null'], description: 'One of: cleanser, toner, serum, eye treatment, moisturizer, sunscreen, exfoliant, mask, device treatment, treatment cream. null if none of them fit.' },
+              frequency: { type: ['string', 'null'], description: 'daily, weekly or monthly — only if the description says so. null otherwise.' },
+              usage: { type: ['string', 'null'], description: 'How to use it, in the words of the description. null if it does not say.' },
+              benefits: { type: ['string', 'null'], description: 'What it does for the customer, short and comma separated, from the description. null if it claims nothing.' },
+            },
+          },
+        },
+      },
+    },
+  };
+
+  const listing = products
+    .map((p, i) => `[${i}] ${p.name}${p.category ? ` (${p.category})` : ''}\n${(p.description || '').slice(0, 700)}`)
+    .join('\n\n');
+
+  try {
+    const response = await client().messages.create({
+      model: MODEL,
+      max_tokens: 16000,
+      thinking: { type: 'adaptive' },
+      system: `You are given a shop's products, each with its own description, and you say where each belongs in a skincare routine and how it is used.
+
+Only what the description supports. A description that does not say how often to use something gets null for frequency — a customer told to use a product daily when the maker says weekly has been given advice we invented. The same goes for usage and benefits.
+
+routine_step is the exception worth a judgement: a face wash is a cleanser whatever it is called, a night cream is a moisturizer, a wand or handset is a device treatment. If it is genuinely none of the listed steps — a supplement, a tool, a gift set — return null.
+
+Answer for every product, using the number it was given.`,
+      tools: [TOOL],
+      tool_choice: { type: 'tool', name: 'describe_products' },
+      messages: [{ role: 'user', content: listing }],
+    });
+
+    const call = response.content.find((b) => b.type === 'tool_use');
+    const rows = call && Array.isArray(call.input?.products) ? call.input.products : [];
+    for (const row of rows) {
+      const p = products[row.index];
+      if (!p) continue;
+      const step = String(row.routine_step || '').toLowerCase();
+      if (ROUTINE_STEPS.includes(step)) p.routine_step = step;
+      const freq = String(row.frequency || '').toLowerCase();
+      if (['daily', 'weekly', 'monthly'].includes(freq)) p.frequency = freq;
+      if (row.usage) p.usage = String(row.usage).slice(0, 2000);
+      if (row.benefits) p.benefits = String(row.benefits).slice(0, 1000);
+    }
+  } catch (err) {
+    // The facts are already right. Losing the routine notes is a smaller loss
+    // than losing the catalogue, so this never fails the import.
+    console.error('[product-import] Could not describe products:', err.message);
+  }
+  return products;
+}
+
 /**
  * Read a page and return the products on it — and if it has none, find the
  * page on that site that does.
@@ -503,9 +707,29 @@ async function readOnePage(rawUrl, opts = {}) {
  * Returns { products, sourceUrl, pageTitle, model, searched }. Never throws
  * for "no products found": an empty list is an answer the caller shows.
  */
-async function extractProductsFromUrl(rawUrl) {
+async function extractProductsFromUrl(rawUrl, onProgress) {
   const first = assertFetchable(rawUrl);
   const searched = [];
+  const say = (event) => { try { onProgress && onProgress(event); } catch (_) {} };
+
+  // The shop's own feed first. It is exact where reading a page is a guess,
+  // it costs nothing, and it works on the JavaScript-built listings that have
+  // no words on them at all — which is most of what fails here.
+  say({ stage: 'feed', url: new URL(first).origin });
+  const feed = await readProductFeed(first.toString()).catch(() => null);
+  if (feed && feed.length) {
+    searched.push({ url: `${new URL(first).origin} (product feed)`, found: feed.length });
+    say({ stage: 'found', count: feed.length, products: feed, source: 'feed' });
+    const enriched = await describeForEmail(feed, say);
+    return {
+      products: enriched,
+      sourceUrl: first.toString(),
+      pageTitle: '',
+      searched,
+      viaFeed: true,
+      model: MODEL,
+    };
+  }
 
   let result = null;
   let firstHtml = null;
@@ -585,4 +809,5 @@ async function extractProductsFromUrl(rawUrl) {
   };
 }
 
-module.exports = { extractProductsFromUrl, readOnePage, assertFetchable, readableText, imageCatalogue, productPageCandidates };
+module.exports = { extractProductsFromUrl, readOnePage, assertFetchable, readableText,
+  imageCatalogue, productPageCandidates, readProductFeed, wooPrice };
