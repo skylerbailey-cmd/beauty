@@ -136,8 +136,11 @@ const NOT_SCOPED = new Set([
   // Answers "does this address exist", used to word an email. Never reaches a
   // browser — see the note on it in the data layer.
   'emailHasAccount',
-  // Takes a company id and returns the ids in scope; scope itself is the
-  // thing under test elsewhere.
+  // Returns every company on the server, by design, for the seed and for
+  // operational scripts. It is excused here because nothing a signed-in shop
+  // can reach is allowed to call it — which the check below enforces, rather
+  // than this comment hoping so. Excusing it without reading it is how the
+  // commissions report shipped showing every shop's roster.
   'getAllCompanyIds',
   // Take an id that already belongs to a company, not a company id.
   'getEmployee', 'getCustomer', 'getSentEmail', 'getTreatment', 'getAppointment',
@@ -250,6 +253,70 @@ async function sweepRoutes(shopA) {
   return hit;
 }
 
+// ─── Nothing a shop can reach may ask for every company ─────────────────────
+
+function sweepAllCompanyCallers() {
+  console.log('\n── No route reaches across every company ──');
+  const fs = require('fs');
+  const dir = path.join(__dirname, '..', 'src', 'routes');
+  let found = 0;
+  for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.js'))) {
+    const src = fs.readFileSync(path.join(dir, file), 'utf8');
+    src.split('\n').forEach((line, i) => {
+      if (line.includes('getAllCompanyIds') && !line.trim().startsWith('//')) {
+        failures.push({ label: `${file}:${i + 1} reaches every company on the server`, sample: line.trim() });
+        found++;
+      }
+    });
+  }
+  if (found) console.log(`  LEAK  ${found} route-level call(s) to getAllCompanyIds`);
+  else { console.log('  ok    every route asks only for its granted scope'); pass++; }
+}
+
+// ─── The POSTs, which is where the reports actually live ────────────────────
+//
+// The commissions and payroll reports are POSTs, because they take a name and
+// PIN. A sweep of GETs alone said the product was clean while its commission
+// report listed every shop's staff.
+
+async function sweepReportPosts(shopA, shopB) {
+  console.log('\n── The reports, which are POSTs ──');
+  const session = { userId: shopA.userId, save: (cb) => cb && cb() };
+  const app = buildApp(session);
+  const server = http.createServer(app);
+  await new Promise((r) => server.listen(0, r));
+  const port = server.address().port;
+
+  const post = (p, body) => new Promise((resolve) => {
+    const data = JSON.stringify(body || {});
+    const req = http.request({ port, path: p, method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } },
+      (res) => { let b = ''; res.on('data', (c) => b += c); res.on('end', () => resolve(b)); });
+    req.on('error', () => resolve(''));
+    req.setTimeout(8000, () => { req.destroy(); resolve(''); });
+    req.write(data); req.end();
+  });
+
+  // The first shop's own admin, asking for its own figures.
+  const creds = { name: 'Staffer', pin: '4321', start: FROM, end: TO, payday: '2026-07-01' };
+  const paths = [
+    '/api/pos/reports/commissions', '/api/pos/reports/payroll',
+    '/api/pos/reports/chargebacks', '/api/pos/reports/my-adjustments',
+    '/api/pos/reports/payroll/paydays', '/api/pos/reports/payroll/runs',
+  ];
+  let answered = 0;
+  for (const p of paths) {
+    const body = await post(p, creds);
+    if (!body) continue;
+    answered++;
+    check(`POST ${p}`, body.includes(MARK)
+      ? body.slice(Math.max(0, body.indexOf(MARK) - 140), body.indexOf(MARK) + 140) : null);
+  }
+  console.log(`        ${answered} of ${paths.length} report endpoints answered`);
+  server.close();
+  return answered;
+}
+
 // ─── A scope that was never granted ─────────────────────────────────────────
 
 async function sweepForgedScope(shopA, shopB) {
@@ -294,6 +361,8 @@ async function sweepForgedScope(shopA, shopB) {
 
   const sweep = await sweepDataLayer(shopA);
   const routes = await sweepRoutes(shopA);
+  const posts = await sweepReportPosts(shopA, shopB);
+  sweepAllCompanyCallers();
   await sweepForgedScope(shopA, shopB);
 
   // A test that exercises nothing passes for the wrong reason.

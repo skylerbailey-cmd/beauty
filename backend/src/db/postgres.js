@@ -1282,6 +1282,20 @@ async function findRecentDuplicate(userId, { type, customer_name, customer_email
 // rest are placeholder rows from sign-ups that never configured anything).
 // Commission is reported across all of them regardless of which one is signed
 // in, since staff work at more than one and are paid on the combined figure.
+// The named companies among a given set of ids — the scoped counterpart to
+// getAllCompanyIds, which every caller that used to reach across the whole
+// server has been moved onto.
+async function companiesByIds(ids) {
+  const list = (Array.isArray(ids) ? ids : [ids]).filter(Boolean);
+  if (!list.length) return [];
+  return (await query(
+    `SELECT user_id, store_name FROM pos_settings
+      WHERE user_id = ANY($1::text[])
+        AND TRIM(COALESCE(store_name, '')) <> '' ORDER BY store_name`, [list])).rows;
+}
+
+// Every company on the server. Nothing a signed-in shop can reach may call
+// this — see companiesByIds. Kept for the seed and for operational scripts.
 async function getAllCompanyIds() {
   return (await query(
     `SELECT user_id, store_name FROM pos_settings
@@ -3777,6 +3791,7 @@ module.exports = {
   saveChargeback,
   deleteChargeback,
   getAllCompanyIds,
+  companiesByIds,
   payrollForPayday,
   paidPaydays,
   setPayrollPaid,

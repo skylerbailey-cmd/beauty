@@ -1517,15 +1517,24 @@ async function rangeFor(req, start, end) {
   };
 }
 
-// Staff work at both stores, so a report about a person (commissions, payroll)
-// asks for `all=1` and gets every company. A report about a shop (KPIs, top
-// products) asks for `all=0` and gets only the company signed in — said
-// explicitly, because the session may have been widened over on Transactions,
-// and "Glow SF only" must never quietly include the other store. Neither given:
-// stay on whatever the session is scoped to.
+// Which companies a report may look at.
+//
+// A report about a person — commissions, payroll — can span more than one
+// company, because somebody who works at two shops has one paycheck. But
+// "more than one" means the ones this session has proved it may open, not
+// every company on the server. It used to mean every company on the server:
+// written when there were two, owned by the same person, with staff working
+// across both. On a product other shops sign up to, that is every shop's
+// roster on every other shop's commission report.
+//
+// The combined view is still available and still works the same way — it is
+// granted by company-scope, which verifies a manager's name and PIN at each
+// company being added. Asking for `all=1` now gets exactly that.
 const reportScope = async (req) => {
-  if (req.query.all === '1') return (await pgDb.getAllCompanyIds()).map(c => c.user_id);
+  // A report about a shop rather than a person: this shop only, said
+  // explicitly, because the session may have been widened elsewhere.
   if (req.query.all === '0') return [req.session.userId];
+  // Everything else — including all=1 — is what this session was granted.
   return scopeIds(req);
 };
 
@@ -1542,10 +1551,12 @@ router.get('/reports/employees', async (req, res) => {
   res.json({ report: await pgDb.getEmployeeSalesReport(await reportScope(req), startDate, endDate) });
 });
 
-// Payroll always covers every company, the way the commission figures do:
-// staff work at both stores and a manager runs one payday across both rather
-// than switching accounts to find the other half of someone's pay.
-const payrollScope = async () => (await pgDb.getAllCompanyIds()).map(c => c.user_id);
+// Payroll covers the companies this session was granted, the way the
+// commission figures do: a manager runs one payday across the shops they have
+// proved they manage, rather than switching accounts to find the other half
+// of somebody's pay. It covered every company on the server before, which on
+// a product other shops sign up to is somebody else's payroll.
+const payrollScope = async (req) => scopeIds(req);
 
 // Commission owed on a given payday, with returns and chargebacks itemised.
 // Manager-gated like the rest of the commission figures.
@@ -1559,7 +1570,7 @@ router.post('/reports/payroll', async (req, res) => {
     return res.status(400).json({ error: 'Pick a payday.' });
   }
   const settings = await pgDb.getSettings(req.session.userId);
-  res.json(await pgDb.payrollForPayday(await payrollScope(), payday, settings));
+  res.json(await pgDb.payrollForPayday(await payrollScope(req), payday, settings));
 });
 
 // Mark a payday as paid (or reopen it). Once paid its figures stop moving —
@@ -1573,7 +1584,7 @@ router.post('/reports/payroll/paid', async (req, res) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.status(400).json({ error: 'Pick a payday.' });
   // Scoped to every company, not the signed-in one: a payday covers both
   // stores, so closing it from one account has to be reopenable from the other.
-  const scope = await payrollScope();
+  const scope = await payrollScope(req);
 
   if (paid) {
     // Read the cheque before closing it, and pin every dispute it is holding
@@ -1652,7 +1663,7 @@ router.post('/reports/payroll/paid-employee', async (req, res) => {
   const empId = parseInt(employee_id);
   if (!empId) return res.status(400).json({ error: 'Pick who is being paid.' });
 
-  const scope = await payrollScope();
+  const scope = await payrollScope(req);
   const settings = await pgDb.getSettings(req.session.userId);
 
   if (paid) {
@@ -1680,7 +1691,7 @@ router.post('/reports/payroll/adjustment', async (req, res) => {
   if (!isFinite(amt) || amt === 0) return res.status(400).json({ error: 'Enter an amount — positive to add, negative to deduct.' });
   if (!employee_id) return res.status(400).json({ error: 'Pick who this is for.' });
   const settings = await pgDb.getSettings(req.session.userId);
-  const run = await pgDb.payrollForPayday(await payrollScope(), payday, settings);
+  const run = await pgDb.payrollForPayday(await payrollScope(req), payday, settings);
   if (run.paid) return res.status(400).json({ error: 'That payday has already been paid. Reopen it first, or put this on the next one.' });
   res.json(await pgDb.addPayrollAdjustment(req.session.userId, payday, parseInt(employee_id), amt, note, employee.name));
 });
@@ -1705,7 +1716,7 @@ router.post('/reports/my-paycheck', async (req, res) => {
   if (!me) return res.status(401).json({ error: 'Invalid name or PIN' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.json({ rows: [] });
 
-  const scope = await payrollScope();
+  const scope = await payrollScope(req);
   const settings = await pgDb.getSettings(req.session.userId);
   const run = await pgDb.payrollForPayday(scope, payday, settings);
   const mine = String(me.name).trim().toLowerCase();
@@ -1722,7 +1733,8 @@ router.post('/reports/my-adjustments', async (req, res) => {
   const me = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
   if (!me) return res.status(401).json({ error: 'Invalid name or PIN' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.json({ adjustments: [] });
-  const scope = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
+  // The companies this session was granted — not every company on the server.
+  const scope = scopeIds(req);
   const rows = await pgDb.adjustmentsForPayday(scope, payday, isAdmin(me) ? null : me.name);
   res.json({ adjustments: rows, payday, role: roleOf(me) });
 });
@@ -1736,7 +1748,8 @@ router.post('/reports/chargebacks', async (req, res) => {
   if (!employee) return res.status(401).json({ error: 'Invalid name or PIN' });
 
   const { startDate, endDate } = await rangeFor(req, start, end);
-  const scope = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
+  // The companies this session was granted — not every company on the server.
+  const scope = scopeIds(req);
   let rows = await pgDb.chargebacksForRange(scope, startDate, endDate);
 
   if (!isAdmin(employee)) {
@@ -1762,7 +1775,8 @@ router.post('/reports/employee-detail', async (req, res) => {
   }
 
   const { startDate, endDate } = await rangeFor(req, start, end);
-  const scope = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
+  // The companies this session was granted — not every company on the server.
+  const scope = scopeIds(req);
 
   const activity = await pgDb.employeeActivityForRange(scope, who, startDate, endDate, store || null);
 
@@ -1798,7 +1812,8 @@ router.post('/reports/chargebacks/:id', async (req, res) => {
     return res.status(403).json({ error: 'Only an admin can change a chargeback.' });
   }
   const id = parseInt(req.params.id);
-  const scope = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
+  // The companies this session was granted — not every company on the server.
+  const scope = scopeIds(req);
 
   if (status !== undefined) {
     const r = await pgDb.setChargebackStatus(id, scope, status, closed_at);
@@ -1821,7 +1836,8 @@ router.get('/reports/paydays', async (req, res) => {
   const sched = pgDb.scheduleFrom(settings);
   // The next payday is offered too: the period it covers has usually closed by
   // the time anyone opens this, and it's the one a manager is about to run.
-  const scope = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
+  // The companies this session was granted — not every company on the server.
+  const scope = scopeIds(req);
   const paid = new Set(await pgDb.paidPaydays(scope));
   const upcoming = pgDb.nextPayday(pgDb.paydaysBetween(from, today, sched)[0] || today, sched);
   res.json({
@@ -1895,7 +1911,11 @@ router.post('/reports/employee-personal', async (req, res) => {
       .filter(r => r.type === 'return');
 
   if (isAdmin(employee)) {
-    const all = (await pgDb.getAllCompanyIds()).map(c => c.user_id);
+    // The companies this session was granted. It used to be every company on
+    // the server, which put every other shop's roster on this one's
+    // commission report — harmless when the two companies were one owner's,
+    // and not harmless at all once anybody can sign up.
+    const all = scopeIds(req);
     const report = await pgDb.getEmployeeSalesReport(all, startDate, endDate);
     // An admin reads everyone's commissions, so they get everyone's returns.
     const names = [...new Set(report.map(r => r.employee_name).filter(Boolean))];
@@ -1914,11 +1934,16 @@ router.post('/reports/employee-personal', async (req, res) => {
     const included = [];
     const rejected = [];
 
-    // Every company, not just the one signed in — the same person works at
-    // both and is paid on the combined figure. Their own name and PIN is
-    // re-checked at each one, and only rows belonging to the employee it
-    // matches there are returned, so this shows nobody else's figures.
-    for (const co of await pgDb.getAllCompanyIds()) {
+    // The companies this session was granted, and no others.
+    //
+    // This used to walk every company on the server, trying the name and PIN
+    // at each. On one owner's two shops that was a convenience. On a product
+    // strangers sign up to it is a four-digit PIN tried against every shop
+    // that exists: a common name and a lucky number would attach somebody
+    // else's sales to this person's commission report, and confirm their PIN
+    // while doing it.
+    const scopedCompanies = await pgDb.companiesByIds(scopeIds(req));
+    for (const co of scopedCompanies) {
       const there = co.user_id === req.session.userId
         ? employee
         : await pgDb.verifyEmployeePin(pin, co.user_id, name);
@@ -1935,7 +1960,7 @@ router.post('/reports/employee-personal', async (req, res) => {
 
     // Only their own, and only at the companies their name and PIN just
     // cleared — the same restriction the rows above are under.
-    const theirScope = (await pgDb.getAllCompanyIds())
+    const theirScope = scopedCompanies
       .filter(co => included.includes(co.store_name)).map(co => co.user_id);
     const returns = theirScope.length ? await returnsFor(theirScope, employee.name) : [];
 
