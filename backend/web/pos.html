@@ -555,6 +555,33 @@
       max-height: none;
     }
   }
+
+  /* ─── Emails: one nav, down the left ──────────────────────────────────── */
+  .emails-layout { display: flex; align-items: stretch; min-height: calc(100vh - 120px); }
+  .emails-nav {
+    flex: 0 0 210px; border-right: 1px solid var(--border); background: var(--white);
+    padding: 16px 10px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .emails-body { flex: 1; min-width: 0; }
+  .em-nav-btn {
+    display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+    padding: 11px 14px; border: none; border-radius: 8px; background: none; cursor: pointer;
+    font-family: system-ui, sans-serif; font-size: .9rem; font-weight: 500; color: var(--dark);
+  }
+  .em-nav-btn:hover { background: var(--cream); }
+  .em-nav-btn.active { background: var(--accent-soft); color: var(--accent-deep); font-weight: 600; }
+  .em-ico { font-size: 1rem; line-height: 1; }
+
+  /* On a phone the nav lies down across the top, because 210px of it beside
+     the content leaves nothing to read the content in. */
+  @media (max-width: 760px) {
+    .emails-layout { display: block; min-height: 0; }
+    .emails-nav {
+      flex: none; flex-direction: row; overflow-x: auto; border-right: none;
+      border-bottom: 1px solid var(--border); padding: 8px;
+    }
+    .em-nav-btn { width: auto; white-space: nowrap; padding: 9px 13px; }
+  }
   </style>
 </head>
 <body>
@@ -1168,16 +1195,28 @@
 
   <!-- ─── EMAILS TAB (embedded Email Suite) ─── -->
   <div class="tab-content" id="tab-emails">
-    <div style="max-width:1500px;margin:0 auto;padding:20px 20px 0">
-      <div class="tx-views">
-        <button class="tx-view-btn active" data-emailview="welcome" onclick="switchEmailView('welcome')">Welcome emails</button>
-        <button class="tx-view-btn" data-emailview="mass" onclick="switchEmailView('mass')">Mass email</button>
-      </div>
-    </div>
+    <!-- One list of places to be, on the left, owned by this page.
+         The email suite runs in a frame and used to bring its own sidebar,
+         which meant two navigations stacked at right angles and mass email
+         reachable from neither. The frame's sidebar is hidden in embedded
+         mode now, and this drives it by message instead. -->
+    <div class="emails-layout">
+      <nav class="emails-nav" id="emailsNav">
+        <button class="em-nav-btn" data-emailview="sent" onclick="switchEmailView('sent')">
+          <span class="em-ico">&#128233;</span> Sent emails
+        </button>
+        <button class="em-nav-btn active" data-emailview="welcome" onclick="switchEmailView('welcome')">
+          <span class="em-ico">&#9993;</span> Welcome emails
+        </button>
+        <button class="em-nav-btn" data-emailview="mass" onclick="switchEmailView('mass')">
+          <span class="em-ico">&#128227;</span> Mass email
+        </button>
+      </nav>
 
-    <div id="emailViewWelcome">
-      <iframe id="emailsFrame" data-src="/?embed=1" title="Emails" style="width:100%;height:calc(100vh - 170px);border:0;display:block"></iframe>
-    </div>
+      <div class="emails-body">
+        <div id="emailViewWelcome">
+          <iframe id="emailsFrame" data-src="/?embed=1" title="Emails" style="width:100%;height:calc(100vh - 140px);border:0;display:block"></iframe>
+        </div>
 
     <!-- Mass email. The audience is chosen here rather than inherited from
          whatever the Customers list happened to be filtered to — writing to
@@ -1247,6 +1286,8 @@
 
       </div>
     </div>
+      </div><!-- /emails-body -->
+    </div><!-- /emails-layout -->
   </div>
 
   <!-- ─── SETTINGS TAB ─── -->
@@ -9103,16 +9144,45 @@ const massMonthStart = () => new Date().toISOString().slice(0, 8) + '01';
 const MASS_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
 function switchEmailView(view) {
-  document.getElementById('emailViewWelcome').style.display = view === 'welcome' ? '' : 'none';
+  // Sent and Welcome are both the email suite, which runs in the frame; mass
+  // email is this page's own. So the frame stays mounted for two of the three
+  // and is simply told which of its tabs to show.
+  const inFrame = view === 'sent' || view === 'welcome';
+  document.getElementById('emailViewWelcome').style.display = inFrame ? '' : 'none';
   document.getElementById('emailViewMass').style.display = view === 'mass' ? '' : 'none';
-  document.querySelectorAll('.tx-view-btn[data-emailview]').forEach(b =>
+  document.querySelectorAll('.em-nav-btn[data-emailview]').forEach(b =>
     b.classList.toggle('active', b.dataset.emailview === view));
-  if (view === 'welcome') {
+
+  if (inFrame) {
     const f = document.getElementById('emailsFrame');
-    if (f && !f.src) f.src = f.dataset.src;
+    if (f && !f.src) {
+      // First visit: ask for the right tab as it loads, rather than showing
+      // whatever it defaults to and then switching in front of them.
+      f.dataset.pendingTab = view;
+      f.src = f.dataset.src;
+    } else if (f) {
+      tellEmailFrame(view);
+    }
   }
   if (view === 'mass') loadMassEmail();
 }
+
+// Same origin, but say so explicitly: a frame that will accept instructions
+// from anywhere is a frame anyone can drive.
+function tellEmailFrame(tab) {
+  const f = document.getElementById('emailsFrame');
+  try { f.contentWindow.postMessage({ type: 'skysale:emails-tab', tab }, location.origin); }
+  catch (_) { /* not loaded yet; the pending tab covers it */ }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const f = document.getElementById('emailsFrame');
+  if (!f) return;
+  f.addEventListener('load', () => {
+    const wanted = f.dataset.pendingTab;
+    if (wanted) { delete f.dataset.pendingTab; tellEmailFrame(wanted); }
+  });
+});
 
 async function loadMassEmail() {
   if (massCustomers || massLoading) { applyMassFilters(); return; }

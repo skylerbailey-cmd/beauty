@@ -1676,6 +1676,12 @@
   body.embedded [data-tab="inbox"],
   body.embedded [data-tab="customers"],
   body.embedded [data-tab="campaigns"] { display: none !important; }
+  /* The POS now draws the list of places to be, outside this frame, so that
+     mass email can sit in it alongside these two. Two navigations at right
+     angles to each other, neither of them complete, was the alternative. */
+  body.embedded .sidebar,
+  body.embedded .mobile-nav { display: none !important; }
+  body.embedded .app-layout { grid-template-columns: 1fr; display: block; }
 </style>
 
 <header>
@@ -4486,6 +4492,20 @@
     });
     hideError();
   }
+
+// Which tab to show is decided by the POS when we're embedded in it: the list
+// of places to be lives out there now, so that mass email — which is the
+// POS's own screen, not ours — can sit in the same list as these.
+window.addEventListener('message', (e) => {
+  // Same origin only. A frame that takes instructions from anywhere is a
+  // frame anyone who can get it into an iframe can drive.
+  if (e.origin !== location.origin) return;
+  const d = e.data;
+  if (!d || d.type !== 'skysale:emails-tab') return;
+  if (d.tab !== 'sent' && d.tab !== 'welcome') return;
+  try { switchTab(d.tab); } catch (_) {}
+});
+
 </script>
 
 </body>
