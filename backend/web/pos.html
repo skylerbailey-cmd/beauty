@@ -6533,9 +6533,27 @@ function composeWelcomeForCustomer(customer) {
   // Point the iframe at the prefilled URL before switching, and set src
   // directly rather than via dataset so switchTab's "load once" check doesn't
   // skip it — and so a second customer replaces the first one's details.
-  if (frame) frame.src = `/?${qs.toString()}`;
+  //
+  // /emails.html, not /. The email suite used to answer at the site root;
+  // once the root became a redirect to the register, this pointed the Emails
+  // tab at the register — so "Send Welcome Email" opened Emails and showed
+  // the till inside it.
+  if (frame) {
+    // Which of the suite's own tabs to open, handed over as it loads rather
+    // than posted at a frame that is still loading.
+    frame.dataset.pendingTab = 'welcome';
+    frame.src = `/emails.html?${qs.toString()}`;
+  }
   closeCustomerDetail();
   switchTab('emails');
+  // Show the frame rather than the mass-email panel, and mark the left nav to
+  // match — without touching the frame, which is already going where it should.
+  const welcomeView = document.getElementById('emailViewWelcome');
+  const massView = document.getElementById('emailViewMass');
+  if (welcomeView) welcomeView.style.display = '';
+  if (massView) massView.style.display = 'none';
+  document.querySelectorAll('.em-nav-btn[data-emailview]').forEach((b) =>
+    b.classList.toggle('active', b.dataset.emailview === 'welcome'));
 }
 
 function closeCustomerDetail() {

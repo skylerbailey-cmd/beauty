@@ -200,11 +200,17 @@ async function main() {
   let sales = 0, returns = 0, revenue = 0;
   const soldSoFar = [];
 
+  // Through today inclusive, so the leaderboard — which opens on today — has
+  // something on it whenever anyone looks. A demo whose first screen reads
+  // "No sales data yet" is a demo of nothing.
   for (let day = new Date(start); day <= today; day.setDate(day.getDate() + 1)) {
     const dow = day.getDay();
     // Closed Sundays, quiet Mondays, busy at the weekend.
     if (dow === 0) continue;
-    const count = dow === 1 ? between(0, 2) : (dow === 5 || dow === 6) ? between(3, 7) : between(1, 5);
+    let count = dow === 1 ? between(0, 2) : (dow === 5 || dow === 6) ? between(3, 7) : between(1, 5);
+    // Today always has trade on it, whatever day of the week it falls on.
+    const isToday = day.toDateString() === today.toDateString();
+    if (isToday) count = Math.max(count, 3);
 
     for (let i = 0; i < count; i++) {
       const emp = pick(staff);
@@ -227,7 +233,10 @@ async function main() {
       const tax = Math.round(subtotal * TAX * 100) / 100;
       const total = Math.round((subtotal + tax) * 100) / 100;
       const at = new Date(day);
-      at.setHours(between(9, 18), between(0, 59), 0, 0);
+      // Today's sales have to have already happened, or the leaderboard —
+      // which runs to now — leaves them out.
+      at.setHours(isToday ? between(8, Math.max(9, today.getHours())) : between(9, 18), between(0, 59), 0, 0);
+      if (at > today) at.setTime(today.getTime() - 60000);
 
       const txId = await pgDb.importTransaction({
         type: 'sale', employee_id: emp.id,
@@ -344,25 +353,56 @@ async function main() {
                                 ['LED Resurfacing', 30], ['Consultation', 30]]) {
       made.push(await pgDb.createTreatment(DEMO_USER_ID, name, mins));
     }
-    let booked = 0;
-    for (let i = 1; i <= 10; i++) {
-      const when = new Date(today);
-      when.setDate(when.getDate() + i);
-      if (when.getDay() === 0) continue;
-      when.setHours(between(10, 15), rnd() < 0.5 ? 0 : 30, 0, 0);
+    const book = async (when, note) => {
       const c = pick(customers);
       const t = pick(made);
       const who = pick(staff);
-      await pgDb.createAppointment({
+      return pgDb.createAppointment({
         user_id: DEMO_USER_ID,
         treatment_id: t.id, treatment_name: t.name,
         customer_name: c.name, customer_email: c.email, customer_phone: c.phone,
         employee_id: who.id, employee_name: who.name,
-        starts_at: when.toISOString(), duration_min: t.duration_min, notes: '',
+        starts_at: when.toISOString(), duration_min: t.duration_min, notes: note || '',
       });
+    };
+
+    // A fortnight of sessions, spread across the staff.
+    let booked = 0;
+    for (let i = 1; i <= 16; i++) {
+      const when = new Date(today);
+      when.setDate(when.getDate() + i);
+      if (when.getDay() === 0) continue;             // closed Sundays
+      if (rnd() < 0.25) continue;                    // not every slot is taken
+      when.setHours(between(10, 16), rnd() < 0.5 ? 0 : 30, 0, 0);
+      await book(when);
       booked++;
     }
-    console.log(`  opening hours, ${made.length} treatments and ${booked} bookings in the next fortnight`);
+
+    // Two that did not go to plan, because those are the ones worth seeing:
+    // the calendar's job is not to show a tidy week.
+    const movedFrom = new Date(today);
+    movedFrom.setDate(movedFrom.getDate() + 2);
+    movedFrom.setHours(11, 0, 0, 0);
+    const moved = await book(movedFrom, 'Asked to move — school run.');
+    const movedTo = new Date(today);
+    movedTo.setDate(movedTo.getDate() + 5);
+    movedTo.setHours(15, 30, 0, 0);
+    await pgDb.updateAppointment(moved.id, { starts_at: movedTo.toISOString() });
+
+    const dropped = new Date(today);
+    dropped.setDate(dropped.getDate() + 3);
+    dropped.setHours(14, 0, 0, 0);
+    const cancelled = await book(dropped, 'Away that week.');
+    await pgDb.cancelAppointment(cancelled.id, 'customer');
+
+    // And one today, so the diary is not empty on the day anybody looks.
+    const later = new Date(today);
+    if (later.getHours() < 16) {
+      later.setHours(Math.max(later.getHours() + 1, 11), 0, 0, 0);
+      await book(later);
+      booked++;
+    }
+    console.log(`  opening hours, ${made.length} treatments, ${booked} bookings, one moved and one cancelled`);
   } catch (err) {
     console.log(`  (skipped the diary: ${err.message})`);
   }

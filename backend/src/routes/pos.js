@@ -2681,6 +2681,69 @@ router.delete('/saved-audits/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+
+// The demo's reconciliation report: its own card sales on one side, and what
+// a processor would have settled against them on the other, disagreeing on
+// four days on purpose. Built from the same pieces the real report uses, so
+// what it shows is what a connected shop would see.
+async function demoAudit(userId, settings, req) {
+  const { settlementFor } = require('../services/demo-merchant');
+  const round2 = (n) => Math.round(n * 100) / 100;
+  const tz = settings.timezone || 'America/Denver';
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+
+  let from = String(req.query.from || '').trim();
+  let to = String(req.query.to || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(to)) to = today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) {
+    const d = new Date(to + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 29);
+    from = d.toISOString().slice(0, 10);
+  }
+
+  const posDays = await pgDb.getCardSalesByDateRange(userId, from, to, tz);
+  const posByDate = {};
+  for (const p of posDays) posByDate[p.date] = p;
+  const merchantByDate = settlementFor(posDays);
+
+  const allDates = [...new Set([...Object.keys(merchantByDate), ...Object.keys(posByDate)])]
+    .filter((d) => d >= from && d <= to).sort();
+
+  const days = allDates.map((d) => {
+    const m = merchantByDate[d]?.total || 0;
+    const p = posByDate[d]?.net_total || 0;
+    return {
+      date: d,
+      merchant_total: round2(m),
+      merchant_sales: round2(merchantByDate[d]?.sales || 0),
+      merchant_credits: round2(merchantByDate[d]?.credits || 0),
+      merchant_sale_count: merchantByDate[d]?.sale_count || 0,
+      merchant_credit_count: merchantByDate[d]?.credit_count || 0,
+      merchant_failed: merchantByDate[d]?.failed || 0,
+      merchant_failed_amount: round2(merchantByDate[d]?.failed_amount || 0),
+      merchant_over_limit: 0,
+      merchant_over_limit_amount: 0,
+      merchant_batches: merchantByDate[d]?.batchIds?.size || 0,
+      merchant_txns: merchantByDate[d]?.txns || 0,
+      pos_total: round2(p),
+      pos_sales: round2(posByDate[d]?.sales_total || 0),
+      pos_returns: round2(posByDate[d]?.returns_total || 0),
+      pos_sale_count: posByDate[d]?.sale_count || 0,
+      pos_return_count: posByDate[d]?.return_count || 0,
+      difference: round2(m - p),
+    };
+  });
+
+  return {
+    configured: true,
+    demo: true,
+    from, to,
+    days,
+    merchant_total: round2(days.reduce((s, d) => s + d.merchant_total, 0)),
+    pos_total: round2(days.reduce((s, d) => s + d.pos_total, 0)),
+    difference: round2(days.reduce((s, d) => s + d.difference, 0)),
+  };
+}
+
 router.get('/reconciliation-audit', async (req, res) => {
   const userId = req.session.userId;
   const settings = await pgDb.getSettings(userId);
@@ -2693,6 +2756,17 @@ router.get('/reconciliation-audit', async (req, res) => {
   // traced to the processor it came from.
   const hasMaverick = !!(dbaId && token);
   const hasPayarc = !!(settings.payarc_token || '').trim();
+
+  // The demo has a processor of its own — see services/demo-merchant. Nobody
+  // evaluating the product is going to connect a real merchant account to see
+  // what reconciliation does, and reconciliation is the feature that most
+  // needs showing rather than describing.
+  const isDemo = String(settings.slug || '') === 'demo'
+    && String(process.env.DEMO_EMAIL || '').includes('@');
+  if (isDemo && !hasMaverick && !hasPayarc) {
+    return res.json(await demoAudit(userId, settings, req));
+  }
+
   if (!hasMaverick && !hasPayarc) return res.json({ configured: false });
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: tz });
