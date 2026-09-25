@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Set up your shop — SkySale</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --accent: #1F6FB2; --accent-soft: #DCEAF6; --accent-deep: #0F4C81;
+    --cream: #F5F8FB; --white: #fff; --dark: #16242E; --mid: #4A6478;
+    --border: #CBDCE9; --success: #1E6B4F; --danger: #A8323C;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--cream); color: var(--dark); min-height: 100vh;
+    font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 15px; line-height: 1.55;
+    padding: calc(20px + env(safe-area-inset-top, 0px)) 16px calc(40px + env(safe-area-inset-bottom, 0px));
+  }
+  .wrap { max-width: 720px; margin: 0 auto; }
+
+  .brand { font-family: Georgia, serif; font-size: 1.5rem; font-weight: 700; color: var(--accent-deep); text-align: center; }
+  .brand span { color: var(--accent); }
+  .sub { text-align: center; color: var(--mid); font-size: .88rem; margin-top: 4px; }
+
+  /* The rail. Says how many steps there are and which are behind you — an
+     open-ended form nobody can see the end of is the one people abandon. */
+  .rail { display: flex; gap: 6px; margin: 26px 0 22px; }
+  .rail div { flex: 1; height: 4px; border-radius: 3px; background: var(--border); transition: background .3s; }
+  .rail div.done { background: var(--accent); }
+  .rail div.now { background: var(--accent-deep); }
+
+  .card { background: var(--white); border: 1px solid var(--border); border-radius: 14px; padding: 30px 28px; box-shadow: 0 1px 2px rgba(16,36,58,.05); }
+  h1 { font-family: Georgia, serif; font-size: 1.5rem; margin: 0 0 8px; font-weight: 600; letter-spacing: -.01em; }
+  .lede { color: var(--mid); margin: 0 0 22px; }
+  .step-of { font-family: var(--mono); font-size: .7rem; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 10px; }
+
+  label { display: block; font-size: .74rem; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; color: var(--mid); margin-bottom: 5px; }
+  input, select, textarea {
+    width: 100%; padding: 10px 13px; border: 1.5px solid var(--border); border-radius: 9px;
+    font-size: .95rem; font-family: inherit; outline: none; background: var(--white); color: var(--dark);
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+  .field { margin-bottom: 16px; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap: 0; } }
+  .hint { font-size: .8rem; color: var(--mid); margin-top: 5px; }
+  .err { font-size: .82rem; color: var(--danger); margin-top: 5px; }
+
+  .btn {
+    font-family: inherit; font-size: .95rem; font-weight: 600; padding: 11px 22px;
+    border-radius: 9px; border: 1.5px solid transparent; cursor: pointer; transition: background .15s;
+  }
+  .btn-primary { background: var(--accent-deep); color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: var(--accent); }
+  .btn-primary:disabled { opacity: .5; cursor: default; }
+  .btn-quiet { background: transparent; color: var(--mid); border-color: var(--border); }
+  .btn-quiet:hover { color: var(--accent-deep); border-color: var(--accent); }
+  .btn-link { background: none; border: none; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; padding: 0; }
+  .actions { display: flex; gap: 10px; align-items: center; margin-top: 26px; flex-wrap: wrap; }
+  .actions .spacer { flex: 1; }
+
+  .addr { font-family: var(--mono); font-size: .95rem; }
+  .addr .slug { color: var(--accent-deep); font-weight: 500; }
+  .ok { color: var(--success); font-size: .82rem; margin-top: 5px; }
+
+  .choice {
+    display: block; width: 100%; text-align: left; background: var(--white);
+    border: 1.5px solid var(--border); border-radius: 11px; padding: 16px 18px;
+    margin-bottom: 10px; cursor: pointer; font: inherit; transition: border-color .15s, background .15s;
+  }
+  .choice:hover { border-color: var(--accent); background: var(--accent-soft); }
+  .choice b { display: block; font-size: 1rem; margin-bottom: 3px; }
+  .choice span { color: var(--mid); font-size: .88rem; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .86rem; }
+  th { text-align: left; font-size: .68rem; text-transform: uppercase; letter-spacing: .5px; color: var(--mid); padding: 7px 6px; border-bottom: 1.5px solid var(--border); }
+  td { padding: 5px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  td input[type=text], td input[type=number] { padding: 6px 9px; font-size: .86rem; }
+  .scroller { max-height: 42vh; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
+  .no-price { border-color: var(--danger) !important; background: #FDF4F5; }
+
+  .notice { border-radius: 10px; padding: 12px 14px; font-size: .88rem; margin-bottom: 16px; }
+  .notice-warn { background: #FDF4F5; border: 1px solid #E4C4C8; color: #7A2129; }
+  .notice-info { background: var(--accent-soft); border: 1px solid var(--border); color: var(--accent-deep); }
+  [hidden] { display: none !important; }
+  .spin { display: inline-block; width: 13px; height: 13px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: -2px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">Sky<span>Sale</span></div>
+  <p class="sub">Setting up your shop</p>
+  <div class="rail" id="rail"></div>
+
+  <div class="card" id="card">
+    <p class="lede">Loading…</p>
+  </div>
+</div>
+
+<script>
+const API = '';
+let state = null;          // what the server says is done
+let step = 1;
+let extracted = [];        // products read from a page, awaiting review
+
+const TOTAL = 5;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+async function api(path, options) {
+  const resp = await fetch(`${API}/api/signup${path}`, {
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) { const e = new Error(data.error || 'Something went wrong.'); e.data = data; e.status = resp.status; throw e; }
+  return data;
+}
+
+function rail() {
+  $('rail').innerHTML = Array.from({ length: TOTAL }, (_, i) => {
+    const n = i + 1;
+    return `<div class="${n < step ? 'done' : n === step ? 'now' : ''}"></div>`;
+  }).join('');
+}
+
+function render() {
+  rail();
+  ({ 1: stepShop, 2: stepAdmin, 3: stepProducts, 4: stepHistory, 5: stepDone })[step]();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// ─── 1 · The shop ──────────────────────────────────────────────────────────
+
+function stepShop() {
+  const s = state.shop;
+  const guessZone = s.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Denver';
+  $('card').innerHTML = `
+    <p class="step-of">Step 1 of ${TOTAL}</p>
+    <h1>Your shop</h1>
+    <p class="lede">
+      Signed in as <strong>${esc(state.email)}</strong>. These are the details the
+      register can't work without — receipts need the address, reports need the
+      timezone, and checkout needs the tax rate.
+    </p>
+
+    <div class="field">
+      <label for="storeName">Shop name</label>
+      <input id="storeName" type="text" value="${esc(s.store_name)}" placeholder="Northgate Aesthetics" autocomplete="organization">
+    </div>
+
+    <div class="field">
+      <label for="slug">Your address on SkySale</label>
+      <div class="addr"><span class="slug" id="slugEcho">${esc(s.slug || 'yourshop')}</span>.sky-sale.com</div>
+      <input id="slug" type="text" value="${esc(s.slug)}" placeholder="yourshop" style="margin-top:7px" autocapitalize="off" spellcheck="false">
+      <div id="slugMsg" class="hint">This is where you and your staff will sign in every day. It can't be changed later without breaking everyone's bookmarks, so pick something short.</div>
+    </div>
+
+    <div class="row">
+      <div class="field"><label for="addr">Street</label><input id="addr" type="text" value="${esc(s.store_address)}" autocomplete="street-address"></div>
+      <div class="field"><label for="city">City</label><input id="city" type="text" value="${esc(s.store_city)}"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label for="stateAbbr">State</label><input id="stateAbbr" type="text" value="${esc(s.store_state)}" maxlength="3"></div>
+      <div class="field"><label for="zip">Postcode</label><input id="zip" type="text" value="${esc(s.store_zip)}"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label for="phone">Phone</label><input id="phone" type="tel" value="${esc(s.store_phone)}"></div>
+      <div class="field">
+        <label for="tax">Sales tax</label>
+        <input id="tax" type="number" step="0.001" min="0" max="30" value="${s.tax_rate != null ? (s.tax_rate * 100).toFixed(4).replace(/0+$/, '').replace(/\.$/, '') : ''}" placeholder="8.25">
+        <div class="hint">As a percentage.</div>
+      </div>
+    </div>
+    <div class="field">
+      <label for="tz">Timezone</label>
+      <select id="tz"></select>
+      <div class="hint">Your day ends when you close, not at midnight somewhere else.</div>
+    </div>
+
+    <div id="err" class="err"></div>
+    <div class="actions">
+      <div class="spacer"></div>
+      <button class="btn btn-primary" id="go">Continue</button>
+    </div>`;
+
+  const zones = (Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : []).filter((z) => /^(America|Europe|Pacific|Asia|Australia|Africa|Atlantic|Indian)\//.test(z));
+  const list = zones.length ? zones : ['America/Denver', 'America/New_York', 'America/Chicago', 'America/Los_Angeles'];
+  $('tz').innerHTML = list.map((z) => `<option value="${esc(z)}" ${z === guessZone ? 'selected' : ''}>${esc(z.replace(/_/g, ' '))}</option>`).join('');
+
+  // Suggest an address from the name, until they touch the field themselves.
+  let slugTouched = !!s.slug;
+  $('storeName').addEventListener('input', () => {
+    if (slugTouched) return;
+    $('slug').value = $('storeName').value.toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 40);
+    checkSlug();
+  });
+  $('slug').addEventListener('input', () => { slugTouched = true; checkSlug(); });
+  if (s.slug) checkSlug();
+  $('go').addEventListener('click', saveShop);
+}
+
+let slugTimer = null;
+function checkSlug() {
+  const v = $('slug').value.toLowerCase().trim();
+  $('slugEcho').textContent = v || 'yourshop';
+  clearTimeout(slugTimer);
+  if (!v) return;
+  $('slugMsg').className = 'hint';
+  $('slugMsg').innerHTML = '<span class="spin"></span> checking…';
+  slugTimer = setTimeout(async () => {
+    try {
+      const r = await api(`/slug-available?slug=${encodeURIComponent(v)}`);
+      $('slugMsg').className = r.available ? 'ok' : 'err';
+      $('slugMsg').textContent = r.available ? `${r.url} is yours.` : r.reason;
+    } catch (_) { $('slugMsg').className = 'hint'; $('slugMsg').textContent = ''; }
+  }, 350);
+}
+
+async function saveShop() {
+  const btn = $('go'); btn.disabled = true;
+  $('err').textContent = '';
+  try {
+    await api('/shop', { method: 'POST', body: JSON.stringify({
+      store_name: $('storeName').value,
+      slug: $('slug').value,
+      store_address: $('addr').value, store_city: $('city').value,
+      store_state: $('stateAbbr').value, store_zip: $('zip').value,
+      store_phone: $('phone').value, store_email: state.email,
+      timezone: $('tz').value,
+      tax_rate: (Number($('tax').value) || 0) / 100,
+    }) });
+    state = await api('/state');
+    step = 2; render();
+  } catch (e) {
+    $('err').textContent = e.message;
+    if (e.data?.field === 'slug') $('slug').focus();
+  } finally { btn.disabled = false; }
+}
+
+// ─── 2 · The administrator ─────────────────────────────────────────────────
+
+function stepAdmin() {
+  $('card').innerHTML = `
+    <p class="step-of">Step 2 of ${TOTAL}</p>
+    <h1>Who's in charge</h1>
+    <p class="lede">
+      Payroll, settings and the transaction list sit behind a PIN, and the screen
+      re-locks every time you leave it — so the next person at the till can't read
+      what the last one was looking at. This is the PIN that opens all of it.
+    </p>
+    <div class="field">
+      <label for="admName">Your name</label>
+      <input id="admName" type="text" placeholder="Mara Ellis" autocomplete="name">
+      <div class="hint">As your staff would say it. You'll type this alongside the PIN.</div>
+    </div>
+    <div class="field">
+      <label for="admPin">Admin PIN</label>
+      <input id="admPin" type="text" inputmode="numeric" maxlength="6" placeholder="six digits" autocomplete="off" style="font-family:var(--mono);letter-spacing:.3em;max-width:200px">
+      <div class="hint">Six digits, not four — staff PINs are four, and this one opens the money.</div>
+    </div>
+    <div id="err" class="err"></div>
+    <div class="actions">
+      <button class="btn btn-quiet" onclick="step=1;render()">Back</button>
+      <div class="spacer"></div>
+      <button class="btn btn-primary" id="go">Continue</button>
+    </div>`;
+  $('admPin').addEventListener('input', (e) => { e.target.value = e.target.value.replace(/\D/g, ''); });
+  $('go').addEventListener('click', async () => {
+    const btn = $('go'); btn.disabled = true; $('err').textContent = '';
+    try {
+      await api('/admin', { method: 'POST', body: JSON.stringify({ name: $('admName').value, pin: $('admPin').value }) });
+      state = await api('/state');
+      step = 3; render();
+    } catch (e) { $('err').textContent = e.message; } finally { btn.disabled = false; }
+  });
+}
+
+// ─── 3 · What they sell ────────────────────────────────────────────────────
+
+function stepProducts() {
+  extracted = [];
+  $('card').innerHTML = `
+    <p class="step-of">Step 3 of ${TOTAL}</p>
+    <h1>What you sell</h1>
+    <p class="lede">
+      We can read your supplier's catalogue page and fill this in for you. Nothing
+      is saved until you've checked it.
+    </p>
+
+    <div class="field">
+      <label for="url">Your supplier's catalogue page</label>
+      <input id="url" type="url" placeholder="https://supplier.com/collections/all" autocapitalize="off" spellcheck="false">
+      <div class="hint">A page that <em>lists several products</em> works best. A single product page often builds itself with JavaScript, and there's nothing for us to read.</div>
+    </div>
+    <div id="err" class="err"></div>
+    <div class="actions">
+      <button class="btn btn-quiet" onclick="step=2;render()">Back</button>
+      <div class="spacer"></div>
+      <button class="btn btn-quiet" onclick="step=4;render()">Skip for now</button>
+      <button class="btn btn-primary" id="go">Read the page</button>
+    </div>
+    <p class="hint" style="margin-top:14px">You can add products by hand at the register at any time, and skipping costs nothing.</p>`;
+
+  $('go').addEventListener('click', readPage);
+  $('url').addEventListener('keydown', (e) => { if (e.key === 'Enter') readPage(); });
+}
+
+async function readPage() {
+  const url = $('url').value.trim();
+  if (!url) { $('err').textContent = 'Paste the address of the page first.'; return; }
+  const btn = $('go');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> reading…';
+  $('err').textContent = '';
+  try {
+    const r = await api('/read-products', { method: 'POST', body: JSON.stringify({ url }) });
+    if (!r.products.length) {
+      $('err').textContent = r.hint || 'Nothing on that page looked like a product for sale.';
+      return;
+    }
+    extracted = r.products.map((p) => ({ ...p, keep: true }));
+    reviewProducts(r.source_url, r.page_title);
+  } catch (e) {
+    $('err').textContent = e.message;
+  } finally { btn.disabled = false; btn.textContent = 'Read the page'; }
+}
+
+// Every row editable, every row checkable, nothing saved until they say so.
+function reviewProducts(sourceUrl, pageTitle) {
+  const missingPrice = extracted.filter((p) => p.price == null).length;
+  $('card').innerHTML = `
+    <p class="step-of">Step 3 of ${TOTAL}</p>
+    <h1>Check these before they go in</h1>
+    <p class="lede">
+      ${extracted.length} product${extracted.length === 1 ? '' : 's'} read from
+      <span class="addr" style="font-size:.85rem">${esc(pageTitle || sourceUrl)}</span>.
+      These become the prices on your register, so read them like you'd read a delivery note.
+    </p>
+    ${missingPrice ? `<div class="notice notice-warn"><strong>${missingPrice}</strong> ${missingPrice === 1 ? 'product has' : 'products have'} no price — the page didn't state one, and we don't guess. Type them in or untick them.</div>` : ''}
+    <div class="scroller">
+      <table>
+        <thead><tr><th style="width:34px"></th><th>Product</th><th style="width:110px">Price</th><th style="width:120px">Category</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+    <p class="hint" style="margin-top:10px">Usage notes from the page are saved too — they're what the welcome email is built from.</p>
+    <div id="err" class="err"></div>
+    <div class="actions">
+      <button class="btn btn-quiet" id="again">Try another page</button>
+      <div class="spacer"></div>
+      <button class="btn btn-primary" id="save">Save products</button>
+    </div>`;
+
+  $('rows').innerHTML = extracted.map((p, i) => `
+    <tr>
+      <td><input type="checkbox" data-k="keep" data-i="${i}" ${p.keep ? 'checked' : ''} style="width:16px"></td>
+      <td><input type="text" data-k="name" data-i="${i}" value="${esc(p.name)}"></td>
+      <td><input type="number" step="0.01" min="0" data-k="price" data-i="${i}" value="${p.price == null ? '' : p.price}" class="${p.price == null ? 'no-price' : ''}" placeholder="—"></td>
+      <td><input type="text" data-k="category" data-i="${i}" value="${esc(p.category)}"></td>
+    </tr>`).join('');
+
+  $('rows').addEventListener('input', (e) => {
+    const t = e.target, i = Number(t.dataset.i), k = t.dataset.k;
+    if (k === 'keep') extracted[i].keep = t.checked;
+    else if (k === 'price') { extracted[i].price = t.value === '' ? null : Number(t.value); t.classList.toggle('no-price', t.value === ''); }
+    else extracted[i][k] = t.value;
+  });
+  $('rows').addEventListener('change', (e) => {
+    if (e.target.dataset.k === 'keep') extracted[Number(e.target.dataset.i)].keep = e.target.checked;
+  });
+  $('again').addEventListener('click', stepProducts);
+  $('save').addEventListener('click', saveProducts);
+}
+
+async function saveProducts() {
+  const rows = extracted.filter((p) => p.keep && p.name.trim() && p.price != null);
+  const dropped = extracted.filter((p) => p.keep).length - rows.length;
+  if (!rows.length) { $('err').textContent = 'Nothing is ticked with both a name and a price.'; return; }
+  if (dropped && !confirm(`${dropped} ticked ${dropped === 1 ? 'product has' : 'products have'} no price and will be left out. Save the other ${rows.length}?`)) return;
+
+  const btn = $('save'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> saving…';
+  try {
+    const r = await api('/products', { method: 'POST', body: JSON.stringify({ products: rows }) });
+    state = await api('/state');
+    step = 4; render();
+    setTimeout(() => { const n = $('savedNote'); if (n) n.textContent = `${r.saved} product${r.saved === 1 ? '' : 's'} added.`; }, 0);
+  } catch (e) { $('err').textContent = e.message; btn.disabled = false; btn.textContent = 'Save products'; }
+}
+
+// ─── 4 · History ───────────────────────────────────────────────────────────
+
+function stepHistory() {
+  $('card').innerHTML = `
+    <p class="step-of">Step 4 of ${TOTAL}</p>
+    <h1>Bringing your history</h1>
+    <p class="ok" id="savedNote"></p>
+    <p class="lede">
+      If you're moving from another system, you can bring your past sales and your
+      customer list with you. Both live in the register under
+      <strong>Transactions</strong>, and both show you what they read before
+      anything is written.
+    </p>
+    <div class="notice notice-info">
+      We've left these until after you're inside, on purpose. They take a file and
+      a few minutes of checking, and you shouldn't have to do that before you can
+      look around.
+    </div>
+    <button class="choice" id="wantImport">
+      <b>Yes, I have files to bring</b>
+      <span>We'll take you straight to the importer when you finish.</span>
+    </button>
+    <button class="choice" id="noImport">
+      <b>No, starting fresh</b>
+      <span>Go straight to the register.</span>
+    </button>
+    <div class="actions">
+      <button class="btn btn-quiet" onclick="step=3;render()">Back</button>
+    </div>`;
+  $('wantImport').addEventListener('click', () => { sessionStorage.setItem('skysale_goto_import', '1'); step = 5; render(); });
+  $('noImport').addEventListener('click', () => { sessionStorage.removeItem('skysale_goto_import'); step = 5; render(); });
+}
+
+// ─── 5 · Open ──────────────────────────────────────────────────────────────
+
+async function stepDone() {
+  $('card').innerHTML = `<p class="lede"><span class="spin"></span> Opening your shop…</p>`;
+  try {
+    const r = await api('/finish', { method: 'POST' });
+    const wantsImport = sessionStorage.getItem('skysale_goto_import') === '1';
+    const url = wantsImport ? r.url.replace('/pos.html', '/pos.html#import') : r.url;
+    $('card').innerHTML = `
+      <p class="step-of">You're open</p>
+      <h1>${esc(state.shop.store_name)} is ready</h1>
+      <p class="lede">Your register is at <span class="addr slug">${esc(r.slug)}.sky-sale.com</span> — bookmark it, and give it to your staff.</p>
+      <div class="notice notice-info">
+        <strong>What's set up:</strong>
+        ${state.counts.products ? `${state.counts.products} products · ` : ''}
+        ${state.counts.staff} ${state.counts.staff === 1 ? 'person' : 'people'} on the roster.
+        Everything else — more staff, opening hours, the treatment menu, your
+        merchant account — is in Settings when you want it.
+      </div>
+      <div class="actions">
+        <div class="spacer"></div>
+        <a class="btn btn-primary" href="${esc(url)}" style="text-decoration:none">Open my register</a>
+      </div>`;
+  } catch (e) {
+    $('card').innerHTML = `
+      <h1>Nearly there</h1>
+      <p class="lede">${esc(e.message)}</p>
+      <div class="actions"><button class="btn btn-primary" onclick="step=1;render()">Go back</button></div>`;
+  }
+}
+
+// ─── Start ─────────────────────────────────────────────────────────────────
+
+(async function init() {
+  try {
+    state = await api('/state');
+  } catch (e) {
+    // Not signed in: Google is the only way in, and it verifies the address
+    // for us at the same time.
+    $('rail').innerHTML = '';
+    $('card').innerHTML = `
+      <h1>Set up your shop</h1>
+      <p class="lede">
+        Sign in with the Google account your shop already uses for email. It takes
+        about four minutes, and you can stop and come back — we'll remember where
+        you were.
+      </p>
+      <div class="actions">
+        <a class="btn btn-primary" style="text-decoration:none"
+           href="/auth/google?from=web&return=%2Fsignup.html">Continue with Google</a>
+      </div>
+      <p class="hint" style="margin-top:18px">
+        Already have a shop on SkySale? <a href="/pos.html" style="color:var(--accent)">Sign in instead</a>.
+      </p>`;
+    return;
+  }
+  // Resume wherever they left off.
+  step = !state.done.shop ? 1 : !state.done.admin ? 2 : !state.done.products ? 3 : 4;
+  render();
+})();
+</script>
+</body>
+</html>
