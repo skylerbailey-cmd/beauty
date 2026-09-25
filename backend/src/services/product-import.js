@@ -497,9 +497,9 @@ Rules, in order of importance:
 
 6. routine_step is what lets the welcome email put the product in the right place in a morning, evening or weekly routine, so it is worth care. Choose from the list given and nothing else. A face wash is a cleanser whatever the page calls it; a night cream is a moisturizer; a device or wand is a device treatment. If it is genuinely none of them — a supplement, a tool, a gift set — return null rather than forcing it.
 
-7. frequency is only what the page states. "Use daily" is daily, "twice a week" is weekly, "once a month" is monthly. A page that does not say gets null: a customer told to use something daily when the maker says weekly is being given advice we invented.
+7. frequency: what the page states, if it states anything — "use daily" is daily, "twice a week" is weekly, "once a month" is monthly. If it says nothing, give what is ordinary for that kind of product: a cleanser, toner, serum, eye product or moisturiser daily; a mask, peel, exfoliant or device weekly. Only null when you cannot tell what kind of product it is.
 
-8. usage is the field that matters most after price. It becomes the guidance a customer receives by email after buying, so capture how the product is actually used — the steps, how often, what it goes with — whenever the page says.
+8. usage is the field that matters most after price. Prefer the page's own words. Where the page gives none, write the ordinary way a product of that kind is used — the steps only, no claims, no benefits — because "Cleanse: Foaming Cleanser —" with nothing after it is what a customer receives otherwise. A price has no such fallback and is still never guessed. It becomes the guidance a customer receives by email after buying, so capture how the product is actually used — the steps, how often, what it goes with — whenever the page says.
 
 If the page sells nothing, record an empty list. That is a valid answer.`;
 
@@ -649,8 +649,8 @@ async function describeForEmail(products, say) {
             properties: {
               index: { type: 'integer', description: 'The number this product was given in the list.' },
               routine_step: { type: ['string', 'null'], description: 'One of: cleanser, toner, serum, eye treatment, moisturizer, sunscreen, exfoliant, mask, device treatment, treatment cream. null if none of them fit.' },
-              frequency: { type: ['string', 'null'], description: 'daily, weekly or monthly — only if the description says so. null otherwise.' },
-              usage: { type: ['string', 'null'], description: 'How to use it, in the words of the description. null if it does not say.' },
+              frequency: { type: ['string', 'null'], description: 'daily, weekly or monthly. If the description says, use that. If it does not, give how a product of this kind is ordinarily used — a cleanser or moisturiser daily, a mask or peel weekly. null only if you cannot tell what kind of product it is.' },
+              usage: { type: ['string', 'null'], description: 'How to use it. Prefer the description\'s own words. If it does not say, give the ordinary way a product of this kind is used, in one or two plain sentences — no claim specific to this product, no benefits, just the steps. null only if you cannot tell what kind of product it is.' },
               benefits: { type: ['string', 'null'], description: 'What it does for the customer, short and comma separated, from the description. null if it claims nothing.' },
             },
           },
@@ -670,7 +670,13 @@ async function describeForEmail(products, say) {
       thinking: { type: 'adaptive' },
       system: `You are given a shop's products, each with its own description, and you say where each belongs in a skincare routine and how it is used.
 
-Only what the description supports. A description that does not say how often to use something gets null for frequency — a customer told to use a product daily when the maker says weekly has been given advice we invented. The same goes for usage and benefits.
+Two different things, and the difference matters.
+
+Claims about this product — what it contains, what it does, what it costs — come only from the description. Never infer them. benefits is null when the description claims nothing.
+
+How a product of this kind is used is not a claim about this product; it is how the category works, and it is the same wherever the product came from. A cleanser goes on damp skin and gets rinsed. A serum goes on before moisturiser. A mask is left on and rinsed off, about once a week. So when the description does not give usage or frequency, give the ordinary handling for the kind of product it is — plainly, in a sentence or two, with no claim attached. Only return null when you cannot tell what kind of product it is at all.
+
+Where the description does state usage or frequency, that always wins: the maker saying "twice a week" beats what is usual for the category.
 
 routine_step is the exception worth a judgement: a face wash is a cleanser whatever it is called, a night cream is a moisturizer, a wand or handset is a device treatment. If it is genuinely none of the listed steps — a supplement, a tool, a gift set — return null.
 

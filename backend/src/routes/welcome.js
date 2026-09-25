@@ -799,10 +799,64 @@ const STEP_REASONS = {
   'Sun Protection': 'SPF is the single most important anti-aging step. Without it, UV damage undoes the benefits of every other product in your routine.',
 };
 
+
+// How a product of each kind is ordinarily used.
+//
+// Not a claim about any particular product — the ordinary way a cleanser, a
+// serum or a mask is used, which is the same wherever it came from. A
+// supplier's collection page rarely states it, and "Cleanse: Active Foaming
+// Cleanser —" with nothing after the dash is worse than saying the plain
+// thing. A shop can overwrite any of it in Settings, and anything the page
+// did state is used ahead of this.
+const STEP_DEFAULTS = {
+  cleanser: 'Massage into damp skin, then rinse with warm water.',
+  toner: 'Sweep over clean skin with a cotton pad or your hands, and let it absorb before the next step.',
+  serum: 'Apply a few drops to clean skin and press in gently, before moisturiser.',
+  'eye treatment': 'Tap a small amount around the eye area with your ring finger, avoiding the lash line.',
+  moisturizer: 'Smooth over the face and neck as the last step of your routine.',
+  sunscreen: 'Apply generously as the final morning step, and reapply through the day when you are outside.',
+  exfoliant: 'Use on clean skin, then rinse and follow with moisturiser.',
+  mask: 'Apply to clean skin, leave on, then rinse and follow with your usual routine.',
+  'device treatment': 'Use on clean, dry skin, moving slowly over the area, then follow with your usual routine.',
+  'treatment cream': 'Apply a thin layer to the area you are treating, after your serum.',
+};
+
+// The same for how often, where the page did not say.
+const STEP_FREQUENCY = {
+  cleanser: 'daily', toner: 'daily', serum: 'daily', 'eye treatment': 'daily',
+  moisturizer: 'daily', sunscreen: 'daily', 'treatment cream': 'daily',
+  exfoliant: 'weekly', mask: 'weekly', 'device treatment': 'weekly',
+};
+
+const everyLine = (freq) => ({
+  daily: 'Use it every day.', weekly: 'Use it once a week.', monthly: 'Use it once a month.',
+}[freq] || '');
+
+// " — text", or nothing at all. A dash introducing an empty string is what
+// put "Cleanse: Active Foaming Cleanser —" in front of a customer.
+const dash = (text) => (text ? ` — ${text}` : '');
+
+// What to tell a customer about this product, in order of who knows best:
+// the shop, then the page it came from, then how the thing is ordinarily used.
+function howToUseFor(p) {
+  const step = String(p.step || '').toLowerCase();
+  // The steps themselves: what was written about this product, or how a
+  // product of its kind is ordinarily handled.
+  const steps = p.howToUse || STEP_DEFAULTS[step] || '';
+  if (!steps) return '';
+  // How often, in front. A catalogue product carries no separate frequency —
+  // its instructions already say so in prose — so nothing is added there and
+  // its wording is untouched.
+  const freq = p.frequency || (p.howToUse ? '' : STEP_FREQUENCY[step]);
+  return [everyLine(freq), steps].filter(Boolean).join(' ');
+}
+
 function routineStepHtml(label, product, suggestion, opts = {}) {
   const theme = opts.theme || 'rose';
   if (product) {
-    return `<p style="margin-bottom:8px">✅ <b>${label}:</b> ${productLink(product, theme)} — ${product.howToUse || ''}</p>`;
+    const how = howToUseFor(product);
+    // No trailing dash with nothing after it.
+    return `<p style="margin-bottom:8px">✅ <b>${label}:</b> ${productLink(product, theme)}${how ? ` — ${how}` : ''}</p>`;
   }
   if (suggestion && !opts.skipSuggestions) {
     // If this suggestion was already detailed in the AM routine, keep it short
@@ -917,9 +971,11 @@ function customAsEmailProducts(customProducts) {
       description: cp.description || '',
       benefits: cp.benefits || '',
       ingredients: cp.ingredients || '',
-      // Frequency first: it is the one thing a customer has to remember, and
-      // it is usually the thing a supplier's page buries in a paragraph.
-      howToUse: [every, steps].filter(Boolean).join(' '),
+      // Just the steps. The frequency is carried separately and put in front
+      // by howToUseFor — joined here, a product with a frequency and no steps
+      // counted as having instructions, and the steps were never filled in.
+      howToUse: steps,
+      frequency: cp.usage_frequency || '',
       // What decides whether this lands in the morning routine, the evening
       // one, or the weekly list. Falls back to the loose category only when
       // no proper step was captured.
@@ -1030,7 +1086,7 @@ function generateWelcomeEmailBody({ customerEmail, customerName, selectedProduct
     // bottom of the email, so a line they wrote beats one we did. Then the
     // catalogue's own hand-written line, then the opening of the description.
     // Shops that have written nothing still read exactly as they did.
-    `<p style="margin-bottom:12px">✨ ${productLink(p, userTheme)} — ${p.loveLine || LOVE_LINES[p.id] || shortDescription(p)}</p>`
+    `<p style="margin-bottom:12px">✨ ${productLink(p, userTheme)}${dash(p.loveLine || LOVE_LINES[p.id] || shortDescription(p) || howToUseFor(p))}</p>`
   ).join('\n');
 
   const newProductsSection = `<div style="margin-top:24px;padding:20px;background:${tc.productsBg};border-left:4px solid ${tc.productsBorder};border-radius:8px"><p style="margin-bottom:12px;font-size:20px"><b>🛍️ Your New Products</b></p>\n${productsHtml}</div>`;
@@ -1171,8 +1227,13 @@ function generateWelcomeEmailBody({ customerEmail, customerName, selectedProduct
   // monthly (monthly masks, treatments with no weekly cadence)
   const isSet = (p) => (p.step || '').toLowerCase() === 'set';
   const sets = selectedProducts.filter(isSet);
-  const isWeeklyMask = (p) => isMask(p) && (p.step || '').toLowerCase().includes('weekly');
-  const isMonthlyMask = (p) => isMask(p) && !(p.step || '').toLowerCase().includes('weekly');
+  // A mask is a weekly thing unless it says otherwise. The old test looked
+  // only for the word "weekly" in the step, so an imported product whose step
+  // is plainly "mask" was filed under Monthly Treatments.
+  const maskFreq = (p) => String(p.frequency || STEP_FREQUENCY[String(p.step || '').toLowerCase()] || '').toLowerCase();
+  const isWeeklyMask = (p) => isMask(p) && (
+    (p.step || '').toLowerCase().includes('weekly') || /week/.test(maskFreq(p)));
+  const isMonthlyMask = (p) => isMask(p) && !isWeeklyMask(p);
   // A treatment whose frequency is weekly belongs under "Treatments", not
   // "Monthly Treatments" — the same weekly/monthly split the masks already use.
   const isWeeklyTreatment = (p) => isTreatment(p) && /week/i.test(p.frequency || '');
@@ -1187,14 +1248,14 @@ function generateWelcomeEmailBody({ customerEmail, customerName, selectedProduct
     weeklyHtml += `<p style="margin-bottom:10px;font-size:17px;color:${tc.routineAccent}"><b>📅 Treatments</b></p>\n`;
     weeklyExfoliants.forEach(p => {
       const freq = p.frequency || (isExfoliant(p) ? '1-2x/week' : 'as directed');
-      weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${p.name}</b> (${freq}) — ${p.howToUse || ''}</p>`;
+      weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${p.name}</b> (${freq}) ${dash(howToUseFor(p))}</p>`;
     });
     weeklyTreatments.forEach(p => {
-      weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${productLink(p, userTheme)}</b> (${p.frequency}) — ${p.howToUse || ''}</p>`;
+      weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${productLink(p, userTheme)}</b> (${p.frequency}) ${dash(howToUseFor(p))}</p>`;
     });
     sets.forEach(p => {
       const freq = p.frequency ? ` (${p.frequency})` : '';
-      weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${p.name}</b>${freq} — ${p.howToUse || ''}</p>`;
+      weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${p.name}</b>${freq} ${dash(howToUseFor(p))}</p>`;
     });
   }
 
@@ -1225,16 +1286,16 @@ function generateWelcomeEmailBody({ customerEmail, customerName, selectedProduct
         // Step 3: cream (if purchased)
         const thermalCream = selectedProducts.find(s => s.id === 'hydrasphere-mineralift-thermal-cream');
         if (thermalCream) {
-          weeklyHtml += `<p style="margin-bottom:8px">✅ <b>Moisturize: ${thermalCream.name}</b> — ${thermalCream.howToUse || ''}</p>`;
+          weeklyHtml += `<p style="margin-bottom:8px">✅ <b>Moisturize: ${thermalCream.name}</b> ${dash(howToUseFor(thermalCream))}</p>`;
         }
       } else {
-        weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${p.name}</b> (${freq}) — ${p.howToUse || ''}</p>`;
+        weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${p.name}</b> (${freq}) ${dash(howToUseFor(p))}</p>`;
       }
     });
 
     treatments.forEach(t => {
       const freq = t.frequency || 'as directed';
-      weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${productLink(t, userTheme)}</b> (${freq}, at night) — ${t.howToUse || ''}</p>`;
+      weeklyHtml += `<p style="margin-bottom:8px">✅ <b>${productLink(t, userTheme)}</b> (${freq}, at night) ${dash(howToUseFor(t))}</p>`;
     });
   }
 
@@ -1315,9 +1376,10 @@ ${visitLine("And whenever you're in the CITY area, come see us! There's nothing 
   const orphans = selectedProducts.filter((p) => !placed.includes(p.name));
   const orphanHtml = orphans.length
     ? `<p style="margin-top:20px;margin-bottom:8px"><b>Also in your order</b></p>`
-      + orphans.map((p) =>
-          `<p style="margin-bottom:8px">✅ ${productLink(p, userTheme)}${p.howToUse ? ` — ${p.howToUse}` : ''}</p>`
-        ).join('')
+      + orphans.map((p) => {
+          const how = howToUseFor(p);
+          return `<p style="margin-bottom:8px">✅ ${productLink(p, userTheme)}${how ? ` — ${how}` : ''}</p>`;
+        }).join('')
     : '';
 
   // ── Assemble ──────────────────────────────────────────────────────────
