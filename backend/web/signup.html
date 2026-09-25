@@ -466,23 +466,78 @@ async function stepDone() {
   try {
     state = await api('/state');
   } catch (e) {
-    // Not signed in: Google is the only way in, and it verifies the address
-    // for us at the same time.
+    // Not signed in. Any address will do — clicking the link we send is what
+    // proves it, so there is no password here and no separate verification
+    // step to forget about later.
     $('rail').innerHTML = '';
     $('card').innerHTML = `
       <h1>Set up your shop</h1>
       <p class="lede">
-        Sign in with the Google account your shop already uses for email. It takes
-        about four minutes, and you can stop and come back — we'll remember where
-        you were.
+        Use whichever email address your shop runs on. We'll send a link to open
+        it — no password to invent. Setting up takes about four minutes, and you
+        can stop and come back.
       </p>
+      <form id="linkForm" autocomplete="on">
+        <label for="loginEmail">Your email address</label>
+        <input id="loginEmail" name="email" type="email" inputmode="email"
+               autocomplete="email" required placeholder="you@yourshop.com">
+        <p class="hint" id="linkMsg" style="min-height:20px;margin:8px 0 0"></p>
+        <div class="actions">
+          <button class="btn btn-primary" type="submit" id="linkGo">Email me a link</button>
+        </div>
+      </form>
+      <p class="hint" style="margin:20px 0 10px">or</p>
       <div class="actions">
-        <a class="btn btn-primary" style="text-decoration:none"
+        <a class="btn" style="text-decoration:none"
            href="/auth/google?from=web&return=%2Fsignup.html">Continue with Google</a>
-      </div>
-      <p class="hint" style="margin-top:18px">
-        Already have a shop on SkySale? <a href="/pos.html" style="color:var(--accent)">Sign in instead</a>.
-      </p>`;
+      </div>`;
+
+    const form = $('linkForm');
+    const msg = $('linkMsg');
+    const go = $('linkGo');
+
+    // Arriving from a link that no longer works. Saying which of "used",
+    // "expired" or "never real" it was would tell whoever holds it something
+    // they should not learn, so all three read the same.
+    const problem = new URLSearchParams(location.search).get('problem');
+    if (problem) {
+      msg.style.color = 'var(--danger, #c0392b)';
+      msg.textContent = problem === 'server'
+        ? 'Something went wrong at our end. Try asking for another link.'
+        : 'That link has already been used or has expired. Ask for a fresh one.';
+    }
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const email = $('loginEmail').value.trim();
+      if (!email) return;
+      go.disabled = true;
+      msg.style.color = '';
+      msg.textContent = 'Sending…';
+      try {
+        const r = await fetch('/auth/link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || 'That did not work.');
+        // Deliberately says nothing about whether the address has an account.
+        $('card').innerHTML = `
+          <h1>Check your inbox</h1>
+          <p class="lede">
+            We've sent a link to <strong>${email.replace(/[&<>"]/g, '')}</strong>.
+            Open it on this device and you're in. It works once and expires in an hour.
+          </p>
+          <p class="hint">
+            Nothing after a minute or two? Look in spam, and check the address
+            above is right.
+          </p>`;
+      } catch (err) {
+        msg.style.color = 'var(--danger, #c0392b)';
+        msg.textContent = err.message;
+        go.disabled = false;
+      }
+    });
     return;
   }
   // Resume wherever they left off.

@@ -142,6 +142,9 @@ app.use(express.static(fs.existsSync(webDir) ? webDir : webDirAlt, {
 
 // hardenRouter: a rejected promise inside an async handler must come back as a
 // 500, not end the process. See lib/safe-async.js.
+// Signing in with any email address, by one-time link. Mounted before the
+// Google routes so /auth/link is reached whether or not Google is configured.
+app.use('/auth', hardenRouter(require('./routes/login')));
 app.use('/auth', hardenRouter(authRoutes));
 app.use('/api/emails', hardenRouter(emailRoutes));
 app.use('/api/welcome', hardenRouter(welcomeRoutes));
@@ -151,7 +154,8 @@ app.use('/api/pos', hardenRouter(posRoutes));
 // under there requires a signed-in session.
 app.use('/api/booking', hardenRouter(bookingRoutes));
 // Opening an account. Public by necessity, so every endpoint under it is rate
-// limited and every account is created from a completed Google sign-in.
+// limited and every account is created from a proven email address — either a
+// completed Google sign-in or a one-time link the shop clicked in its inbox.
 app.use('/api/signup', hardenRouter(signupRoutes));
 app.use('/webhook', hardenRouter(webhookRoutes));
 
@@ -165,7 +169,25 @@ app.get('/health', async (req, res) => {
       pgStatus = 'connected';
     }
   } catch (err) { pgStatus = 'error: ' + err.message; }
-  res.json({ status: 'ok', app: 'SkySale Backend', postgres: pgStatus, timestamp: new Date().toISOString() });
+
+  // Whether sign-in links can actually be sent. Reduced to one word on
+  // purpose: this endpoint is public, and the underlying error names the
+  // account we send from. Without it, a broken app password is only
+  // discovered by a shop that cannot get in and has no way to say so.
+  let mailStatus = 'not configured';
+  try {
+    const { verifyMailer } = require('./services/mailer');
+    const r = await verifyMailer();
+    mailStatus = r.ok ? 'ok' : (r.reason && /not set/.test(r.reason) ? 'not configured' : 'error');
+  } catch (_) { mailStatus = 'error'; }
+
+  res.json({
+    status: 'ok',
+    app: 'SkySale Backend',
+    postgres: pgStatus,
+    mail: mailStatus,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // 404 handler

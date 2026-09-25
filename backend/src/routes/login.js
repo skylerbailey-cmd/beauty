@@ -1,0 +1,144 @@
+'use strict';
+
+// Signing in with your own email address, whoever it is with.
+//
+// A shop types an address, we mail a one-time link, and clicking it proves
+// they can read that inbox. That proof is the whole authentication: there is
+// no password to store, leak, reuse or reset, and the address is verified by
+// the act of signing in rather than by a separate step someone can skip.
+//
+// Four rules this file exists to keep:
+//
+//   The reply never says whether an account exists. "Check your inbox" comes
+//   back for every address, so this cannot be used to find out which shops
+//   have accounts.
+//
+//   Links are rate limited by address as well as by caller. Otherwise anyone
+//   with a few IP addresses can fill one shop's inbox with login mail.
+//
+//   A link is spent when used. The database claims it in a single conditional
+//   update, so a link that is forwarded, quoted in a reply, or clicked twice
+//   by an over-eager mail scanner opens nothing the second time.
+//
+//   A send that fails says so. A link silently dropped looks like a slow
+//   inbox, and the shop waits for mail that is never coming.
+
+const express = require('express');
+const router = express.Router();
+const pgDb = require('../db/postgres');
+const { rateLimit, consume, clientKey } = require('../lib/rate-limit');
+const { cookieDomainFor, companyUrl, appDomain } = require('../lib/tenancy');
+
+const LINK_MINUTES = 60;
+
+// Deliberately loose. The job here is to catch a typo and obvious nonsense,
+// not to adjudicate the RFC — a real address that a strict pattern rejects is
+// a shop that cannot sign up at all.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+const normalise = (v) => String(v || '').trim().toLowerCase();
+
+function originOf(req) {
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  return `${proto}://${host}`;
+}
+
+// ─── POST /auth/link ────────────────────────────────────────────────────────
+// Ask for a sign-in link.
+
+router.post('/link',
+  rateLimit({
+    limit: 20, windowMs: 15 * 60 * 1000, name: 'login-link-ip',
+    message: 'Too many sign-in attempts from here. Try again shortly.',
+  }),
+  async (req, res) => {
+    const email = normalise(req.body?.email);
+    if (!EMAIL_RE.test(email)) {
+      return res.status(400).json({ error: 'That doesn\'t look like an email address.' });
+    }
+
+    // Per-address, so a flood cannot be aimed at one inbox from many places.
+    const perAddress = consume({
+      name: 'login-link-email', key: email, limit: 5, windowMs: 15 * 60 * 1000,
+    });
+    if (!perAddress.ok) {
+      // Still not a statement about whether the account exists — the same
+      // answer comes back for an address that has never been seen.
+      return res.status(429).json({
+        error: 'A few links have already gone to that address. Check your inbox, or try again in a little while.',
+      });
+    }
+
+    let isNew = true;
+    try {
+      // Only to choose the wording of the mail. It is never revealed here.
+      isNew = !(await pgDb.emailHasAccount(email));
+    } catch (_) { /* wording is not worth failing a sign-in over */ }
+
+    try {
+      const token = await pgDb.createLoginLink(email, LINK_MINUTES);
+      const url = `${originOf(req)}/auth/link/${encodeURIComponent(token)}`;
+      const { sendLoginLink } = require('../services/mailer');
+      await sendLoginLink({ to: email, url, isNew, minutes: LINK_MINUTES });
+    } catch (err) {
+      console.error('[login] Could not send a sign-in link:', err.message);
+      // The one case where saying nothing would be worse than saying too
+      // much. The shop is owed the difference between "check your inbox" and
+      // "our mail is broken", because only one of those is worth waiting on.
+      return res.status(err.status === 503 ? 503 : 502).json({
+        error: 'We could not send the email just now. Try again in a moment, or sign in with Google.',
+      });
+    }
+
+    res.json({ ok: true, message: 'Check your inbox.' });
+  });
+
+// ─── GET /auth/link/:token ──────────────────────────────────────────────────
+// Spend a link and sign in.
+
+router.get('/link/:token',
+  rateLimit({
+    limit: 60, windowMs: 15 * 60 * 1000, name: 'login-link-use',
+    message: 'Too many attempts. Try again shortly.',
+  }),
+  async (req, res) => {
+    let email = null;
+    try {
+      email = await pgDb.consumeLoginLink(req.params.token);
+    } catch (err) {
+      console.error('[login] Could not read the sign-in link:', err.message);
+      return res.redirect('/signup.html?problem=server');
+    }
+
+    if (!email) {
+      // Used, expired, or never real — all the same to whoever is holding it,
+      // and worth the same answer.
+      return res.redirect('/signup.html?problem=link');
+    }
+
+    const { findOrCreateUserByEmail } = require('../db');
+    const { user } = findOrCreateUserByEmail(email, null);
+
+    try { await pgDb.rememberUser(user.id); } catch (_) {}
+
+    req.session.userId = user.id;
+    res.cookie('glow_user_email', user.email, {
+      maxAge: 365 * 24 * 60 * 60 * 1000,
+      httpOnly: true,
+      signed: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      domain: cookieDomainFor(req),
+    });
+
+    // A shop that has finished setting up belongs at its own address; one that
+    // has not belongs back in the wizard.
+    let slug = null;
+    try { slug = await pgDb.getCompanySlug(user.id); } catch (_) {}
+    if (!slug) return res.redirect('/signup.html');
+    if (appDomain()) return res.redirect(companyUrl(slug, '/pos.html'));
+    return res.redirect('/pos.html');
+  });
+
+module.exports = router;

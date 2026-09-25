@@ -63,7 +63,32 @@ function rateLimit({ limit, windowMs, name, message }) {
   };
 }
 
+/**
+ * Take one from a bucket named by something other than the caller's address.
+ *
+ * Limiting sign-in links by IP alone protects the server and not the person:
+ * anyone with a handful of addresses can still march one inbox full of login
+ * mail. Limiting by the address being written to closes that, and costs a
+ * would-be flooder nothing they can rotate.
+ *
+ * @returns {{ok: boolean, retryAfterSeconds: number}}
+ */
+function consume({ name, key, limit, windowMs }) {
+  const id = `${name}:${key}`;
+  const now = Date.now();
+  let b = buckets.get(id);
+  if (!b || b.resetAt <= now) {
+    b = { count: 0, resetAt: now + windowMs };
+    buckets.set(id, b);
+  }
+  b.count++;
+  return {
+    ok: b.count <= limit,
+    retryAfterSeconds: Math.max(1, Math.ceil((b.resetAt - now) / 1000)),
+  };
+}
+
 // Exposed for tests.
 function _reset() { buckets.clear(); }
 
-module.exports = { rateLimit, clientKey, _reset };
+module.exports = { rateLimit, clientKey, consume, _reset };

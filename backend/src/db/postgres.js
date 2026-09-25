@@ -262,6 +262,19 @@ async function initSchema() {
       email TEXT DEFAULT '',
       updated_at TIMESTAMPTZ DEFAULT NOW()
     );
+
+    -- One-time sign-in links. Only the SHA-256 of each token is kept: the link
+    -- in somebody's inbox is a password, and a leaked database should not hand
+    -- over working ones. A row is spent the moment it is used, so a link
+    -- forwarded, quoted in a reply or scraped from an inbox opens nothing.
+    CREATE TABLE IF NOT EXISTS pos_login_links (
+      token_hash TEXT PRIMARY KEY,
+      email TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS pos_login_links_email ON pos_login_links (email);
   `);
   // Migrations for existing DBs
   const migrate = async (sql) => { try { await query(sql); } catch (_) {} };
@@ -3390,6 +3403,84 @@ async function bookingCapacity(userId) {
 }
 
 // Both halves of a company's Gmail connection, read straight from Postgres.
+// ─── Sign-in links ──────────────────────────────────────────────────────────
+//
+// A link in an inbox is a credential, so these follow the same rules a
+// password would: only a hash is stored, it expires, and it works exactly
+// once. Postgres holds them rather than SQLite because SQLite is wiped on
+// every deploy — a redeploy mid-signup would otherwise void every link that
+// had just been emailed out.
+
+const crypto = require('crypto');
+
+const hashToken = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
+
+/** Mint a sign-in link for an address. Returns the raw token — never stored. */
+async function createLoginLink(email, ttlMinutes = 60) {
+  const token = crypto.randomBytes(32).toString('base64url');
+  const addr = String(email || '').trim().toLowerCase();
+  if (!addr) throw new Error('An email address is required.');
+  // A fresh link supersedes the ones already out. Asking again because the
+  // first has not arrived should not leave several working keys in an inbox.
+  await query('DELETE FROM pos_login_links WHERE email = $1 AND used_at IS NULL', [addr]);
+  await query(
+    `INSERT INTO pos_login_links (token_hash, email, expires_at)
+     VALUES ($1, $2, NOW() + ($3 || ' minutes')::interval)`,
+    [hashToken(token), addr, String(ttlMinutes)],
+  );
+  return token;
+}
+
+/**
+ * Spend a sign-in link. Returns the address it proves, or null.
+ *
+ * The update is what claims it: marking used_at inside a single conditional
+ * statement means two simultaneous clicks cannot both succeed, which a
+ * read-then-write would allow.
+ */
+async function consumeLoginLink(token) {
+  if (!token) return null;
+  const { rows } = await query(
+    `UPDATE pos_login_links SET used_at = NOW()
+      WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW()
+      RETURNING email`,
+    [hashToken(token)],
+  );
+  return rows[0] ? rows[0].email : null;
+}
+
+/** Housekeeping: spent and expired links are not worth keeping. */
+async function purgeLoginLinks() {
+  await query("DELETE FROM pos_login_links WHERE expires_at < NOW() - INTERVAL '7 days'");
+}
+
+/** Record a stable account id, so later sign-ins are recognised as returning. */
+async function rememberUser(userId) {
+  if (!pool || !userId) return;
+  await query('INSERT INTO pos_known_users (user_id) VALUES ($1) ON CONFLICT DO NOTHING', [userId]);
+}
+
+/**
+ * Has this address been here before?
+ *
+ * Only ever used to word an email — "finish setting up" against "sign in".
+ * It must not reach any reply sent to the browser: answering whether an
+ * address has an account turns the sign-in box into a way of listing which
+ * shops use SkySale.
+ */
+async function emailHasAccount(email) {
+  if (!pool) return false;
+  const addr = String(email || '').trim().toLowerCase();
+  if (!addr) return false;
+  const { v5: uuidv5 } = require('uuid');
+  const id = uuidv5('mailto:' + addr, uuidv5.URL);
+  const { rows } = await query(
+    `SELECT 1 FROM pos_known_users WHERE user_id = $1
+     UNION ALL SELECT 1 FROM pos_settings WHERE user_id = $1 LIMIT 1`, [id],
+  );
+  return rows.length > 0;
+}
+
 // The public reschedule page has no session and no SQLite to fall back on
 // (it is wiped on every deploy), so the sending identity has to live here.
 async function getGmailAccount(userId) {
@@ -3615,6 +3706,12 @@ module.exports = {
   cancelAppointment,
   bookingCapacity,
   getGmailAccount,
+  // Sign-in links
+  createLoginLink,
+  consumeLoginLink,
+  purgeLoginLinks,
+  rememberUser,
+  emailHasAccount,
   findCustomerIdByContact,
   createCustomerRecord,
   countTransactions,
