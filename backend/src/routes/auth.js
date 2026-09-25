@@ -103,7 +103,7 @@ router.post('/web-login', (req, res) => {
   // brands/theme into this company via the persistent-auth restore middleware.
   res.cookie('glow_company_name', user.company_name || '', cookieOpts);
   res.cookie('glow_theme', user.theme || 'rose', cookieOpts);
-  res.cookie('glow_brands', user.brands || '["avologi","avinichi","hydrasphere","spacetouch","lumieres"]', cookieOpts);
+  res.cookie('glow_brands', user.brands || '[]', cookieOpts);
   res.cookie('glow_websites', user.websites || '[]', cookieOpts);
 
   res.json({
@@ -115,7 +115,7 @@ router.post('/web-login', (req, res) => {
       companyName: user.company_name,
       theme: user.theme || 'rose',
       websites: JSON.parse(user.websites || '[]'),
-      brands: JSON.parse(user.brands || '["avologi","avinichi","hydrasphere","spacetouch","lumieres"]'),
+      brands: JSON.parse(user.brands || '[]'),
       hasGmail: !!user.refresh_token,
     },
   });
@@ -379,7 +379,7 @@ router.get('/me', async (req, res) => {
     companyName: user.company_name,
     theme: user.theme || 'rose',
     websites: JSON.parse(user.websites || '[]'),
-    brands: JSON.parse(user.brands || '["avologi","avinichi","hydrasphere","spacetouch","lumieres"]'),
+    brands: JSON.parse(user.brands || '[]'),
     hasGmail: !!user.refresh_token,
     push_token: user.push_token,
     gmail_history_id: user.gmail_history_id,

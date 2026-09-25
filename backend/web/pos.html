@@ -2384,7 +2384,7 @@ const canManageRole = (role) => role === 'manager' || role === 'admin';
 let lastEmployeesReport = [];       // most recent employee report data
 let lastSalesSummaryHtml = '';      // most recent KPI tiles HTML, revealed on manager unlock
 let lastProductsHtml = '';          // most recent top-products rows HTML, revealed on manager unlock
-let selectedBrands = ['avologi', 'avinichi', 'hydrasphere', 'spacetouch', 'lumieres'];
+let selectedBrands = [];
 
 const API = '';
 
@@ -2421,7 +2421,8 @@ async function init() {
     if (!resp.ok) throw new Error('Not auth');
     const data = await resp.json();
     currentUser = { email: data.email, companyName: data.company_name || data.companyName, brands: data.brands };
-    selectedBrands = data.brands || ['avologi', 'avinichi', 'hydrasphere', 'spacetouch', 'lumieres'];
+    // Nothing by default: a shop sells what it has said it sells.
+    selectedBrands = Array.isArray(data.brands) ? data.brands : [];
     addLinkedAccount(currentUser.email, currentUser.companyName);
 
     const el = document.getElementById('headerUser');
@@ -9038,11 +9039,11 @@ function renderBrandCheckboxes() {
 
 async function saveBrands() {
   const brands = [...document.querySelectorAll('#brandCheckboxes input[type=checkbox]:checked')].map(cb => cb.value);
-  if (brands.length === 0) {
-    alert('At least one brand must be selected.');
-    renderBrandCheckboxes();
-    return;
-  }
+  // No guard on zero. The brands here are a catalogue this server happens to
+  // carry, not the shop's own range — a shop that sells only what it imported
+  // should be able to switch all of them off, and refusing that left every
+  // new shop stuck with another company's products on its register.
+  
   selectedBrands = brands;
   try {
     // Save to both SQLite (for welcome emails) and Postgres (for persistence)
