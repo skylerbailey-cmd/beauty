@@ -3560,6 +3560,29 @@ router.patch('/custom-products/:id', async (req, res) => {
   if (req.body.usage_notes !== undefined) fields.usage_notes = String(req.body.usage_notes).slice(0, 4000);
   if (req.body.benefits !== undefined) fields.benefits = String(req.body.benefits).slice(0, 1000);
   if (req.body.ingredients !== undefined) fields.ingredients = String(req.body.ingredients).slice(0, 1000);
+  if (req.body.name !== undefined) {
+    const name = String(req.body.name).trim();
+    if (!name) return res.status(400).json({ error: 'A product needs a name.' });
+    fields.name = name.slice(0, 200);
+  }
+  // Money. A blank means zero here rather than "unknown" — an imported product
+  // with no price should be visibly free until someone sets it, not silently
+  // unsellable.
+  for (const key of ['price', 'min_price']) {
+    if (req.body[key] === undefined) continue;
+    const raw = req.body[key];
+    const n = raw === '' || raw === null ? 0 : Number(raw);
+    if (!Number.isFinite(n) || n < 0) {
+      return res.status(400).json({ error: 'A price is a number, and not a negative one.', field: key });
+    }
+    fields[key] = n;
+  }
+  if (fields.min_price !== undefined && fields.price === undefined && fields.min_price > Number(mine.price || 0)) {
+    return res.status(400).json({ error: 'The minimum cannot be more than the price itself.', field: 'min_price' });
+  }
+  if (fields.price !== undefined && fields.min_price === undefined && Number(mine.min_price || 0) > fields.price) {
+    return res.status(400).json({ error: 'That is below this product\'s minimum price.', field: 'price' });
+  }
   if (req.body.routine_step !== undefined) {
     const step = String(req.body.routine_step).toLowerCase().trim();
     if (!ROUTINE_STEP_VALUES.includes(step)) return res.status(400).json({ error: 'Not a routine step we know.' });

@@ -7472,10 +7472,17 @@ function renderCustomProductPanel(panel, onlyBrand) {
       <div style="display:grid;grid-template-columns:1fr 80px 80px 96px;gap:4px 8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
         <div style="display:flex;align-items:center;gap:6px;min-width:0">
           ${p.image ? `<img src="${p.image}" style="width:28px;height:28px;border-radius:4px;object-fit:cover;flex-shrink:0" onerror="this.style.display='none'">` : ''}
-          <span style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</span>
+          <input type="text" value="${escapeHtml(p.name)}" onchange="saveCustomField(${p.customId}, 'name', this)"
+                 style="flex:1;min-width:0;padding:4px 6px;border:1px solid transparent;border-radius:4px;font-size:.82rem;font-weight:600;font-family:system-ui,sans-serif;background:transparent;color:var(--dark);outline:none"
+                 onfocus="this.style.borderColor='var(--border)';this.style.background='var(--white)'"
+                 onblur="this.style.borderColor='transparent';this.style.background='transparent'">
         </div>
-        <div style="text-align:right">$${money((p.price || 0))}</div>
-        <div style="text-align:right;${p.minPrice > 0 ? 'color:var(--accent-deep)' : 'color:var(--mid)'}">$${money((p.minPrice || 0))}</div>
+        <input type="number" value="${p.price > 0 ? p.price : ''}" step="0.01" min="0"
+               onchange="saveCustomPrice(${p.customId}, 'price', this)" placeholder="0"
+               style="width:100%;padding:4px 6px;border:1px solid ${p.price > 0 ? 'var(--border)' : 'var(--danger)'};border-radius:4px;font-size:.8rem;text-align:right;outline:none">
+        <input type="number" value="${p.minPrice > 0 ? p.minPrice : ''}" step="0.01" min="0"
+               onchange="saveCustomPrice(${p.customId}, 'min_price', this)" placeholder="0"
+               style="width:100%;padding:4px 6px;border:1px solid ${p.minPrice > 0 ? 'var(--accent)' : 'var(--border)'};border-radius:4px;font-size:.8rem;text-align:right;outline:none;${p.minPrice > 0 ? 'background:#fff5f5' : ''}">
         <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end">
           <button onclick="toggleProductDetail(${p.customId})" title="What the customer is told about this product"
                   style="background:none;border:1px solid var(--border);border-radius:6px;cursor:pointer;color:var(--accent-deep);font-size:.72rem;padding:4px 9px;font-family:system-ui,sans-serif;white-space:nowrap">Edit</button>
@@ -10663,6 +10670,55 @@ async function patchProduct(customId, fields, statusId) {
     if (status) { status.style.color = 'var(--success)'; status.textContent = 'Saved.'; }
   } catch (err) {
     if (status) { status.style.color = 'var(--danger)'; status.textContent = err.message; }
+  }
+}
+
+
+// ─── Editing one of the shop's own products in place ────────────────────────
+//
+// These were plain text. Fine when every product came from the catalogue,
+// which has its own price fields — and useless for a shop whose whole range
+// was imported, which is now most of them.
+
+async function saveCustomPrice(customId, field, input) {
+  const n = input.value === '' ? 0 : Number(input.value);
+  if (!Number.isFinite(n) || n < 0) {
+    input.style.borderColor = 'var(--danger)';
+    return;
+  }
+  const ok = await saveCustomField(customId, field, input);
+  if (ok) {
+    const p = products.find((x) => x.customId === customId);
+    if (p) {
+      if (field === 'price') { p.price = n; p.retailPrice = n; }
+      else p.minPrice = n;
+    }
+    // The register is showing these prices right now.
+    renderProducts();
+  }
+}
+
+async function saveCustomField(customId, field, input) {
+  const original = input.style.borderColor;
+  input.style.borderColor = 'var(--accent)';
+  try {
+    const res = await fetch(`${API}/api/pos/custom-products/${customId}`, {
+      method: 'PATCH', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [field]: input.value }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'That could not be saved.');
+    if (field === 'name') {
+      const p = products.find((x) => x.customId === customId);
+      if (p) { p.name = input.value.trim(); renderProducts(); }
+    }
+    input.style.borderColor = original;
+    return true;
+  } catch (err) {
+    input.style.borderColor = 'var(--danger)';
+    alert(err.message);
+    return false;
   }
 }
 
