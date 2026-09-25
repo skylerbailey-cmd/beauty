@@ -152,6 +152,15 @@ router.post('/shop',
       store_email: String(b.store_email || '').trim(),
       timezone: String(b.timezone).trim(),
       tax_rate: tax,
+      // A new shop sells nothing until it says otherwise.
+      //
+      // The server carries a built-in catalogue of brands, and the column
+      // default opts every new row into all of them. That was harmless while
+      // there was one shop, whose brands those were. It is not harmless now:
+      // it would put another company's product range on a stranger's register
+      // on their first morning, with brand filters for ranges they have never
+      // heard of, and they would have to work out which of it was theirs.
+      brands: '[]',
     });
 
     res.json({ ok: true, slug, url: companyUrl(slug, '/pos.html') });
@@ -168,10 +177,12 @@ router.post('/admin',
     const pin = String(req.body?.pin || '').trim();
 
     if (name.length < 2) return res.status(400).json({ error: 'Who is the administrator?', field: 'name' });
-    if (!/^\d{6}$/.test(pin)) {
-      return res.status(400).json({ error: 'The admin PIN is six digits — it unlocks payroll and settings, so it is longer than a till PIN.', field: 'pin' });
+    if (!/^\d{4}$/.test(pin)) {
+      return res.status(400).json({ error: 'The admin PIN is four digits.', field: 'pin' });
     }
-    if (/^(\d)\1{5}$/.test(pin) || '0123456789'.includes(pin) || '9876543210'.includes(pin)) {
+    // Still refuses the handful anyone would try first — four of the same, or
+    // a straight run up or down. A PIN that unlocks payroll is worth that much.
+    if (/^(\d)\1{3}$/.test(pin) || '0123456789'.includes(pin) || '9876543210'.includes(pin)) {
       return res.status(400).json({ error: 'Pick something less guessable than that.', field: 'pin' });
     }
 
@@ -234,6 +245,12 @@ router.post('/products',
           category: String(p?.category || '').trim(),
           description: String(p?.description || '').trim(),
           usage: String(p?.usage || '').trim(),
+          // Only ever an address the extractor saw on the page — it filters
+          // the model's answer against what it actually found. Kept as a
+          // remote URL rather than copied: a supplier who replaces a photo
+          // should have the till follow, and we are not in the business of
+          // rehosting their catalogue.
+          image: String(p?.image || '').trim(),
           source_url: String(p?.source_url || '').trim(),
         }, userId);
         saved++;

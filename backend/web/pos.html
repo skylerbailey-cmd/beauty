@@ -501,6 +501,60 @@
       .pos-cart { width: 100%; border-left: none; border-top: 1px solid var(--border); }
       .product-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
     }
+
+  /* ─── Settings: grouped, with help in the margin ──────────────────────── */
+  .settings-shell { position: relative; }
+  .settings-subtabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px; }
+  .settings-subtabs .sub-btn {
+    font-family: system-ui, sans-serif; font-size: .84rem; font-weight: 600;
+    padding: 8px 16px; border-radius: 999px; cursor: pointer;
+    border: 1.5px solid var(--border); background: var(--white); color: var(--mid);
+  }
+  .settings-subtabs .sub-btn:hover { border-color: var(--accent-deep); color: var(--accent-deep); }
+  .settings-subtabs .sub-btn.active { background: var(--accent-deep); border-color: var(--accent-deep); color: #fff; }
+
+  /* The question mark beside a connection's name. */
+  .help-dot {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 19px; height: 19px; margin-left: 8px; padding: 0; vertical-align: 2px;
+    border-radius: 50%; border: 1.5px solid var(--border); background: var(--white);
+    color: var(--mid); font-family: system-ui, sans-serif; font-size: .74rem;
+    font-weight: 700; cursor: pointer; line-height: 1;
+  }
+  .help-dot:hover { border-color: var(--accent-deep); color: var(--accent-deep); }
+  .help-dot.on { background: var(--accent-deep); border-color: var(--accent-deep); color: #fff; }
+
+  /* Wide screens: the margin to the right of the 900px column. */
+  .settings-help {
+    position: absolute; top: 20px; left: calc(50% + 470px); width: 330px;
+    max-height: calc(100vh - 140px); overflow-y: auto;
+    background: var(--white); border: 1.5px solid var(--border); border-radius: 12px;
+    padding: 18px 20px 20px; font-family: system-ui, sans-serif; font-size: .84rem;
+    line-height: 1.6; color: var(--dark); box-shadow: 0 2px 10px rgba(16,36,58,.07);
+  }
+  .settings-help h4 { margin: 0 0 10px; font-size: .95rem; color: var(--accent-deep); }
+  .settings-help p { margin: 0 0 12px; color: var(--mid); }
+  .settings-help ol, .settings-help ul { margin: 0 0 12px; padding-left: 20px; color: var(--mid); }
+  .settings-help li { margin-bottom: 7px; }
+  .settings-help b { color: var(--dark); }
+  .settings-help code {
+    font-family: ui-monospace, Menlo, monospace; font-size: .8rem;
+    background: var(--cream); padding: 1px 5px; border-radius: 4px; color: var(--dark);
+  }
+  .help-close {
+    float: right; margin: -6px -6px 0 0; width: 26px; height: 26px; border: none;
+    background: none; color: var(--mid); font-size: 1.3rem; line-height: 1; cursor: pointer;
+  }
+  .help-close:hover { color: var(--dark); }
+
+  /* Below roughly 1640px there is no margin left to put it in, so it stops
+     floating and becomes a panel in the flow instead of covering the form. */
+  @media (max-width: 1640px) {
+    .settings-help {
+      position: static; width: auto; max-width: 900px; margin: 0 auto 20px;
+      max-height: none;
+    }
+  }
   </style>
 </head>
 <body>
@@ -1197,14 +1251,26 @@
 
   <!-- ─── SETTINGS TAB ─── -->
   <div class="tab-content" id="tab-settings">
+    <div class="settings-shell">
     <div style="max-width:900px;margin:0 auto;padding:20px">
+
+      <!-- Settings had grown to seven cards on one scroll, with the merchant
+           tokens buried between text alerts and pay schedules. Grouping them
+           means someone setting up a card processor is looking at that and
+           nothing else. -->
+      <div class="settings-subtabs" id="settingsSubtabs">
+        <button class="sub-btn active" data-sgo="store">Store</button>
+        <button class="sub-btn" data-sgo="brands">Brands &amp; products</button>
+        <button class="sub-btn" data-sgo="merchant">Merchant connections</button>
+        <button class="sub-btn" data-sgo="staff">Employees</button>
+      </div>
 
       <!-- Store Settings, Brands & Products, and the Maverick connection are
            administrative/company-wide data — hidden from a non-manager
            employee who only verified their own name+PIN (see settingsAccess). -->
       <div id="settingsManagerOnly">
       <!-- Store Settings -->
-      <div class="report-card">
+      <div class="report-card" data-sgroup="store">
         <h3>Store Settings</h3>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div class="field">
@@ -1271,7 +1337,7 @@
       </div>
 
       <!-- Brands & Products -->
-      <div class="report-card" style="margin-top:16px">
+      <div class="report-card" data-sgroup="brands" style="margin-top:16px">
         <h3>Product Brands &amp; Catalog</h3>
         <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Select brands and configure which products are available. Set prices and minimum price thresholds.</p>
         <div id="brandCheckboxes" style="display:flex;flex-direction:column;gap:10px">
@@ -1329,8 +1395,8 @@
       </div>
 
       <!-- Maverick Payments connection (for batch reconciliation) -->
-      <div class="report-card" id="maverickConfigCard" style="margin-top:16px">
-        <h3>Maverick Payments Connection</h3>
+      <div class="report-card" data-sgroup="merchant" id="maverickConfigCard" style="margin-top:16px">
+        <h3>Maverick Payments Connection<button class="help-dot" type="button" onclick="openSettingsHelp('maverick', this)" aria-label="How to find these details" title="How to find these details">?</button></h3>
         <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
           Connect this company's Maverick account to reconcile batches against recorded sales (Transactions → Run Batch Audit). The token is stored securely on the server and never shown again.
           <span id="maverickConnStatus" style="font-weight:600"></span>
@@ -1346,7 +1412,7 @@
       </div>
 
       <!-- Text alert on each sale, via the carrier's email-to-SMS gateway -->
-      <div class="report-card" style="margin-top:16px">
+      <div class="report-card" data-sgroup="store" style="margin-top:16px">
         <h3>Sale Text Alerts</h3>
         <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
           Get a text whenever a sale is completed. Sent through your carrier's email-to-text gateway using this company's Gmail connection, so there's nothing to pay for — but delivery is up to the carrier and can be slow or dropped.
@@ -1373,7 +1439,7 @@
       </div>
 
       <!-- Pay schedule — drives the Payroll section in Reports -->
-      <div class="report-card" style="margin-top:16px">
+      <div class="report-card" data-sgroup="store" style="margin-top:16px">
         <h3>Pay Schedule</h3>
         <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
           When payday falls and which period it settles. Changing this re-dates every paycheck in Reports → Payroll.
@@ -1396,8 +1462,8 @@
       </div>
 
       <!-- Payarc connection (the processor for companies not on Maverick) -->
-      <div class="report-card" id="payarcConfigCard" style="margin-top:16px">
-        <h3>Payarc Connection</h3>
+      <div class="report-card" data-sgroup="merchant" id="payarcConfigCard" style="margin-top:16px">
+        <h3>Payarc Connection<button class="help-dot" type="button" onclick="openSettingsHelp('payarc', this)" aria-label="How to find these details" title="How to find these details">?</button></h3>
         <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
           Connect this company's Payarc account. In the Payarc dashboard go to <b>API</b>, click the <b>eye icon</b> on your token's row, and copy the <b>API Bearer Token</b> from the pop-up — not the ID shown in the table, which won't authenticate. Stored on the server and never shown again.
           <span id="payarcConnStatus" style="font-weight:600"></span>
@@ -1418,7 +1484,7 @@
       <!-- /settingsManagerOnly -->
 
       <!-- Employees -->
-      <div class="report-card" style="margin-top:16px">
+      <div class="report-card" data-sgroup="staff" style="margin-top:16px">
         <h3>Employees</h3>
 
         <!-- Manager view: full roster CRUD (hidden from a sales employee) -->
@@ -1474,6 +1540,16 @@
       </div>
     </div>
   </div>
+
+      <!-- The explainer for whichever connection they asked about. It sits in
+           the margin beside the form on a wide screen, because sending
+           somebody to a separate help page mid-setup is how a half-entered
+           token gets lost. Narrow screens get it inline instead. -->
+      <aside class="settings-help" id="settingsHelp" hidden>
+        <button class="help-close" onclick="closeSettingsHelp()" aria-label="Close">&times;</button>
+        <div id="settingsHelpBody"></div>
+      </aside>
+    </div><!-- /settings-shell -->
 
 </div>
 
@@ -2163,7 +2239,20 @@ async function loadProducts() {
 const BRAND_KEY_MAP = { 'Avologi': 'avologi', 'Avinichi': 'avinichi', 'HydraSphere Plus': 'hydrasphere', 'SpaceTouch': 'spacetouch', 'Lumières': 'lumieres' };
 
 function renderBrandFilters() {
-  const brands = [...new Set(products.map(p => p.brand))].filter(b => selectedBrands.includes(BRAND_KEY_MAP[b] || b.toLowerCase())).sort();
+  // A chip for every brand actually on the shelf, and nothing else.
+  //
+  // This used to test the brand list alone, which got it wrong twice over: a
+  // catalogue brand switched on but never stocked still got a chip that
+  // filtered to an empty grid, and a shop's own imported range got none at
+  // all, because their supplier is not in our catalogue. renderProducts has
+  // always exempted custom products from the brand list; the chips have to
+  // agree with it or they describe a register nobody is looking at.
+  const brands = [...new Set(
+    products
+      .filter(p => p.visible !== false)
+      .filter(p => p.isCustom || selectedBrands.includes(BRAND_KEY_MAP[p.brand] || p.brand.toLowerCase()))
+      .map(p => p.brand)
+  )].sort();
   const container = document.getElementById('brandFilters');
   container.innerHTML = `<button class="brand-filter-btn ${!activeBrand ? 'active' : ''}" onclick="filterBrand(null)">All</button>` +
     brands.map(b => `<button class="brand-filter-btn ${activeBrand === b ? 'active' : ''}" onclick="filterBrand('${b}')">${b}</button>`).join('');
@@ -9750,6 +9839,108 @@ async function logout() {
 
 // ─── Start ──────────────────────────────────────────────────────────────────
 init();
+
+// ─── Settings: groups, and help in the margin ──────────────────────────────
+//
+// The explainers are deliberately about *what to ask for* rather than a click
+// path through somebody else's dashboard. Processor portals get redesigned,
+// and a stale set of menu names reads as authoritative while sending someone
+// to a screen that no longer exists. Naming the credential, and who issues
+// it, stays true.
+
+const SETTINGS_HELP = {
+  maverick: `
+    <h4>Connecting Maverick Payments</h4>
+    <p>This is only needed for <b>Run Batch Audit</b> under Transactions, which
+       checks what Maverick actually settled against what the register rang up.
+       Nothing else in SkySale depends on it.</p>
+    <p>You need two things, and both come from Maverick rather than from us:</p>
+    <ul>
+      <li><b>DBA ID</b> — identifies this location on your Maverick account. It
+          appears on your merchant statement, and in the merchant portal. A
+          business with more than one shop has one per location, so take the one
+          for this shop.</li>
+      <li><b>Access token</b> — an API token issued by Maverick. It is not your
+          portal password and it is not anywhere in the portal by default: ask
+          your account manager or their integrations team for
+          <b>API access credentials for reporting</b>.</li>
+    </ul>
+    <p>Read-only reporting access is all we use. If they offer a choice, that is
+       the one to ask for — a token that can only read cannot move money.</p>
+    <p>The token is stored on the server and never shown again. Leaving the
+       field blank keeps the one already saved.</p>`,
+
+  payarc: `
+    <h4>Connecting Payarc</h4>
+    <p>Used to match card sales against Payarc's own batches, so a missing
+       deposit is named rather than left as a difference.</p>
+    <ul>
+      <li><b>API bearer token</b> — generated from your Payarc dashboard, in the
+          developer or API section. If you cannot find it, ask Payarc support
+          for an <b>API key for transaction reporting</b>.</li>
+      <li><b>Merchant account number</b> — your MID. On your statement and in
+          the dashboard. Optional: leave it blank unless your token covers more
+          than one merchant account, in which case it says which one.</li>
+      <li><b>Environment</b> — <code>live</code> for real money. Only use
+          <code>sandbox</code> with a sandbox token; a live token will not work
+          against it, and vice versa.</li>
+    </ul>
+    <p>If the audit later reports nothing at all, the environment and the token
+       disagreeing is the first thing to check.</p>
+    <p>Like the Maverick token, this is stored on the server and never shown
+       back. Leave it blank to keep the current one.</p>`,
+};
+
+function settingsGroup(which) {
+  document.querySelectorAll('#settingsSubtabs .sub-btn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.sgo === which);
+  });
+  document.querySelectorAll('#tab-settings [data-sgroup]').forEach((card) => {
+    card.style.display = card.dataset.sgroup === which ? '' : 'none';
+  });
+  // The open explainer belongs to a connection; leaving the group should not
+  // leave its help stranded beside an unrelated form.
+  if (which !== 'merchant') closeSettingsHelp();
+  try { localStorage.setItem('skysale.settingsGroup', which); } catch (_) {}
+}
+
+function openSettingsHelp(key, btn) {
+  const body = SETTINGS_HELP[key];
+  if (!body) return;
+  const panel = document.getElementById('settingsHelp');
+  const already = panel && !panel.hidden && panel.dataset.key === key;
+  if (already) return closeSettingsHelp();
+  document.querySelectorAll('.help-dot').forEach((d) => d.classList.remove('on'));
+  if (btn) btn.classList.add('on');
+  document.getElementById('settingsHelpBody').innerHTML = body;
+  panel.dataset.key = key;
+  panel.hidden = false;
+  // Only scrolls when the panel has dropped into the flow, where it would
+  // otherwise open below the fold with no sign anything happened.
+  if (window.matchMedia('(max-width: 1640px)').matches) {
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function closeSettingsHelp() {
+  const panel = document.getElementById('settingsHelp');
+  if (panel) { panel.hidden = true; delete panel.dataset.key; }
+  document.querySelectorAll('.help-dot').forEach((d) => d.classList.remove('on'));
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const bar = document.getElementById('settingsSubtabs');
+  if (!bar) return;
+  bar.addEventListener('click', (e) => {
+    const b = e.target.closest('.sub-btn');
+    if (b) settingsGroup(b.dataset.sgo);
+  });
+  let start = 'store';
+  try { start = localStorage.getItem('skysale.settingsGroup') || 'store'; } catch (_) {}
+  if (!['store', 'brands', 'merchant', 'staff'].includes(start)) start = 'store';
+  settingsGroup(start);
+});
+
 </script>
 </body>
 </html>

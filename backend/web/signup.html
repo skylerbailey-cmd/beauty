@@ -83,6 +83,10 @@
   td input[type=text], td input[type=number] { padding: 6px 9px; font-size: .86rem; }
   .scroller { max-height: 42vh; overflow: auto; border: 1px solid var(--border); border-radius: 10px; }
   .no-price { border-color: var(--danger) !important; background: #FDF4F5; }
+  /* A picture is the fastest way to see a row has been matched to the wrong
+     product, which is the mistake this whole screen exists to catch. */
+  .thumb { width: 38px; height: 38px; object-fit: contain; border-radius: 6px; background: var(--cream); display: block; }
+  .thumb-none { border: 1px dashed var(--border); }
 
   .notice { border-radius: 10px; padding: 12px 14px; font-size: .88rem; margin-bottom: 16px; }
   .notice-warn { background: #FDF4F5; border: 1px solid #E4C4C8; color: #7A2129; }
@@ -108,7 +112,8 @@
 const API = '';
 let state = null;          // what the server says is done
 let step = 1;
-let extracted = [];        // products read from a page, awaiting review
+let extracted = [];        // products read so far, awaiting review
+let sources = [];          // every page they've had us read
 
 const TOTAL = 5;
 const $ = (id) => document.getElementById(id);
@@ -259,14 +264,14 @@ function stepAdmin() {
       what the last one was looking at. This is the PIN that opens all of it.
     </p>
     <div class="field">
-      <label for="admName">Your name</label>
-      <input id="admName" type="text" placeholder="Mara Ellis" autocomplete="name">
-      <div class="hint">As your staff would say it. You'll type this alongside the PIN.</div>
+      <label for="admName">Your first name</label>
+      <input id="admName" type="text" placeholder="Mara" autocomplete="given-name">
+      <div class="hint">Just the first name — it's what shows beside a sale, and it's what you'll type alongside the PIN.</div>
     </div>
     <div class="field">
       <label for="admPin">Admin PIN</label>
-      <input id="admPin" type="text" inputmode="numeric" maxlength="6" placeholder="six digits" autocomplete="off" style="font-family:var(--mono);letter-spacing:.3em;max-width:200px">
-      <div class="hint">Six digits, not four — staff PINs are four, and this one opens the money.</div>
+      <input id="admPin" type="text" inputmode="numeric" maxlength="4" placeholder="four digits" autocomplete="off" style="font-family:var(--mono);letter-spacing:.3em;max-width:200px">
+      <div class="hint">Four digits. Anything but 1234 or four of the same.</div>
     </div>
     <div id="err" class="err"></div>
     <div class="actions">
@@ -288,17 +293,22 @@ function stepAdmin() {
 // ─── 3 · What they sell ────────────────────────────────────────────────────
 
 function stepProducts() {
-  extracted = [];
+  // Deliberately does NOT clear what has already been read: a shop that buys
+  // from three suppliers comes back through here twice, and emptying the list
+  // on the way in would throw away the first two.
+  const adding = extracted.length > 0;
   $('card').innerHTML = `
     <p class="step-of">Step 3 of ${TOTAL}</p>
-    <h1>What you sell</h1>
+    <h1>${adding ? 'Another supplier' : 'What you sell'}</h1>
     <p class="lede">
-      We can read your supplier's catalogue page and fill this in for you. Nothing
-      is saved until you've checked it.
+      ${adding
+        ? `${extracted.length} product${extracted.length === 1 ? '' : 's'} so far. Paste the next supplier's catalogue page and we'll add to the list — anything already read stays.`
+        : `We can read your supplier's catalogue page and fill this in for you. Nothing is saved until you've checked it.`}
     </p>
+    ${adding && sources.length ? `<div class="notice notice-info">Read so far: ${sources.map((x) => esc(x.title || x.url)).join(' · ')}</div>` : ''}
 
     <div class="field">
-      <label for="url">Your supplier's catalogue page</label>
+      <label for="url">${adding ? 'The next catalogue page' : "Your supplier's catalogue page"}</label>
       <input id="url" type="url" placeholder="https://supplier.com/collections/all" autocapitalize="off" spellcheck="false">
       <div class="hint">A page that <em>lists several products</em> works best. A single product page often builds itself with JavaScript, and there's nothing for us to read.</div>
     </div>
@@ -306,13 +316,16 @@ function stepProducts() {
     <div class="actions">
       <button class="btn btn-quiet" onclick="step=2;render()">Back</button>
       <div class="spacer"></div>
-      <button class="btn btn-quiet" onclick="step=4;render()">Skip for now</button>
+      ${adding
+        ? `<button class="btn btn-quiet" id="backToList">Back to the list</button>`
+        : `<button class="btn btn-quiet" onclick="step=4;render()">Skip for now</button>`}
       <button class="btn btn-primary" id="go">Read the page</button>
     </div>
-    <p class="hint" style="margin-top:14px">You can add products by hand at the register at any time, and skipping costs nothing.</p>`;
+    <p class="hint" style="margin-top:14px">You can add products by hand at the register at any time${adding ? '.' : ', and skipping costs nothing.'}</p>`;
 
   $('go').addEventListener('click', readPage);
   $('url').addEventListener('keydown', (e) => { if (e.key === 'Enter') readPage(); });
+  if (adding) $('backToList').addEventListener('click', () => reviewProducts());
 }
 
 async function readPage() {
@@ -327,35 +340,48 @@ async function readPage() {
       $('err').textContent = r.hint || 'Nothing on that page looked like a product for sale.';
       return;
     }
-    extracted = r.products.map((p) => ({ ...p, keep: true }));
-    reviewProducts(r.source_url, r.page_title);
+    // Shops buy from more than one supplier, so a second page adds to the
+    // list rather than replacing it. Matching on name and brand, because the
+    // same product read twice from two pages is one product.
+    const before = extracted.length;
+    const seen = new Set(extracted.map((p) => (p.name + '|' + (p.brand || '')).toLowerCase()));
+    for (const p of r.products) {
+      const key = (p.name + '|' + (p.brand || '')).toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      extracted.push({ ...p, keep: true });
+    }
+    sources.push({ url: r.source_url, title: r.page_title, added: extracted.length - before });
+    reviewProducts();
   } catch (e) {
     $('err').textContent = e.message;
   } finally { btn.disabled = false; btn.textContent = 'Read the page'; }
 }
 
 // Every row editable, every row checkable, nothing saved until they say so.
-function reviewProducts(sourceUrl, pageTitle) {
+function reviewProducts() {
   const missingPrice = extracted.filter((p) => p.price == null).length;
   $('card').innerHTML = `
     <p class="step-of">Step 3 of ${TOTAL}</p>
     <h1>Check these before they go in</h1>
     <p class="lede">
       ${extracted.length} product${extracted.length === 1 ? '' : 's'} read from
-      <span class="addr" style="font-size:.85rem">${esc(pageTitle || sourceUrl)}</span>.
+      ${sources.length === 1
+        ? `<span class="addr" style="font-size:.85rem">${esc(sources[0].title || sources[0].url)}</span>`
+        : `${sources.length} pages`}.
       These become the prices on your register, so read them like you'd read a delivery note.
     </p>
     ${missingPrice ? `<div class="notice notice-warn"><strong>${missingPrice}</strong> ${missingPrice === 1 ? 'product has' : 'products have'} no price — the page didn't state one, and we don't guess. Type them in or untick them.</div>` : ''}
     <div class="scroller">
       <table>
-        <thead><tr><th style="width:34px"></th><th>Product</th><th style="width:110px">Price</th><th style="width:120px">Category</th></tr></thead>
+        <thead><tr><th style="width:34px"></th><th style="width:48px"></th><th>Product</th><th style="width:110px">Price</th><th style="width:120px">Category</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
     </div>
     <p class="hint" style="margin-top:10px">Usage notes from the page are saved too — they're what the welcome email is built from.</p>
     <div id="err" class="err"></div>
     <div class="actions">
-      <button class="btn btn-quiet" id="again">Try another page</button>
+      <button class="btn btn-quiet" id="again">Add another supplier</button>
       <div class="spacer"></div>
       <button class="btn btn-primary" id="save">Save products</button>
     </div>`;
@@ -363,6 +389,9 @@ function reviewProducts(sourceUrl, pageTitle) {
   $('rows').innerHTML = extracted.map((p, i) => `
     <tr>
       <td><input type="checkbox" data-k="keep" data-i="${i}" ${p.keep ? 'checked' : ''} style="width:16px"></td>
+      <td>${p.image
+        ? `<img src="${esc(p.image)}" alt="" loading="lazy" class="thumb" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'thumb thumb-none',title:'That picture did not load'}))">`
+        : `<span class="thumb thumb-none" title="No picture on the page"></span>`}</td>
       <td><input type="text" data-k="name" data-i="${i}" value="${esc(p.name)}"></td>
       <td><input type="number" step="0.01" min="0" data-k="price" data-i="${i}" value="${p.price == null ? '' : p.price}" class="${p.price == null ? 'no-price' : ''}" placeholder="—"></td>
       <td><input type="text" data-k="category" data-i="${i}" value="${esc(p.category)}"></td>

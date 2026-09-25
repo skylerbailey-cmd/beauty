@@ -110,6 +110,77 @@ function readableText(html) {
   return { title, text: body.slice(0, 120000) };
 }
 
+// Pictures.
+//
+// The model only ever sees the words on a page, so it cannot know what any
+// product looks like. This walks the markup instead and builds a catalogue of
+// the real images, each with whatever text sits closest to it — the alt
+// attribute, the link it is inside, the card it belongs to. The model then
+// picks from that list by name. It is never asked for a URL, because a URL it
+// composed would look perfectly reasonable and point at nothing.
+const MAX_IMAGES = 120;
+
+// A shop page is mostly furniture: logos, payment badges, flags, sprites.
+const JUNK = /logo|icon|sprite|badge|payment|visa|mastercard|paypal|amex|flag|avatar|placeholder|spacer|pixel|tracking|loader|spinner|arrow|chevron|star-rating|swatch/i;
+
+function imageCatalogue(html, pageUrl) {
+  const cheerio = require('cheerio');
+  const $ = cheerio.load(html);
+  $('script, style, noscript, header nav, footer').remove();
+
+  const seen = new Set();
+  const out = [];
+
+  $('img').each((_, el) => {
+    if (out.length >= MAX_IMAGES) return;
+    const $el = $(el);
+
+    // Lazy-loaded images keep the real address out of src, so check the
+    // attributes that actually carry it before falling back.
+    const srcset = $el.attr('srcset') || $el.attr('data-srcset') || '';
+    const widest = srcset
+      .split(',')
+      .map((part) => part.trim().split(/\s+/))
+      .filter((p) => p[0])
+      .sort((a, b) => (parseInt(b[1], 10) || 0) - (parseInt(a[1], 10) || 0))[0];
+    const raw = $el.attr('data-src') || $el.attr('data-original')
+      || (widest && widest[0]) || $el.attr('src') || '';
+    if (!raw || raw.startsWith('data:')) return;
+
+    let url;
+    try { url = new URL(raw, pageUrl).toString(); } catch (_) { return; }
+    if (!/^https?:/.test(url)) return;
+    if (JUNK.test(url)) return;
+
+    // Explicitly tiny images are furniture whatever they are called.
+    const w = parseInt($el.attr('width') || '0', 10);
+    const h = parseInt($el.attr('height') || '0', 10);
+    if ((w && w < 80) || (h && h < 80)) return;
+
+    // One entry per picture, ignoring the size suffix Shopify and friends add,
+    // so the same product photo at six widths is not six candidates.
+    const key = url.split('?')[0].replace(/_\d+x\d*(?=\.[a-z]{3,4}$)/i, '');
+    if (seen.has(key)) return;
+    seen.add(key);
+
+    const alt = ($el.attr('alt') || '').trim();
+    if (JUNK.test(alt)) return;
+
+    // The nearest text that names the thing: the link wrapping it, or the card.
+    const near = $el.closest('a').text().trim()
+      || $el.parent().text().trim()
+      || $el.closest('li, article, div').text().trim();
+
+    out.push({
+      url,
+      alt: alt.slice(0, 120),
+      near: near.replace(/\s+/g, ' ').slice(0, 140),
+    });
+  });
+
+  return out;
+}
+
 // The shape a product has to be in for the register to sell it and for the
 // welcome email to say anything useful about it.
 const PRODUCT_TOOL = {
@@ -147,6 +218,10 @@ const PRODUCT_TOOL = {
               type: ['string', 'null'],
               description: 'How the customer uses it — steps, frequency, order of application. This becomes the guidance in their welcome email. null if the page does not say.',
             },
+            image: {
+              type: ['string', 'null'],
+              description: 'The picture of this product, copied EXACTLY from the numbered image list supplied with the page. Never write a URL that is not on that list, and never adapt one. null if no listed image shows this product.',
+            },
           },
         },
       },
@@ -166,7 +241,9 @@ Rules, in order of importance:
 
 4. Prices are digits only, in whatever currency the page uses. "$1,299.00" is 1299. "From $49" is 49. A price range means the lowest figure.
 
-5. usage is the field that matters most after price. It becomes the guidance a customer receives by email after buying, so capture how the product is actually used — the steps, how often, what it goes with — whenever the page says.
+5. image must be copied character for character from the numbered image list, or be null. The list is the only source of pictures. A URL you composed, adjusted, or guessed will point at nothing and leave a broken picture on a till, which is worse than no picture at all. Match by what the alt text and surrounding words say, not by position in the list, and leave it null rather than attaching a picture you are unsure of. Two products must not share an image.
+
+6. usage is the field that matters most after price. It becomes the guidance a customer receives by email after buying, so capture how the product is actually used — the steps, how often, what it goes with — whenever the page says.
 
 If the page sells nothing, record an empty list. That is a valid answer.`;
 
@@ -180,6 +257,7 @@ async function extractProductsFromUrl(rawUrl) {
   const url = assertFetchable(rawUrl);
   const html = await fetchPage(url);
   const { title, text } = readableText(html);
+  const images = imageCatalogue(html, url.toString());
 
   // A page that is mostly markup and barely any words is one whose content
   // arrives by JavaScript. We can't run that, and guessing at what it would
@@ -201,7 +279,11 @@ async function extractProductsFromUrl(rawUrl) {
     tool_choice: { type: 'tool', name: 'record_products' },
     messages: [{
       role: 'user',
-      content: `Page address: ${url.toString()}\nPage title: ${title || '(none)'}\n\n--- page text ---\n${text}`,
+      content: `Page address: ${url.toString()}\nPage title: ${title || '(none)'}\n\n--- page text ---\n${text}`
+        + (images.length
+          ? `\n\n--- images on this page ---\nCopy one of these URLs exactly into a product's image field, or use null. Do not write any other URL.\n`
+            + images.map((im, i) => `[${i + 1}] ${im.url}\n     alt: ${im.alt || '(none)'}\n     near: ${im.near || '(none)'}`).join('\n')
+          : ''),
     }],
   });
 
@@ -217,6 +299,13 @@ async function extractProductsFromUrl(rawUrl) {
   // Tool input is JSON the model produced; treat every field as untrusted and
   // coerce it into the shape the rest of the app expects.
   const raw = Array.isArray(call.input?.products) ? call.input.products : [];
+
+  // Only URLs that were actually on the page get through. The instruction not
+  // to invent one is worth having, but it is not a guarantee, and a made-up
+  // address renders as a broken picture on a till. An allow-list is.
+  const offered = new Set(images.map((im) => im.url));
+  const claimed = new Set();
+
   const products = raw
     .map((p) => ({
       name: String(p?.name || '').trim().slice(0, 200),
@@ -225,6 +314,14 @@ async function extractProductsFromUrl(rawUrl) {
       category: p?.category ? String(p.category).trim().slice(0, 100) : '',
       description: p?.description ? String(p.description).trim().slice(0, 1200) : '',
       usage: p?.usage ? String(p.usage).trim().slice(0, 2000) : '',
+      image: (() => {
+        const src = p?.image ? String(p.image).trim() : '';
+        // Not offered, or already spoken for — a page whose every card shares
+        // one hero shot would otherwise put the same photo on all of them.
+        if (!offered.has(src) || claimed.has(src)) return '';
+        claimed.add(src);
+        return src;
+      })(),
     }))
     .filter((p) => p.name);
 
@@ -243,4 +340,4 @@ async function extractProductsFromUrl(rawUrl) {
   };
 }
 
-module.exports = { extractProductsFromUrl, assertFetchable, readableText };
+module.exports = { extractProductsFromUrl, assertFetchable, readableText, imageCatalogue };
