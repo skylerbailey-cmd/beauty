@@ -112,6 +112,24 @@ async function initSchema() {
       PRIMARY KEY(product_id, user_id)
     );
 
+    -- What a shop tells its own customers about a catalogue product.
+    --
+    -- The built-in catalogue carries one set of usage notes written for
+    -- everybody, and a shop that sells a product has its own way of
+    -- explaining it — and is the one whose name is at the bottom of the
+    -- email. Anything left blank here falls back to the catalogue's own.
+    CREATE TABLE IF NOT EXISTS pos_product_email (
+      product_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      usage_notes TEXT DEFAULT '',
+      usage_frequency TEXT DEFAULT '',
+      routine_step TEXT DEFAULT '',
+      benefits TEXT DEFAULT '',
+      description TEXT DEFAULT '',
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY(product_id, user_id)
+    );
+
     -- Transactions
     CREATE TABLE IF NOT EXISTS pos_transactions (
       id SERIAL PRIMARY KEY,
@@ -3430,6 +3448,35 @@ async function bookingCapacity(userId) {
 }
 
 // Both halves of a company's Gmail connection, read straight from Postgres.
+
+// ─── What a shop says about a catalogue product ─────────────────────────────
+
+async function getProductEmailOverrides(userId) {
+  if (!pool) return {};
+  const { rows } = await query(
+    'SELECT * FROM pos_product_email WHERE user_id = $1', [userId]);
+  const byId = {};
+  for (const r of rows) byId[r.product_id] = r;
+  return byId;
+}
+
+async function setProductEmailOverride(userId, productId, fields) {
+  const allowed = ['usage_notes', 'usage_frequency', 'routine_step', 'benefits', 'description'];
+  const keys = allowed.filter((k) => fields[k] !== undefined);
+  if (!keys.length) return null;
+
+  const cols = ['product_id', 'user_id', ...keys];
+  const values = [productId, userId, ...keys.map((k) => fields[k])];
+  const placeholders = cols.map((_, i) => `$${i + 1}`).join(',');
+  const updates = keys.map((k) => `${k} = EXCLUDED.${k}`).concat('updated_at = NOW()').join(', ');
+
+  const { rows } = await query(
+    `INSERT INTO pos_product_email (${cols.join(',')}) VALUES (${placeholders})
+     ON CONFLICT (product_id, user_id) DO UPDATE SET ${updates}
+     RETURNING *`, values);
+  return rows[0];
+}
+
 // ─── Sign-in links ──────────────────────────────────────────────────────────
 //
 // A link in an inbox is a credential, so these follow the same rules a
@@ -3819,6 +3866,8 @@ module.exports = {
   updateCustomProduct,
   // Product Visibility
   getProductVisibility,
+  getProductEmailOverrides,
+  setProductEmailOverride,
   setProductVisibility,
   // Treatment calendar
   getAvailability,

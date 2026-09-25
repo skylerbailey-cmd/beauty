@@ -930,7 +930,7 @@ function customAsEmailProducts(customProducts) {
   });
 }
 
-function generateWelcomeEmailBody({ customerEmail, customerName, selectedProductIds: rawProductIds, includeSuggestions, userId, storeName, storeCity, brands, customProducts }) {
+function generateWelcomeEmailBody({ customerEmail, customerName, selectedProductIds: rawProductIds, includeSuggestions, userId, storeName, storeCity, brands, customProducts, emailOverrides }) {
   // A bundle isn't a real product — swap it for the items it stands for.
   const selectedProductIds = expandBundles(rawProductIds);
 
@@ -977,7 +977,23 @@ function generateWelcomeEmailBody({ customerEmail, customerName, selectedProduct
     .flatMap(([, products]) => products)
     // The shop's own range is never filtered by the catalogue brand list —
     // their supplier is not in our catalogue, so it would remove all of it.
-    .concat(customAsEmailProducts(customProducts));
+    .concat(customAsEmailProducts(customProducts))
+    // What this shop says about a catalogue product, where it has said
+    // anything. Its name is at the bottom of the email, so its wording wins.
+    .map((p) => {
+      const own = (emailOverrides || {})[p.id];
+      if (!own) return p;
+      const every = { daily: 'Use it every day.', weekly: 'Use it once a week.', monthly: 'Use it once a month.' }[own.usage_frequency] || '';
+      const steps = own.usage_notes || p.howToUse || '';
+      return {
+        ...p,
+        howToUse: [every, steps].filter(Boolean).join(' ') || p.howToUse,
+        step: own.routine_step || p.step,
+        benefits: own.benefits || p.benefits,
+        description: own.description || p.description,
+        loveLine: own.benefits || p.loveLine,
+      };
+    });
   const selectedIds = new Set(selectedProductIds);
   const selectedProducts = selectedProductIds
     .map(id => allProducts.find(p => p.id === id))
@@ -1010,11 +1026,11 @@ function generateWelcomeEmailBody({ customerEmail, customerName, selectedProduct
 
   // ── 2. Your New Products ──────────────────────────────────────────────
   const productsHtml = selectedProducts.map(p =>
-    // A hand-written line for a catalogue product; for a shop's own product,
-    // whatever they wrote under "what it does for them"; otherwise the opening
-    // of its description. Deliberately in that order, so the catalogue's
-    // existing emails read exactly as they did.
-    `<p style="margin-bottom:12px">✨ ${productLink(p, userTheme)} — ${LOVE_LINES[p.id] || p.loveLine || shortDescription(p)}</p>`
+    // Whatever this shop wrote about the product first — their name is at the
+    // bottom of the email, so a line they wrote beats one we did. Then the
+    // catalogue's own hand-written line, then the opening of the description.
+    // Shops that have written nothing still read exactly as they did.
+    `<p style="margin-bottom:12px">✨ ${productLink(p, userTheme)} — ${p.loveLine || LOVE_LINES[p.id] || shortDescription(p)}</p>`
   ).join('\n');
 
   const newProductsSection = `<div style="margin-top:24px;padding:20px;background:${tc.productsBg};border-left:4px solid ${tc.productsBorder};border-radius:8px"><p style="margin-bottom:12px;font-size:20px"><b>🛍️ Your New Products</b></p>\n${productsHtml}</div>`;
@@ -1331,6 +1347,9 @@ router.post('/generate', async (req, res) => {
       ...req.body, userId: req.session?.userId, storeName: settings?.store_name,
       storeCity: settings?.store_city,
       brands: settings?.brands, customProducts,
+      emailOverrides: req.session?.userId
+        ? await pgDb.getProductEmailOverrides(req.session.userId).catch(() => ({}))
+        : {},
     });
     res.json({
       success: true,

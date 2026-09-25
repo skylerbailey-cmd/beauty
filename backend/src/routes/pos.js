@@ -90,10 +90,11 @@ router.use(async (req, res, next) => {
 router.get('/products', async (req, res) => {
   try {
   const userId = req.session.userId;
-  const [prices, visibility, customProducts] = await Promise.all([
+  const [prices, visibility, customProducts, emailOverrides] = await Promise.all([
     pgDb.getProductPrices(userId),
     pgDb.getProductVisibility(userId),
     pgDb.getCustomProducts(userId),
+    pgDb.getProductEmailOverrides(userId).catch(() => ({})),
   ]);
   const priceMap = {};
   for (const p of prices) priceMap[p.product_id] = p;
@@ -105,9 +106,20 @@ router.get('/products', async (req, res) => {
     for (const prod of products) {
       const priceEntry = priceMap[prod.id];
       const vis = visMap[prod.id];
+      // Whatever this shop has written for its own customers, falling back to
+      // the catalogue's wording where they have written nothing.
+      const own = emailOverrides[prod.id] || {};
       allProducts.push({
         id: prod.id,
         name: prod.name,
+        usageNotes: own.usage_notes || prod.howToUse || '',
+        usageFrequency: own.usage_frequency || '',
+        routineStep: own.routine_step || prod.step || '',
+        benefits: own.benefits || prod.benefits || '',
+        // True only where the shop has actually overridden something, so the
+        // editor can say whose words these are.
+        emailEdited: Object.keys(own).some((k) =>
+          ['usage_notes', 'usage_frequency', 'routine_step', 'benefits', 'description'].includes(k) && own[k]),
         brand: prod.brand || brandKey,
         // brand above is the display name ("Avologi"); brandKey is the catalog
         // key ("avologi") the Emails picker groups its grids by.
@@ -1272,6 +1284,7 @@ router.post('/transactions/:id/welcome', async (req, res) => {
 
   const settings = await pgDb.getSettings(userId);
   const customProducts = await pgDb.getCustomProducts(userId).catch(() => []);
+  const emailOverrides = await pgDb.getProductEmailOverrides(userId).catch(() => ({}));
   let emailBody, selectedProducts;
   try {
     ({ emailBody, selectedProducts } = generateWelcomeEmailBody({
@@ -1285,6 +1298,7 @@ router.post('/transactions/:id/welcome', async (req, res) => {
       storeCity: settings?.store_city,
       brands: settings?.brands,
       customProducts,
+      emailOverrides,
     }));
   } catch (err) {
     return res.status(400).json({ error: err.message });
@@ -3502,6 +3516,36 @@ const USAGE_FREQUENCIES = ['daily', 'weekly', 'monthly', ''];
 // else would save fine and then never place the product in a routine.
 const ROUTINE_STEP_VALUES = ['cleanser', 'toner', 'serum', 'eye treatment', 'moisturizer',
   'sunscreen', 'exfoliant', 'mask', 'device treatment', 'treatment cream', ''];
+
+// The same editor, for a catalogue product. The shop's words are stored
+// against its own id and the catalogue's stay untouched, so two shops selling
+// the same cleanser can tell their customers different things — which they
+// will, because it is their name at the bottom of the email.
+router.patch('/product-email/:productId', async (req, res) => {
+  const productId = String(req.params.productId || '');
+  if (!productId || productId.startsWith('custom-')) {
+    return res.status(400).json({ error: 'That is one of your own products — edit it directly.' });
+  }
+
+  const fields = {};
+  if (req.body.description !== undefined) fields.description = String(req.body.description).slice(0, 4000);
+  if (req.body.usage_notes !== undefined) fields.usage_notes = String(req.body.usage_notes).slice(0, 4000);
+  if (req.body.benefits !== undefined) fields.benefits = String(req.body.benefits).slice(0, 1000);
+  if (req.body.usage_frequency !== undefined) {
+    const f = String(req.body.usage_frequency).toLowerCase().trim();
+    if (!USAGE_FREQUENCIES.includes(f)) return res.status(400).json({ error: 'Daily, weekly or monthly.' });
+    fields.usage_frequency = f;
+  }
+  if (req.body.routine_step !== undefined) {
+    const step = String(req.body.routine_step).toLowerCase().trim();
+    if (!ROUTINE_STEP_VALUES.includes(step)) return res.status(400).json({ error: 'Not a routine step we know.' });
+    fields.routine_step = step;
+  }
+  if (!Object.keys(fields).length) return res.status(400).json({ error: 'Nothing to change.' });
+
+  const saved = await pgDb.setProductEmailOverride(req.session.userId, productId, fields);
+  res.json({ ok: true, product: saved });
+});
 
 router.patch('/custom-products/:id', async (req, res) => {
   const id = Number(req.params.id);

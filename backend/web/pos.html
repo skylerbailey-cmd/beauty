@@ -7415,12 +7415,13 @@ function renderBrandProductPanel(brandKey) {
 
   const brandProds = products.filter(p => (BRAND_KEY_MAP[p.brand] || p.brand.toLowerCase()) === brandKey && !p.isCustom);
 
-  panel.innerHTML = `<div style="display:grid;grid-template-columns:auto 1fr 80px 80px;gap:4px 8px;align-items:center;font-family:system-ui,sans-serif;font-size:.8rem;padding:4px 0">
+  panel.innerHTML = `<div style="display:grid;grid-template-columns:auto 1fr 80px 80px 96px;gap:4px 8px;align-items:center;font-family:system-ui,sans-serif;font-size:.8rem;padding:4px 0">
     <div></div><div style="font-weight:700;font-size:.7rem;text-transform:uppercase;color:var(--mid)">Product</div>
     <div style="font-weight:700;font-size:.7rem;text-transform:uppercase;color:var(--mid);text-align:right">Price</div>
     <div style="font-weight:700;font-size:.7rem;text-transform:uppercase;color:var(--mid);text-align:right">Min Price</div>
+    <div style="font-weight:700;font-size:.7rem;text-transform:uppercase;color:var(--mid);text-align:center">Welcome email</div>
   </div>` + brandProds.map(p => `
-    <div style="display:grid;grid-template-columns:auto 1fr 80px 80px;gap:4px 8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
+    <div style="display:grid;grid-template-columns:auto 1fr 80px 80px 96px;gap:4px 8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
       <input type="checkbox" ${p.visible !== false ? 'checked' : ''} onchange="toggleProductVisibility('${p.id}',this.checked)" style="accent-color:var(--accent-deep)">
       <div style="min-width:0">
         <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.name}</div>
@@ -7428,7 +7429,12 @@ function renderBrandProductPanel(brandKey) {
       </div>
       <input type="number" value="${p.price > 0 ? p.price : ''}" step="0.01" min="0" data-id="${p.id}" data-field="price" onchange="saveSinglePrice('${p.id}')" placeholder="${p.retailPrice || '0'}" style="width:100%;padding:4px 6px;border:1px solid var(--border);border-radius:4px;font-size:.8rem;text-align:right;outline:none">
       <input type="number" value="${p.minPrice > 0 ? p.minPrice : ''}" step="0.01" min="0" data-id="${p.id}" data-field="min_price" onchange="saveSinglePrice('${p.id}')" placeholder="0" style="width:100%;padding:4px 6px;border:1px solid ${p.minPrice > 0 ? 'var(--accent)' : 'var(--border)'};border-radius:4px;font-size:.8rem;text-align:right;outline:none;${p.minPrice > 0 ? 'background:#fff5f5' : ''}">
+      <div style="display:flex;justify-content:flex-end">
+        <button onclick="toggleProductDetail('${p.id}')" title="What your customers are told about this"
+                style="background:none;border:1px solid ${p.emailEdited ? 'var(--accent)' : 'var(--border)'};border-radius:6px;cursor:pointer;color:var(--accent-deep);font-size:.72rem;padding:4px 9px;font-family:system-ui,sans-serif;white-space:nowrap">${p.emailEdited ? 'Edited' : 'Edit'}</button>
+      </div>
     </div>
+    <div id="prodDetail-${cssId(p.id)}" style="display:none;grid-column:1 / -1;padding:12px 10px 16px;background:var(--cream);border-bottom:1px solid var(--border)"></div>
   `).join('') || '<div style="color:var(--mid);font-family:system-ui,sans-serif;font-size:.85rem;padding:12px;text-align:center">No products in this brand</div>';
 }
 
@@ -10536,17 +10542,24 @@ window.addEventListener('hashchange', openTabFromHash);
 // now there was nowhere to see them — the first sight of what a customer had
 // been sent was the customer mentioning it.
 
+// A catalogue id like "hydrasphere-vitamin-c-serum" is fine in an id
+// attribute but has to be escaped where it is used as a selector.
+const cssId = (v) => String(v).replace(/[^a-zA-Z0-9_-]/g, '_');
+
 const FREQUENCIES = [
   ['daily', 'Daily', 'every day'],
   ['weekly', 'Weekly', 'once a week'],
   ['monthly', 'Monthly', 'once a month'],
 ];
 
+// Keyed on the product's id rather than a custom-product row id, because a
+// catalogue product has no row of its own — the shop's wording is stored
+// against it separately, and it is edited here the same way.
 function toggleProductDetail(customId) {
-  const box = document.getElementById(`prodDetail-${customId}`);
+  const box = document.getElementById(`prodDetail-${cssId(customId)}`);
   if (!box) return;
   if (box.style.display !== 'none') { box.style.display = 'none'; return; }
-  const p = products.find((x) => x.customId === customId);
+  const p = products.find((x) => x.customId === customId || x.id === customId);
   if (!p) return;
 
   box.innerHTML = `
@@ -10555,7 +10568,7 @@ function toggleProductDetail(customId) {
     </div>
 
     <label style="display:block;font-family:system-ui,sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:4px">How often to use it</label>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px" id="freqRow-${customId}">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px" id="freqRow-${cssId(customId)}">
       ${FREQUENCIES.map(([key, label]) => `
         <label style="display:flex;align-items:center;gap:6px;padding:7px 13px;border:1.5px solid ${p.usageFrequency === key ? 'var(--accent-deep)' : 'var(--border)'};border-radius:8px;cursor:pointer;background:${p.usageFrequency === key ? 'var(--accent-soft)' : 'var(--white)'};font-family:system-ui,sans-serif;font-size:.82rem">
           <input type="checkbox" ${p.usageFrequency === key ? 'checked' : ''}
@@ -10569,7 +10582,7 @@ function toggleProductDetail(customId) {
     </div>
 
     <label style="display:block;font-family:system-ui,sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:4px">Where it goes in a routine</label>
-    <select id="routineStep-${customId}" onchange="patchProduct(${customId},{routine_step:this.value},'prodDetailStatus-${customId}')"
+    <select id="routineStep-${cssId(customId)}" onchange="patchProduct(${customId},{routine_step:this.value},'prodDetailStatus-${customId}')"
       style="width:100%;max-width:280px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.84rem;font-family:system-ui,sans-serif;outline:none;background:var(--white)">
       ${['', 'cleanser', 'toner', 'serum', 'eye treatment', 'moisturizer', 'sunscreen',
          'exfoliant', 'mask', 'device treatment', 'treatment cream']
@@ -10580,7 +10593,7 @@ function toggleProductDetail(customId) {
     </div>
 
     <label style="display:block;font-family:system-ui,sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:4px">How to use it</label>
-    <textarea id="usageNotes-${customId}" rows="4"
+    <textarea id="usageNotes-${cssId(customId)}" rows="4"
       style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.84rem;font-family:system-ui,sans-serif;outline:none;resize:vertical"
       placeholder="Cleanse first, glide in small circles for three minutes, moisturise after.">${escapeHtml(p.usageNotes || '')}</textarea>
     <div style="font-family:system-ui,sans-serif;font-size:.74rem;color:var(--mid);margin:4px 0 14px">
@@ -10588,18 +10601,18 @@ function toggleProductDetail(customId) {
     </div>
 
     <label style="display:block;font-family:system-ui,sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin-bottom:4px">What it is</label>
-    <textarea id="prodDesc-${customId}" rows="3"
+    <textarea id="prodDesc-${cssId(customId)}" rows="3"
       style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.84rem;font-family:system-ui,sans-serif;outline:none;resize:vertical"
       placeholder="A sentence or two on what it does.">${escapeHtml(p.description || '')}</textarea>
 
     <label style="display:block;font-family:system-ui,sans-serif;font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin:14px 0 4px">What it does for them</label>
-    <textarea id="prodBenefits-${customId}" rows="2"
+    <textarea id="prodBenefits-${cssId(customId)}" rows="2"
       style="width:100%;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.84rem;font-family:system-ui,sans-serif;outline:none;resize:vertical"
       placeholder="Brightens, evens tone, reduces the look of fine lines">${escapeHtml(p.benefits || '')}</textarea>
 
     <div style="display:flex;gap:8px;align-items:center;margin-top:12px">
       <button class="btn btn-confirm" style="padding:6px 16px;font-size:.82rem" onclick="saveProductDetail(${customId})">Save</button>
-      <span id="prodDetailStatus-${customId}" style="font-family:system-ui,sans-serif;font-size:.8rem"></span>
+      <span id="prodDetailStatus-${cssId(customId)}" style="font-family:system-ui,sans-serif;font-size:.8rem"></span>
     </div>`;
   box.style.display = 'block';
 }
@@ -10609,24 +10622,29 @@ function toggleProductDetail(customId) {
 // ticking one unticks the rest.
 async function setProductFrequency(customId, key, checked) {
   await patchProduct(customId, { usage_frequency: checked ? key : '' },
-    `prodDetailStatus-${customId}`);
-  const box = document.getElementById(`prodDetail-${customId}`);
+    `prodDetailStatus-${cssId(customId)}`);
+  const box = document.getElementById(`prodDetail-${cssId(customId)}`);
   if (box) { box.style.display = 'none'; toggleProductDetail(customId); }
 }
 
 async function saveProductDetail(customId) {
   await patchProduct(customId, {
-    usage_notes: document.getElementById(`usageNotes-${customId}`).value,
-    description: document.getElementById(`prodDesc-${customId}`).value,
-    benefits: document.getElementById(`prodBenefits-${customId}`).value,
-  }, `prodDetailStatus-${customId}`);
+    usage_notes: document.getElementById(`usageNotes-${cssId(customId)}`).value,
+    description: document.getElementById(`prodDesc-${cssId(customId)}`).value,
+    benefits: document.getElementById(`prodBenefits-${cssId(customId)}`).value,
+  }, `prodDetailStatus-${cssId(customId)}`);
 }
 
 async function patchProduct(customId, fields, statusId) {
   const status = document.getElementById(statusId);
   if (status) { status.style.color = 'var(--mid)'; status.textContent = 'Saving…'; }
+  // A number is one of the shop's own products; anything else is a catalogue
+  // id, whose wording is stored per shop rather than on the product itself.
+  const url = typeof customId === 'number'
+    ? `${API}/api/pos/custom-products/${customId}`
+    : `${API}/api/pos/product-email/${encodeURIComponent(customId)}`;
   try {
-    const res = await fetch(`${API}/api/pos/custom-products/${customId}`, {
+    const res = await fetch(url, {
       method: 'PATCH', credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(fields),
@@ -10634,7 +10652,7 @@ async function patchProduct(customId, fields, statusId) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'That could not be saved.');
     // Keep the copy in memory in step, or reopening the panel shows the old text.
-    const p = products.find((x) => x.customId === customId);
+    const p = products.find((x) => x.customId === customId || x.id === customId);
     if (p) {
       if (fields.usage_notes !== undefined) p.usageNotes = fields.usage_notes;
       if (fields.description !== undefined) p.description = fields.description;
