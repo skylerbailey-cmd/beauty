@@ -32,10 +32,18 @@ const { cookieDomainFor, companyUrl, appDomain } = require('../lib/tenancy');
 const LINK_MINUTES = 60;
 
 // The showroom account, if this deployment has one.
-const isDemoAddress = (email) => {
-  const demo = (process.env.DEMO_EMAIL || '').trim().toLowerCase();
-  return !!demo && email === demo;
-};
+//
+// A list rather than one address, because test@demo.com and demo@test.com are
+// equally memorable and nobody should have to remember which way round it
+// goes to get into a demo. Every spelling opens the same company: the first
+// in the list is the one it belongs to, and the rest are simply let through
+// to it.
+const demoAddresses = () => String(process.env.DEMO_EMAIL || '')
+  .split(',')
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean);
+
+const isDemoAddress = (email) => demoAddresses().includes(email);
 
 // Deliberately loose. The job here is to catch a typo and obvious nonsense,
 // not to adjudicate the RFC — a real address that a strict pattern rejects is
@@ -90,7 +98,10 @@ router.post('/link',
     // Unset DEMO_EMAIL and the door does not exist.
     if (isDemoAddress(email)) {
       const { findOrCreateUserByEmail } = require('../db');
-      const { user } = findOrCreateUserByEmail(email, null);
+      // Always the first address in the list — otherwise a second spelling
+      // would derive a different account id and open an empty shop with the
+      // demo's name on the door.
+      const { user } = findOrCreateUserByEmail(demoAddresses()[0], null);
       req.session.userId = user.id;
       rememberAuthenticated(req, user.id);
       res.cookie('glow_user_email', user.email, {
