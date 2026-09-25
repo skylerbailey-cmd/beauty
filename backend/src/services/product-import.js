@@ -358,6 +358,14 @@ async function readProductFeed(pageUrl) {
   return null;
 }
 
+// Whether the last feed probe looked like a firewall rather than an absence.
+// A challenge page is an HTML body under a 2xx or a 403 — the shape of "prove
+// you are a person", which a server cannot do and should not pretend to.
+function feedWasRefused() {
+  return !!lastFeedProblem && /answered (40[13]|202|429|503)/.test(lastFeedProblem);
+}
+const lastFeedNote = () => lastFeedProblem;
+
 // ─── Where the products actually live ───────────────────────────────────────
 //
 // People paste the address they know, which is the front door: avologi.com,
@@ -832,11 +840,17 @@ async function extractProductsFromUrl(rawUrl, onProgress) {
     sourceUrl: first.toString(),
     pageTitle: result?.pageTitle || '',
     searched,
-    hint: tried > 1
-      ? `We looked at ${tried} pages on that site — including the ones it links to as its shop — and could not read a product list from any of them. Try the page that lists several products directly, or add them by hand.`
-      : (result?.hint || 'Nothing on that page looked like a product for sale.'),
+    // Blaming the pages when the site simply refused us sends a shop looking
+    // for a better page that does not exist. Say which it was.
+    hint: feedWasRefused()
+      ? `That supplier's website is blocking us. Its product list is there, but their firewall turns away requests that do not come from a browser, so we cannot read it — nothing you can change at your end. Add these by hand, or ask them to allow SkySale.`
+      : (tried > 1
+        ? `We looked at ${tried} pages on that site — including the ones it links to as its shop — and could not read a product list from any of them. Try the page that lists several products directly, or add them by hand.`
+        : (result?.hint || 'Nothing on that page looked like a product for sale.')),
+    blocked: feedWasRefused(),
+    blocked_detail: feedWasRefused() ? lastFeedNote() : null,
   };
 }
 
 module.exports = { extractProductsFromUrl, readOnePage, assertFetchable, readableText,
-  imageCatalogue, productPageCandidates, readProductFeed, wooPrice };
+  imageCatalogue, productPageCandidates, readProductFeed, wooPrice, feedWasRefused, lastFeedNote };
