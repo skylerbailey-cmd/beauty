@@ -2464,12 +2464,18 @@ function renderBrandFilters() {
   // all, because their supplier is not in our catalogue. renderProducts has
   // always exempted custom products from the brand list; the chips have to
   // agree with it or they describe a register nobody is looking at.
-  const brands = [...new Set(
-    products
-      .filter(p => p.visible !== false)
-      .filter(p => p.isCustom || selectedBrands.includes(BRAND_KEY_MAP[p.brand] || p.brand.toLowerCase()))
-      .map(p => p.brand)
-  )].sort();
+  // Grouped without regard to case, because "Benelift" and "BeneLift" are one
+  // supplier and two chips — which is what an import spelling a brand one way
+  // and a hand-typed product spelling it another produced. The first spelling
+  // seen is the one shown.
+  const byKey = new Map();
+  for (const p of products) {
+    if (p.visible === false) continue;
+    if (!(p.isCustom || selectedBrands.includes(BRAND_KEY_MAP[p.brand] || String(p.brand).toLowerCase()))) continue;
+    const key = String(p.brand || '').trim().toLowerCase();
+    if (key && !byKey.has(key)) byKey.set(key, p.brand);
+  }
+  const brands = [...byKey.values()].sort((a, b) => a.localeCompare(b));
   const container = document.getElementById('brandFilters');
   container.innerHTML = `<button class="brand-filter-btn ${!activeBrand ? 'active' : ''}" onclick="filterBrand(null)">All</button>` +
     brands.map(b => `<button class="brand-filter-btn ${activeBrand === b ? 'active' : ''}" onclick="filterBrand('${b}')">${b}</button>`).join('');
@@ -2492,7 +2498,7 @@ function renderProducts() {
     if (p.visible === false) return false;
     const brandKey = BRAND_KEY_MAP[p.brand] || p.brand.toLowerCase();
     if (!p.isCustom && !selectedBrands.includes(brandKey)) return false;
-    if (activeBrand && p.brand !== activeBrand) return false;
+    if (activeBrand && String(p.brand || '').toLowerCase() !== String(activeBrand).toLowerCase()) return false;
     if (search && !p.name.toLowerCase().includes(search) && !p.brand.toLowerCase().includes(search)) return false;
     return true;
   });
