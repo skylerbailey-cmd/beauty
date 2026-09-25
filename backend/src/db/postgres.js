@@ -591,6 +591,13 @@ async function initSchema() {
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS booking_slot_step INTEGER DEFAULT 30');
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS booking_lead_hours INTEGER DEFAULT 2');
 
+  // What a supplier's page says about a product beyond its price. `usage` is
+  // the one that earns its keep: it becomes the guidance in the welcome email
+  // a customer gets after buying, which is the email people actually read.
+  await migrate("ALTER TABLE pos_custom_products ADD COLUMN IF NOT EXISTS category TEXT DEFAULT ''");
+  await migrate("ALTER TABLE pos_custom_products ADD COLUMN IF NOT EXISTS usage_notes TEXT DEFAULT ''");
+  await migrate("ALTER TABLE pos_custom_products ADD COLUMN IF NOT EXISTS source_url TEXT DEFAULT ''");
+
   // Each company's own address on sky-sale.com — glowsf.sky-sale.com. Kept
   // here rather than derived from the store name on the fly, so renaming a shop
   // doesn't silently move everyone's bookmark.
@@ -2771,7 +2778,11 @@ async function getSettings(userId) {
 async function updateSettings(userId, fields) {
   const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip',
     'store_email', 'store_phone', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'payarc_token', 'payarc_merchant_id', 'payarc_env', 'payroll_paydays', 'payroll_lag', 'sale_alert_phone', 'sale_alert_carrier', 'sale_alert_enabled', 'sale_alert_recipients',
-    'booking_slot_step', 'booking_lead_hours'];
+    'booking_slot_step', 'booking_lead_hours',
+    // The shop's own address on the app domain. Left off this list it is
+    // silently dropped — the save reports success and the subdomain never
+    // exists, which is exactly what happened.
+    'slug'];
   const sets = [];
   const params = [];
   let idx = 1;
@@ -3024,10 +3035,21 @@ async function getCustomProducts(userId) {
 
 async function createCustomProduct(fields, userId) {
   const result = await query(
-    'INSERT INTO pos_custom_products (name, brand, description, image, price, min_price, user_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
-    [fields.name, fields.brand || 'Custom', fields.description || '', fields.image || '', fields.price || 0, fields.min_price || 0, userId]
+    `INSERT INTO pos_custom_products
+      (name, brand, description, image, price, min_price, category, usage_notes, source_url, user_id)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+    [fields.name, fields.brand || 'Custom', fields.description || '', fields.image || '',
+     fields.price || 0, fields.min_price || 0, fields.category || '',
+     fields.usage || fields.usage_notes || '', fields.source_url || '', userId]
   );
   return result.rows[0];
+}
+
+// How much trade is already on file — used by the signup flow to tell whether
+// a shop has imported its history yet.
+async function countTransactions(userId) {
+  const r = await query('SELECT COUNT(*)::int AS n FROM pos_transactions WHERE user_id = $1', [userId]);
+  return r.rows[0]?.n || 0;
 }
 
 async function updateCustomProduct(id, fields) {
@@ -3595,6 +3617,7 @@ module.exports = {
   getGmailAccount,
   findCustomerIdByContact,
   createCustomerRecord,
+  countTransactions,
   // Company addresses
   slugify,
   getCompanyBySlug,

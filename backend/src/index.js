@@ -14,6 +14,7 @@ const webhookRoutes = require('./routes/webhook');
 const { router: welcomeRoutes } = require('./routes/welcome');
 const posRoutes = require('./routes/pos');
 const bookingRoutes = require('./routes/booking');
+const signupRoutes = require('./routes/signup');
 const { initSchema: initPostgres } = require('./db/postgres');
 const { hardenRouter } = require('./lib/safe-async');
 const { tenantMiddleware, cookieDomainFor } = require('./lib/tenancy');
@@ -22,6 +23,11 @@ const { setupGmailWatch } = require('./services/gmail');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Behind Railway's proxy. Without this, every request looks like it came from
+// the proxy — which would make the rate limiter treat the whole internet as
+// one client, and secure cookies think the connection was plain HTTP.
+app.set('trust proxy', 1);
 
 // ─── Middleware ────────────────────────────────────────────────────────────────
 
@@ -144,6 +150,9 @@ app.use('/api/pos', hardenRouter(posRoutes));
 // confirmation email. Mounted outside /api/pos precisely because everything
 // under there requires a signed-in session.
 app.use('/api/booking', hardenRouter(bookingRoutes));
+// Opening an account. Public by necessity, so every endpoint under it is rate
+// limited and every account is created from a completed Google sign-in.
+app.use('/api/signup', hardenRouter(signupRoutes));
 app.use('/webhook', hardenRouter(webhookRoutes));
 
 // Health check
