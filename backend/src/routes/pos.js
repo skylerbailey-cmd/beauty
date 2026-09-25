@@ -269,7 +269,7 @@ router.get('/employees/:id/commission-plan', async (req, res) => {
 });
 
 router.put('/employees/:id/commission-plan', async (req, res) => {
-  const { plan_type, base_rate, tier_rate, tier_threshold } = req.body;
+  const { plan_type, base_rate, tier_rate, tier_threshold, store_rate } = req.body;
   if (!['flat', 'daily_threshold'].includes(plan_type)) {
     return res.status(400).json({ error: 'plan_type must be "flat" or "daily_threshold"' });
   }
@@ -277,7 +277,14 @@ router.put('/employees/:id/commission-plan', async (req, res) => {
   if (isNaN(baseRate) || baseRate < 0 || baseRate > 100) {
     return res.status(400).json({ error: 'base_rate must be a percentage between 0 and 100' });
   }
-  const plan = { plan_type, base_rate: baseRate };
+  // A cut of the whole shop's trade, on top of their own sales. Optional, so
+  // a missing or blank value is nought rather than an error.
+  const storeRate = store_rate === undefined || store_rate === '' || store_rate === null
+    ? 0 : parseFloat(store_rate);
+  if (isNaN(storeRate) || storeRate < 0 || storeRate > 100) {
+    return res.status(400).json({ error: 'store_rate must be a percentage between 0 and 100' });
+  }
+  const plan = { plan_type, base_rate: baseRate, store_rate: storeRate };
   if (plan_type === 'daily_threshold') {
     const tierRate = parseFloat(tier_rate);
     const tierThreshold = parseFloat(tier_threshold);

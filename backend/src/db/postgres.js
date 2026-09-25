@@ -244,6 +244,10 @@ async function initSchema() {
       base_rate REAL NOT NULL DEFAULT 35,
       tier_rate REAL DEFAULT 40,
       tier_threshold REAL DEFAULT 0,
+      -- A cut of everything the shop sells, not just what this person sold.
+      -- Optional, and normally only for a manager: they are paid partly on the
+      -- floor's performance rather than only their own.
+      store_rate REAL DEFAULT 0,
       user_id TEXT DEFAULT ''
     );
     CREATE INDEX IF NOT EXISTS idx_pg_commplan_emp ON pos_commission_plans(employee_id);
@@ -299,6 +303,7 @@ async function initSchema() {
   // Migrations for existing DBs
   const migrate = async (sql) => { try { await query(sql); } catch (_) {} };
   await migrate('ALTER TABLE pos_employees ADD COLUMN IF NOT EXISTS commission_rate REAL DEFAULT 0');
+  await migrate('ALTER TABLE pos_commission_plans ADD COLUMN IF NOT EXISTS store_rate REAL DEFAULT 0');
   // For business cards. The phone is optional; the title starts as the one
   // almost everyone here has, and is editable per person.
   await migrate("ALTER TABLE pos_employees ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT ''");
@@ -2268,6 +2273,24 @@ const asCompanyIds = (u) => (Array.isArray(u) ? u : [u]).filter(Boolean);
 // Summing it directly dropped those sales to $0 while still counting them, so
 // fall back to working the share out from the percentage and the subtotal.
 // Requires `t` (pos_transactions) and `te` (pos_transaction_employees).
+
+// The shop's own takings over a period, before tax, sales less returns.
+//
+// This is the base a store commission is paid on. Deliberately the whole
+// shop's trade, not the sum of what is credited to individual staff: a sale
+// rung up by someone on no commission plan is still a sale the manager ran
+// the floor for, and would otherwise be invisible.
+async function storeNetSales(userId, startDate, endDate) {
+  const { rows } = await query(`
+    SELECT COALESCE(SUM(CASE WHEN type = 'return' THEN -ABS(subtotal) ELSE subtotal END), 0) AS net
+    FROM pos_transactions
+    WHERE user_id = ANY($1::text[])
+      AND COALESCE(original_sale_date, created_at) >= $2
+      AND COALESCE(original_sale_date, created_at) <= $3
+  `, [asCompanyIds(userId), startDate, endDate]);
+  return Number(rows[0]?.net) || 0;
+}
+
 const EMP_SHARE = `
   CASE
     WHEN te.commission_amount IS NOT NULL AND te.commission_amount <> 0 THEN te.commission_amount
@@ -2499,6 +2522,13 @@ async function getEmployeeSalesReport(userId, startDate, endDate) {
       // Sale columns above stay comparable across every employee; the plan's
       // computed payout rides along separately for the Commission column.
       row.commission_total = recalc.commission_total;
+      // Split out, so a payslip can say which part came from their own sales
+      // and which from a share of the floor — a manager wondering why their
+      // commission is larger than their sales deserves to see why.
+      row.own_commission = recalc.own_commission;
+      row.store_commission = recalc.store_commission;
+      row.store_rate = recalc.store_rate;
+      row.store_sales = recalc.store_sales;
       row.has_special_plan = true;
     }
   }
@@ -2863,9 +2893,10 @@ async function setCommissionPlan(employeeId, plan, userId) {
   // Delete old and insert fresh (simpler than upsert on employee_id)
   await query('DELETE FROM pos_commission_plans WHERE employee_id = $1', [employeeId]);
   await query(
-    `INSERT INTO pos_commission_plans (employee_id, plan_type, base_rate, tier_rate, tier_threshold, user_id)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [employeeId, plan.plan_type, plan.base_rate, plan.tier_rate || 0, plan.tier_threshold || 0, userId]
+    `INSERT INTO pos_commission_plans (employee_id, plan_type, base_rate, tier_rate, tier_threshold, store_rate, user_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [employeeId, plan.plan_type, plan.base_rate, plan.tier_rate || 0, plan.tier_threshold || 0,
+     plan.store_rate || 0, userId]
   );
 }
 
@@ -2919,6 +2950,13 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
       AND COALESCE(t.original_sale_date, t.created_at) <= $4
   `, [employeeId, asCompanyIds(userId), startDate, endDate]);
 
+  // A cut of the whole shop's trade, if this person is on one. Worked out
+  // once here and added to whichever plan shape applies below, because it is
+  // the same money however their own sales are counted.
+  const storeRate = Number(plan?.store_rate) || 0;
+  const storeSales = storeRate > 0 ? await storeNetSales(userId, startDate, endDate) : 0;
+  const storeCommission = storeSales * storeRate / 100;
+
   if (!plan || plan.plan_type === 'flat') {
     let salesTotal = 0, returnsTotal = 0, saleCount = 0, returnCount = 0;
     for (const tx of txResult.rows) {
@@ -2936,7 +2974,13 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
       sales_total: salesTotal, returns_total: returnsTotal, net_total: netTotal,
       // No plan row at all → let the caller fall back to the employee's own
       // commission_rate rather than asserting a rate here.
-      commission_total: rate === null ? null : netTotal * rate / 100,
+      commission_total: rate === null ? null : (netTotal * rate / 100) + storeCommission,
+      // Kept separate as well, so a payslip can show what was earned on their
+      // own sales and what came from the floor.
+      own_commission: rate === null ? null : netTotal * rate / 100,
+      store_rate: storeRate,
+      store_sales: storeSales,
+      store_commission: storeCommission,
     };
   }
 
@@ -2972,11 +3016,19 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
     return {
       sale_count: saleCount, return_count: returnCount,
       sales_total: salesTotal, returns_total: returnsTotal, net_total: salesTotal - returnsTotal,
-      commission_total: commissionTotal,
+      commission_total: commissionTotal + storeCommission,
+      own_commission: commissionTotal,
+      store_rate: storeRate,
+      store_sales: storeSales,
+      store_commission: storeCommission,
     };
   }
 
-  return { sale_count: 0, return_count: 0, sales_total: 0, returns_total: 0, net_total: 0, commission_total: 0 };
+  return {
+    sale_count: 0, return_count: 0, sales_total: 0, returns_total: 0, net_total: 0,
+    commission_total: storeCommission,
+    own_commission: 0, store_rate: storeRate, store_sales: storeSales, store_commission: storeCommission,
+  };
 }
 
 // ─── Additional Customer queries ────────────────────────────────────────────

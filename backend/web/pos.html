@@ -2053,6 +2053,19 @@
       <input type="number" id="empEditCommission" step="0.5" min="0" max="100">
     </div>
 
+    <!-- A cut of the whole floor, on top of their own sales. Usually a
+         manager: they are paid partly on how the shop did, not only on what
+         they personally rang up. Left at zero for everyone else. -->
+    <div class="field" id="empEditStoreWrap">
+      <label>Store commission % <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--mid)">— optional</span></label>
+      <input type="number" id="empEditStoreRate" step="0.5" min="0" max="100" placeholder="0">
+      <div style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:4px">
+        A share of <b>every</b> sale the shop makes, paid on top of their own commission.
+        At 4%, a $10,000 fortnight adds $400 to their cheque whoever rang the sales up.
+        Leave it blank for staff paid only on what they sell.
+      </div>
+    </div>
+
     <div class="field">
       <label>Commission Plan</label>
       <select id="empEditPlanType" onchange="updateEmpPlanTypeUI()" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.95rem;font-family:system-ui,sans-serif;outline:none">
@@ -4068,12 +4081,16 @@ async function editEmployee(id) {
 
   // Load this employee's commission plan, if any (daily-tiered rates are opt-in per employee)
   document.getElementById('empEditPlanType').value = 'flat';
+  document.getElementById('empEditStoreRate').value = '';
   document.getElementById('empEditTierBase').value = '';
   document.getElementById('empEditTierRate').value = '';
   document.getElementById('empEditTierThreshold').value = '';
   try {
     const resp = await fetch(`${API}/api/pos/employees/${id}/commission-plan`, { credentials: 'include' });
     const data = await resp.json();
+    if (data.plan && Number(data.plan.store_rate) > 0) {
+      document.getElementById('empEditStoreRate').value = data.plan.store_rate;
+    }
     if (data.plan && data.plan.plan_type === 'daily_threshold') {
       document.getElementById('empEditPlanType').value = 'daily_threshold';
       document.getElementById('empEditTierBase').value = data.plan.base_rate;
@@ -4124,16 +4141,27 @@ async function saveEmpEdit() {
     return;   // dialog stays open, with what was typed still in it
   }
 
-  const planResp = planType === 'daily_threshold'
+  const storeRate = parseFloat(document.getElementById('empEditStoreRate').value) || 0;
+
+  // A plan row is needed for a store rate even on a flat plan, so deleting it
+  // whenever the plan is flat — which is what used to happen — would throw
+  // the store cut away the moment anything else on this dialog was saved.
+  const needsPlan = planType === 'daily_threshold' || storeRate > 0;
+  const planResp = needsPlan
     ? await fetch(`${API}/api/pos/employees/${id}/commission-plan`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
+        body: JSON.stringify(planType === 'daily_threshold' ? {
           plan_type: 'daily_threshold',
           base_rate: parseFloat(document.getElementById('empEditTierBase').value),
           tier_rate: parseFloat(document.getElementById('empEditTierRate').value),
           tier_threshold: parseFloat(document.getElementById('empEditTierThreshold').value),
+          store_rate: storeRate,
+        } : {
+          plan_type: 'flat',
+          base_rate: commission_rate,
+          store_rate: storeRate,
         }),
       })
     : await fetch(`${API}/api/pos/employees/${id}/commission-plan`, { method: 'DELETE', credentials: 'include' });
@@ -7619,6 +7647,14 @@ function commissionBase(e) {
   return e.net_after_chargebacks != null ? Number(e.net_after_chargebacks) : Number(e.net_total) || 0;
 }
 
+// " (incl. $400 store)" — said only when there is one, because a manager whose
+// commission is larger than their own sales otherwise looks like a mistake.
+function storeCutNote(e) {
+  const cut = Number(e.store_commission) || 0;
+  if (!cut) return '';
+  return ` <span style="font-size:.72rem;color:var(--mid);font-weight:400">incl. $${money(cut)} store @ ${Number(e.store_rate) || 0}%</span>`;
+}
+
 function commissionAmt(e, amount) {
   // An employee on a commission plan has their payout computed server-side
   // (tiered rates depend on each day's sales, and it deducts disputes the same
@@ -7650,7 +7686,7 @@ function commissionRow(e) {
              style="border:none;background:none;padding:0;font:inherit;color:var(--danger);font-weight:600;cursor:pointer;text-decoration:underline">−$${money(Number(e.chargeback_total || 0))}</button>`
         : '<span style="color:var(--mid)">—</span>'}</td>
       <td title="Net sales less anything lost to a dispute — what commission is earned on">$${money(commissionBase(e))}</td>
-      <td style="font-weight:600">$${money(commissionAmt(e, commissionBase(e)))}</td>
+      <td style="font-weight:600">$${money(commissionAmt(e, commissionBase(e)))}${storeCutNote(e)}</td>
     </tr>`;
 }
 

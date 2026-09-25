@@ -44,54 +44,69 @@ const STORE = {
 // Two roles, as asked for, and the same PIN on both: this is a demo and the
 // point is that anyone can get in. A real shop would never share a PIN, which
 // is why the PIN is what unlocks payroll and the money screens.
+// Rates are percentages everywhere in this product — 8 means 8%, not 0.08.
+// Written as fractions here at first, which would have shown a shop what a
+// tenth of a percent looks like on a payslip.
 const STAFF = [
-  { name: 'admin', pin: '5555', role: 'admin', rate: 0.10, plan: { plan_type: 'tiered', base_rate: 0.08, tier_rate: 0.12, tier_threshold: 12000 } },
-  { name: 'employee', pin: '5555', role: 'sales', rate: 0.08, plan: { plan_type: 'flat', base_rate: 0.08 } },
-  { name: 'Rosa', pin: '2481', role: 'manager', rate: 0.09, plan: { plan_type: 'flat', base_rate: 0.09 } },
-  { name: 'Tomas', pin: '3694', role: 'sales', rate: 0.07, plan: { plan_type: 'flat', base_rate: 0.07 } },
+  { name: 'admin', pin: '5555', role: 'admin', rate: 10,
+    // A day over $2,000 earns the higher rate on that whole day — the tiered
+    // plan, so the demo has one of those to look at.
+    plan: { plan_type: 'daily_threshold', base_rate: 8, tier_rate: 12, tier_threshold: 2000 } },
+  { name: 'employee', pin: '5555', role: 'sales', rate: 8,
+    plan: { plan_type: 'flat', base_rate: 8 } },
+  { name: 'Rosa', pin: '2481', role: 'manager', rate: 9,
+    // Paid on her own sales and on the floor's: 9% of what she sells, plus 4%
+    // of everything the shop takes.
+    plan: { plan_type: 'flat', base_rate: 9, store_rate: 4 } },
+  { name: 'Tomas', pin: '3694', role: 'sales', rate: 7,
+    plan: { plan_type: 'flat', base_rate: 7 } },
 ];
 
-// A plausible range for a skincare and device shop, with the fields a welcome
-// email is built from already filled in — this is also the example of what a
-// well-set-up product looks like.
-const PRODUCTS = [
-  { name: 'Harbour Gentle Cleanser', price: 68, min: 55, step: 'cleanser', freq: 'daily',
-    usage: 'Massage into damp skin for thirty seconds, then rinse with warm water.',
-    benefits: 'Removes the day without stripping', category: 'Cleansers' },
-  { name: 'Vine Balancing Toner', price: 54, min: 45, step: 'toner', freq: 'daily',
-    usage: 'Sweep over clean skin and let it dry before your serum.',
-    benefits: 'Settles redness, preps for what follows', category: 'Toners' },
-  { name: 'Vitamin C Brightening Serum', price: 128, min: 110, step: 'serum', freq: 'daily',
-    usage: 'Three drops to clean skin each morning, pressed in before moisturiser.',
-    benefits: 'Brightens, evens tone', category: 'Serums' },
-  { name: 'Night Repair Complex', price: 156, min: 130, step: 'serum', freq: 'daily',
-    usage: 'Four drops at night, after cleansing, before your cream.',
-    benefits: 'Softens fine lines overnight', category: 'Serums' },
-  { name: 'Restorative Eye Cream', price: 96, min: 80, step: 'eye treatment', freq: 'daily',
-    usage: 'Tap a rice-grain amount around the orbital bone with your ring finger.',
-    benefits: 'Depuffs, softens the look of shadows', category: 'Eye' },
-  { name: 'Deep Moisture Cream', price: 88, min: 72, step: 'moisturizer', freq: 'daily',
-    usage: 'Smooth over face and neck as the last step.',
-    benefits: 'Holds hydration through the day', category: 'Moisturisers' },
-  { name: 'Daily Mineral SPF 40', price: 62, min: 52, step: 'sunscreen', freq: 'daily',
-    usage: 'A generous layer as the final morning step, reapplied when you are outdoors.',
-    benefits: 'Protects without a white cast', category: 'Sun' },
-  { name: 'Resurfacing Enzyme Peel', price: 112, min: 95, step: 'exfoliant', freq: 'weekly',
-    usage: 'Leave on clean skin for five minutes, rinse, then moisturise.',
-    benefits: 'Smooths texture, lifts dullness', category: 'Treatments' },
-  { name: 'Clarifying Clay Mask', price: 74, min: 60, step: 'mask', freq: 'weekly',
-    usage: 'A thin layer for ten minutes, then rinse and follow with your routine.',
-    benefits: 'Draws out congestion', category: 'Treatments' },
-  { name: 'Radiance LED Handset', price: 1450, min: 1250, step: 'device treatment', freq: 'weekly',
-    usage: 'Ten minutes on clean, dry skin, moving slowly over each area.',
-    benefits: 'Firms over a course of weeks', category: 'Devices' },
-  { name: 'Contour Microcurrent Device', price: 2400, min: 2100, step: 'device treatment', freq: 'weekly',
-    usage: 'Use with the conductive gel, five minutes each side of the face.',
-    benefits: 'Lifts and defines with regular use', category: 'Devices' },
-  { name: 'Full Ritual Collection', price: 495, min: 430, step: '', freq: '',
-    usage: 'The whole routine, in order, morning and night.',
-    benefits: 'Everything above at a set price', category: 'Sets' },
+// The range, taken from the catalogue this server already carries.
+//
+// Written out by hand at first, which left a register of grey boxes — a demo
+// whose whole job is to look like a working shop. These are real products
+// with real photographs, copied in as the demo's own so the shop owns its
+// range the way any other shop does, rather than being switched onto a
+// catalogue brand that no real new shop would have.
+const { PRODUCTS: CATALOG } = require('../src/routes/welcome');
+
+// A routine's worth, plus a couple of devices so the top-products report has
+// something with a large ticket on it.
+const WANTED = [
+  ['hydrasphere', 'Advanced Foaming Cleanser', 'cleanser', 'daily'],
+  ['hydrasphere', 'Hydra Toning Solution', 'toner', 'daily'],
+  ['hydrasphere', 'Vitamin C Serum', 'serum', 'daily'],
+  ['hydrasphere', 'Advanced Night Repair', 'serum', 'daily'],
+  ['hydrasphere', 'Advanced Eye Lifting Serum', 'eye treatment', 'daily'],
+  ['hydrasphere', 'Deep Moisturizing Cream', 'moisturizer', 'daily'],
+  ['hydrasphere', 'Oxygen Brightening Cream', 'moisturizer', 'daily'],
+  ['hydrasphere', 'SPF 50 Shield Cream', 'sunscreen', 'daily'],
+  ['hydrasphere', 'Facial Peeling Gel', 'exfoliant', 'weekly'],
+  ['hydrasphere', 'MineralLift Thermal Mask', 'mask', 'weekly'],
+  ['hydrasphere', 'MineralLift Thermal Cream', 'treatment cream', 'daily'],
+  ['avologi', 'Eneo Totalé', 'device treatment', 'weekly'],
+  ['avologi', 'Eneo Blu', 'device treatment', 'weekly'],
 ];
+
+const PRODUCTS = WANTED.map(([brandKey, name, step, freq]) => {
+  const found = (CATALOG[brandKey] || []).find((p) => p.name === name);
+  if (!found) throw new Error(`The catalogue has no "${name}" under ${brandKey}.`);
+  return {
+    name: found.name,
+    price: found.retailPrice,
+    // A floor a little under the asking price, so the minimum-price rule has
+    // something to demonstrate.
+    min: Math.round(found.retailPrice * 0.85),
+    step,
+    freq,
+    usage: found.howToUse || '',
+    benefits: found.benefits || '',
+    description: found.cardDescription || found.description || '',
+    image: found.image || '',
+    category: step === 'device treatment' ? 'Devices' : 'Skincare',
+  };
+});
 
 const CUSTOMERS = [
   ['Marguerite Oyelaran', 'm.oyelaran@example.com', '(303) 555-0118'],
@@ -151,12 +166,14 @@ async function main() {
   for (const p of PRODUCTS) {
     const row = await pgDb.createCustomProduct({
       name: p.name, brand: 'Harbour & Vine', price: p.price, min_price: p.min,
-      category: p.category, description: `${p.name} — ${p.benefits}.`,
+      category: p.category, description: p.description,
       usage: p.usage, usage_frequency: p.freq, routine_step: p.step, benefits: p.benefits,
+      image: p.image,
     }, DEMO_USER_ID);
     products.push({ ...p, id: `custom-${row.id}` });
   }
-  console.log(`  ${products.length} products, with usage notes and routine steps`);
+  const withPictures = products.filter((p) => p.image).length;
+  console.log(`  ${products.length} products, ${withPictures} with a photograph, all with usage notes and routine steps`);
 
   // ── Customers ──
   const customers = [];
@@ -217,7 +234,10 @@ async function main() {
         user_id: DEMO_USER_ID, created_at: iso(at), tz: TZ,
         items,
         employees: [{ employee_id: emp.id, commission_type: 'percent', commission_value: 100,
-          commission_amount: Math.round(subtotal * emp.rate * 100) / 100 }],
+          // The share of the sale credited to them, which the payroll page
+          // then applies their rate to. 100% of it — a split sale is a thing
+          // the product supports but not what a demo needs to show.
+          commission_amount: subtotal }],
       });
       sales++; revenue += total;
       soldSoFar.push({ txId, at: new Date(at), emp, items, subtotal, tax, total, customer, receipt: `HV-${receipts}` });
@@ -248,7 +268,7 @@ async function main() {
       user_id: DEMO_USER_ID, created_at: iso(at), tz: TZ,
       items: [{ ...line, quantity: -line.quantity, line_total: subtotal }],
       employees: [{ employee_id: original.emp.id, commission_type: 'percent', commission_value: 100,
-        commission_amount: Math.round(subtotal * original.emp.rate * 100) / 100 }],
+        commission_amount: subtotal }],
     });
     returns++;
   }
