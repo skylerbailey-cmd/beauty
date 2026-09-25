@@ -3184,9 +3184,16 @@ async function updateCustomProduct(id, fields) {
   for (const key of allowed) {
     if (fields[key] !== undefined) { sets.push(`${key} = $${idx}`); params.push(fields[key]); idx++; }
   }
-  if (sets.length === 0) return;
+  // Hand the updated row back. It returned nothing before, so every caller
+  // that wanted to show the result showed the row as it was beforehand — the
+  // PATCH endpoint has been answering with `product: undefined`, and a newly
+  // described product looked undescribed even though the database had it.
+  if (sets.length === 0) {
+    return (await query('SELECT * FROM pos_custom_products WHERE id = $1', [id])).rows[0];
+  }
   params.push(id);
-  await query(`UPDATE pos_custom_products SET ${sets.join(', ')} WHERE id = $${idx}`, params);
+  return (await query(
+    `UPDATE pos_custom_products SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`, params)).rows[0];
 }
 
 // ─── Product Visibility ─────────────────────────────────────────────────────
