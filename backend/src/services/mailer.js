@@ -26,6 +26,39 @@ const nodemailer = require('nodemailer');
 // SMTP stays as the fallback for a deployment that has an app password and no
 // OAuth client.
 
+// Resend, when configured, comes before either. Sign-in mail is the one thing
+// a shop cannot work around when it goes wrong, and a Gmail mailbox is the
+// wrong place to send it from: it sends as a person rather than the product,
+// it is capped at a few hundred a day, and mail from one business's Gmail to
+// another's inbox is the shape spam filters are most suspicious of. Sending
+// from an authenticated sky-sale.com address fixes all three, and does not
+// depend on Google's verification queue.
+const resendKey = () => (process.env.RESEND_API_KEY || '').trim();
+const hasResend = () => Boolean(resendKey() && process.env.PLATFORM_EMAIL);
+
+async function sendViaResend({ to, subject, text, html }) {
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${resendKey()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: `SkySale <${process.env.PLATFORM_EMAIL.trim()}>`,
+      to: [to],
+      subject,
+      text,
+      html,
+      reply_to: process.env.SUPPORT_EMAIL || undefined,
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`Resend refused the message (${res.status}): ${detail.slice(0, 300)}`);
+  }
+  return res.json();
+}
+
 const refreshToken = () => (process.env.PLATFORM_GMAIL_REFRESH_TOKEN
   || process.env.GLOW_GMAIL_REFRESH_TOKEN || '').trim();
 const hasOAuth = () => Boolean(
@@ -39,7 +72,7 @@ const from = () => (process.env.PLATFORM_EMAIL || '').trim() || discovered || ''
 const appPassword = () => (process.env.GMAIL_APP_PASSWORD || '').replace(/\s+/g, '');
 
 function configured() {
-  return hasOAuth() || Boolean(from() && appPassword());
+  return hasResend() || hasOAuth() || Boolean(from() && appPassword());
 }
 
 function gmailClient() {
@@ -121,8 +154,28 @@ async function verifyMailer() {
   if (!configured()) {
     return {
       ok: false,
-      reason: 'Neither a Gmail refresh token nor PLATFORM_EMAIL + GMAIL_APP_PASSWORD is set.',
+      reason: 'No sender configured: set RESEND_API_KEY + PLATFORM_EMAIL, a Gmail refresh token, or PLATFORM_EMAIL + GMAIL_APP_PASSWORD.',
     };
+  }
+  if (hasResend()) {
+    // Asks Resend whether the sending domain is actually verified, because an
+    // unverified one accepts the key and then refuses every message.
+    try {
+      const res = await fetch('https://api.resend.com/domains', {
+        headers: { Authorization: `Bearer ${resendKey()}` },
+      });
+      if (!res.ok) return { ok: false, reason: `Resend key rejected (${res.status}).` };
+      const body = await res.json();
+      const domain = String(process.env.PLATFORM_EMAIL).split('@')[1] || '';
+      const match = (body.data || []).find((d) => d.name === domain);
+      if (!match) return { ok: false, reason: `Resend has no domain ${domain}.` };
+      if (match.status !== 'verified') {
+        return { ok: false, reason: `Resend domain ${domain} is ${match.status}, not verified.` };
+      }
+      return { ok: true, via: 'resend', from: process.env.PLATFORM_EMAIL };
+    } catch (e) {
+      return { ok: false, reason: 'Resend: ' + e.message };
+    }
   }
   if (hasOAuth()) {
     try {
@@ -143,6 +196,7 @@ async function verifyMailer() {
 }
 
 async function send({ to, subject, text, html }) {
+  if (hasResend()) return sendViaResend({ to, subject, text, html });
   if (hasOAuth()) {
     try {
       return await sendViaOAuth({ to, subject, text, html });
