@@ -179,7 +179,10 @@ app.get('/health', async (req, res) => {
     const { verifyMailer } = require('./services/mailer');
     const r = await verifyMailer();
     mailStatus = r.ok ? 'ok' : (r.reason && /not set/.test(r.reason) ? 'not configured' : 'error');
-  } catch (_) { mailStatus = 'error'; }
+    // The one word above is all the public gets; the reason belongs in the
+    // logs, which is the only place anyone can act on it.
+    if (!r.ok) console.warn('[mail] Not able to send:', r.reason);
+  } catch (e) { mailStatus = 'error'; console.warn('[mail] Check failed:', e.message); }
 
   res.json({
     status: 'ok',
