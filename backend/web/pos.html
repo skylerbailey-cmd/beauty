@@ -6682,6 +6682,17 @@ async function testSaleAlert() {
     if (!resp.ok) throw new Error(data.error || 'Could not send');
     const sent = data.sent_to || [];
     const failed = data.failed || [];
+    // A passing test used to mean nothing about whether real sales would send
+    // anything, which is exactly how a shop ends up waiting weeks for alerts
+    // that were switched off the whole time.
+    if (data.alerts_off) {
+      statusEl.style.color = 'var(--danger)';
+      statusEl.innerHTML = `<b>The number works — but alerts are switched off.</b><br>`
+        + `That text reached ${sent.join(', ')}, and no real sale will send one until you tick `
+        + `<b>Send a text on every completed sale</b> above and press Save.`;
+      document.getElementById('settingsAlertEnabled')?.focus();
+      return;
+    }
     statusEl.style.color = failed.length ? '#b26a00' : 'var(--success)';
     statusEl.textContent = `Sent to ${sent.join(', ')}.`
       + (failed.length ? ` Failed for ${failed.map(f => f.to).join(', ')}.` : '')

@@ -1091,11 +1091,23 @@ function saleAlertText(tx, storeName) {
 async function sendSaleAlert(userId, tx) {
   try {
     const settings = await pgDb.getSettings(userId);
-    if (!settings?.sale_alert_enabled) return;
+    // Each of these is a silent no-send, and silence is what made a company
+    // with a working test number wonder why no sale ever texted anyone. Say
+    // which one it was — the log is the only place anybody can find out.
+    if (!Number(settings?.sale_alert_enabled)) {
+      console.log(`[pos] Sale alert not sent for ${userId}: alerts are switched off in Settings.`);
+      return;
+    }
     const addresses = smsAddressesFor(settings);
-    if (!addresses.length) return;
+    if (!addresses.length) {
+      console.log(`[pos] Sale alert not sent for ${userId}: alerts are on but no usable number is saved.`);
+      return;
+    }
     const user = await getSendingUser(userId);
-    if (!user?.refresh_token) return;   // Gmail not connected for this company
+    if (!user?.refresh_token) {
+      console.log(`[pos] Sale alert not sent for ${userId}: this company has no Gmail connected to send from.`);
+      return;
+    }
     // Gateways prepend the subject to the message, so leave it empty and put
     // everything in the body — otherwise the text arrives saying it twice.
     const text = saleAlertText(tx, settings.store_name);
@@ -1131,9 +1143,17 @@ router.post('/settings/test-sale-alert', async (req, res) => {
   if (!user?.refresh_token) {
     return res.status(403).json({ error: 'Gmail is not connected for this company. Connect it on the Welcome Emails page first.' });
   }
+  // The test used not to look at whether alerts were actually switched on,
+  // so a company could have a number saved, send itself a successful test,
+  // and never receive a single alert from a real sale. The test passing was
+  // the thing that made it invisible.
+  const alertsOff = !Number(settings.sale_alert_enabled);
+
   // Report per recipient: with several numbers, "it failed" isn't much use
   // without knowing which one.
-  const text = `Test from ${settings.store_name || 'SkySale'} — sale alerts are working.`;
+  const text = alertsOff
+    ? `Test from ${settings.store_name || 'SkySale'} — the number works, but sale alerts are switched OFF, so real sales will not send one.`
+    : `Test from ${settings.store_name || 'SkySale'} — sale alerts are working.`;
   const sent = [], failed = [];
   for (const to of addresses) {
     // Check the gateway is alive before sending. Otherwise Gmail takes the
@@ -1147,7 +1167,13 @@ router.post('/settings/test-sale-alert', async (req, res) => {
   if (!sent.length) {
     return res.status(500).json({ error: failed[0]?.error || 'unknown error', failed });
   }
-  res.json({ ok: true, sent_to: sent, failed });
+  res.json({
+    ok: true,
+    sent_to: sent,
+    failed,
+    // The one thing a passing test could not previously tell you.
+    alerts_off: alertsOff,
+  });
 });
 
 // ─── Email Receipt ─────────────────────────────────────────────────────────
