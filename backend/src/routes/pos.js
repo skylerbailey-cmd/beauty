@@ -67,23 +67,20 @@ router.get('/debug/session', (req, res) => {
 
 router.use(requireAuth);
 
-// One-time, non-destructive bridge: reattach any orphaned pre-migration dataset
-// to this (now-stable) company account. Never pulls another company's data.
-const bridgedUsers = new Set();
-router.use(async (req, res, next) => {
-  const userId = req.session.userId;
-  if (userId && !bridgedUsers.has(userId)) {
-    bridgedUsers.add(userId);
-    try {
-      const { getUser } = require('../db');
-      const companyName = getUser(userId)?.company_name || '';
-      await pgDb.bridgeLegacyData(userId, companyName);
-    } catch (e) {
-      console.error('[pos] Legacy data bridge failed:', e.message);
-    }
-  }
-  next();
-});
+// The one-time bridge that used to run here is gone.
+//
+// It reattached an orphaned pre-migration dataset to a new account, from the
+// days when ids were not derived from the login address and a redeploy could
+// strand a shop's data. Ids have been stable for a long time and every
+// dataset in the database is now registered to a company, so it had nothing
+// left to find.
+//
+// What it still had was teeth: it ran for every account on its first request,
+// and the move it performs deletes the destination's rows and reassigns the
+// source's. A single unregistered dataset plus one new account was all it
+// would take to hand one shop's entire trade to a stranger and leave the
+// first with nothing. That is not a risk worth carrying for a migration that
+// finished.
 
 // ─── Products (with prices) ────────────────────────────────────────────────
 
@@ -234,7 +231,16 @@ router.put('/products/custom/:id', async (req, res) => {
 // ─── Employees ─────────────────────────────────────────────────────────────
 
 router.get('/employees', async (req, res) => {
-  res.json({ employees: await pgDb.getEmployees(req.session.userId) });
+  const employees = await pgDb.getEmployees(req.session.userId);
+  // The roster used to show one number: the flat rate on the employee row.
+  // For anyone on a tiered plan that is the lower of two rates and not what
+  // they are actually paid, and it said nothing at all about a store cut.
+  const plans = await pgDb.getAllCommissionPlans(req.session.userId).catch(() => []);
+  const byEmp = {};
+  for (const p of plans) byEmp[p.employee_id] = p;
+  res.json({
+    employees: employees.map((e) => ({ ...e, plan: byEmp[e.id] || null })),
+  });
 });
 
 // Employees may share a PIN. Everything that checks one asks for the name

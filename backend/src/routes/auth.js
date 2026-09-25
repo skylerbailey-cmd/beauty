@@ -270,6 +270,9 @@ router.get('/google/callback', async (req, res) => {
 
     // Store userId in session
     req.session.userId = userId;
+    // A combined payroll view was authorised against the previous company's
+    // manager PIN. It does not carry across a change of company.
+    req.session.companyScope = null;
     // Signing in with Google proves this address too, so the company joins the
     // set this browser may switch between without another round trip.
     {

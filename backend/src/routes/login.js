@@ -103,6 +103,12 @@ router.post('/link',
       // demo's name on the door.
       const { user } = findOrCreateUserByEmail(demoAddresses()[0], null);
       req.session.userId = user.id;
+      // A combined view is authorised against one company's manager PIN, for
+      // that company's session. It must not survive a change of company —
+      // otherwise a browser that had combined two shops for payroll carries
+      // both of them into whichever shop it signs into next, and their staff
+      // appear on a register that has nothing to do with them.
+      req.session.companyScope = null;
       rememberAuthenticated(req, user.id);
       res.cookie('glow_user_email', user.email, {
         maxAge: 7 * 24 * 60 * 60 * 1000,
@@ -173,6 +179,9 @@ router.get('/link/:token',
     try { await pgDb.rememberUser(user.id); } catch (_) {}
 
     req.session.userId = user.id;
+    // As above: a combined payroll view belongs to the session that
+    // authorised it, not to the browser.
+    req.session.companyScope = null;
     rememberAuthenticated(req, user.id);
     res.cookie('glow_user_email', user.email, {
       maxAge: 365 * 24 * 60 * 60 * 1000,

@@ -280,6 +280,54 @@ async function main() {
 
   console.log(`  ${sales} sales and ${returns} returns over four months, $${Math.round(revenue).toLocaleString()} taken`);
 
+  // ── A few disputes ──
+  //
+  // Three states, on purpose, because they behave differently and the
+  // difference is most of the point of the payroll page:
+  //   pending — money withheld from the open cheque, not yet lost
+  //   lost    — the commission on that sale stops being paid
+  //   won     — released, and the commission stands
+  //
+  // All on card sales from earlier months, which is when a dispute actually
+  // lands: a customer queries a charge weeks after making it.
+  const disputable = soldSoFar.filter((s) => s.total > 200
+    && s.at < new Date(today.getFullYear(), today.getMonth(), 1));
+  let disputes = 0;
+  const wanted = [
+    ['pending', 3], ['lost', 2], ['won', 2],
+  ];
+  const notes = {
+    pending: 'Customer says they did not recognise the charge — with the bank.',
+    lost: 'Bank found for the cardholder. Funds taken back.',
+    won: 'Receipt and signature accepted. Funds returned to us.',
+  };
+  for (const [status, howMany] of wanted) {
+    for (let i = 0; i < howMany && disputable.length; i++) {
+      const sale = disputable[Math.floor(rnd() * disputable.length)];
+      const opened = new Date(sale.at);
+      opened.setDate(opened.getDate() + between(12, 40));
+      if (opened > today) continue;
+      const closed = new Date(opened);
+      closed.setDate(closed.getDate() + between(10, 30));
+      try {
+        await pgDb.saveChargeback(sale.txId, DEMO_USER_ID, {
+          // Part of the sale sometimes, all of it others — a dispute is not
+          // always for the whole ticket.
+          amount: rnd() < 0.6 ? sale.total : Math.round(sale.total * 0.5 * 100) / 100,
+          status,
+          opened_at: opened,
+          closed_at: status === 'pending' || closed > today ? null : closed,
+          card_last4: String(between(1000, 9999)),
+          note: notes[status],
+        });
+        disputes++;
+      } catch (err) {
+        console.log(`  (a dispute could not be recorded: ${err.message})`);
+      }
+    }
+  }
+  console.log(`  ${disputes} disputes — some open, some lost, some won`);
+
   // ── Something in the diary ──
   try {
     await pgDb.setAvailability(DEMO_USER_ID, [

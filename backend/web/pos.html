@@ -3996,7 +3996,7 @@ async function loadEmployees() {
     <div class="emp-row">
       <div class="emp-name">${e.name}</div>
       <div class="emp-role">${e.role}</div>
-      <div style="font-size:.78rem;color:var(--mid);font-family:system-ui,sans-serif">${e.commission_rate || 0}% comm</div>
+      <div style="font-size:.78rem;color:var(--mid);font-family:system-ui,sans-serif">${commissionSummary(e)}</div>
       <span class="emp-status ${e.active ? 'active' : 'inactive'}">${e.active ? 'Active' : 'Inactive'}</span>
       <button onclick="editEmployee(${e.id})" style="border:none;background:none;cursor:pointer;font-size:.78rem;color:var(--accent);text-decoration:underline">Edit</button>
       <button onclick="toggleEmployee(${e.id}, ${e.active})" style="border:none;background:none;cursor:pointer;font-size:.78rem;color:${e.active ? 'var(--danger)' : 'var(--success)'};text-decoration:underline">${e.active ? 'Deactivate' : 'Activate'}</button>
@@ -10767,6 +10767,29 @@ async function saveCustomField(customId, field, input) {
     alert(err.message);
     return false;
   }
+}
+
+
+// What this person is actually paid, in one line.
+//
+// The roster used to print the flat rate on the employee row and nothing
+// else, so somebody on a tiered plan was listed at the lower of their two
+// rates — a manager reading it would think they were paid 8% when a good day
+// pays 12 — and a store cut did not appear at all.
+function commissionSummary(e) {
+  const plan = e.plan;
+  const parts = [];
+  if (plan && plan.plan_type === 'daily_threshold') {
+    parts.push(`${Number(plan.base_rate)}% &rarr; ${Number(plan.tier_rate)}% over $${money(plan.tier_threshold)}/day`);
+  } else if (plan && Number(plan.base_rate) > 0) {
+    parts.push(`${Number(plan.base_rate)}%`);
+  } else {
+    parts.push(`${Number(e.commission_rate) || 0}%`);
+  }
+  if (plan && Number(plan.store_rate) > 0) {
+    parts.push(`+ ${Number(plan.store_rate)}% of the store`);
+  }
+  return parts.join(' ');
 }
 
 </script>

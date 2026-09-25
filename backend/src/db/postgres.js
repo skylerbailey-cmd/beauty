@@ -3223,95 +3223,11 @@ async function getGmailToken(userId) {
   return r.rows[0]?.refresh_token || null;
 }
 
-// ─── Legacy data bridge ───────────────────────────────────────────────────
-// Move every user-scoped row from one userId to another.
-async function migrateDataBetweenUsers(oldUserId, newUserId) {
-  if (!pool || !oldUserId || oldUserId === newUserId) return;
-
-  // pos_settings.user_id is a PRIMARY KEY, so clear the destination row first
-  try {
-    const oldSettings = await query('SELECT 1 FROM pos_settings WHERE user_id = $1', [oldUserId]);
-    if (oldSettings.rows.length > 0) {
-      await query('DELETE FROM pos_settings WHERE user_id = $1', [newUserId]);
-      await query('UPDATE pos_settings SET user_id = $1 WHERE user_id = $2', [newUserId, oldUserId]);
-    }
-  } catch (_) {}
-
-  const tables = [
-    'pos_product_prices', 'pos_employees', 'pos_custom_products',
-    'pos_product_visibility', 'pos_transactions',
-    'pos_commission_plans', 'customers', 'welcome_emails', 'campaigns',
-  ];
-  for (const table of tables) {
-    try {
-      await query(`DELETE FROM ${table} WHERE user_id = $1`, [newUserId]);
-      await query(`UPDATE ${table} SET user_id = $1 WHERE user_id = $2`, [newUserId, oldUserId]);
-    } catch (_) { /* table might not exist yet */ }
-  }
-}
-
-// Since user IDs are now stable (derived from the login email), data no longer
-// churns across redeploys. This one-time, NON-destructive bridge reattaches a
-// pre-existing orphaned dataset to its rightful company, and — crucially —
-// never pulls another company's data:
-//   • It registers each stable userId in pos_known_users.
-//   • It only considers "legacy" datasets that are NOT known stable users.
-//   • It only claims a legacy dataset when it is unambiguous: either its store
-//     name matches this company's name, or it is the only legacy dataset.
-async function bridgeLegacyData(newUserId, companyName) {
-  if (!pool || !newUserId) return;
-
-  // Register this account as a known stable user.
-  await query('INSERT INTO pos_known_users (user_id) VALUES ($1) ON CONFLICT DO NOTHING', [newUserId]);
-
-  // If this account already has data, there is nothing to bridge.
-  const hasData = (await query(
-    `SELECT 1 FROM pos_transactions WHERE user_id = $1
-     UNION SELECT 1 FROM pos_product_prices WHERE user_id = $1 LIMIT 1`, [newUserId]
-  )).rows.length > 0;
-  if (hasData) return;
-
-  // Candidate legacy datasets: have data, aren't this user, aren't a known stable user.
-  const legacy = (await query(`
-    SELECT DISTINCT user_id FROM (
-      SELECT user_id FROM pos_product_prices
-      UNION SELECT user_id FROM pos_transactions
-      UNION SELECT user_id FROM pos_custom_products
-      UNION SELECT user_id FROM pos_employees
-    ) d
-    WHERE user_id <> '' AND user_id <> $1
-      AND user_id NOT IN (SELECT user_id FROM pos_known_users)
-  `, [newUserId])).rows.map(r => r.user_id);
-  if (legacy.length === 0) return;
-
-  // Look up each legacy dataset's store name so we can attribute it safely.
-  const legacyInfo = [];
-  for (const uid of legacy) {
-    const s = (await query('SELECT store_name FROM pos_settings WHERE user_id = $1', [uid])).rows[0];
-    legacyInfo.push({ uid, store: (s?.store_name || '').trim().toLowerCase() });
-  }
-
-  let target = null;
-  const name = (companyName || '').trim().toLowerCase();
-  if (name) {
-    // Prefer an exact store-name match.
-    const matches = legacyInfo.filter(l => l.store && l.store === name);
-    if (matches.length === 1) {
-      target = matches[0].uid;
-    } else if (matches.length === 0 && legacyInfo.length === 1 && !legacyInfo[0].store) {
-      // Only claim a single, truly UNATTRIBUTED dataset (no store name of its own).
-      // Never let a named company grab a dataset that belongs to a different store.
-      target = legacyInfo[0].uid;
-    }
-  } else if (legacyInfo.length === 1) {
-    // This account has no company name; safe only when there's exactly one orphan.
-    target = legacyInfo[0].uid;
-  }
-  if (!target) return; // ambiguous — never risk cross-company corruption
-
-  await migrateDataBetweenUsers(target, newUserId);
-  console.log(`[postgres] Bridged legacy POS data ${target} -> ${newUserId} (${companyName || 'unnamed'})`);
-}
+// The legacy data bridge and the wholesale user-to-user move it depended on
+// were removed. See the note in routes/pos.js: the migration they existed
+// for is finished — every dataset in the database is registered to a
+// company — and a function that deletes one company's rows and reassigns
+// another's is not worth leaving about once nothing calls it.
 
 // ─── Treatment calendar ─────────────────────────────────────────────────────
 
@@ -3807,8 +3723,6 @@ async function ensureCompanySlugs() {
 module.exports = {
   pool,
   initSchema,
-  bridgeLegacyData,
-  migrateDataBetweenUsers,
   saveGmailToken,
   saveCompanyName,
   getCompanyName,
