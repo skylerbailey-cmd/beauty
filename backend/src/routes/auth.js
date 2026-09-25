@@ -7,12 +7,29 @@ const { db, saveUser, getUser, updateUserPushToken } = require('../db');
 
 const router = express.Router();
 
-const OAUTH_SCOPES = [
+// Two different asks, deliberately kept apart.
+//
+// Proving who you are needs nothing but your name and address, and Google
+// hands those over to any app without review. Reading a mailbox is another
+// matter: gmail.modify and gmail.compose are *restricted* scopes, which means
+// Google grants them only after verification and a third-party security
+// assessment — and until that clears, nobody outside the test-user list can
+// complete the consent screen at all.
+//
+// Asking for both at the front door therefore made signing in impossible for
+// every shop that isn't us. So sign-in asks for identity alone and works for
+// anyone today; the mailbox scopes are requested later, the first time a shop
+// actually opens its Emails tab, and only that feature waits on verification.
+const SIGN_IN_SCOPES = [
+  'https://www.googleapis.com/auth/userinfo.profile',
+  'https://www.googleapis.com/auth/userinfo.email',
+];
+
+const GMAIL_SCOPES = [
   'https://www.googleapis.com/auth/gmail.modify',
   'https://www.googleapis.com/auth/gmail.compose',
   'https://www.googleapis.com/auth/gmail.send',
-  'https://www.googleapis.com/auth/userinfo.profile',
-  'https://www.googleapis.com/auth/userinfo.email',
+  ...SIGN_IN_SCOPES,
 ];
 
 // ─── POST /auth/web-login ─────────────────────────────────────────────────────
@@ -114,12 +131,21 @@ router.get('/google', (req, res) => {
     req.session.oauthReturn = ret;
   }
 
+  // The mailbox is asked for only when a shop goes to connect it, and on the
+  // mobile flow, whose whole purpose is handing back a Gmail-linked user id.
+  const wantsGmail = req.query.connect === 'gmail' || from !== 'web';
+  req.session.oauthWants = wantsGmail ? 'gmail' : 'identity';
+
   const oauth2Client = createOAuthClient();
 
   const authUrl = oauth2Client.generateAuthUrl({
-    access_type: 'offline',
-    scope: OAUTH_SCOPES,
-    prompt: 'consent',
+    // A refresh token is only worth holding for a mailbox we send from later.
+    // Signing in needs one answer, once, so it asks for no standing access.
+    access_type: wantsGmail ? 'offline' : 'online',
+    scope: wantsGmail ? GMAIL_SCOPES : SIGN_IN_SCOPES,
+    // Re-prompting is what forces Google to re-issue a refresh token, so it
+    // matters for the mailbox and only gets in the way of signing in.
+    prompt: wantsGmail ? 'consent' : 'select_account',
     include_granted_scopes: true,
   });
 
@@ -180,7 +206,31 @@ router.get('/google/callback', async (req, res) => {
           gmail_history_id: null,
         });
       }
+    } else if (isWebLogin) {
+      // Signing a shop in from the web. The account id has to come out the same
+      // as the one email sign-in derived, because every row this company owns
+      // in Postgres is keyed by it. Google's own numeric profile id is a
+      // different number entirely — use it here and a shop that has been
+      // trading for months signs in to an empty register, its transactions,
+      // staff and customers all still in the database under the other id.
+      //
+      // So the verified Google address is put through the same derivation the
+      // email door used. Whichever way a shop comes in, it lands on its own
+      // account.
+      const { findOrCreateUserByEmail } = require('../db');
+      const email = String(profile.email || '').trim().toLowerCase();
+      if (!email) throw new Error('Google did not return an email address.');
+      const { user } = findOrCreateUserByEmail(email, null);
+      userId = user.id;
+      cookieEmail = user.email;
+      if (tokens.access_token || tokens.refresh_token) {
+        db.prepare('UPDATE users SET access_token = COALESCE(?, access_token), refresh_token = COALESCE(?, refresh_token) WHERE id = ?')
+          .run(tokens.access_token || null, tokens.refresh_token || null, userId);
+      }
     } else {
+      // The mobile flow, which exists to hand a Gmail-linked user id back to
+      // the Expo app. Its ids have always been Google's, and rekeying them
+      // here would orphan exactly what the web change above is preventing.
       userId = profile.id || uuidv4();
       saveUser({
         id: userId,
@@ -203,12 +253,16 @@ router.get('/google/callback', async (req, res) => {
       }
     }
 
-    // Set up Gmail push notifications
-    try {
-      await setupGmailWatch(userId);
-    } catch (watchErr) {
-      console.error('[auth] Gmail watch setup failed (non-fatal):', watchErr.message);
+    // Only worth doing when a mailbox was actually granted. On a plain sign-in
+    // there is nothing to watch, and asking anyway fails on every single login.
+    if (req.session?.oauthWants !== 'identity') {
+      try {
+        await setupGmailWatch(userId);
+      } catch (watchErr) {
+        console.error('[auth] Gmail watch setup failed (non-fatal):', watchErr.message);
+      }
     }
+    delete req.session.oauthWants;
 
     // Store userId in session
     req.session.userId = userId;

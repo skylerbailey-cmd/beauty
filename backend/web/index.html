@@ -1659,7 +1659,9 @@
   // run in the TOP-LEVEL window. When embedded in the POS, break out and return
   // to /pos.html afterwards; otherwise navigate normally.
   function connectGmail() {
-    var url = '/auth/google?from=web';
+    // connect=gmail is what asks for the mailbox scopes. Without it this is a
+    // plain sign-in and comes back with no mailbox attached.
+    var url = '/auth/google?from=web&connect=gmail';
     if (IS_EMBEDDED) url += '&return=' + encodeURIComponent('/pos.html');
     (window.top || window).location.href = url;
   }
