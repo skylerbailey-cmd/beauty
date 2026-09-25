@@ -587,25 +587,11 @@
 <body>
 
 <header>
-  <div style="position:relative;display:none" id="appSwitcherWrap">
-    <button class="app-switch-btn" onclick="toggleAppSwitcher()" title="Switch app">
-      <span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span>
-    </button>
-    <div class="app-menu" id="appSwitcherMenu">
-      <a href="/">
-        <span style="font-size:18px">&#9993;&#65039;</span>
-        <div><b>Welcome Emails</b><span class="sub"><br>Customer onboarding</span></div>
-      </a>
-      <a href="/inbox.html">
-        <span style="font-size:18px">&#128232;</span>
-        <div><b>Smart Inbox</b><span class="sub"><br>AI-powered email replies</span></div>
-      </a>
-      <a href="/pos.html" class="active">
-        <span style="font-size:18px">&#128179;</span>
-        <div><b>SkySale</b><span class="sub"><br>Sales, returns & receipts</span></div>
-      </a>
-    </div>
-  </div>
+  <!-- The app switcher is gone. Welcome Emails and Smart Inbox were never
+       separate products a shop should navigate between; they are screens of
+       this one, and the Emails tab is where they live. Leaving a menu here
+       pointing at them standalone is what sent people to a sign-in that had
+       nothing to do with the register. -->
   <div style="flex:1">
     <h1>SkySale</h1>
     <p id="headerSub">Sales & receipts</p>
@@ -630,9 +616,11 @@
 <!-- ── Login gate ─── -->
 <div id="loginGate" style="display:none;max-width:400px;margin:80px auto;padding:0 20px">
   <div style="background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow);border:1px solid var(--border);padding:36px;text-align:center">
-    <h2 style="color:var(--accent-deep);margin-bottom:8px">Sign In Required</h2>
-    <p style="font-family:system-ui,sans-serif;font-size:.88rem;color:var(--mid);margin-bottom:24px">Please sign in via the Welcome Emails page first to use the POS system.</p>
-    <a href="/" style="display:inline-block;padding:12px 32px;background:var(--accent);color:white;border-radius:10px;text-decoration:none;font-family:system-ui,sans-serif;font-weight:600">Go to Welcome Emails</a>
+    <h2 style="color:var(--accent-deep);margin-bottom:8px">Sign in</h2>
+    <p style="font-family:system-ui,sans-serif;font-size:.88rem;color:var(--mid);margin-bottom:24px">
+      We'll email you a link that opens the register. It works once and lasts an hour.
+    </p>
+    <a href="/signup.html" style="display:inline-block;padding:12px 32px;background:var(--accent);color:white;border-radius:10px;text-decoration:none;font-family:system-ui,sans-serif;font-weight:600">Sign in</a>
   </div>
 </div>
 
@@ -1215,7 +1203,7 @@
 
       <div class="emails-body">
         <div id="emailViewWelcome">
-          <iframe id="emailsFrame" data-src="/?embed=1" title="Emails" style="width:100%;height:calc(100vh - 140px);border:0;display:block"></iframe>
+          <iframe id="emailsFrame" data-src="/emails.html?embed=1" title="Emails" style="width:100%;height:calc(100vh - 140px);border:0;display:block"></iframe>
         </div>
 
     <!-- Mass email. The audience is chosen here rather than inherited from
@@ -2337,6 +2325,10 @@ async function init() {
     document.getElementById('rptEnd').value = today;
     document.getElementById('custStart').value = monthStart;
     document.getElementById('custEnd').value = today;
+
+    // Only once the register is actually on screen: a redirect that names a
+    // tab has to land on it, or the link reads as broken.
+    openTabFromHash();
   } catch (err) {
     console.error('[pos] Auth check failed:', err);
     document.getElementById('loginGate').style.display = 'block';
@@ -8795,18 +8787,6 @@ function lockPersonalReport() {
   document.getElementById('rptEnd').value = today;
 }
 
-// ─── App Switcher ───────────────────────────────────────────────────────────
-function toggleAppSwitcher() {
-  const menu = document.getElementById('appSwitcherMenu');
-  menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
-}
-document.addEventListener('click', e => {
-  const wrap = document.getElementById('appSwitcherWrap');
-  if (wrap && !wrap.contains(e.target)) {
-    document.getElementById('appSwitcherMenu').style.display = 'none';
-  }
-});
-
 // ─── Store Settings ─────────────────────────────────────────────────────────
 let storeSettings = { store_name: '', store_address: '', store_city: '', store_state: '', store_zip: '', store_email: '', store_phone: '', receipt_footer: 'Thank you for your purchase!', timezone: 'America/Los_Angeles', tax_rate: 0.081875 };
 
@@ -9105,7 +9085,7 @@ async function switchAccount(email) {
 
 function addNewAccount() {
   document.getElementById('companySwitcherMenu').classList.remove('show');
-  window.location.href = '/';
+  window.location.href = '/signup.html';
 }
 
 // ─── Mass email ─────────────────────────────────────────────────────────────
@@ -9992,7 +9972,7 @@ async function logout() {
     const accounts = getLinkedAccounts().filter(a => a.email !== currentUser.email);
     saveLinkedAccounts(accounts);
   }
-  window.location.href = '/';
+  window.location.href = '/signup.html';
 }
 
 // ─── Start ──────────────────────────────────────────────────────────────────
@@ -10283,6 +10263,20 @@ async function confirmCloseAccount() {
     btn.disabled = false;
   }
 }
+
+
+// ─── Opening straight onto a tab ───────────────────────────────────────────
+//
+// Anything that used to be its own page now redirects here with the tab in
+// the hash. Without this the redirect lands on the register instead, which
+// reads as the link being broken.
+function openTabFromHash() {
+  const want = (location.hash || '').replace(/^#/, '');
+  const ALLOWED = ['register', 'reports', 'calendar', 'emails', 'history', 'settings'];
+  if (!ALLOWED.includes(want)) return;
+  try { switchTab(want); } catch (_) {}
+}
+window.addEventListener('hashchange', openTabFromHash);
 
 </script>
 </body>

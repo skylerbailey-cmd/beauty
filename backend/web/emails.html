@@ -1654,6 +1654,15 @@
   var IS_EMBEDDED = new URLSearchParams(location.search).get('embed') === '1';
   if (IS_EMBEDDED) {
     document.body.classList.add('embedded');
+  } else {
+    // This is a screen of the register, not a product of its own.
+    //
+    // It used to answer on its own at the site root, with its own sign-in and
+    // its own idea of who you were, which is how someone could type an email
+    // address into a page that was never the way into the shop and end up
+    // looking at the email generator. There is one way in now, and one place
+    // these screens live: the POS Emails tab.
+    location.replace('/pos.html#emails');
   }
   // Google's sign-in page cannot load inside an iframe, so the OAuth flow must
   // run in the TOP-LEVEL window. When embedded in the POS, break out and return
@@ -1688,7 +1697,7 @@
   <div style="position:relative" id="appSwitcherWrap">
     <button onclick="toggleAppSwitcher()" title="Switch app" style="width:40px;height:40px;border-radius:10px;border:1.5px solid var(--border);background:var(--white);cursor:pointer;display:grid;grid-template-columns:repeat(3,6px);gap:4px;align-content:center;justify-content:center;transition:all .2s;padding:0" onmouseover="this.style.borderColor='var(--accent)';this.style.background='var(--accent-soft)'" onmouseout="this.style.borderColor='var(--border)';this.style.background='var(--white)'"><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span><span style="width:6px;height:6px;border-radius:1.5px;background:var(--accent)"></span></button>
     <div id="appSwitcherMenu" style="display:none;position:absolute;left:0;top:52px;background:var(--white);border:1px solid var(--border);border-radius:12px;box-shadow:0 8px 32px rgba(44,32,34,.12);min-width:200px;z-index:999;overflow:hidden">
-      <a href="/" style="display:flex;align-items:center;gap:10px;padding:14px 16px;text-decoration:none;color:var(--dark);font-family:system-ui,sans-serif;font-size:.88rem;background:var(--accent-soft);border-left:3px solid var(--accent)">
+      <a href="/pos.html#emails" style="display:flex;align-items:center;gap:10px;padding:14px 16px;text-decoration:none;color:var(--dark);font-family:system-ui,sans-serif;font-size:.88rem;background:var(--accent-soft);border-left:3px solid var(--accent)">
         <span style="font-size:18px">&#9993;&#65039;</span>
         <div><b>Smart Inbox</b><br><span style="font-size:.75rem;color:var(--mid)">Welcome emails &amp; Smart Inbox</span></div>
       </a>

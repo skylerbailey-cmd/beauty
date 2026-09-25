@@ -122,13 +122,30 @@ app.use(async (req, res, next) => {
 
 // ─── Routes ────────────────────────────────────────────────────────────────────
 
-// Serve the welcome email generator web UI
+// The front door.
+//
+// This used to serve the welcome email generator, which had its own sign-in
+// and its own idea of who you were. So the address a shop was given led to a
+// page that was never the way into the register, and typing an email into it
+// appeared to work. There is one way in now: signed in goes to the register,
+// and everyone else goes to the one screen that can actually sign you in.
+app.get('/', (req, res) => {
+  res.redirect(req.session?.userId ? '/pos.html' : '/signup.html');
+});
+
+// Anything still asking for the old standalone pages by name.
+app.get(['/index.html', '/inbox.html'], (req, res) => res.redirect('/pos.html#emails'));
+
+// Serve the web UI.
 // In Docker: /app/web; in local dev: ../../web
 const webDir = path.join(__dirname, '../web');
 const webDirAlt = path.join(__dirname, '../../web');
 const fs = require('fs');
 app.use(express.static(fs.existsSync(webDir) ? webDir : webDirAlt, {
   etag: true,
+  // No directory index: "/" is answered above, deliberately, and a stray
+  // index.html appearing in the web folder must never quietly take it back.
+  index: false,
   setHeaders: (res, filePath) => {
     // Never cache HTML, so redeploys take effect immediately (incl. the
     // embedded Emails iframe) without a hard refresh.
