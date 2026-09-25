@@ -556,11 +556,21 @@ async function stepDone() {
           <button class="btn btn-primary" type="submit" id="linkGo">Email me a link</button>
         </div>
       </form>
+      <p class="hint" style="margin:18px 0 10px">
+        Just looking? Sign in as <button type="button" class="btn-link" onclick="useDemo()">test@demo.com</button>
+        to walk around a shop that has been trading for months — real-looking sales, staff, customers and reports, none of it ours or anyone else's.
+      </p>
       <p class="hint" style="margin:20px 0 10px">or</p>
       <div class="actions">
         <a class="btn" style="text-decoration:none"
            href="/auth/google?from=web&return=%2Fsignup.html">Continue with Google</a>
       </div>`;
+
+    // Fills the box rather than signing in, so it is still their decision.
+    window.useDemo = () => {
+      $('loginEmail').value = 'test@demo.com';
+      $('loginEmail').focus();
+    };
 
     const form = $('linkForm');
     const msg = $('linkMsg');
@@ -591,6 +601,8 @@ async function stepDone() {
         });
         const data = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(data.error || 'That did not work.');
+        // The demo shop has no inbox to check — it opens straight away.
+        if (data.demo && data.redirect) { location.href = data.redirect; return; }
         // Deliberately says nothing about whether the address has an account.
         $('card').innerHTML = `
           <h1>Check your inbox</h1>

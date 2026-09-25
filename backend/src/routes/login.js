@@ -31,6 +31,12 @@ const { cookieDomainFor, companyUrl, appDomain } = require('../lib/tenancy');
 
 const LINK_MINUTES = 60;
 
+// The showroom account, if this deployment has one.
+const isDemoAddress = (email) => {
+  const demo = (process.env.DEMO_EMAIL || '').trim().toLowerCase();
+  return !!demo && email === demo;
+};
+
 // Deliberately loose. The job here is to catch a typo and obvious nonsense,
 // not to adjudicate the RFC — a real address that a strict pattern rejects is
 // a shop that cannot sign up at all.
@@ -67,6 +73,39 @@ router.post('/link',
       // answer comes back for an address that has never been seen.
       return res.status(429).json({
         error: 'A few links have already gone to that address. Check your inbox, or try again in a little while.',
+      });
+    }
+
+    // ── The demo shop ──
+    //
+    // One address, and only when DEMO_EMAIL names it, signs in without a
+    // link. It has to: nobody can read mail at test@demo.com, and a demo you
+    // cannot get into is not a demo.
+    //
+    // This is a password-less door, so it is worth being plain about what
+    // keeps it safe. It opens exactly one company, whose every customer,
+    // sale and staff member is invented; it is rebuilt from a script, so
+    // anything a visitor does to it is temporary; and it reaches no other
+    // company, because a session names one shop and tenancy does the rest.
+    // Unset DEMO_EMAIL and the door does not exist.
+    if (isDemoAddress(email)) {
+      const { findOrCreateUserByEmail } = require('../db');
+      const { user } = findOrCreateUserByEmail(email, null);
+      req.session.userId = user.id;
+      rememberAuthenticated(req, user.id);
+      res.cookie('glow_user_email', user.email, {
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+        httpOnly: true, signed: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        domain: cookieDomainFor(req),
+      });
+      let slug = null;
+      try { slug = await pgDb.getCompanySlug(user.id); } catch (_) {}
+      return res.json({
+        ok: true,
+        demo: true,
+        redirect: slug && appDomain() ? companyUrl(slug, '/pos.html') : '/pos.html',
       });
     }
 
