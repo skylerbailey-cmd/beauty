@@ -18,7 +18,12 @@
 const { v5: uuidv5 } = require('uuid');
 const pgDb = require('../src/db/postgres');
 
-const DEMO_EMAIL = (process.env.DEMO_EMAIL || 'test@demo.com').toLowerCase();
+// DEMO_EMAIL may list several spellings of the same shop. The account belongs
+// to the first, exactly as the sign-in derives it — deriving it from the whole
+// list would build a second shop with a comma in its address, which is how
+// this first ran and why the slug guard below earned its keep.
+const DEMO_EMAIL = String(process.env.DEMO_EMAIL || 'test@demo.com')
+  .split(',')[0].trim().toLowerCase();
 const DEMO_USER_ID = uuidv5('mailto:' + DEMO_EMAIL, uuidv5.URL);
 const TZ = 'America/Denver';
 const TAX = 0.0875;
