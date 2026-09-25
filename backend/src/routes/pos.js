@@ -3409,4 +3409,71 @@ router.post('/appointments/:id/resend', async (req, res) => {
   }
 });
 
+// ─── Closing the account ────────────────────────────────────────────────────
+//
+// This is the only thing in the product that destroys data on purpose, so it
+// is gated three ways rather than one: an admin name and PIN, the shop's own
+// name typed out in full, and — because neither of those proves the person
+// understood what they were agreeing to — a plain statement beforehand of
+// what will be gone and that nobody can get it back.
+//
+// No soft delete, no grace period. A shop that closes its account is usually
+// doing it because it wants its customer list off someone else's server, and
+// quietly keeping a copy for thirty days would be the opposite of what they
+// asked for. That also means there is nothing to undo, which is exactly why
+// the confirmation is as heavy as it is.
+
+router.post('/close-account', async (req, res) => {
+  const userId = req.session.userId;
+  const { name, pin, confirm } = req.body || {};
+
+  const employee = await pgDb.verifyEmployeePin(pin, userId, name);
+  if (!isAdmin(employee)) {
+    return res.status(403).json({ error: 'Closing the account needs an admin name and PIN.' });
+  }
+
+  const settings = await pgDb.getSettings(userId);
+  const storeName = String(settings?.store_name || '').trim();
+
+  // Typing the shop's name is the part that cannot be done by reflex. A
+  // dialog is dismissed without reading; a name has to be looked up and
+  // copied, which is a moment to change your mind.
+  const typed = String(confirm || '').trim();
+  if (!storeName || typed.toLowerCase() !== storeName.toLowerCase()) {
+    return res.status(400).json({
+      error: `Type the shop's name exactly — ${storeName || 'it is not set'} — to confirm.`,
+      field: 'confirm',
+    });
+  }
+
+  let result;
+  try {
+    result = await pgDb.deleteCompany(userId);
+  } catch (err) {
+    console.error('[pos] Closing the account failed:', err.message);
+    // The delete runs in one transaction, so a failure here has rolled back
+    // and the shop is intact. Saying so matters: the alternative reading is
+    // that it half happened.
+    return res.status(500).json({
+      error: 'Nothing was deleted — the account is still here. Please try again, and tell us if it keeps failing.',
+    });
+  }
+
+  const removed = Object.values(result.deleted).reduce((a, b) => a + b, 0);
+  console.warn(`[pos] Account closed: ${result.storeName || userId} (${result.slug || 'no address'}), ${removed} rows`);
+
+  // Nothing left to be signed in to.
+  const finish = () => {
+    const { cookieDomainFor } = require('../lib/tenancy');
+    const domain = cookieDomainFor(req);
+    for (const c of ['connect.sid', 'glow_user_email', 'glow_company_name',
+      'glow_gmail_refresh', 'glow_theme', 'glow_brands', 'glow_websites']) {
+      res.clearCookie(c);
+      if (domain) res.clearCookie(c, { domain });
+    }
+    res.json({ ok: true, rowsRemoved: removed, slug: result.slug });
+  };
+  if (req.session?.destroy) req.session.destroy(finish); else finish();
+});
+
 module.exports = router;

@@ -3454,6 +3454,113 @@ async function purgeLoginLinks() {
   await query("DELETE FROM pos_login_links WHERE expires_at < NOW() - INTERVAL '7 days'");
 }
 
+// ─── Closing an account ─────────────────────────────────────────────────────
+//
+// Everything this company owns, gone, including the address that named it.
+//
+// Two things make this worth writing out by hand rather than leaning on
+// cascades. The child tables — line items, the people paid on a sale, the
+// tender it was taken by — are keyed by transaction rather than by company,
+// so deleting the parent without them leaves rows nobody owns and nobody can
+// reach. And it all runs in one transaction: a delete that gives up halfway
+// leaves a shop that half exists, still holding its address, with a register
+// full of sales whose customers are gone.
+
+// Ordered children first, so nothing is orphaned on the way down.
+const OWNED_BY_TRANSACTION = [
+  'pos_transaction_items',
+  'pos_transaction_employees',
+  'pos_transaction_payments',
+];
+
+const OWNED_BY_USER = [
+  'pos_transaction_chargebacks', 'pos_transactions',
+  'pos_payroll_employee_runs', 'pos_payroll_adjustments', 'pos_payroll_balances',
+  'pos_payroll_runs', 'pos_commission_plans',
+  'pos_appointments', 'pos_availability', 'pos_closed_dates', 'pos_treatments',
+  'pos_custom_products', 'pos_product_prices', 'pos_product_visibility',
+  'pos_saved_audits', 'pos_audit_reviews',
+  'welcome_emails', 'sent_emails', 'campaigns',
+  'customers',
+  'pos_gmail_tokens', 'pos_employees',
+  'pos_known_users',
+  // Last: while this row exists the subdomain still resolves to a company.
+  'pos_settings',
+];
+
+/**
+ * Delete a company and everything belonging to it.
+ *
+ * @returns {Promise<{deleted: Object<string, number>, slug: string|null}>}
+ *   what went, per table, so the caller can say so rather than claim it.
+ */
+async function deleteCompany(userId) {
+  if (!pool) throw new Error('No database configured.');
+  if (!userId) throw new Error('Which company?');
+
+  const client = await pool.connect();
+  const deleted = {};
+  try {
+    await client.query('BEGIN');
+
+    const settings = await client.query('SELECT slug, store_name FROM pos_settings WHERE user_id = $1', [userId]);
+    const slug = settings.rows[0]?.slug || null;
+    const storeName = settings.rows[0]?.store_name || null;
+
+    // Read before the tables holding them are emptied — any sign-in link
+    // already in an inbox has to die with the account, and after the sweep
+    // below there is nothing left to look the address up in.
+    const addresses = new Set();
+    for (const row of (await client.query('SELECT email FROM pos_gmail_tokens WHERE user_id = $1', [userId])).rows) {
+      if (row.email) addresses.add(String(row.email).toLowerCase());
+    }
+    for (const row of (await client.query('SELECT store_email FROM pos_settings WHERE user_id = $1', [userId])).rows) {
+      if (row.store_email) addresses.add(String(row.store_email).toLowerCase());
+    }
+
+    // Employees are referenced by chargeback holds, which are keyed by neither
+    // company nor transaction and would otherwise survive the whole delete.
+    const empIds = (await client.query('SELECT id FROM pos_employees WHERE user_id = $1', [userId])).rows.map((r) => r.id);
+    if (empIds.length) {
+      const r = await client.query('DELETE FROM pos_chargeback_holds WHERE employee_id = ANY($1::int[])', [empIds]);
+      deleted.pos_chargeback_holds = r.rowCount;
+    }
+
+    // What a customer bought, keyed by customer.
+    const custIds = (await client.query('SELECT id FROM customers WHERE user_id = $1', [userId])).rows.map((r) => r.id);
+    if (custIds.length) {
+      const r = await client.query('DELETE FROM customer_products WHERE customer_id = ANY($1::int[])', [custIds]);
+      deleted.customer_products = r.rowCount;
+    }
+
+    const txIds = (await client.query('SELECT id FROM pos_transactions WHERE user_id = $1', [userId])).rows.map((r) => r.id);
+    if (txIds.length) {
+      for (const table of OWNED_BY_TRANSACTION) {
+        const r = await client.query(`DELETE FROM ${table} WHERE transaction_id = ANY($1::int[])`, [txIds]);
+        deleted[table] = r.rowCount;
+      }
+    }
+
+    for (const table of OWNED_BY_USER) {
+      const r = await client.query(`DELETE FROM ${table} WHERE user_id = $1`, [userId]);
+      if (r.rowCount) deleted[table] = r.rowCount;
+    }
+
+    if (addresses.size) {
+      const r = await client.query('DELETE FROM pos_login_links WHERE email = ANY($1::text[])', [[...addresses]]);
+      if (r.rowCount) deleted.pos_login_links = r.rowCount;
+    }
+
+    await client.query('COMMIT');
+    return { deleted, slug, storeName };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 /** Record a stable account id, so later sign-ins are recognised as returning. */
 async function rememberUser(userId) {
   if (!pool || !userId) return;
@@ -3711,6 +3818,7 @@ module.exports = {
   consumeLoginLink,
   purgeLoginLinks,
   rememberUser,
+  deleteCompany,
   emailHasAccount,
   findCustomerIdByContact,
   createCustomerRecord,

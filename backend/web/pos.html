@@ -1263,6 +1263,7 @@
         <button class="sub-btn" data-sgo="brands">Brands &amp; products</button>
         <button class="sub-btn" data-sgo="merchant">Merchant connections</button>
         <button class="sub-btn" data-sgo="staff">Employees</button>
+        <button class="sub-btn" data-sgo="danger">Account</button>
       </div>
 
       <!-- Store Settings, Brands & Products, and the Maverick connection are
@@ -1483,6 +1484,46 @@
       </div>
       <!-- /settingsManagerOnly -->
 
+      <!-- Read a supplier's catalogue, the same way signup does. The shop
+           adds a second brand months later, and having to redo signup to do
+           it would be absurd — so this is the same two endpoints. -->
+      <div class="report-card" data-sgroup="brands" style="margin-top:16px">
+        <h3>Add products from a supplier page</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
+          Paste a page that lists several products and we'll read the names, prices, descriptions and usage notes off it —
+          the usage notes are what the welcome email is built from. Nothing is saved until you've checked it.
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="url" id="impUrl" placeholder="https://supplier.com/collections/all" autocapitalize="off" spellcheck="false"
+                 style="flex:1;min-width:260px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+          <button class="btn btn-confirm" id="impGo" onclick="importFromUrl()">Read the page</button>
+        </div>
+        <div id="impStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:8px"></div>
+        <div id="impReview" style="display:none;margin-top:14px"></div>
+      </div>
+
+      <!-- Closing the account. Last card, its own group, and visibly not the
+           same kind of thing as everything above it. -->
+      <div class="report-card" data-sgroup="danger" style="margin-top:16px;border-color:#E4C4C8">
+        <h3 style="color:#A8323C">Close this account</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:10px">
+          Deletes this shop and everything in it, and frees
+          <span id="closeSlugLine"></span> for someone else to claim.
+        </p>
+        <ul style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:0 0 12px;padding-left:20px">
+          <li>Every sale, receipt, return and chargeback</li>
+          <li>Your customer list, their purchases and every email sent to them</li>
+          <li>Staff, commission plans, payroll history and open balances</li>
+          <li>Products, prices, treatments, bookings and your connected mailbox</li>
+        </ul>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:#A8323C;font-weight:600;margin-bottom:12px">
+          This cannot be undone. There is no backup to restore from and no grace period —
+          once it's gone, it's gone. Export anything you need first.
+        </p>
+        <button class="btn" id="closeAccountBtn" onclick="openCloseAccount()"
+                style="background:#A8323C;color:#fff;border-color:#A8323C">Close account…</button>
+      </div>
+
       <!-- Employees -->
       <div class="report-card" data-sgroup="staff" style="margin-top:16px">
         <h3>Employees</h3>
@@ -1555,6 +1596,45 @@
 
 <!-- ─── Price Edit Modal ─── -->
 <!-- Book or edit a treatment session -->
+<!-- Closing the account. Three things are asked for, and the button will not
+     press until all three are right: an admin name and PIN, and the shop's
+     own name typed out. A dialog gets dismissed without being read; a name
+     has to be looked at and copied. -->
+<div class="modal-overlay" id="closeAccountModal">
+  <div class="modal" style="max-width:520px">
+    <h2 style="color:#A8323C">Close this account?</h2>
+    <p class="sub">
+      Everything belonging to <b id="closeShopName"></b> is deleted immediately and permanently:
+      sales, customers, staff, payroll, products and bookings. There is no backup and no grace
+      period — this cannot be reversed by us or by anyone else.
+    </p>
+
+    <div class="field" style="margin-top:14px">
+      <label>Type the shop's name to confirm</label>
+      <input type="text" id="closeConfirmName" autocomplete="off" oninput="closeAccountTyped()"
+             placeholder="The exact shop name">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 130px;gap:12px">
+      <div class="field">
+        <label>Admin name</label>
+        <input type="text" id="closeAdminName" autocomplete="off" oninput="closeAccountTyped()">
+      </div>
+      <div class="field">
+        <label>Admin PIN</label>
+        <input type="password" id="closeAdminPin" maxlength="6" autocomplete="off" oninput="closeAccountTyped()">
+      </div>
+    </div>
+
+    <div id="closeStatus" style="font-family:system-ui,sans-serif;font-size:.84rem;margin-top:6px;min-height:20px"></div>
+
+    <div class="modal-actions">
+      <button class="btn" onclick="closeCloseAccount()">Keep my account</button>
+      <button class="btn" id="closeGo" disabled onclick="confirmCloseAccount()"
+              style="background:#A8323C;color:#fff;border-color:#A8323C">Delete everything</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="apptModal">
   <div class="modal" style="max-width:560px">
     <h2 id="apptModalTitle">New session</h2>
@@ -8710,6 +8790,14 @@ async function loadStoreSettings() {
     const data = await resp.json();
     storeSettings = data.settings || storeSettings;
     refreshHeaderCompany(); // the page title comes from the store name
+    // Name the address on the closing card, so what is being given up is on
+    // the screen rather than something they have to remember.
+    const slugLine = document.getElementById('closeSlugLine');
+    if (slugLine) {
+      slugLine.textContent = storeSettings.slug
+        ? `${storeSettings.slug}.sky-sale.com`
+        : 'this shop\u2019s address';
+    }
     document.getElementById('settingsStoreName').value = storeSettings.store_name || '';
     document.getElementById('settingsStoreAddress').value = storeSettings.store_address || '';
     document.getElementById('settingsStoreCity').value = storeSettings.store_city || '';
@@ -9901,7 +9989,10 @@ function settingsGroup(which) {
   // The open explainer belongs to a connection; leaving the group should not
   // leave its help stranded beside an unrelated form.
   if (which !== 'merchant') closeSettingsHelp();
-  try { localStorage.setItem('skysale.settingsGroup', which); } catch (_) {}
+  // Not remembered when it is the closing screen — reopening Settings there
+  // days later, with a Close account button under the cursor, is not a place
+  // anyone meant to land.
+  try { localStorage.setItem('skysale.settingsGroup', which === 'danger' ? 'store' : which); } catch (_) {}
 }
 
 function openSettingsHelp(key, btn) {
@@ -9937,9 +10028,191 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   let start = 'store';
   try { start = localStorage.getItem('skysale.settingsGroup') || 'store'; } catch (_) {}
-  if (!['store', 'brands', 'merchant', 'staff'].includes(start)) start = 'store';
+  if (!['store', 'brands', 'merchant', 'staff', 'danger'].includes(start)) start = 'store';
   settingsGroup(start);
 });
+
+
+// ─── Settings: reading a supplier page ─────────────────────────────────────
+//
+// The same two endpoints signup uses, because it is the same job: a shop that
+// takes on a second brand in March should not have to pretend to sign up
+// again to get its prices in.
+
+let impProducts = [];
+
+async function importFromUrl() {
+  const url = (document.getElementById('impUrl').value || '').trim();
+  const status = document.getElementById('impStatus');
+  const btn = document.getElementById('impGo');
+  if (!url) { status.style.color = 'var(--danger)'; status.textContent = 'Paste the address of the page first.'; return; }
+
+  btn.disabled = true;
+  status.style.color = 'var(--mid)';
+  status.textContent = 'Reading the page…';
+  document.getElementById('impReview').style.display = 'none';
+
+  try {
+    const resp = await fetch(`${API}/api/signup/read-products`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'That page could not be read.');
+    if (!data.products || !data.products.length) {
+      status.style.color = 'var(--danger)';
+      status.textContent = data.hint || 'Nothing on that page looked like a product for sale.';
+      return;
+    }
+    impProducts = data.products.map((p) => ({ ...p, keep: true }));
+    status.style.color = 'var(--mid)';
+    status.textContent = `${impProducts.length} product${impProducts.length === 1 ? '' : 's'} read. Check them before saving.`;
+    renderImportReview();
+  } catch (err) {
+    status.style.color = 'var(--danger)';
+    status.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderImportReview() {
+  const box = document.getElementById('impReview');
+  const noPrice = impProducts.filter((p) => p.price == null).length;
+  box.style.display = '';
+  box.innerHTML = `
+    ${noPrice ? `<div style="background:#FDF4F5;border:1px solid #E4C4C8;color:#7A2129;border-radius:8px;padding:10px 12px;font-family:system-ui,sans-serif;font-size:.82rem;margin-bottom:10px"><b>${noPrice}</b> ${noPrice === 1 ? 'has' : 'have'} no price — the page didn't state one and we don't guess. Type them in or untick them.</div>` : ''}
+    <div style="max-height:44vh;overflow:auto;border:1px solid var(--border);border-radius:8px">
+      <table style="width:100%;border-collapse:collapse;font-family:system-ui,sans-serif;font-size:.83rem">
+        <thead><tr>
+          <th style="width:34px"></th><th style="width:48px"></th>
+          <th style="text-align:left;padding:7px 6px">Product</th>
+          <th style="width:110px;text-align:left;padding:7px 6px">Price</th>
+          <th style="width:130px;text-align:left;padding:7px 6px">Brand</th>
+        </tr></thead>
+        <tbody id="impRows"></tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:10px;flex-wrap:wrap">
+      <button class="btn btn-confirm" onclick="saveImported()">Save products</button>
+      <button class="btn" onclick="document.getElementById('impReview').style.display='none';impProducts=[]">Cancel</button>
+      <span id="impSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem"></span>
+    </div>`;
+
+  document.getElementById('impRows').innerHTML = impProducts.map((p, i) => `
+    <tr>
+      <td style="padding:4px 6px"><input type="checkbox" data-k="keep" data-i="${i}" ${p.keep ? 'checked' : ''}></td>
+      <td style="padding:4px 6px">${p.image
+        ? `<img src="${escapeHtml(p.image)}" alt="" loading="lazy" style="width:38px;height:38px;object-fit:contain;border-radius:6px;background:var(--cream);display:block">`
+        : `<span style="display:block;width:38px;height:38px;border:1px dashed var(--border);border-radius:6px"></span>`}</td>
+      <td style="padding:4px 6px"><input type="text" data-k="name" data-i="${i}" value="${escapeHtml(p.name)}" style="width:100%;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:.83rem"></td>
+      <td style="padding:4px 6px"><input type="number" step="0.01" min="0" data-k="price" data-i="${i}" value="${p.price == null ? '' : p.price}" placeholder="—" style="width:100%;padding:5px 8px;border:1.5px solid ${p.price == null ? 'var(--danger)' : 'var(--border)'};border-radius:6px;font-size:.83rem"></td>
+      <td style="padding:4px 6px"><input type="text" data-k="brand" data-i="${i}" value="${escapeHtml(p.brand || '')}" style="width:100%;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:.83rem"></td>
+    </tr>`).join('');
+
+  document.getElementById('impRows').addEventListener('input', (e) => {
+    const t = e.target, i = Number(t.dataset.i), k = t.dataset.k;
+    if (k === 'keep') impProducts[i].keep = t.checked;
+    else if (k === 'price') {
+      impProducts[i].price = t.value === '' ? null : Number(t.value);
+      t.style.borderColor = t.value === '' ? 'var(--danger)' : 'var(--border)';
+    } else impProducts[i][k] = t.value;
+  });
+  document.getElementById('impRows').addEventListener('change', (e) => {
+    if (e.target.dataset.k === 'keep') impProducts[Number(e.target.dataset.i)].keep = e.target.checked;
+  });
+}
+
+async function saveImported() {
+  const rows = impProducts.filter((p) => p.keep && String(p.name).trim() && p.price != null);
+  const dropped = impProducts.filter((p) => p.keep).length - rows.length;
+  const status = document.getElementById('impSaveStatus');
+  if (!rows.length) { status.style.color = 'var(--danger)'; status.textContent = 'Nothing ticked has both a name and a price.'; return; }
+  if (dropped && !confirm(`${dropped} ticked ${dropped === 1 ? 'product has' : 'products have'} no price and will be left out. Save the other ${rows.length}?`)) return;
+
+  status.style.color = 'var(--mid)';
+  status.textContent = 'Saving…';
+  try {
+    const resp = await fetch(`${API}/api/signup/products`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ products: rows }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'They could not be saved.');
+    status.style.color = 'var(--success)';
+    status.textContent = `${data.saved} saved${data.skipped ? `, ${data.skipped} skipped` : ''}.`;
+    impProducts = [];
+    setTimeout(() => { document.getElementById('impReview').style.display = 'none'; }, 1800);
+    // The register should show them without a reload.
+    if (typeof loadProducts === 'function') loadProducts();
+  } catch (err) {
+    status.style.color = 'var(--danger)';
+    status.textContent = err.message;
+  }
+}
+
+// ─── Settings: closing the account ─────────────────────────────────────────
+
+function openCloseAccount() {
+  const shop = (storeSettings && storeSettings.store_name) || '';
+  document.getElementById('closeShopName').textContent = shop || 'this shop';
+  document.getElementById('closeConfirmName').value = '';
+  document.getElementById('closeAdminName').value = '';
+  document.getElementById('closeAdminPin').value = '';
+  document.getElementById('closeStatus').textContent = '';
+  document.getElementById('closeGo').disabled = true;
+  document.getElementById('closeAccountModal').classList.add('active');
+}
+
+function closeCloseAccount() {
+  document.getElementById('closeAccountModal').classList.remove('active');
+}
+
+// The button stays dead until the name matches. Reaching for it and finding
+// it will not press is a clearer "are you sure" than a second dialog.
+function closeAccountTyped() {
+  const want = ((storeSettings && storeSettings.store_name) || '').trim().toLowerCase();
+  const got = document.getElementById('closeConfirmName').value.trim().toLowerCase();
+  const named = document.getElementById('closeAdminName').value.trim();
+  const pin = document.getElementById('closeAdminPin').value.trim();
+  document.getElementById('closeGo').disabled = !(want && got === want && named && pin.length >= 4);
+}
+
+async function confirmCloseAccount() {
+  const status = document.getElementById('closeStatus');
+  const btn = document.getElementById('closeGo');
+  btn.disabled = true;
+  status.style.color = 'var(--mid)';
+  status.textContent = 'Closing the account…';
+  try {
+    const resp = await fetch(`${API}/api/pos/close-account`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: document.getElementById('closeAdminName').value.trim(),
+        pin: document.getElementById('closeAdminPin').value.trim(),
+        confirm: document.getElementById('closeConfirmName').value.trim(),
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'It could not be closed.');
+    document.body.innerHTML = `
+      <div style="max-width:520px;margin:18vh auto;padding:0 20px;font-family:system-ui,sans-serif;text-align:center;color:#16242E">
+        <h2 style="font-family:Georgia,serif">The account is closed.</h2>
+        <p style="color:#4A6478;line-height:1.6">
+          ${data.rowsRemoved.toLocaleString()} records were deleted${data.slug ? `, and <b>${data.slug}</b> is free for someone else to claim` : ''}.
+          There is nothing left to sign in to.
+        </p>
+        <p style="color:#4A6478">Thank you for using SkySale.</p>
+      </div>`;
+  } catch (err) {
+    status.style.color = 'var(--danger)';
+    status.textContent = err.message;
+    btn.disabled = false;
+  }
+}
 
 </script>
 </body>
