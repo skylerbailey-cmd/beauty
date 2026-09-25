@@ -495,11 +495,136 @@
     .cs-action:hover { background: var(--cream); }
     .cs-action .cs-icon { width: 18px; text-align: center; font-size: 16px; flex-shrink: 0; }
 
+
+  /* ═══ Phones ════════════════════════════════════════════════════════════
+     The register is used standing up, one-handed, on a device about 390px
+     wide. Everything below is written against that, and the thing it fixes
+     most is sideways scroll: the tab row alone was 100px wider than the
+     screen, which dragged the whole page with it and left Settings somewhere
+     off to the right with nothing to say so. */
+
+  /* Nothing scrolls the page sideways. A row that is too wide scrolls on its
+     own, below, rather than taking the layout with it. */
+  html, body { overflow-x: hidden; max-width: 100%; }
+
+  /* The notch and the home bar. Without this the first tab sits under the
+     one and the checkout button under the other. */
+  header { padding-top: calc(12px + env(safe-area-inset-top, 0px)); }
+
+  @media (max-width: 760px) {
+    /* ── The tab row scrolls itself ── */
+    .pos-subtabs {
+      overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch;
+      scrollbar-width: none; flex-wrap: nowrap;
+      padding-inline: 4px; margin-bottom: 12px;
+      /* Sticky, because on a phone the tabs are how you get anywhere and
+         scrolling a long product grid should not lose them. */
+      position: sticky; top: 0; z-index: 20; background: var(--cream);
+    }
+    .pos-subtabs::-webkit-scrollbar { display: none; }
+    .pos-subtabs button {
+      flex: 0 0 auto; padding: 12px 14px; font-size: .84rem;
+      scroll-snap-align: start;
+    }
+
+    /* Any other row of buttons that was built to sit side by side. */
+    .tx-views, .settings-subtabs, .brand-filters {
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+      scrollbar-width: none; flex-wrap: nowrap;
+    }
+    .tx-views::-webkit-scrollbar,
+    .settings-subtabs::-webkit-scrollbar,
+    .brand-filters::-webkit-scrollbar { display: none; }
+    .tx-views > *, .settings-subtabs > *, .brand-filters > * { flex: 0 0 auto; }
+
+    /* ── Header: the shop's name, and the way out. Nothing else. ── */
+    header { padding-left: 14px; padding-right: 14px; gap: 10px; }
+    header h1 { font-size: 1.05rem; }
+    header p { display: none; }
+
+    /* ── Register ── */
+    .pos-products { padding: 14px 12px; }
+    .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .product-tile { padding: 10px; }
+
+    /* Printing is a back-office job done at a desk, and these two took the
+       best row on the screen. They are still in Reports. */
+    #printDayBtn, #printCardBtn { display: none; }
+
+    /* ── Anything in a table ── */
+    /* A table cannot reflow, so it gets its own sideways scroll rather than
+       being squeezed into columns too narrow to read. */
+    .table-wrap, .tx-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { font-size: .82rem; }
+
+    /* ── Dialogs fill the screen ── */
+    .modal {
+      width: 100%; max-width: none; border-radius: 16px 16px 0 0;
+      max-height: 92vh; padding: 22px 18px;
+      padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+    }
+    .modal-overlay { align-items: flex-end; }
+    .modal-actions { flex-direction: column-reverse; }
+    .modal-actions .btn { width: 100%; padding: 14px; }
+
+    /* ── Things you have to hit ── */
+    /* Anything below about 44px is missed as often as it is pressed. Centred
+       and non-wrapping with it, because a minimum height applied to a button
+       sized for its text turns a short label into a clipped square. */
+    .btn, .checkout-btn, .brand-filter-btn, .em-nav-btn, .sub-btn {
+      min-height: 44px; display: inline-flex; align-items: center;
+      justify-content: center; white-space: nowrap;
+    }
+    .btn { padding-inline: 18px; }
+    input, select, textarea {
+      /* 16px or iOS zooms the whole page in on focus and does not zoom back. */
+      font-size: 16px !important;
+    }
+
+    /* ── Settings ── */
+    .settings-shell > div { padding: 14px 12px !important; }
+    .report-card { padding: 16px 14px; }
+    /* Two-column forms have no room to be two columns. */
+    .report-card [style*="grid-template-columns:1fr 1fr"],
+    .report-card [style*="grid-template-columns: 1fr 1fr"] { grid-template-columns: 1fr !important; }
+
+    /* ── Sign-in gate ── */
+    #loginGate { max-width: 100%; margin-top: 48px; }
+  }
+
+  /* ── The cart, on a phone ──
+     The cart sits under the product grid once the layout stacks, which on a
+     phone means a dozen scrolls away from the thing you just tapped. This
+     keeps the total and the way to finish the sale in reach the whole time. */
+  .cart-jump {
+    display: none; position: fixed; left: 12px; right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 90;
+    align-items: center; gap: 12px; padding: 13px 18px;
+    border: none; border-radius: 14px; background: var(--accent-deep); color: #fff;
+    font-family: system-ui, sans-serif; font-size: .92rem; font-weight: 600;
+    box-shadow: 0 6px 20px rgba(16,36,58,.28); cursor: pointer;
+  }
+  .cart-jump .cj-count {
+    background: rgba(255,255,255,.22); border-radius: 999px;
+    padding: 2px 9px; font-size: .82rem;
+  }
+  .cart-jump .cj-total { margin-left: auto; }
+  @media (max-width: 760px) { .cart-jump.on { display: flex; } }
+
     /* ── Responsive ─── */
     @media (max-width: 768px) {
       .pos-layout { flex-direction: column; height: auto; }
       .pos-cart { width: 100%; border-left: none; border-top: 1px solid var(--border); }
-      .product-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+      /* Exactly two columns, each free to be as narrow as the screen makes
+         them. auto-fill with a 150px floor does not fit two of them plus the
+         gap and the padding on a 390px phone, so it laid out three and let
+         the third hang off the side — taking the search box and the brand
+         filters with it, because the page then scrolled sideways as a whole. */
+      .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    }
+    @media (max-width: 360px) {
+      /* At this width two columns leave no room for a name and a price. */
+      .product-grid { grid-template-columns: 1fr; }
     }
 
   /* ─── Settings: grouped, with help in the margin ──────────────────────── */
@@ -624,6 +749,15 @@
   </div>
 </div>
 
+<!-- On a phone the cart sits below a long grid of products, so the total
+     and the way to finish the sale are otherwise a dozen scrolls away from
+     the thing just tapped. -->
+<button class="cart-jump" id="cartJump" onclick="jumpToCart()">
+  <span class="cj-count" id="cartJumpCount">0</span>
+  <span>In the basket</span>
+  <span class="cj-total" id="cartJumpTotal">$0.00</span>
+</button>
+
 <!-- ── Main POS UI ─── -->
 <div id="posMain" style="display:none">
 
@@ -648,8 +782,8 @@
             <button id="modereturn" onclick="setMode('return')" title="Find a receipt to reprint, email, or return against">Look Up</button>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn" style="background:var(--accent2);color:#fff;padding:7px 16px;font-family:system-ui,sans-serif;font-size:.82rem;border-radius:8px" onclick="printDaySummary()">Print End of Day Report</button>
-            <button class="btn" style="background:var(--accent);color:#fff;padding:7px 16px;font-family:system-ui,sans-serif;font-size:.82rem;border-radius:8px" onclick="openBusinessCards()">Print Business Card</button>
+            <button class="btn" style="background:var(--accent2);color:#fff;padding:7px 16px;font-family:system-ui,sans-serif;font-size:.82rem;border-radius:8px" onclick="printDaySummary()" id="printDayBtn">Print End of Day Report</button>
+            <button class="btn" style="background:var(--accent);color:#fff;padding:7px 16px;font-family:system-ui,sans-serif;font-size:.82rem;border-radius:8px" onclick="openBusinessCards()" id="printCardBtn">Print Business Card</button>
           </div>
         </div>
         <!-- Sale mode: product search & grid -->
@@ -709,7 +843,7 @@
       </div>
 
       <!-- Cart side -->
-      <div class="pos-cart">
+      <div class="pos-cart" id="posCart">
         <div class="cart-header">
           <h3 id="cartTitle">Current Sale</h3>
         </div>
@@ -2571,6 +2705,24 @@ function updateCartTotals() {
   // remaining balance) and the checkout button's enabled state. Applies to both
   // sales (payment) and returns (refund destination).
   renderTenders();
+  updateCartJump(total);
+}
+
+// The bar that follows you down the page on a phone. It says what is in the
+// basket and takes you to it; it is not a second checkout button, because a
+// sale should not be completable without the totals in front of you.
+function updateCartJump(total) {
+  const bar = document.getElementById('cartJump');
+  if (!bar) return;
+  const count = cart.reduce((n, line) => n + (Number(line.quantity) || 0), 0);
+  bar.classList.toggle('on', count > 0);
+  document.getElementById('cartJumpCount').textContent = count;
+  document.getElementById('cartJumpTotal').textContent = `$${money(total)}`;
+}
+
+function jumpToCart() {
+  const cartEl = document.getElementById('posCart');
+  if (cartEl) cartEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ─── Mode Toggle ────────────────────────────────────────────────────────────
