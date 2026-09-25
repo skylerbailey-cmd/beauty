@@ -3,6 +3,18 @@
 const express = require('express');
 
 const router = express.Router();
+
+// Everything under /api/welcome is one company's: its customers, what it has
+// sent them, its campaigns. None of it had a session requirement — each route
+// simply read req.session?.userId and passed it down, so an unauthenticated
+// call scoped to undefined and came back empty. That is safe by accident
+// rather than by design: one route treating a missing company as "all" is the
+// whole address book, and a debug endpoint that ignored the session entirely
+// is exactly what used to sit next to these.
+router.use((req, res, next) => {
+  if (!req.session?.userId) return res.status(401).json({ error: 'Not authenticated' });
+  next();
+});
 const pgDb = require('../db/postgres');
 
 // ─── Product catalog (hardcoded with usage instructions) ────────────────────
@@ -1784,46 +1796,9 @@ router.post('/customers/import', async (req, res) => {
 });
 
 // GET /api/welcome/debug — check DB and connected users
-router.get('/debug', (req, res) => {
-  const { getAllUsers } = require('../db');
-  const fs = require('fs');
-  const path = require('path');
-  const users = getAllUsers();
-
-  // Check filesystem to verify volume mount
-  const dbFile = path.resolve(process.env.DATABASE_PATH || './data/glow.db');
-  const dbDir = path.dirname(dbFile);
-  let fsInfo = {};
-  try {
-    const stats = fs.statSync(dbFile);
-    fsInfo = {
-      dbFileExists: true,
-      dbFileSize: stats.size,
-      dbFilePath: dbFile,
-      dbDir: dbDir,
-      dbDirContents: fs.readdirSync(dbDir),
-      cwd: process.cwd(),
-    };
-  } catch (e) {
-    fsInfo = { dbFileExists: false, error: e.message, dbFilePath: dbFile, cwd: process.cwd() };
-  }
-
-  // Check if /app/data is a mount point (different device from /app)
-  try {
-    const appStat = fs.statSync('/app');
-    const dataStat = fs.statSync('/app/data');
-    fsInfo.isMountPoint = appStat.dev !== dataStat.dev;
-  } catch (e) {
-    fsInfo.isMountPoint = 'unknown: ' + e.message;
-  }
-
-  res.json({
-    dbPath: process.env.DATABASE_PATH || './data/glow.db (default)',
-    hasGlowRefreshToken: !!process.env.GLOW_GMAIL_REFRESH_TOKEN,
-    userCount: users.length,
-    users: users.map(u => ({ id: u.id, email: u.email, hasAccessToken: !!u.access_token, hasRefreshToken: !!u.refresh_token })),
-    fs: fsInfo,
-  });
-});
+// A /debug endpoint lived here, reachable without signing in, and it listed
+// every user on the server with their email addresses — alongside the
+// database path and whether tokens were present. A shop's address book is the
+// thing it would least like published; the list of shops is a close second.
 
 module.exports = { router, PRODUCTS, BUNDLES, generateWelcomeEmailBody };

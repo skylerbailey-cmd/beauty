@@ -47,23 +47,12 @@ function requireAuth(req, res, next) {
   next();
 }
 
-// Debug endpoint (no auth)
-router.get('/debug/products-sample', async (req, res) => {
-  try {
-    const userId = '24f18ae0-c5c5-420b-b9b3-1f4ea2c74112';
-    const prices = await pgDb.getProductPrices(userId);
-    const employees = await pgDb.getEmployees(userId);
-    const sample = prices.slice(0, 3).map(p => ({ product_id: p.product_id, price: p.price, min_price: p.min_price }));
-    res.json({ price_count: prices.length, employee_count: employees.length, employees: employees.map(e => ({ id: e.id, name: e.name, role: e.role, user_id: e.user_id })), sample, db_connected: true });
-  } catch (err) {
-    res.json({ error: err.message, db_connected: false });
-  }
-});
-
-// Debug: check session userId
-router.get('/debug/session', (req, res) => {
-  res.json({ session_userId: req.session?.userId || 'NOT SET', has_session: !!req.session });
-});
+// Two debug endpoints lived here, above requireAuth, so anyone on the
+// internet could call them. One returned the employees of a company named by
+// a hardcoded id — names, roles and ids, belonging to whoever that id happens
+// to be — and the other reported session state. Neither had any business in a
+// deployed product, and the first is the exact shape of the leak this
+// codebase's tenancy test now looks for.
 
 router.use(requireAuth);
 
