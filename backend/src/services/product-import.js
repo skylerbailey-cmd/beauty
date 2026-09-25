@@ -343,14 +343,22 @@ async function readShopifyFeed(origin) {
 async function readProductFeed(pageUrl) {
   const origin = new URL(pageUrl).origin;
   lastFeedProblem = null;
+  const tried = [];
   for (const read of [readWooFeed, readShopifyFeed]) {
+    lastFeedProblem = null;
     try {
       const rows = (await read(origin)).filter((p) => p.name);
       if (rows.length) return rows;
+      // Keep each probe's own answer. Only the last was kept before, so a
+      // WooCommerce site refused at the first probe reported whatever the
+      // Shopify probe happened to say — which is a different site's answer to
+      // a different question.
+      tried.push(lastFeedProblem || `${read.name}: no products`);
     } catch (err) {
-      lastFeedProblem = `${read.name}: ${err.message}`;
+      tried.push(`${read.name}: ${err.message}`);
     }
   }
+  lastFeedProblem = tried.join(' | ');
   // Said out loud rather than swallowed. A feed that works from a laptop and
   // not from the server — a firewall refusing the datacenter, usually — looks
   // identical to a site with no feed at all unless this is written down.
