@@ -2317,16 +2317,42 @@ async function setChargebackHold(chargebackId, employeeId, payday, by) {
 }
 
 // Undo whatever a paycheck recorded, for one person or for everyone on it.
-async function clearHoldsForPayday(payday, employeeId) {
-  const where = employeeId ? 'AND employee_id = $2' : '';
-  const params = employeeId ? [payday, employeeId] : [payday];
-  await query(`UPDATE pos_chargeback_holds SET held_payday = NULL
-               WHERE held_payday = $1::date ${where}`, params);
-  await query(`UPDATE pos_chargeback_holds SET released_payday = NULL
-               WHERE released_payday = $1::date ${where}`, params);
-  await query(`DELETE FROM pos_chargeback_holds
-               WHERE held_payday IS NULL AND released_payday IS NULL ${where ? 'AND employee_id = $1' : ''}`,
-    employeeId ? [employeeId] : []);
+// Undo the holds a paycheck was carrying, because that paycheck is being
+// reopened and never went out.
+//
+// Every statement here is scoped to the shop reopening the payday. It was
+// not: the two UPDATEs matched on the payday alone, and the DELETE that
+// tidies up afterwards had NO payday filter and NO company filter at all
+// when reopening a whole payday — `WHERE held_payday IS NULL AND
+// released_payday IS NULL` and nothing else. Reopening one payday at one
+// shop therefore deleted every dormant hold belonging to every shop on the
+// server. It emptied this installation's table.
+//
+// Nothing anyone was owed changed — a hold is a record of where a deduction
+// was taken, rebuilt whenever a payday is closed again — but a shop's audit
+// trail is not another shop's to delete.
+async function clearHoldsForPayday(userId, payday, employeeId) {
+  const ids = asCompanyIds(userId);
+  // The holds table keys on the employee, so the company comes through them.
+  const mine = 'employee_id IN (SELECT id FROM pos_employees WHERE user_id = ANY($1::text[]))';
+  const args = [ids, payday];
+  const onlyThem = employeeId ? ' AND employee_id = $3' : '';
+  if (employeeId) args.push(employeeId);
+
+  await query(
+    `UPDATE pos_chargeback_holds SET held_payday = NULL
+      WHERE ${mine} AND held_payday = $2::date${onlyThem}`, args);
+  await query(
+    `UPDATE pos_chargeback_holds SET released_payday = NULL
+      WHERE ${mine} AND released_payday = $2::date${onlyThem}`, args);
+  // Only rows this call just emptied — a hold with no payday either side is
+  // spent, but only within the shop and the person being reopened. This one
+  // has no payday of its own to match, so it takes its own parameters.
+  const spentArgs = employeeId ? [ids, employeeId] : [ids];
+  await query(
+    `DELETE FROM pos_chargeback_holds
+      WHERE ${mine} AND held_payday IS NULL AND released_payday IS NULL${employeeId ? ' AND employee_id = $2' : ''}`,
+    spentArgs);
 }
 
 // Pin disputes to the paycheck they came off, when that paycheck is closed.

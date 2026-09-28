@@ -1772,7 +1772,7 @@ router.post('/reports/payroll/paid', async (req, res) => {
   // Reopening: the cheque never went out, so release what it was holding and
   // let those disputes go back to following the open paycheck.
   const released = await pgDb.clearChargebacksWithheld(scope, payday);
-  await pgDb.clearHoldsForPayday(payday, null);
+  await pgDb.clearHoldsForPayday(scope, payday, null);
   const result = await pgDb.setPayrollPaid(scope, payday, false, employee.name);
   res.json({ ...result, chargebacks_released: released });
 });
@@ -1852,7 +1852,7 @@ router.post('/reports/payroll/paid-employee', async (req, res) => {
     return res.json({ ...result, chargebacks_held: held, chargebacks_released: released, carried_forward });
   }
 
-  await pgDb.clearHoldsForPayday(payday, empId);
+  await pgDb.clearHoldsForPayday(scope, payday, empId);
   res.json(await pgDb.setEmployeePayrollPaid(scope, payday, empId, false, me.name));
 });
 
