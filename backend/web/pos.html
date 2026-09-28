@@ -8248,8 +8248,21 @@ function renderPaySummary(paycheck) {
         `$${money(r.commission_earned)}`)).join('')
     : '';
 
+  // A manager on a cut of the whole floor earns two different things, and a
+  // payslip that merges them invites the question "why is my commission
+  // bigger than my sales?". Say which is which.
+  const storeCut = rows.reduce((s, r) => s + Number(r.store_commission || 0), 0);
+  const ownCut = round2(earned - storeCut);
+  const split = storeCut > 0
+    ? line('<span style="padding-left:10px;color:var(--mid)">On your own sales</span>', `$${money(ownCut)}`)
+      + rows.filter(r => Number(r.store_commission || 0) > 0).map(r => line(
+          `<span style="padding-left:10px;color:var(--mid)">Store commission — ${taxPctStr(Number(r.store_rate) / 100)}% of $${money(r.store_sales)} sold${r.store_name ? ' at ' + escapeHtml(r.store_name) : ''}</span>`,
+          `$${money(r.store_commission)}`)).join('')
+    : '';
+
   const html =
     line('Commission earned', `$${money(earned)}`, { top: true })
+    + split
     + perStore
     + lines.map(a => line(escapeHtml(label(a)),
         `${Number(a.amount) < 0 ? '−' : '+'}$${money(Math.abs(Number(a.amount)))}`,

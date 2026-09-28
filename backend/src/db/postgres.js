@@ -1448,8 +1448,14 @@ const CB_FRACTION = `
 const DEFAULT_SCHEDULE = { semiMonthly: true, lag: 'previous' };
 function scheduleFrom(settings) {
   if (!settings) return DEFAULT_SCHEDULE;
+  // The setting is normally a list of days ("1,15"), but it has also been
+  // stored as words. "semi-monthly" contains no 15, so the shop that spelled
+  // it out was read as paying monthly — and a monthly schedule has one period
+  // per month, which both the 1st and the 15th then claimed. Every figure on
+  // those two paydays was the same figure, paid twice.
+  const raw = String(settings.payroll_paydays || '1,15');
   return {
-    semiMonthly: String(settings.payroll_paydays || '1,15').includes('15'),
+    semiMonthly: raw.includes('15') || /semi|twice|bi-?month/i.test(raw),
     lag: settings.payroll_lag === 'ended' ? 'ended' : 'previous',
   };
 }
@@ -1880,6 +1886,52 @@ async function payrollForPayday(userId, payday, settings) {
   for (const a of manual) {
     const r = row(a.employee_id, a.employee_name, a.commission_rate, a.company_id);
     r.adjustments.push({ kind: 'manual', id: a.id, receipt: null, amount: round2(a.amount), note: a.note || 'Manual adjustment' });
+  }
+
+  // ── A cut of the whole shop's trade ──
+  //
+  // A manager can be on a percentage of everything the store sells on top of
+  // their own sales. The commission report has always worked this out; the
+  // paycheck never did, because it reads the flat rate off the employee
+  // record and never looks at the commission plan. So the report said one
+  // figure and the cheque paid a smaller one, and the difference was the
+  // manager's store commission — for the demo's Rosa, $2,763.80 a fortnight.
+  //
+  // On the store's SALES, not its takings: subtotal, before tax. Tax is the
+  // state's money passing through the till, and nobody earns a percentage of
+  // it. storeNetSales nets returns off at the same pre-tax figure.
+  //
+  // Per company: a manager at one of two linked shops earns on the shop they
+  // manage, not on both.
+  const planRows = (await query(
+    `SELECT p.employee_id, p.store_rate, e.name AS employee_name, e.commission_rate, e.user_id AS company_id
+     FROM pos_commission_plans p
+     JOIN pos_employees e ON e.id = p.employee_id
+     WHERE p.user_id = ANY($1::text[]) AND COALESCE(p.store_rate, 0) > 0 AND e.active = 1`,
+    [ids])).rows;
+
+  if (planRows.length) {
+    const storeSalesFor = new Map();
+    for (const p of planRows) {
+      if (!storeSalesFor.has(p.company_id)) {
+        storeSalesFor.set(p.company_id, await storeNetSales(
+          p.company_id, `${period.start}T00:00:00Z`, `${period.end}T23:59:59.999Z`));
+      }
+      const rate = Number(p.store_rate) || 0;
+      const sales = round2(storeSalesFor.get(p.company_id));
+      const commission = round2(sales * rate / 100);
+      if (!commission) continue;
+      // A manager who sold nothing themselves still earns this, so the row is
+      // made if it isn't already there.
+      const r = row(p.employee_id, p.employee_name, p.commission_rate, p.company_id);
+      r.store_rate = rate;
+      r.store_sales = sales;
+      r.store_commission = commission;
+      // Split out so a payslip can say which part came from their own sales
+      // and which from the floor, the same way the report does.
+      r.own_commission = r.commission_earned;
+      r.commission_earned = round2(r.commission_earned + commission);
+    }
   }
 
   const rows = [...byEmp.values()];
