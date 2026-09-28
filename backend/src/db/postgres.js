@@ -1607,6 +1607,25 @@ async function payrollForPayday(userId, payday, settings) {
   };
   const openPayday = (date, empId) => openFrom(paydayForDate(date, sched), empId);
 
+  // ── Which cheque is still ahead of us ──
+  //
+  // Marking a payday as paid is a button somebody has to remember to press,
+  // and plenty of shops never do. That is fine for most of this — an unpaid
+  // payday genuinely is still open — but it is not fine for money owed back.
+  //
+  // A dispute won today, whose commission was held on a payday a fortnight
+  // gone, was being released onto that old payday: a cheque that in real life
+  // was handed out long ago, so the release landed somewhere nobody would
+  // ever look and the person never saw the money. A payday that has been and
+  // gone counts as gone out, ticked or not.
+  const today = new Date().toISOString().slice(0, 10);
+  const wentOut = (empId, p) => closedFor(empId, p) || (p && p < today ? p : null);
+  const openAhead = (p0, empId) => {
+    let p = p0;
+    for (let i = 0; i < 48 && p && wentOut(empId, p); i++) p = nextPayday(p, sched);
+    return p;
+  };
+
   // Every sale in the period. What's later taken back — a return, a dispute —
   // is shown as its own line rather than being quietly left out here, so the
   // paycheck shows what was earned and exactly why it was reduced; a total
@@ -1741,7 +1760,7 @@ async function payrollForPayday(userId, payday, settings) {
     const r = () => row(d.employee_id, d.employee_name, d.commission_rate, d.company_id);
 
     if (d.withheld_payday) {
-      const heldChequeWentOut = !!closedFor(d.employee_id, d.withheld_payday);
+      const heldChequeWentOut = !!wentOut(d.employee_id, d.withheld_payday);
 
       // Marked by hand: the money was dealt with elsewhere, so no cheque takes
       // it. Shown on whichever one is open, at zero, until the dispute closes.
@@ -1771,13 +1790,17 @@ async function payrollForPayday(userId, payday, settings) {
       }
 
       // Won after that cheque went out: the money is owed back, and it goes on
-      // the next cheque still open — or on the one that already paid it, so
-      // that cheque keeps explaining itself. Walked forward from the payday
-      // that held it, NOT from the day the dispute closed: a closing date is
-      // not a sale and must not go through the pay-period lag, which was
-      // pushing the release a fortnight past the first cheque that could pay.
+      // the cheque that is still ahead of us — the one being run now. Walked
+      // forward from the payday that held it, NOT from the day the dispute
+      // closed: a closing date is not a sale and must not go through the
+      // pay-period lag, which was pushing the release a fortnight past the
+      // first cheque that could pay.
+      //
+      // Once a payday is actually marked paid the release is pinned to it
+      // (released_payday) and stops moving, so a cheque that has gone out
+      // keeps explaining its own figure.
       if (d.status === 'won') {
-        const releaseOn = d.released_payday || openFrom(d.withheld_payday, d.employee_id);
+        const releaseOn = d.released_payday || openAhead(d.withheld_payday, d.employee_id);
         if (releaseOn === payday) {
           r().adjustments.push({
             kind: 'won', chargeback_id: d.chargeback_id, receipt: d.receipt_number,
@@ -1793,7 +1816,7 @@ async function payrollForPayday(userId, payday, settings) {
       // at this paycheck needs to know the money is being held and why, but it
       // has been held once already and must not be held twice.
       if (d.status === 'pending' && heldChequeWentOut
-          && openFrom(d.withheld_payday, d.employee_id) === payday) {
+          && openAhead(d.withheld_payday, d.employee_id) === payday) {
         r().adjustments.push({
           kind: 'held', chargeback_id: d.chargeback_id, employee_id: d.employee_id,
           pinned: true, receipt: d.receipt_number,

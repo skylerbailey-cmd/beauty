@@ -10,7 +10,8 @@
     "test:register": "node test/register-custom-item.test.js",
     "test:register:dom": "node test/register-custom-item.dom.test.js",
     "test:chargebacks": "node test/chargeback-dialog.dom.test.js",
-    "test:links": "node test/company-links.test.js"
+    "test:links": "node test/company-links.test.js",
+    "test:payroll-releases": "node test/won-disputes-land-ahead.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
