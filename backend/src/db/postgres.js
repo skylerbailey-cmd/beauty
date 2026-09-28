@@ -340,6 +340,8 @@ async function initSchema() {
   // something when the day does not reconcile. Off until a shop turns them on.
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS audit_auto_enabled INTEGER DEFAULT 0');
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS audit_alert_enabled INTEGER DEFAULT 0');
+  // When to run it, on the shop's own clock. 24-hour HH:MM.
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS audit_auto_time TEXT DEFAULT '09:00'");
   // One row per company per day audited, so a restart, a second web process or
   // a re-deploy cannot run the same morning twice.
   await migrate(`CREATE TABLE IF NOT EXISTS pos_audit_auto_runs (
@@ -1282,7 +1284,8 @@ async function companiesWantingAutoAudit() {
   return (await query(
     `SELECT user_id, COALESCE(timezone, 'America/Los_Angeles') AS timezone,
             COALESCE(store_name, '') AS store_name,
-            COALESCE(audit_alert_enabled, 0) AS audit_alert_enabled
+            COALESCE(audit_alert_enabled, 0) AS audit_alert_enabled,
+            COALESCE(NULLIF(TRIM(audit_auto_time), ''), '09:00') AS audit_auto_time
        FROM pos_settings WHERE COALESCE(audit_auto_enabled, 0) = 1`)).rows;
 }
 
@@ -3104,7 +3107,7 @@ async function updateSettings(userId, fields) {
     'store_email', 'store_phone', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'payarc_token', 'payarc_merchant_id', 'payarc_env', 'payroll_paydays', 'payroll_lag', 'sale_alert_phone', 'sale_alert_carrier', 'sale_alert_enabled', 'sale_alert_recipients',
     'booking_slot_step', 'booking_lead_hours',
     'return_policy_title', 'return_policy_points',
-    'audit_auto_enabled', 'audit_alert_enabled',
+    'audit_auto_enabled', 'audit_alert_enabled', 'audit_auto_time',
     // The shop's own address on the app domain. Left off this list it is
     // silently dropped — the save reports success and the subdomain never
     // exists, which is exactly what happened.

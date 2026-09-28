@@ -982,21 +982,11 @@
   <div id="txViewAudit" style="display:none">
     <div class="report-card" id="autoAuditCard">
       <h3 style="margin:0 0 4px">Nightly reconciliation</h3>
-      <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
-        Each morning at <b>9am</b> on this store's clock, yesterday is checked against what the
-        processor actually settled — so a card sale that never funded turns up the next day rather
-        than at month end. <span id="autoAuditTz"></span>
-      </p>
-      <label style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.88rem;cursor:pointer;margin-bottom:8px">
-        <input type="checkbox" id="autoAuditOn" onchange="saveAutoAudit()" style="width:16px;height:16px;accent-color:var(--success);cursor:pointer">
-        <span>Run the audit automatically every morning</span>
-      </label>
-      <label style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.88rem;cursor:pointer">
-        <input type="checkbox" id="autoAuditAlert" onchange="saveAutoAudit()" style="width:16px;height:16px;accent-color:var(--success);cursor:pointer">
-        <span>Text me when a day doesn't reconcile <span style="color:var(--mid)">— to the same numbers as sale alerts</span></span>
-      </label>
-      <div id="autoAuditStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-top:8px"></div>
-      <div id="autoAuditRuns" style="margin-top:12px"></div>
+      <!-- The switches live in Settings with the merchant connection they
+           depend on; what belongs here is whether it ran and what it found. -->
+      <p id="autoAuditState" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:10px"></p>
+      <div id="autoAuditStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:8px"></div>
+      <div id="autoAuditRuns"></div>
     </div>
 
     <div class="report-card">
@@ -1600,15 +1590,10 @@
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:system-ui,sans-serif;font-size:.85rem;margin-bottom:6px">
           <input type="checkbox" id="settingsAlertEnabled" style="width:16px;height:16px;accent-color:var(--accent)"> Send a text on every completed sale
         </label>
-        <!-- The same numbers, a different reason to use them. One is a running
-             commentary on the day; the other only speaks when something is
-             wrong, which is why a shop may well want the second without the
-             first. -->
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:system-ui,sans-serif;font-size:.85rem;margin-bottom:10px">
-          <input type="checkbox" id="settingsAuditAlertEnabled" style="width:16px;height:16px;accent-color:var(--accent)">
-          Send a text when a day doesn't reconcile with the merchant
-          <span style="color:var(--mid)">— needs the nightly audit, on the Transactions → Audit tab</span>
-        </label>
+        <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:0 0 10px">
+          These numbers are also used to tell you when a day doesn't reconcile with your
+          merchant — switch that on under <b>Merchant connections</b>.
+        </p>
         <!-- One row per person. Each needs its own carrier, so they can't just
              be a list of numbers. -->
         <div id="alertRecipients"></div>
@@ -1661,6 +1646,31 @@
           <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border)" onclick="testPayarc()">Test Connection</button>
         </div>
         <div id="payarcSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
+      </div>
+
+      <!-- The nightly reconciliation belongs with the connection it uses: with
+           no processor connected there is nothing for it to check. -->
+      <div class="report-card" data-sgroup="merchant" style="margin-top:16px">
+        <h3>Nightly reconciliation</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
+          Check yesterday against what the processor actually settled, every morning, without
+          anyone having to remember — so a card sale that never funded turns up the next day
+          rather than at month end. Results appear under <b>Transactions → Audit</b>.
+        </p>
+        <label style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.88rem;cursor:pointer;margin-bottom:10px">
+          <input type="checkbox" id="autoAuditOn" onchange="saveAutoAudit()" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer">
+          <span>Run the audit automatically every day</span>
+        </label>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:system-ui,sans-serif;font-size:.88rem;margin-bottom:10px">
+          <label for="autoAuditAt">Run it at</label>
+          <input type="time" id="autoAuditAt" onchange="saveAutoAudit()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem">
+          <span id="autoAuditTz" style="color:var(--mid)"></span>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.88rem;cursor:pointer">
+          <input type="checkbox" id="autoAuditAlert" onchange="saveAutoAudit()" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer">
+          <span>Text me when a day doesn't reconcile <span style="color:var(--mid)">— to the same numbers as sale alerts</span></span>
+        </label>
+        <div id="autoAuditSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-top:8px"></div>
       </div>
 
       <!-- Two processors are supported today. A shop on a third has no way to
@@ -7159,8 +7169,7 @@ function refreshSaleAlertState() {
   alertRecipients = list.map(r => ({ phone: r.phone || '', carrier: r.carrier || '' }));
   if (!alertRecipients.length) alertRecipients = [{ phone: '', carrier: '' }];
   document.getElementById('settingsAlertEnabled').checked = !!Number(storeSettings.sale_alert_enabled);
-  const auditAlertBox = document.getElementById('settingsAuditAlertEnabled');
-  if (auditAlertBox) auditAlertBox.checked = !!Number(storeSettings.audit_alert_enabled);
+
   renderAlertRecipients();
 }
 
@@ -7208,7 +7217,9 @@ function usableAlertRecipients() {
 async function saveSaleAlerts() {
   const statusEl = document.getElementById('saleAlertStatus');
   const enabled = document.getElementById('settingsAlertEnabled').checked;
-  const auditAlerts = !!document.getElementById('settingsAuditAlertEnabled')?.checked;
+  // The mismatch text is switched on under Merchant connections; it shares
+  // these numbers, so either one being on needs somewhere to send it.
+  const auditAlerts = !!Number(storeSettings.audit_alert_enabled);
   const usable = usableAlertRecipients();
   const partial = alertRecipients.filter(r => (r.phone || r.carrier) && !usable.includes(r)).length;
   // Both kinds of text go to the same numbers, so either one being on needs
@@ -7226,7 +7237,6 @@ async function saveSaleAlerts() {
       body: JSON.stringify({
         sale_alert_recipients: JSON.stringify(usable),
         sale_alert_enabled: enabled ? 1 : 0,
-        audit_alert_enabled: auditAlerts ? 1 : 0,
         // Keep the original single fields in step with the first recipient so
         // nothing reading them falls out of date.
         sale_alert_phone: usable[0]?.phone || '',
@@ -7991,7 +8001,7 @@ function loadTabData(tabName) {
     const f = document.getElementById('emailsFrame');
     if (f && !f.src) f.src = f.dataset.src; // load once, on first open
   }
-  if (tabName === 'settings') { applySettingsAccessUI(); loadLinkedStores(); fillReturnPolicySettings(); }
+  if (tabName === 'settings') { applySettingsAccessUI(); loadLinkedStores(); fillReturnPolicySettings(); loadAutoAudit(); }
 }
 
 // Which half of the Transactions tab is showing. Sales is one row per sale;
@@ -8019,30 +8029,58 @@ function switchTxView(view) {
 }
 
 // ─── The nightly reconciliation, as the shop sees it ─────────────────────────
+// Read by both places: the switches in Settings and the state line on the
+// Audit tab. Either may be absent depending on which the reader is looking at.
 async function loadAutoAudit() {
-  const on = document.getElementById('autoAuditOn');
-  const alertBox = document.getElementById('autoAuditAlert');
-  if (!on) return;
   try {
     const resp = await fetch(`${API}/api/pos/audit-auto`, { credentials: 'include' });
     if (!resp.ok) return;
     const data = await resp.json();
-    on.checked = !!data.enabled;
-    alertBox.checked = !!data.alert_enabled;
+    const at = (data.at || '09:00');
+    const tz = (data.timezone || '').replace(/_/g, ' ');
+
+    const on = document.getElementById('autoAuditOn');
+    const alertBox = document.getElementById('autoAuditAlert');
+    const atBox = document.getElementById('autoAuditAt');
+    if (on) on.checked = !!data.enabled;
+    if (alertBox) alertBox.checked = !!data.alert_enabled;
+    if (atBox && !atBox.matches(':focus')) atBox.value = at;
     const tzEl = document.getElementById('autoAuditTz');
-    if (tzEl) tzEl.textContent = data.timezone ? `This store's clock is ${data.timezone.replace(/_/g, ' ')}.` : '';
+    if (tzEl) tzEl.textContent = tz ? `on this store's clock (${tz})` : '';
+
     // A text nobody can receive is worth saying out loud rather than
     // discovering on the morning a day does not balance.
-    const status = document.getElementById('autoAuditStatus');
-    if (status) {
-      status.style.color = 'var(--mid)';
-      status.textContent = (alertBox.checked && !data.alerts_possible)
-        ? 'No phone number is saved for alerts — add one under Settings → Sale Text Alerts, or nothing can be sent.'
+    const needsNumber = !!data.alert_enabled && !data.alerts_possible;
+    for (const elId of ['autoAuditSaveStatus', 'autoAuditStatus']) {
+      const el = document.getElementById(elId);
+      if (!el) continue;
+      el.style.color = needsNumber ? 'var(--danger)' : 'var(--mid)';
+      el.textContent = needsNumber
+        ? 'No phone number is saved, so nothing can be sent — add one under Sale Text Alerts.'
         : '';
-      if (alertBox.checked && !data.alerts_possible) status.style.color = 'var(--danger)';
+    }
+
+    // The Audit tab says what is set without offering the switches twice.
+    const state = document.getElementById('autoAuditState');
+    if (state) {
+      state.innerHTML = data.enabled
+        ? `Runs every day at <b>${escapeHtml(prettyTime(at))}</b>${tz ? ' ' + escapeHtml(tz.startsWith('on') ? tz : 'on this store\'s clock (' + tz + ')') : ''}, checking the day before.`
+          + (data.alert_enabled ? ' You are texted when a day does not reconcile.' : '')
+          + ' <span style="color:var(--mid)">Change this under Settings → Merchant connections.</span>'
+        : 'Not running automatically. Switch it on under <b>Settings → Merchant connections</b> to check each day without having to remember.';
     }
     renderAutoAuditRuns(data.runs || []);
   } catch (_) { /* the rest of the tab still works */ }
+}
+
+// 09:00 -> 9:00am, for reading rather than for the input.
+function prettyTime(hhmm) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || ''));
+  if (!m) return hhmm;
+  const h = Number(m[1]);
+  const ampm = h < 12 ? 'am' : 'pm';
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${m[2]}${ampm}`;
 }
 
 function renderAutoAuditRuns(runs) {
@@ -8075,10 +8113,11 @@ function renderAutoAuditRuns(runs) {
 }
 
 async function saveAutoAudit() {
-  const status = document.getElementById('autoAuditStatus');
+  const status = document.getElementById('autoAuditSaveStatus');
   const body = {
     enabled: document.getElementById('autoAuditOn').checked,
     alert_enabled: document.getElementById('autoAuditAlert').checked,
+    at: document.getElementById('autoAuditAt').value || '09:00',
   };
   status.style.color = 'var(--mid)';
   status.textContent = 'Saving…';
@@ -8090,7 +8129,7 @@ async function saveAutoAudit() {
     if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || 'Could not save');
     status.style.color = 'var(--success)';
     status.textContent = body.enabled
-      ? (body.alert_enabled ? 'On. You will be texted when a day does not reconcile.' : 'On. Results appear here each morning.')
+      ? `On. Runs at ${prettyTime(body.at)} each day${body.alert_enabled ? ', and texts you when a day does not reconcile' : ''}.`
       : 'Off. Nothing will run automatically.';
     loadAutoAudit();
   } catch (err) {

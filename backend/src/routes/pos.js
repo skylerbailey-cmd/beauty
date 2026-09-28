@@ -3180,11 +3180,22 @@ router.get('/reconciliation-audit', async (req, res) => {
 // Runs off the same function the button uses, so the two can never drift.
 
 function localNow(tz) {
-  // 'en-CA' gives YYYY-MM-DD, and the hour comes back on a 24-hour clock.
+  // 'en-CA' gives YYYY-MM-DD, and a 24-hour clock for the time.
   const d = new Date();
   const day = d.toLocaleDateString('en-CA', { timeZone: tz });
-  const hour = Number(d.toLocaleString('en-US', { timeZone: tz, hour: '2-digit', hour12: false }).match(/\d+/)?.[0] ?? 0);
-  return { day, hour };
+  const hhmm = d.toLocaleTimeString('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });
+  const [h, m] = String(hhmm).split(':').map(Number);
+  return { day, hour: h || 0, minute: m || 0, minutes: (h || 0) * 60 + (m || 0) };
+}
+
+// "09:00" as minutes past midnight. Anything unreadable falls back to 9am
+// rather than to midnight, which would run the moment the day ticks over.
+function minutesOfDay(hhmm) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(hhmm || '').trim());
+  if (!m) return 9 * 60;
+  const h = Math.min(23, Math.max(0, Number(m[1])));
+  const mi = Math.min(59, Math.max(0, Number(m[2])));
+  return h * 60 + mi;
 }
 
 function yesterdayIn(tz) {
@@ -3235,8 +3246,9 @@ async function sendAuditAlert(userId, settings, text) {
 
 async function runNightlyAuditFor(company) {
   const tz = company.timezone || 'America/Los_Angeles';
-  const { hour } = localNow(tz);
-  if (hour < 9) return;                       // not yet nine where they are
+  const { minutes } = localNow(tz);
+  // Not yet the hour they picked, where they are.
+  if (minutes < minutesOfDay(company.audit_auto_time)) return;
   const day = yesterdayIn(tz);
   // The claim is the lock — see claimAutoAudit.
   if (!(await pgDb.claimAutoAudit(company.user_id, day))) return;
@@ -3292,6 +3304,7 @@ router.get('/audit-auto', async (req, res) => {
     alert_enabled: !!Number(settings?.audit_alert_enabled),
     alerts_possible: !!Number(settings?.sale_alert_enabled) || smsAddressesFor(settings).length > 0,
     timezone: settings?.timezone || 'America/Los_Angeles',
+    at: (settings?.audit_auto_time || '').trim() || '09:00',
     runs: await pgDb.recentAutoAudits(userId, 14),
   });
 });
@@ -3301,12 +3314,21 @@ router.post('/audit-auto', async (req, res) => {
   const fields = {};
   if (req.body.enabled !== undefined) fields.audit_auto_enabled = req.body.enabled ? 1 : 0;
   if (req.body.alert_enabled !== undefined) fields.audit_alert_enabled = req.body.alert_enabled ? 1 : 0;
+  if (req.body.at !== undefined) {
+    // Store only what the runner can read back.
+    const t = /^(\d{1,2}):(\d{2})$/.exec(String(req.body.at).trim());
+    if (!t) return res.status(400).json({ error: 'Give the time as HH:MM, for example 09:00.' });
+    const h = Number(t[1]), m = Number(t[2]);
+    if (h > 23 || m > 59) return res.status(400).json({ error: 'That is not a time of day.' });
+    fields.audit_auto_time = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
   if (Object.keys(fields).length) await pgDb.updateSettings(userId, fields);
   const settings = await pgDb.getSettings(userId);
   res.json({
     ok: true,
     enabled: !!Number(settings?.audit_auto_enabled),
     alert_enabled: !!Number(settings?.audit_alert_enabled),
+    at: (settings?.audit_auto_time || '').trim() || '09:00',
   });
 });
 

@@ -23,7 +23,7 @@ const dom = new JSDOM(html, { url: 'https://glowsf.sky-sale.com/pos.html', runSc
       if (/audit-auto/.test(String(url))) {
         return Promise.resolve({ ok: true, json: async () => ({
           enabled: true, alert_enabled: true, alerts_possible: false,
-          timezone: 'America/Denver',
+          timezone: 'America/Denver', at: '07:30',
           runs: [
             { audited_day: '2026-09-27', days_off: 2, difference: -6000.04, alerted: 1, note: '' },
             { audited_day: '2026-09-26', days_off: 0, difference: 0, alerted: 0, note: 'reconciled' },
@@ -85,11 +85,21 @@ setTimeout(() => {
 
   console.log('\n── The nightly panel ──');
   setTimeout(() => {
+    check('the switches are in Settings, not on the tab',
+      !id('txViewAudit').contains(id('autoAuditOn')) && !!id('autoAuditOn'));
+    check('they sit with the merchant connections',
+      id('autoAuditOn').closest('[data-sgroup]').dataset.sgroup === 'merchant',
+      id('autoAuditOn').closest('[data-sgroup]').dataset.sgroup);
     check('the switches reflect the server', id('autoAuditOn').checked && id('autoAuditAlert').checked);
+    check('the chosen time is loaded', id('autoAuditAt').value === '07:30', id('autoAuditAt').value);
     check("the store's clock is named", /America\/Denver/.test(id('autoAuditTz').textContent),
       id('autoAuditTz').textContent);
+    check('the Audit tab says when it runs, in words',
+      /7:30am/.test(id('autoAuditState').textContent), id('autoAuditState').textContent);
+    check('and points at where to change it',
+      /Merchant connections/.test(id('autoAuditState').textContent));
     check('alerts on with nowhere to send says so',
-      /No phone number is saved/.test(id('autoAuditStatus').textContent), id('autoAuditStatus').textContent);
+      /No phone number is saved/.test(id('autoAuditSaveStatus').textContent), id('autoAuditSaveStatus').textContent);
     const runs = id('autoAuditRuns').textContent.replace(/\s+/g, ' ');
     check('a morning that did not reconcile is flagged', /did not reconcile/.test(runs), runs);
     check('with the amount', /6,000\.04/.test(runs), runs);
@@ -101,20 +111,20 @@ setTimeout(() => {
     calls.length = 0;
     id('autoAuditOn').checked = false;
     id('autoAuditAlert').checked = false;
+    id('autoAuditAt').value = '06:15';
     w.eval('saveAutoAudit()');
     setTimeout(() => {
       const posted = calls.find((c) => c.method === 'POST' && /audit-auto/.test(c.url));
-      check('it saves both switches', posted && posted.body.enabled === false && posted.body.alert_enabled === false,
+      check('it saves both switches and the time',
+        posted && posted.body.enabled === false && posted.body.alert_enabled === false && posted.body.at === '06:15',
         JSON.stringify(posted && posted.body));
 
-      console.log('\n── The Settings checkbox ──');
-      check('there is one for mismatches', !!id('settingsAuditAlertEnabled'));
-      check('and the sale one is still there', !!id('settingsAlertEnabled'));
-      w.eval("storeSettings = { sale_alert_enabled: 0, audit_alert_enabled: 1 }; " +
-        "document.getElementById('settingsAlertEnabled').checked = !!Number(storeSettings.sale_alert_enabled);" +
-        "document.getElementById('settingsAuditAlertEnabled').checked = !!Number(storeSettings.audit_alert_enabled);");
-      check('a shop can have mismatch texts without sale texts',
-        id('settingsAuditAlertEnabled').checked && !id('settingsAlertEnabled').checked);
+      console.log('\n── One control, one place ──');
+      check('the sale-alert checkbox is still there', !!id('settingsAlertEnabled'));
+      check('the mismatch switch is NOT duplicated under Sale Text Alerts',
+        !id('settingsAuditAlertEnabled'));
+      check('Sale Text Alerts points at where it lives',
+        /Merchant connections/.test(id('settingsAlertEnabled').closest('.report-card').textContent));
 
       console.log(`\n${pass} passed, ${fail} failed\n`);
       process.exit(fail ? 1 : 0);
