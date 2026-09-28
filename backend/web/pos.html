@@ -1610,6 +1610,17 @@
         </div>
         <div id="payarcSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
       </div>
+
+      <!-- Two processors are supported today. A shop on a third has no way to
+           tell from this page whether that is permanent or whether we simply
+           have not got to theirs — so say so, and say who to ask. -->
+      <div data-sgroup="merchant" style="margin-top:14px;padding:12px 14px;background:var(--cream);border:1px solid var(--border);border-radius:10px;font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);line-height:1.5">
+        <b style="color:var(--dark)">Don't see your processor?</b>
+        Reconciliation works with Maverick and Payarc today. If your merchant account is with
+        someone else, email <a href="mailto:support@sky-sale.com?subject=Merchant%20connection%20request" style="color:var(--accent);font-weight:600">support@sky-sale.com</a>
+        and tell us who you process with — we'll look at adding them. Everything else
+        in the register works either way; only Run Batch Audit needs the connection.
+      </div>
       </div>
       <!-- /settingsManagerOnly -->
 
