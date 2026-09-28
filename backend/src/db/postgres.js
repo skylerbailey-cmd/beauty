@@ -333,6 +333,13 @@ async function initSchema() {
   }
   await migrate('ALTER TABLE pos_employees ADD COLUMN IF NOT EXISTS commission_rate REAL DEFAULT 0');
   await migrate('ALTER TABLE pos_commission_plans ADD COLUMN IF NOT EXISTS store_rate REAL DEFAULT 0');
+  // The reminder staff see before taking a return, in the shop's own words.
+  // One list, shown on the return screen and again in the confirmation, so a
+  // shop writes its policy once. Blank means the reminder is switched off.
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS return_policy_title TEXT DEFAULT 'Before processing a return'");
+  await migrate(`ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS return_policy_points TEXT DEFAULT 'Inspect each item — make sure nothing has been **opened or used**.
+Ask the customer if they''d like to do an **exchange** instead.
+Exchanges are only allowed within **7 days** of purchase.'`);
   // For business cards. The phone is optional; the title starts as the one
   // almost everyone here has, and is editable per person.
   await migrate("ALTER TABLE pos_employees ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT ''");
@@ -3043,6 +3050,7 @@ async function updateSettings(userId, fields) {
   const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip',
     'store_email', 'store_phone', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'payarc_token', 'payarc_merchant_id', 'payarc_env', 'payroll_paydays', 'payroll_lag', 'sale_alert_phone', 'sale_alert_carrier', 'sale_alert_enabled', 'sale_alert_recipients',
     'booking_slot_step', 'booking_lead_hours',
+    'return_policy_title', 'return_policy_points',
     // The shop's own address on the app domain. Left off this list it is
     // silently dropped — the save reports success and the subdomain never
     // exists, which is exactly what happened.

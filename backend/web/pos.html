@@ -811,13 +811,11 @@
         <div id="returnView" style="display:none">
           <!-- Hidden until a receipt that can actually be returned is found —
                it is noise for someone who only wants to reprint. -->
+          <!-- Written by the shop in Settings, and shown again in the
+               confirmation when the return is processed. -->
           <div id="returnPolicyNote" style="display:none;max-width:500px;margin-bottom:16px;padding:14px 16px;background:#fff6e0;border:1px solid #f0d48a;border-left:4px solid var(--accent2);border-radius:10px;font-family:system-ui,sans-serif">
-            <div style="font-weight:700;font-size:.85rem;color:#8a6d1f;margin-bottom:6px">⚠️ Before processing a return</div>
-            <ul style="margin:0;padding-left:18px;font-size:.82rem;color:#6b5518;line-height:1.5">
-              <li>Inspect each item — make sure nothing has been <strong>opened or used</strong>.</li>
-              <li>Ask the customer if they'd like to do an <strong>exchange</strong> instead.</li>
-              <li>Exchanges are only allowed within <strong>7 days</strong> of purchase.</li>
-            </ul>
+            <div id="returnPolicyTitle" style="font-weight:700;font-size:.85rem;color:#8a6d1f;margin-bottom:6px"></div>
+            <ul id="returnPolicyList" style="margin:0;padding-left:18px;font-size:.82rem;color:#6b5518;line-height:1.5"></ul>
           </div>
           <div class="report-card" style="max-width:500px">
             <h3 style="font-family:system-ui,sans-serif;margin-bottom:4px">Look Up a Receipt</h3>
@@ -1631,6 +1629,34 @@
         </div>
         <div id="impStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:8px"></div>
         <div id="impReview" style="display:none;margin-top:14px"></div>
+      </div>
+
+      <!-- The reminder staff get before taking a return, in the shop's own
+           words. Shown on the return screen and again in the confirmation. -->
+      <div class="report-card" data-sgroup="brands" style="margin-top:16px">
+        <h3>Return policy reminder</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
+          Staff see this on the return screen, and again when they press Process Return.
+          One point per line. Wrap anything in <code>**stars**</code> to show it in bold.
+          Leave it empty and staff are not reminded at all.
+        </p>
+        <div class="field">
+          <label>Heading</label>
+          <input type="text" id="setReturnPolicyTitle" maxlength="80" placeholder="Before processing a return">
+        </div>
+        <div class="field">
+          <label>Points — one per line</label>
+          <textarea id="setReturnPolicyPoints" rows="5" placeholder="Inspect each item — make sure nothing has been **opened or used**."
+            style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;resize:vertical"></textarea>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-confirm" onclick="saveReturnPolicy()">Save</button>
+          <span id="setReturnPolicyStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)"></span>
+        </div>
+        <div style="margin-top:14px">
+          <div style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-bottom:6px">How it will look:</div>
+          <div id="setReturnPolicyPreview" style="max-width:500px;padding:14px 16px;background:#fff6e0;border:1px solid #f0d48a;border-left:4px solid var(--accent2);border-radius:10px;font-family:system-ui,sans-serif"></div>
+        </div>
       </div>
 
       <!-- Two shops, one roster. Staff who work across both see their own
@@ -2966,6 +2992,42 @@ function jumpToCart() {
   if (cartEl) cartEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+// ─── The shop's return reminder ──────────────────────────────────────────────
+// One list, written in Settings, shown on the return screen and again in the
+// confirmation. Blank lines are ignored so the shop can space the text out,
+// and **like this** reads as bold on screen — the confirmation is a plain
+// browser dialog, so there the markers are simply dropped.
+const RETURN_POLICY_FALLBACK = [
+  'Inspect each item — make sure nothing has been **opened or used**.',
+  "Ask the customer if they'd like to do an **exchange** instead.",
+  'Exchanges are only allowed within **7 days** of purchase.',
+];
+
+function returnPolicyPoints() {
+  const raw = storeSettings.return_policy_points;
+  // Only fall back before the shop has ever saved this. Once they have,
+  // clearing it means they want no reminder at all, not the default back.
+  const list = (raw === undefined || raw === null ? RETURN_POLICY_FALLBACK.join('\n') : String(raw))
+    .split('\n').map(l => l.trim()).filter(Boolean);
+  return list.map(l => l.replace(/\*\*(.+?)\*\*/g, '$1'));
+}
+
+function renderReturnPolicyNote() {
+  const box = document.getElementById('returnPolicyNote');
+  const titleEl = document.getElementById('returnPolicyTitle');
+  const listEl = document.getElementById('returnPolicyList');
+  if (!box || !titleEl || !listEl) return;
+  const raw = storeSettings.return_policy_points;
+  const lines = (raw === undefined || raw === null ? RETURN_POLICY_FALLBACK.join('\n') : String(raw))
+    .split('\n').map(l => l.trim()).filter(Boolean);
+  box.dataset.empty = lines.length ? '' : '1';
+  const title = (storeSettings.return_policy_title || '').trim() || 'Before processing a return';
+  titleEl.textContent = '⚠️ ' + title;
+  listEl.innerHTML = lines
+    .map(l => `<li>${escapeHtml(l).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')}</li>`)
+    .join('');
+}
+
 // ─── Mode Toggle ────────────────────────────────────────────────────────────
 let returnOriginalTx = null;
 
@@ -3043,7 +3105,9 @@ async function lookupReceipt() {
 
     returnOriginalTx = canReturn ? tx : null;
     lookedUpTx = tx;
-    document.getElementById('returnPolicyNote').style.display = canReturn ? '' : 'none';
+    renderReturnPolicyNote();
+    const note = document.getElementById('returnPolicyNote');
+    note.style.display = (canReturn && !note.dataset.empty) ? '' : 'none';
     document.getElementById('returnActions').style.display = canReturn ? 'inline-flex' : 'none';
     const notAllowed = document.getElementById('returnNotAllowed');
     notAllowed.style.display = canReturn ? 'none' : '';
@@ -3533,15 +3597,20 @@ async function processTransaction() {
     }
   }
 
-  // Return checklist reminder
+  // The shop's own return reminder, once more before it goes through. Same
+  // words as the note on screen — written once in Settings. A shop that has
+  // cleared it is not asked anything.
   if (currentMode === 'return') {
-    const proceed = confirm(
-      'Return checklist:\n\n' +
-      '• Have you inspected the items to confirm nothing has been opened or used?\n' +
-      '• Did you offer the customer an exchange instead? (Exchanges are only allowed within 7 days of purchase.)\n\n' +
-      'Click OK to continue with the return.'
-    );
-    if (!proceed) return;
+    const points = returnPolicyPoints();
+    if (points.length) {
+      const heading = (storeSettings.return_policy_title || '').trim() || 'Before processing a return';
+      const proceed = confirm(
+        heading + '\n\n'
+        + points.map(p => '•  ' + p).join('\n')
+        + '\n\nClick OK to continue with the return.'
+      );
+      if (!proceed) return;
+    }
   }
 
   // Validate employee commissions
@@ -7797,7 +7866,7 @@ function loadTabData(tabName) {
     const f = document.getElementById('emailsFrame');
     if (f && !f.src) f.src = f.dataset.src; // load once, on first open
   }
-  if (tabName === 'settings') { applySettingsAccessUI(); loadLinkedStores(); }
+  if (tabName === 'settings') { applySettingsAccessUI(); loadLinkedStores(); fillReturnPolicySettings(); }
 }
 
 // Which half of the Transactions tab is showing. Sales is one row per sale;
@@ -9636,6 +9705,61 @@ async function saveCompanyName() {
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── The return reminder, as the shop writes it ──────────────────────────────
+function fillReturnPolicySettings() {
+  const t = document.getElementById('setReturnPolicyTitle');
+  const p = document.getElementById('setReturnPolicyPoints');
+  if (!t || !p) return;
+  t.value = storeSettings.return_policy_title || '';
+  // Undefined means nothing has ever been saved, so show the default they are
+  // about to edit. An empty string is a deliberate "no reminder" and stays empty.
+  p.value = storeSettings.return_policy_points === undefined || storeSettings.return_policy_points === null
+    ? RETURN_POLICY_FALLBACK.join('\n')
+    : storeSettings.return_policy_points;
+  previewReturnPolicy();
+  t.oninput = previewReturnPolicy;
+  p.oninput = previewReturnPolicy;
+}
+
+function previewReturnPolicy() {
+  const box = document.getElementById('setReturnPolicyPreview');
+  if (!box) return;
+  const title = (document.getElementById('setReturnPolicyTitle').value || '').trim() || 'Before processing a return';
+  const lines = String(document.getElementById('setReturnPolicyPoints').value || '')
+    .split('\n').map(l => l.trim()).filter(Boolean);
+  if (!lines.length) {
+    box.innerHTML = '<div style="font-size:.82rem;color:var(--mid)">Nothing — staff will not be reminded before a return.</div>';
+    return;
+  }
+  box.innerHTML = `<div style="font-weight:700;font-size:.85rem;color:#8a6d1f;margin-bottom:6px">⚠️ ${escapeHtml(title)}</div>`
+    + '<ul style="margin:0;padding-left:18px;font-size:.82rem;color:#6b5518;line-height:1.5">'
+    + lines.map(l => `<li>${escapeHtml(l).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')}</li>`).join('')
+    + '</ul>';
+}
+
+async function saveReturnPolicy() {
+  const status = document.getElementById('setReturnPolicyStatus');
+  const body = {
+    return_policy_title: document.getElementById('setReturnPolicyTitle').value.trim(),
+    return_policy_points: document.getElementById('setReturnPolicyPoints').value,
+  };
+  status.textContent = 'Saving…';
+  try {
+    const resp = await fetch(`${API}/api/pos/settings`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      credentials: 'include', body: JSON.stringify(body),
+    });
+    if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || 'Could not save');
+    Object.assign(storeSettings, body);
+    renderReturnPolicyNote();
+    status.style.color = 'var(--success)';
+    status.textContent = 'Saved. Staff see this on the next return.';
+  } catch (err) {
+    status.style.color = 'var(--danger)';
+    status.textContent = err.message;
+  }
 }
 
 // ─── Stores that share a roster ─────────────────────────────────────────────
