@@ -1792,6 +1792,11 @@ async function payrollForPayday(userId, payday, settings) {
         r().adjustments.push({
           kind: 'withheld', chargeback_id: d.chargeback_id, employee_id: d.employee_id,
           pinned: true, receipt: d.receipt_number,
+          // Where the dispute stands, so the line can say so. This same line
+          // carries the money for a dispute still open and for one already
+          // lost, and calling both "dispute opened" sent people hunting for a
+          // lost one in the open list, where it will never be.
+          status: d.status,
           amount: -commission, note: `dispute on the ${d.sale_date} sale${card} — held back`,
         });
       }

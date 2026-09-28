@@ -8242,6 +8242,11 @@ function renderPaySummary(paycheck) {
     if (a.kind === 'lost') return 'Dispute lost — taken back';
     if (a.kind === 'return') return a.note || 'Returned after this was paid';
     if (a.kind === 'carry') return a.note || 'Negative amount carried from the last paycheck';
+    // The same line carries a dispute still running and one already lost. Say
+    // which: a lost one is never in the open list, so calling it "opened"
+    // sends people looking for it where it cannot be.
+    if (a.status === 'lost') return 'Dispute lost — the money held is kept';
+    if (a.status === 'won') return 'Dispute won — held on this cheque, released on the next';
     return 'Held from pay — dispute opened';
   };
   const line = (text, amount, opts = {}) => `
