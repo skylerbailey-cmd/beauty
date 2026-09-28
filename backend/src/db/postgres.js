@@ -302,6 +302,18 @@ async function initSchema() {
   `);
   // Migrations for existing DBs
   const migrate = async (sql) => { try { await query(sql); } catch (_) {} };
+
+  // One receipt number per company. Numbers are handed out per shop, so the
+  // uniqueness that matters is within a shop — two shops both having a 1042 is
+  // correct and expected. This is what makes the retry in createTransaction
+  // work: without it, two tills ringing up together would both get 1042 and
+  // both be written. Unlike the migrations below, a failure here is worth
+  // knowing about, because something would have to already be duplicated.
+  try {
+    await query('CREATE UNIQUE INDEX IF NOT EXISTS idx_pg_tx_receipt_company ON pos_transactions(user_id, receipt_number)');
+  } catch (err) {
+    console.warn('[db] could not enforce one receipt number per company:', err.message);
+  }
   await migrate('ALTER TABLE pos_employees ADD COLUMN IF NOT EXISTS commission_rate REAL DEFAULT 0');
   await migrate('ALTER TABLE pos_commission_plans ADD COLUMN IF NOT EXISTS store_rate REAL DEFAULT 0');
   // For business cards. The phone is optional; the title starts as the one
@@ -862,19 +874,36 @@ async function setProductPrice(productId, price, minPrice, cost, userId) {
 
 // ─── Transactions ───────────────────────────────────────────────────────────
 
-async function generateReceiptNumber() {
-  const result = await query("SELECT COALESCE(MAX(CAST(receipt_number AS INTEGER)), 1000) as num FROM pos_transactions WHERE receipt_number ~ '^[0-9]+$'");
+// Receipt numbers run per company, not across the platform. A shop's first
+// sale is 1001 and its own numbering carries on from there, untouched by how
+// many sales anyone else has made — which is what a shop expects of its own
+// books, and stops one shop's receipt numbers from disclosing how busy the
+// rest of the platform is.
+//
+// A shop that imported history from another system keeps whatever numbering
+// came with it (HV-1042, 1501-1338LC1); those aren't plain integers, so they
+// sit outside this sequence and don't move it.
+async function generateReceiptNumber(userId) {
+  const result = await query(
+    "SELECT COALESCE(MAX(CAST(receipt_number AS INTEGER)), 1000) as num FROM pos_transactions WHERE user_id = $1 AND receipt_number ~ '^[0-9]+$'",
+    [userId || '']
+  );
   return String((result.rows[0]?.num || 1000) + 1);
 }
 
-// Ensure a receipt number is unique (returns can collide on "R<num>" if a sale
-// is returned more than once — append -2, -3, … in that case).
-async function uniqueReceiptNumber(base) {
+// Ensure a receipt number is unique within the company (returns can collide on
+// "R<num>" if a sale is returned more than once — append -2, -3, … in that
+// case). Scoped to the one shop: another shop's R1042 is none of its business
+// and must not push this one's receipt to R1042-2.
+async function uniqueReceiptNumber(base, userId) {
   let candidate = base;
   let n = 1;
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const exists = (await query('SELECT 1 FROM pos_transactions WHERE receipt_number = $1 LIMIT 1', [candidate])).rows.length > 0;
+    const exists = (await query(
+      'SELECT 1 FROM pos_transactions WHERE receipt_number = $1 AND user_id = $2 LIMIT 1',
+      [candidate, userId || '']
+    )).rows.length > 0;
     if (!exists) return candidate;
     n += 1;
     candidate = `${base}-${n}`;
@@ -882,10 +911,33 @@ async function uniqueReceiptNumber(base) {
 }
 
 async function createTransaction(txData) {
+  // Two tills ringing up at the same moment can read the same "highest so far"
+  // and pick the same next number. The unique index on (user_id,
+  // receipt_number) refuses the second one; take the next number and try
+  // again rather than letting a shop end up with two receipt 1042s.
+  let result;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      result = await insertTransaction(txData);
+      break;
+    } catch (err) {
+      if (err.code !== '23505' || attempt >= 5) throw err;
+    }
+  }
+  const id = result.rows[0].id;
+  // Record individual tenders (split payment). The route always passes at least
+  // one; guard anyway so a caller that omits them doesn't crash.
+  if (Array.isArray(txData.payments) && txData.payments.length) {
+    await addTransactionPayments(id, txData.payments);
+  }
+  return { id, receipt_number: result.rows[0].receipt_number };
+}
+
+async function insertTransaction(txData) {
   const receiptNumber = txData.receipt_number
-    ? await uniqueReceiptNumber(txData.receipt_number)
-    : await generateReceiptNumber();
-  const result = await query(
+    ? await uniqueReceiptNumber(txData.receipt_number, txData.user_id)
+    : await generateReceiptNumber(txData.user_id);
+  return query(
     `INSERT INTO pos_transactions
       (type, employee_id, customer_id, customer_name, customer_email, customer_phone,
        subtotal, tax_rate, tax_amount, discount_amount, total,
@@ -901,13 +953,6 @@ async function createTransaction(txData) {
       txData.original_sale_date || null, txData.employees_changed ? 1 : 0, txData.user_id,
     ]
   );
-  const id = result.rows[0].id;
-  // Record individual tenders (split payment). The route always passes at least
-  // one; guard anyway so a caller that omits them doesn't crash.
-  if (Array.isArray(txData.payments) && txData.payments.length) {
-    await addTransactionPayments(id, txData.payments);
-  }
-  return { id, receipt_number: result.rows[0].receipt_number };
 }
 
 async function addTransactionPayments(transactionId, payments) {

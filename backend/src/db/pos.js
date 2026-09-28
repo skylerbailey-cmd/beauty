@@ -104,15 +104,17 @@ function getProductPrice(productId, userId) {
 
 // ─── Transactions ───────────────────────────────────────────────────────────
 
-function generateReceiptNumber() {
-  // Simple incrementing receipt number per store
-  const last = db.prepare('SELECT MAX(CAST(receipt_number AS INTEGER)) as num FROM pos_transactions WHERE receipt_number GLOB \'[0-9]*\'').get();
+function generateReceiptNumber(userId) {
+  // Per store, and genuinely so: scoped to this company's own rows, so its
+  // first sale is 1001 whatever anyone else has rung up. Matches the Postgres
+  // side, which is the one that counts.
+  const last = db.prepare('SELECT MAX(CAST(receipt_number AS INTEGER)) as num FROM pos_transactions WHERE user_id = ? AND receipt_number GLOB \'[0-9]*\'').get(userId || '');
   const next = (last?.num || 1000) + 1;
   return String(next);
 }
 
 function createTransaction(txData) {
-  const receiptNumber = generateReceiptNumber();
+  const receiptNumber = generateReceiptNumber(txData.user_id);
   const result = db.prepare(`
     INSERT INTO pos_transactions
       (type, employee_id, customer_id, customer_name, customer_email,
