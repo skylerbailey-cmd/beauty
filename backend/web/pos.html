@@ -4945,10 +4945,10 @@ function renderChargebackList() {
   }
   const label = { pending: 'Pending', won: 'Closed won', lost: 'Closed lost' };
   el.innerHTML = cbs.map(c => `
-    <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem">
+    <div style="display:flex;align-items:center;gap:8px;padding:6px ${c.id === chargebackEditId ? '8px' : '0'};border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem${c.id === chargebackEditId ? ';background:var(--accent-soft);border-radius:8px' : ''}">
       <span class="tx-chargeback cb-${c.status}" style="margin:0">${label[c.status] || c.status}</span>
       <span style="flex:1">$${money(c.amount)}${c.card_last4 ? ` · ****${escapeHtml(c.card_last4)}` : ''}${c.closed_at ? ` · closed ${c.closed_at}` : ''}${c.note ? ` · ${escapeHtml(c.note)}` : ''}</span>
-      <button type="button" onclick="editChargeback(${c.id})" style="border:none;background:none;color:var(--accent);text-decoration:underline;cursor:pointer;font-size:.8rem">Edit</button>
+      <button type="button" onclick="editChargeback(${c.id})" style="border:1px solid var(--accent);background:${c.id === chargebackEditId ? 'var(--accent)' : 'var(--white)'};color:${c.id === chargebackEditId ? 'white' : 'var(--accent)'};border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.78rem;font-weight:600;white-space:nowrap">${c.id === chargebackEditId ? 'Editing' : 'Edit'}</button>
       <button type="button" onclick="removeChargeback(${c.id})" title="Remove" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:1rem;line-height:1">&times;</button>
     </div>`).join('')
     + `<div style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:6px">$${money(used)} of $${money(chargebackMaxAmount)} disputed · $${money(left)} left</div>`;
@@ -4960,6 +4960,16 @@ function resetChargebackForm() {
   const cbs = (chargebackTarget && chargebackTarget.chargebacks) || [];
   const used = cbs.reduce((s, c) => s + Number(c.amount || 0), 0);
   const left = Math.max(0, round2(chargebackMaxAmount - used));
+
+  // Every dollar of the sale is already disputed and there is one dispute
+  // holding it. Nothing can be added — the server would refuse it — and the
+  // only thing anyone opens this for is to move that dispute along, from
+  // pending to won or lost. So start there, rather than presenting a form
+  // that looks like the way to do it and can only fail.
+  if (cbs.length === 1 && left <= 0 && chargebackMaxAmount > 0) {
+    editChargeback(cbs[0].id);
+    return;
+  }
   document.getElementById('cbAmountLabel').textContent = cbs.length ? 'Amount disputed (another card)' : 'Amount disputed';
   document.getElementById('cbAmount').value = left > 0 ? left.toFixed(2) : '';
   document.getElementById('cbCard').value = '';
@@ -4999,6 +5009,20 @@ function updateChargebackForm() {
     noteEl.textContent = `${pct.toFixed(1)}% of the $${money(chargebackMaxAmount)} sale — only that share of the commission is affected.`;
   }
 
+  // With several disputes already covering the whole sale there is no single
+  // one to load, so the add form stays — but it cannot succeed. Say so on the
+  // button instead of letting them fill it in and be refused.
+  const btn = document.getElementById('cbSaveBtn');
+  if (btn && !chargebackTargets) {
+    const cbs = (chargebackTarget && chargebackTarget.chargebacks) || [];
+    const spent = cbs.filter(c => c.id !== chargebackEditId).reduce((s, c) => s + Number(c.amount || 0), 0);
+    const noRoom = chargebackMaxAmount > 0 && round2(chargebackMaxAmount - spent) <= 0 && !chargebackEditId;
+    btn.disabled = noRoom;
+    btn.style.opacity = noRoom ? '.45' : '';
+    btn.style.cursor = noRoom ? 'not-allowed' : '';
+    btn.title = noRoom ? 'The whole sale is already disputed. Press Edit on a dispute above to change it.' : '';
+  }
+
   const effect = {
     pending: 'Commission on this share is held back until the dispute closes.',
     won: 'The store kept the money. The held-back commission is paid on the paycheck covering the date it closed.',
@@ -5019,6 +5043,7 @@ function editChargeback(id) {
   document.getElementById('cbNote').value = c.note || '';
   const btn = document.getElementById('cbSaveBtn');
   if (btn) btn.textContent = 'Update dispute';
+  renderChargebackList();
   updateChargebackForm();
 }
 
