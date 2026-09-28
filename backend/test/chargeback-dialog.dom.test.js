@@ -62,70 +62,97 @@ setTimeout(() => {
     openChargebackModal(sale);
   `);
 
-  console.log('\n── A fully disputed sale opens ready to change what is there ──');
-  check('the existing dispute is listed', !!$('#cbExisting button'), true);
-  check('it opens in edit mode, not add mode', id('cbSaveBtn').textContent, 'Update dispute');
-  check('the dispute is already loaded', w.eval('chargebackEditId'), 77);
-  check('its amount is in the box', id('cbAmount').value, '8763.19');
-  check('its card is in the box', id('cbCard').value, '9625');
-  check('the row says it is the one being edited', /Editing/.test(id('cbExisting').textContent), true);
-  check('it says nothing is left to add', /\$0\.00 left/.test(id('cbExisting').textContent), true);
-  check('the save button is live', id('cbSaveBtn').disabled, false);
+  console.log('\n── The dispute is changed on its own row ──');
+  const row = () => id('cbExisting');
+  const rowSelect = () => row().querySelector('select');
+  const rowButtons = () => [...row().querySelectorAll('button')].map(b => b.textContent.trim());
 
-  console.log('\n── Moving it from pending to closed won ──');
-  {
-    id('cbStatus').value = 'won';
-    w.eval('updateChargebackForm()');
-    id('cbClosedAt').value = '2026-09-28';
-    w.eval('saveChargeback()');
-  }
+  check('the row carries a status dropdown', !!rowSelect(), true);
+  check('showing where it stands', rowSelect().value, 'pending');
+  check('no Save until something is changed', rowButtons().includes('Save'), false);
+  check('the add form is put away — nothing left to add', id('cbAddForm').hidden, true);
+  check('its button goes with it', id('cbSaveBtn').hidden, true);
+  check('only one status control is on screen', row().querySelectorAll('select').length
+    + (id('cbAddForm').hidden ? 0 : 1), 1);
+  check('and it says why', /already disputed/.test(id('cbAddNothing').textContent), true);
+
+  console.log('\n── Pick "Closed won" on the row ──');
+  w.eval("chargebackRowStatus(77, 'won')");
+  check('a Save appears on the row', rowButtons().includes('Save'), true);
+  check('so does a Cancel', rowButtons().includes('Cancel'), true);
+  check('a close date is offered, defaulted to today',
+    row().querySelector('input[type=date]').value, new Date().toISOString().slice(0, 10));
+  check('it spells out what won means for the money',
+    /held-back commission is paid/.test(row().textContent), true);
+
+  console.log('\n── Press Save on the row ──');
+  calls.length = 0;
+  w.eval("chargebackRowDate(77, '2026-09-15'); saveChargebackRow(77)");
   setTimeout(() => {
     const posted = calls.filter(c => c.method === 'POST').pop();
-    check('it UPDATES the dispute rather than adding one', posted && posted.body.id, 77);
-    check('with the new status', posted && posted.body.status, 'won');
-    check('and the close date', posted && posted.body.closed_at, '2026-09-28');
+    check('it updates that dispute', posted && posted.body.id, 77);
+    check('to closed won', posted && posted.body.status, 'won');
+    check('on the date given', posted && posted.body.closed_at, '2026-09-15');
+    check('keeping its amount', posted && posted.body.amount, 8763.19);
+    check('and its card', posted && posted.body.card_last4, '9625');
 
-    console.log('\n── Edit still works when reached by hand ──');
-    calls.length = 0;
+    console.log('\n── Closing one needs a date ──');
     w.eval(`
-      chargebackTarget.chargebacks = [
-        { id: 77, amount: 4000, card_last4: '9625', status: 'pending', closed_at: null, note: '' },
-        { id: 78, amount: 4763.19, card_last4: '1111', status: 'pending', closed_at: null, note: '' }
-      ];
-      renderChargebackList(); resetChargebackForm();
+      chargebackTarget.chargebacks = [{ id: 77, amount: 8763.19, card_last4: '9625', status: 'pending', closed_at: null, note: '' }];
+      renderChargebackList();
+      chargebackRowStatus(77, 'lost');
+      chargebackRowDate(77, '');
     `);
-    check('two disputes covering it all: no auto-edit', w.eval('chargebackEditId'), null);
-    check('and adding is refused up front', id('cbSaveBtn').disabled, true);
-    w.eval('editChargeback(77)');
-    check('the button changes to Update', id('cbSaveBtn').textContent, 'Update dispute');
-    check('the amount is loaded from the dispute', id('cbAmount').value, '4000.00');
-    check('the card is loaded', id('cbCard').value, '9625');
-    check('the status starts where it was', id('cbStatus').value, 'pending');
-    check('the edit id is held', w.eval('chargebackEditId'), 77);
-    check('editing re-enables the save button', id('cbSaveBtn').disabled, false);
-
-    console.log('\n── A partly disputed sale can still take another card ──');
-    w.eval(`
-      chargebackTarget.chargebacks = [{ id: 79, amount: 3000, card_last4: '9625', status: 'pending', closed_at: null, note: '' }];
-      renderChargebackList(); resetChargebackForm();
-    `);
-    check('no auto-edit when room is left', w.eval('chargebackEditId'), null);
-    check('it offers to add another', id('cbSaveBtn').textContent, 'Add dispute');
-    check('adding is allowed', id('cbSaveBtn').disabled, false);
-    check('prefilled with what is left', id('cbAmount').value, '5763.19');
-
-    // Adding that second card goes through as a NEW dispute, which is what
-    // the add form is actually for.
     calls.length = 0;
-    id('cbCard').value = '4242';
-    w.eval('saveChargeback()');
+    w.eval('saveChargebackRow(77)');
+    check('it refuses to save without one', calls.filter(c => c.method === 'POST').length, 0);
+    check('and says why', /date the dispute closed/.test(id('cbError').textContent), true);
+
+    console.log('\n── Back to pending needs no date ──');
+    w.eval(`
+      chargebackTarget.chargebacks = [{ id: 77, amount: 8763.19, card_last4: '9625', status: 'won', closed_at: '2026-09-15', note: '' }];
+      cbRowEdits = {}; renderChargebackList();
+      chargebackRowStatus(77, 'pending');
+    `);
+    check('no date field is asked for', !row().querySelector('input[type=date]'), true);
+    calls.length = 0;
+    w.eval('saveChargebackRow(77)');
     setTimeout(() => {
-      const posted = calls.filter(c => c.method === 'POST').pop();
-      check('adding another card posts a new dispute', posted && posted.body.id, null);
-      check('for what was left of the sale', posted && posted.body.amount, 5763.19);
+      const p2 = calls.filter(c => c.method === 'POST').pop();
+      check('it saves as pending', p2 && p2.body.status, 'pending');
+      check('clearing the close date', p2 && p2.body.closed_at, null);
 
-      console.log(`\n${pass} passed, ${fail} failed\n`);
-      process.exit(fail ? 1 : 0);
+      console.log('\n── Cancel puts the row back ──');
+      w.eval(`
+        chargebackTarget.chargebacks = [{ id: 77, amount: 8763.19, card_last4: '9625', status: 'pending', closed_at: null, note: '' }];
+        cbRowEdits = {}; renderChargebackList();
+        chargebackRowStatus(77, 'won');
+      `);
+      check('Save is showing', rowButtons().includes('Save'), true);
+      w.eval('cancelChargebackRow(77)');
+      check('Cancel clears it', rowButtons().includes('Save'), false);
+      check('and the dropdown is back where it was', rowSelect().value, 'pending');
+
+      console.log('\n── A sale with room left can still add another card ──');
+      w.eval(`
+        chargebackTarget.chargebacks = [{ id: 79, amount: 3000, card_last4: '9625', status: 'pending', closed_at: null, note: '' }];
+        cbRowEdits = {}; renderChargebackList(); resetChargebackForm();
+      `);
+      check('the add form is back', id('cbAddForm').hidden, false);
+      check('and its button', id('cbSaveBtn').hidden, false);
+      check('labelled for what it does', id('cbSaveBtn').textContent, 'Add another dispute');
+      check('prefilled with what is left', id('cbAmount').value, '5763.19');
+      calls.length = 0;
+      id('cbCard').value = '4242';
+      w.eval('saveChargeback()');
+      setTimeout(() => {
+        const p3 = calls.filter(c => c.method === 'POST').pop();
+        check('which posts a new dispute, not an update', p3 && p3.body.id, null);
+        check('for the balance', p3 && p3.body.amount, 5763.19);
+
+        console.log(`\n${pass} passed, ${fail} failed\n`);
+        process.exit(fail ? 1 : 0);
+      }, 200);
     }, 200);
   }, 200);
 }, 600);

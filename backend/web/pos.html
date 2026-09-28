@@ -1923,6 +1923,13 @@
     <!-- Disputes already on this sale. A sale paid on several cards can have
          one per card, so they're listed and added to rather than replaced. -->
     <div id="cbExisting" style="margin-bottom:14px"></div>
+    <!-- Everything from here to the note is for ADDING a dispute. Where an
+         existing dispute stands is changed on its own row above. When the
+         sale is fully disputed there is nothing to add, so this is replaced
+         by a line saying so. -->
+    <div id="cbAddNothing" style="display:none;font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);background:var(--cream);border-radius:8px;padding:10px 12px;margin-bottom:14px"></div>
+    <div id="cbAddForm">
+    <div id="cbAddHeading" style="font-family:system-ui,sans-serif;font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);border-top:1px solid var(--border);padding-top:12px;margin-bottom:10px;display:none">Add another dispute</div>
     <div class="field">
       <label id="cbAmountLabel">Amount disputed</label>
       <div style="display:flex;align-items:center;gap:6px">
@@ -1954,6 +1961,7 @@
       <label>Note (optional)</label>
       <input type="text" id="cbNote" placeholder="Reference, reason, who handled it">
     </div>
+    </div><!-- /cbAddForm -->
     <div id="cbError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger);margin-bottom:8px"></div>
     <div class="modal-actions" style="justify-content:space-between">
       <button class="btn" id="cbRemoveBtn" style="background:var(--cream);color:var(--mid);border:1.5px dashed var(--border)" onclick="saveChargeback(true)">Remove all</button>
@@ -4904,9 +4912,11 @@ let chargebackTarget = null;
 let chargebackTargets = null;
 let chargebackMaxAmount = 0;   // the sale's total, for the "full amount" shortcut
 let chargebackEditId = null;   // the dispute being edited, if any
+let cbRowEdits = {};           // status changes picked on a row, not yet saved
 function openChargebackModal(tx) {
   chargebackTarget = tx;
   chargebackTargets = null;   // single sale, not a batch
+  cbRowEdits = {};            // no half-made status changes carried in
   document.getElementById('cbReceipt').textContent = tx.receipt_number;
   document.getElementById('cbSummary').textContent =
     `$${money(tx.total)} from ${tx.customer_name || 'this customer'} on ${new Date(tx.created_at).toLocaleDateString()}`;
@@ -4924,6 +4934,7 @@ function openChargebackModal(tx) {
 
 function closeChargebackModal() {
   document.getElementById('chargebackModal').classList.remove('show');
+  cbRowEdits = {};
   chargebackTarget = null;
   chargebackTargets = null;
   chargebackEditId = null;
@@ -4943,15 +4954,109 @@ function renderChargebackList() {
     el.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)">No disputes recorded on this sale yet.</div>';
     return;
   }
-  const label = { pending: 'Pending', won: 'Closed won', lost: 'Closed lost' };
-  el.innerHTML = cbs.map(c => `
-    <div style="display:flex;align-items:center;gap:8px;padding:6px ${c.id === chargebackEditId ? '8px' : '0'};border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem${c.id === chargebackEditId ? ';background:var(--accent-soft);border-radius:8px' : ''}">
-      <span class="tx-chargeback cb-${c.status}" style="margin:0">${label[c.status] || c.status}</span>
-      <span style="flex:1">$${money(c.amount)}${c.card_last4 ? ` · ****${escapeHtml(c.card_last4)}` : ''}${c.closed_at ? ` · closed ${c.closed_at}` : ''}${c.note ? ` · ${escapeHtml(c.note)}` : ''}</span>
-      <button type="button" onclick="editChargeback(${c.id})" style="border:1px solid var(--accent);background:${c.id === chargebackEditId ? 'var(--accent)' : 'var(--white)'};color:${c.id === chargebackEditId ? 'white' : 'var(--accent)'};border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.78rem;font-weight:600;white-space:nowrap">${c.id === chargebackEditId ? 'Editing' : 'Edit'}</button>
-      <button type="button" onclick="removeChargeback(${c.id})" title="Remove" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:1rem;line-height:1">&times;</button>
-    </div>`).join('')
+  // Where a dispute stands is changed on the dispute itself. Pick the new
+  // status on its own row and it saves there — no second form to find, and
+  // nothing to work out about which button means what. The form underneath
+  // only ever adds a dispute.
+  el.innerHTML = cbs.map(c => {
+    const pending = cbRowEdits[c.id] || null;
+    const status = pending ? pending.status : c.status;
+    const closedAt = pending ? pending.closed_at : (c.closed_at || '');
+    const dirty = !!pending;
+    return `
+    <div style="padding:8px ${dirty ? '10px' : '0'};border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.82rem${dirty ? ';background:var(--accent-soft);border-radius:8px' : ''}">
+      <div style="display:flex;align-items:center;gap:8px">
+        <select onchange="chargebackRowStatus(${c.id}, this.value)" title="Where this dispute stands"
+                style="font-family:system-ui,sans-serif;font-size:.8rem;font-weight:600;padding:5px 8px;border:1.5px solid var(--border);border-radius:7px;background:var(--white);cursor:pointer">
+          <option value="pending"${status === 'pending' ? ' selected' : ''}>Pending</option>
+          <option value="won"${status === 'won' ? ' selected' : ''}>Closed won</option>
+          <option value="lost"${status === 'lost' ? ' selected' : ''}>Closed lost</option>
+        </select>
+        <span style="flex:1">$${money(c.amount)}${c.card_last4 ? ` · ****${escapeHtml(c.card_last4)}` : ''}${!dirty && c.closed_at ? ` · closed ${c.closed_at}` : ''}${c.note ? ` · ${escapeHtml(c.note)}` : ''}</span>
+        <button type="button" onclick="editChargeback(${c.id})" title="Change the amount, card or note"
+                style="border:1px solid var(--border);background:var(--white);color:var(--mid);border-radius:6px;padding:4px 9px;cursor:pointer;font-size:.76rem;white-space:nowrap">Amount…</button>
+        <button type="button" onclick="removeChargeback(${c.id})" title="Remove" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:1rem;line-height:1">&times;</button>
+      </div>
+      ${dirty ? `
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px">
+        ${status === 'pending' ? '' : `
+        <label style="font-size:.78rem;color:var(--mid)">Closed on</label>
+        <input type="date" value="${closedAt}" onchange="chargebackRowDate(${c.id}, this.value)"
+               style="font-family:system-ui,sans-serif;font-size:.8rem;padding:4px 6px;border:1.5px solid var(--border);border-radius:7px">`}
+        <button type="button" onclick="saveChargebackRow(${c.id})"
+                style="border:none;background:var(--accent);color:white;border-radius:7px;padding:6px 14px;cursor:pointer;font-size:.8rem;font-weight:600">Save</button>
+        <button type="button" onclick="cancelChargebackRow(${c.id})"
+                style="border:none;background:none;color:var(--mid);cursor:pointer;font-size:.8rem;text-decoration:underline">Cancel</button>
+        <span style="flex-basis:100%;font-size:.76rem;color:var(--mid)">${chargebackEffect(status)}</span>
+      </div>` : ''}
+    </div>`;
+  }).join('')
     + `<div style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:6px">$${money(used)} of $${money(chargebackMaxAmount)} disputed · $${money(left)} left</div>`;
+}
+
+// What a status means for the money. Shown on the row as it is chosen, and
+// under the add form below.
+function chargebackEffect(status) {
+  return {
+    pending: 'Commission on this share is held back until the dispute closes.',
+    won: 'The store kept the money. The held-back commission is paid on the paycheck covering the date it closed.',
+    lost: 'The store lost the money. That commission is never paid — and if it had already been paid out, it comes off the paycheck covering the date it closed.',
+  }[status] || '';
+}
+
+function chargebackRowStatus(id, status) {
+  const c = ((chargebackTarget && chargebackTarget.chargebacks) || []).find(x => x.id === id);
+  if (!c) return;
+  if (status === c.status && !cbRowEdits[id]) return;
+  // Closing one needs the date it closed — that is what decides which paycheck
+  // the money moves on. Offer today rather than an empty box.
+  const existing = cbRowEdits[id] || {};
+  cbRowEdits[id] = {
+    status,
+    closed_at: status === 'pending' ? '' : (existing.closed_at || c.closed_at || new Date().toISOString().slice(0, 10)),
+  };
+  renderChargebackList();
+}
+
+function chargebackRowDate(id, value) {
+  if (cbRowEdits[id]) cbRowEdits[id].closed_at = value;
+}
+
+function cancelChargebackRow(id) {
+  delete cbRowEdits[id];
+  renderChargebackList();
+}
+
+async function saveChargebackRow(id) {
+  const errEl = document.getElementById('cbError');
+  errEl.textContent = '';
+  const c = ((chargebackTarget && chargebackTarget.chargebacks) || []).find(x => x.id === id);
+  const change = cbRowEdits[id];
+  if (!c || !change) return;
+  if (change.status !== 'pending' && !change.closed_at) {
+    errEl.textContent = 'Enter the date the dispute closed — it decides which paycheck this lands on.';
+    return;
+  }
+  try {
+    const resp = await fetch(`${API}/api/pos/transactions/${chargebackTarget.id}/chargebacks`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({
+        manager_name: txCreds.name, manager_pin: txCreds.pin,
+        id,
+        amount: Number(c.amount),
+        card_last4: c.card_last4 || '',
+        status: change.status,
+        closed_at: change.status === 'pending' ? null : change.closed_at,
+        note: c.note || '',
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Could not save');
+    delete cbRowEdits[id];
+    await refreshChargebacks();
+  } catch (err) {
+    errEl.textContent = err.message;
+  }
 }
 
 // Blank form, ready for another dispute on the same sale.
@@ -4961,15 +5066,6 @@ function resetChargebackForm() {
   const used = cbs.reduce((s, c) => s + Number(c.amount || 0), 0);
   const left = Math.max(0, round2(chargebackMaxAmount - used));
 
-  // Every dollar of the sale is already disputed and there is one dispute
-  // holding it. Nothing can be added — the server would refuse it — and the
-  // only thing anyone opens this for is to move that dispute along, from
-  // pending to won or lost. So start there, rather than presenting a form
-  // that looks like the way to do it and can only fail.
-  if (cbs.length === 1 && left <= 0 && chargebackMaxAmount > 0) {
-    editChargeback(cbs[0].id);
-    return;
-  }
   document.getElementById('cbAmountLabel').textContent = cbs.length ? 'Amount disputed (another card)' : 'Amount disputed';
   document.getElementById('cbAmount').value = left > 0 ? left.toFixed(2) : '';
   document.getElementById('cbCard').value = '';
@@ -4978,7 +5074,9 @@ function resetChargebackForm() {
   document.getElementById('cbNote').value = '';
   document.getElementById('cbError').textContent = '';
   const btn = document.getElementById('cbSaveBtn');
-  if (btn) btn.textContent = cbs.length ? 'Add dispute' : 'Save';
+  if (btn) btn.textContent = cbs.length ? 'Add another dispute' : 'Save';
+  const heading = document.getElementById('cbAddHeading');
+  if (heading) heading.style.display = (cbs.length && !chargebackTargets) ? '' : 'none';
   updateChargebackForm();
 }
 
@@ -5017,18 +5115,22 @@ function updateChargebackForm() {
     const cbs = (chargebackTarget && chargebackTarget.chargebacks) || [];
     const spent = cbs.filter(c => c.id !== chargebackEditId).reduce((s, c) => s + Number(c.amount || 0), 0);
     const noRoom = chargebackMaxAmount > 0 && round2(chargebackMaxAmount - spent) <= 0 && !chargebackEditId;
-    btn.disabled = noRoom;
-    btn.style.opacity = noRoom ? '.45' : '';
-    btn.style.cursor = noRoom ? 'not-allowed' : '';
-    btn.title = noRoom ? 'The whole sale is already disputed. Press Edit on a dispute above to change it.' : '';
+    const form = document.getElementById('cbAddForm');
+    const instead = document.getElementById('cbAddNothing');
+    // `hidden` alone is not enough here: .btn sets display in the stylesheet,
+    // which beats the attribute. Set both.
+    const put = (el, away) => { if (el) { el.hidden = away; el.style.display = away ? 'none' : ''; } };
+    put(form, noRoom);
+    if (instead) {
+      instead.style.display = noRoom ? '' : 'none';
+      instead.textContent = cbs.length > 1
+        ? 'Every dollar of this sale is already disputed across the disputes above. Change one on its own row, or remove one to add a different dispute.'
+        : 'Every dollar of this sale is already disputed. Change where it stands on its row above, or remove it to record a different dispute.';
+    }
+    put(btn, noRoom);
   }
 
-  const effect = {
-    pending: 'Commission on this share is held back until the dispute closes.',
-    won: 'The store kept the money. The held-back commission is paid on the paycheck covering the date it closed.',
-    lost: 'The store lost the money. That commission is never paid — and if it had already been paid out, it comes off the paycheck covering the date it closed.',
-  }[status] || '';
-  document.getElementById('cbEffect').textContent = effect;
+  document.getElementById('cbEffect').textContent = chargebackEffect(status);
 }
 
 function editChargeback(id) {
@@ -5066,6 +5168,7 @@ async function refreshChargebacks() {
   const tx = chargebackTarget;
   const resp = await fetch(`${API}/api/pos/transactions/${tx.id}/chargebacks`, { credentials: 'include' });
   tx.chargebacks = resp.ok ? ((await resp.json()).chargebacks || []) : [];
+  cbRowEdits = {};
   tx.charged_back = tx.chargebacks.length ? 1 : 0;
   document.getElementById('cbRemoveBtn').style.display = tx.chargebacks.length ? '' : 'none';
   renderChargebackList();
