@@ -1623,6 +1623,16 @@ async function payrollForPayday(userId, payday, settings) {
     return p;
   };
 
+  // Which day a sale belongs to is the day it happened IN THE SHOP. Casting a
+  // timestamp straight to a date uses the server's clock, which is UTC, so an
+  // evening sale — 6pm in Denver is already past midnight in UTC — counted as
+  // the next day. Most of the time that only moved it within the same period,
+  // but a sale on the 15th or the last of the month moved onto the NEXT
+  // paycheck, and the commission went with it.
+  const tzName = settings?.timezone || 'America/Los_Angeles';
+  const localDate = (col) => `((${col}) AT TIME ZONE '${tzName.replace(/'/g, "''")}')::date`;
+  const saleDay = localDate('COALESCE(t.original_sale_date, t.created_at)');
+
   // Every sale in the period. What's later taken back — a return, a dispute —
   // is shown as its own line rather than being quietly left out here, so the
   // paycheck shows what was earned and exactly why it was reduced; a total
@@ -1637,8 +1647,8 @@ async function payrollForPayday(userId, payday, settings) {
     JOIN pos_transactions t ON t.id = te.transaction_id
     WHERE e.user_id = ANY($1::text[]) AND t.user_id = ANY($1::text[])
       AND t.type = 'sale'
-      AND COALESCE(t.original_sale_date, t.created_at)::date >= $2::date
-      AND COALESCE(t.original_sale_date, t.created_at)::date <= $3::date
+      AND ${saleDay} >= $2::date
+      AND ${saleDay} <= $3::date
     GROUP BY e.id
   `, [ids, period.start, period.end])).rows;
 
@@ -1650,8 +1660,8 @@ async function payrollForPayday(userId, payday, settings) {
   // can't be taken off it, so it lands on the next one still open.
   const returns = (await query(`
     SELECT t.receipt_number,
-      COALESCE(t.original_sale_date, t.created_at)::date::text AS sale_date,
-      t.created_at::date::text AS return_date,
+      ${saleDay}::text AS sale_date,
+      ${localDate('t.created_at')}::text AS return_date,
       e.id AS employee_id, e.name AS employee_name, e.commission_rate,
       e.user_id AS company_id,
       ${EMP_SHARE} AS share
@@ -1660,7 +1670,7 @@ async function payrollForPayday(userId, payday, settings) {
     JOIN pos_employees e ON e.id = te.employee_id
     WHERE t.user_id = ANY($1::text[]) AND e.user_id = ANY($1::text[])
       AND t.type = 'return'
-      AND t.created_at::date >= $2::date - INTERVAL '1 year'
+      AND ${localDate('t.created_at')} >= $2::date - INTERVAL '1 year'
   `, [ids, period.start])).rows;
 
   // Every disputed sale, with the dates needed to decide which paycheck it
@@ -1670,9 +1680,9 @@ async function payrollForPayday(userId, payday, settings) {
   // handled one at a time rather than as a single flag on the sale.
   const disputes = (await query(`
     SELECT cb.id AS chargeback_id, t.receipt_number, cb.status,
-      COALESCE(t.original_sale_date, t.created_at)::date::text AS sale_date,
-      cb.opened_at::date::text AS marked_date,
-      cb.closed_at::date::text AS closed_date,
+      ${saleDay}::text AS sale_date,
+      ${localDate('cb.opened_at')}::text AS marked_date,
+      ${localDate('cb.closed_at')}::text AS closed_date,
       cb.card_last4,
       -- This person's own hold. Most disputes are split between two or three
       -- people, so paying one of them must not settle it for the others.

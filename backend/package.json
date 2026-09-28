@@ -13,7 +13,8 @@
     "test:links": "node test/company-links.test.js",
     "test:reopen-scope": "node test/reopen-scope.test.js",
     "test:settled-disputes": "node test/settled-disputes.dom.test.js",
-    "test:payroll-releases": "node test/won-disputes-release.test.js"
+    "test:payroll-releases": "node test/won-disputes-release.test.js",
+    "test:store-day": "node test/payroll-store-day.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
