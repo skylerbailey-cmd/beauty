@@ -1602,32 +1602,6 @@ router.get('/reports/employees', async (req, res) => {
 // a product other shops sign up to is somebody else's payroll.
 const payrollScope = async (req) => scopeIds(req);
 
-// ── Payroll across two stores that share a roster ──
-//
-// One payday pays everybody, at both shops, in one go. But a payday was
-// closed only for the companies in the session's scope — normally just the
-// one being looked at — so pressing Mark as paid at one shop left the other's
-// cheque open. The same payday then read one way from one account and another
-// way from the other, and disputes kept chasing a cheque that had in fact
-// gone out.
-//
-// An admin's payroll now covers the stores linked to this one where the SAME
-// admin name and PIN is also an admin. The link says which stores to ask
-// about; their own credentials, checked there, are what grants it — so this
-// gives nobody access they could not get by signing into that shop and
-// running its payroll themselves.
-async function adminPayrollScope(req, name, pin) {
-  const ids = new Set(scopeIds(req));
-  let linked = [];
-  try { linked = await pgDb.linkedCompanyIds(req.session.userId); } catch (_) { return [...ids]; }
-  for (const other of linked) {
-    if (ids.has(other)) continue;
-    const there = await pgDb.verifyEmployeePin(pin, other, name);
-    if (isAdmin(there)) ids.add(other);
-  }
-  return [...ids];
-}
-
 // ─── One person, two stores ─────────────────────────────────────────────────
 //
 // Staff who work across both of an owner's shops have a separate employee
@@ -1736,12 +1710,7 @@ router.post('/reports/payroll', async (req, res) => {
     return res.status(400).json({ error: 'Pick a payday.' });
   }
   const settings = await pgDb.getSettings(req.session.userId);
-  const scope = await adminPayrollScope(req, name, pin);
-  const run = await pgDb.payrollForPayday(scope, payday, settings);
-  // Name the shops this run actually covers, so the page can say so instead
-  // of claiming both when it has one.
-  run.companies = (await pgDb.companiesByIds(scope)).map((c) => c.store_name).filter(Boolean);
-  res.json(run);
+  res.json(await pgDb.payrollForPayday(await payrollScope(req), payday, settings));
 });
 
 // Mark a payday as paid (or reopen it). Once paid its figures stop moving —
@@ -1753,10 +1722,9 @@ router.post('/reports/payroll/paid', async (req, res) => {
     return res.status(403).json({ error: 'Only an admin can close off a payday.' });
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.status(400).json({ error: 'Pick a payday.' });
-  // Every shop this payday actually paid — see adminPayrollScope. Closing it
-  // from one account closes it at the other, and reopening does the same, so
-  // the two can never disagree about whether a cheque went out.
-  const scope = await adminPayrollScope(req, name, pin);
+  // Scoped to every company, not the signed-in one: a payday covers both
+  // stores, so closing it from one account has to be reopenable from the other.
+  const scope = await payrollScope(req);
 
   if (paid) {
     // Read the cheque before closing it, and pin every dispute it is holding
@@ -1835,10 +1803,7 @@ router.post('/reports/payroll/paid-employee', async (req, res) => {
   const empId = parseInt(employee_id);
   if (!empId) return res.status(400).json({ error: 'Pick who is being paid.' });
 
-  // Both shops, for the same reason the whole payday covers both: one person
-  // has a record at each and is paid once. sameNameEmployeeIds below needs
-  // the other shop in scope to find their record there.
-  const scope = await adminPayrollScope(req, name, pin);
+  const scope = await payrollScope(req);
   const settings = await pgDb.getSettings(req.session.userId);
 
   if (paid) {
@@ -2015,11 +1980,8 @@ router.get('/reports/paydays', async (req, res) => {
   const sched = pgDb.scheduleFrom(settings);
   // The next payday is offered too: the period it covers has usually closed by
   // the time anyone opens this, and it's the one a manager is about to run.
-  //
-  // The shops this payroll covers — this one plus any sharing its roster — so
-  // the chips agree with the run they open. Only whether a payday is closed
-  // is read here, never anyone's money, so it needs no credentials.
-  const scope = [...new Set([...scopeIds(req), ...await pgDb.linkedCompanyIds(req.session.userId)])];
+  // The companies this session was granted — not every company on the server.
+  const scope = scopeIds(req);
   const paid = new Set(await pgDb.paidPaydays(scope));
   const upcoming = pgDb.nextPayday(pgDb.paydaysBetween(from, today, sched)[0] || today, sched);
   res.json({

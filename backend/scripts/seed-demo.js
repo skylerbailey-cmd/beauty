@@ -43,7 +43,7 @@ const STORE = {
   tax_rate: TAX,
   brands: '[]',
   receipt_footer: 'Thank you — we love seeing you.',
-  payroll_paydays: '1,15',   // the days themselves — see scheduleFrom
+  payroll_paydays: 'semi-monthly',
 };
 
 // Two roles, as asked for, and the same PIN on both: this is a demo and the

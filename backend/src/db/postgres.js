@@ -1448,14 +1448,8 @@ const CB_FRACTION = `
 const DEFAULT_SCHEDULE = { semiMonthly: true, lag: 'previous' };
 function scheduleFrom(settings) {
   if (!settings) return DEFAULT_SCHEDULE;
-  // The setting is normally a list of days ("1,15"), but it has also been
-  // stored as words. "semi-monthly" contains no 15, so the shop that spelled
-  // it out was read as paying monthly — and a monthly schedule has one period
-  // per month, which both the 1st and the 15th then claimed. Every figure on
-  // those two paydays was the same figure, paid twice.
-  const raw = String(settings.payroll_paydays || '1,15');
   return {
-    semiMonthly: raw.includes('15') || /semi|twice|bi-?month/i.test(raw),
+    semiMonthly: String(settings.payroll_paydays || '1,15').includes('15'),
     lag: settings.payroll_lag === 'ended' ? 'ended' : 'previous',
   };
 }
@@ -1552,23 +1546,9 @@ async function payrollForPayday(userId, payday, settings) {
   // Paydays already handed out. Their figures are settled, so anything that
   // happens afterwards has to land on a paycheck that hasn't gone out yet.
   const paidRuns = (await query(
-    `SELECT user_id, payday::text AS payday, paid_at, paid_by FROM pos_payroll_runs WHERE user_id = ANY($1::text[])`,
+    `SELECT payday::text AS payday, paid_at, paid_by FROM pos_payroll_runs WHERE user_id = ANY($1::text[])`,
     [ids])).rows;
-
-  // Which store each person's record belongs to. A payday is closed BY a
-  // company FOR its own staff: one store settling its cheques says nothing
-  // about whether the other has settled its own. Keyed on payday alone, one
-  // store marking a payday paid silently closed it for the other store's
-  // people too — so the same payday read different figures depending on which
-  // account you were signed into, and a cheque nobody had sent stopped
-  // accepting the disputes that belonged on it.
-  const empCompany = new Map((await query(
-    'SELECT id, user_id FROM pos_employees WHERE user_id = ANY($1::text[])', [ids]
-  )).rows.map((r) => [r.id, r.user_id]));
-  // Closed only when every shop in this run has closed it — see paidPaydays.
-  const runsForThis = paidRuns.filter(r => r.payday === payday);
-  const closedHere = new Set(runsForThis.map(r => r.user_id));
-  const thisRun = ids.every((id) => closedHere.has(id)) ? (runsForThis[0] || null) : null;
+  const thisRun = paidRuns.find(r => r.payday === payday) || null;
 
   // Paydays closed for one person only. A person is settled when either their
   // own cheque went out or the whole payday did, whichever came first.
@@ -1583,14 +1563,13 @@ async function payrollForPayday(userId, payday, settings) {
     if (!own.has(r.payday) || day > own.get(r.payday)) own.set(r.payday, day);
   }
   const thisEmpRuns = new Map(empRuns.filter(r => r.payday === payday).map(r => [r.employee_id, r]));
-  // The day each store closed each payday. Two companies can close the same
-  // payday at different moments, or one may not have closed it at all, so
-  // this is keyed by both.
+  // The day each closed payday was actually closed off. Two companies can close
+  // the same payday at different moments; the later one is what matters, since
+  // until then the figures were still moving.
   const closedOn = new Map();
   for (const r of paidRuns) {
     const day = r.paid_at ? new Date(r.paid_at).toISOString().slice(0, 10) : '9999-12-31';
-    const key = `${r.user_id}|${r.payday}`;
-    if (!closedOn.has(key) || day > closedOn.get(key)) closedOn.set(key, day);
+    if (!closedOn.has(r.payday) || day > closedOn.get(r.payday)) closedOn.set(r.payday, day);
   }
 
   // Where a deduction actually lands, given the day the thing happened (`on` —
@@ -1605,8 +1584,7 @@ async function payrollForPayday(userId, payday, settings) {
   // sitting on the closed cheque that already accounted for it, so that cheque
   // still explains the figure it paid, and no later one picks it up again.
   // Closed for this person: their own cheque, or the whole payday.
-  const closedFor = (empId, p) =>
-    empClosedOn.get(empId)?.get(p) || closedOn.get(`${empCompany.get(empId)}|${p}`) || null;
+  const closedFor = (empId, p) => empClosedOn.get(empId)?.get(p) || closedOn.get(p) || null;
 
   const landsOn = (date, on, empId) => {
     let p = paydayForDate(date, sched);
@@ -1628,25 +1606,6 @@ async function payrollForPayday(userId, payday, settings) {
     return p;
   };
   const openPayday = (date, empId) => openFrom(paydayForDate(date, sched), empId);
-
-  // ── Which cheque is still ahead of us ──
-  //
-  // Marking a payday as paid is a button somebody has to remember to press,
-  // and plenty of shops never do. That is fine for most of this — an unpaid
-  // payday genuinely is still open — but it is not fine for money owed back.
-  //
-  // A dispute won today, whose commission was held on a payday a fortnight
-  // gone, was being released onto that old payday: a cheque that in real life
-  // was handed out long ago, so the release landed somewhere nobody would
-  // ever look and the person never saw the money. A payday that has been and
-  // gone counts as gone out, ticked or not.
-  const today = new Date().toISOString().slice(0, 10);
-  const wentOut = (empId, p) => closedFor(empId, p) || (p && p < today ? p : null);
-  const openAhead = (p0, empId) => {
-    let p = p0;
-    for (let i = 0; i < 48 && p && wentOut(empId, p); i++) p = nextPayday(p, sched);
-    return p;
-  };
 
   // Every sale in the period. What's later taken back — a return, a dispute —
   // is shown as its own line rather than being quietly left out here, so the
@@ -1782,7 +1741,7 @@ async function payrollForPayday(userId, payday, settings) {
     const r = () => row(d.employee_id, d.employee_name, d.commission_rate, d.company_id);
 
     if (d.withheld_payday) {
-      const heldChequeWentOut = !!wentOut(d.employee_id, d.withheld_payday);
+      const heldChequeWentOut = !!closedFor(d.employee_id, d.withheld_payday);
 
       // Marked by hand: the money was dealt with elsewhere, so no cheque takes
       // it. Shown on whichever one is open, at zero, until the dispute closes.
@@ -1812,17 +1771,13 @@ async function payrollForPayday(userId, payday, settings) {
       }
 
       // Won after that cheque went out: the money is owed back, and it goes on
-      // the cheque that is still ahead of us — the one being run now. Walked
-      // forward from the payday that held it, NOT from the day the dispute
-      // closed: a closing date is not a sale and must not go through the
-      // pay-period lag, which was pushing the release a fortnight past the
-      // first cheque that could pay.
-      //
-      // Once a payday is actually marked paid the release is pinned to it
-      // (released_payday) and stops moving, so a cheque that has gone out
-      // keeps explaining its own figure.
+      // the next cheque still open — or on the one that already paid it, so
+      // that cheque keeps explaining itself. Walked forward from the payday
+      // that held it, NOT from the day the dispute closed: a closing date is
+      // not a sale and must not go through the pay-period lag, which was
+      // pushing the release a fortnight past the first cheque that could pay.
       if (d.status === 'won') {
-        const releaseOn = d.released_payday || openAhead(d.withheld_payday, d.employee_id);
+        const releaseOn = d.released_payday || openFrom(d.withheld_payday, d.employee_id);
         if (releaseOn === payday) {
           r().adjustments.push({
             kind: 'won', chargeback_id: d.chargeback_id, receipt: d.receipt_number,
@@ -1838,7 +1793,7 @@ async function payrollForPayday(userId, payday, settings) {
       // at this paycheck needs to know the money is being held and why, but it
       // has been held once already and must not be held twice.
       if (d.status === 'pending' && heldChequeWentOut
-          && openAhead(d.withheld_payday, d.employee_id) === payday) {
+          && openFrom(d.withheld_payday, d.employee_id) === payday) {
         r().adjustments.push({
           kind: 'held', chargeback_id: d.chargeback_id, employee_id: d.employee_id,
           pinned: true, receipt: d.receipt_number,
@@ -1904,52 +1859,6 @@ async function payrollForPayday(userId, payday, settings) {
     r.adjustments.push({ kind: 'manual', id: a.id, receipt: null, amount: round2(a.amount), note: a.note || 'Manual adjustment' });
   }
 
-  // ── A cut of the whole shop's trade ──
-  //
-  // A manager can be on a percentage of everything the store sells on top of
-  // their own sales. The commission report has always worked this out; the
-  // paycheck never did, because it reads the flat rate off the employee
-  // record and never looks at the commission plan. So the report said one
-  // figure and the cheque paid a smaller one, and the difference was the
-  // manager's store commission — for the demo's Rosa, $2,763.80 a fortnight.
-  //
-  // On the store's SALES, not its takings: subtotal, before tax. Tax is the
-  // state's money passing through the till, and nobody earns a percentage of
-  // it. storeNetSales nets returns off at the same pre-tax figure.
-  //
-  // Per company: a manager at one of two linked shops earns on the shop they
-  // manage, not on both.
-  const planRows = (await query(
-    `SELECT p.employee_id, p.store_rate, e.name AS employee_name, e.commission_rate, e.user_id AS company_id
-     FROM pos_commission_plans p
-     JOIN pos_employees e ON e.id = p.employee_id
-     WHERE p.user_id = ANY($1::text[]) AND COALESCE(p.store_rate, 0) > 0 AND e.active = 1`,
-    [ids])).rows;
-
-  if (planRows.length) {
-    const storeSalesFor = new Map();
-    for (const p of planRows) {
-      if (!storeSalesFor.has(p.company_id)) {
-        storeSalesFor.set(p.company_id, await storeNetSales(
-          p.company_id, `${period.start}T00:00:00Z`, `${period.end}T23:59:59.999Z`));
-      }
-      const rate = Number(p.store_rate) || 0;
-      const sales = round2(storeSalesFor.get(p.company_id));
-      const commission = round2(sales * rate / 100);
-      if (!commission) continue;
-      // A manager who sold nothing themselves still earns this, so the row is
-      // made if it isn't already there.
-      const r = row(p.employee_id, p.employee_name, p.commission_rate, p.company_id);
-      r.store_rate = rate;
-      r.store_sales = sales;
-      r.store_commission = commission;
-      // Split out so a payslip can say which part came from their own sales
-      // and which from the floor, the same way the report does.
-      r.own_commission = r.commission_earned;
-      r.commission_earned = round2(r.commission_earned + commission);
-    }
-  }
-
   const rows = [...byEmp.values()];
   for (const r of rows) {
     r.adjustment_total = round2(r.adjustments.reduce((s, a) => s + a.amount, 0));
@@ -1989,17 +1898,10 @@ async function payrollForPayday(userId, payday, settings) {
 }
 
 // Which paydays have already been handed out, so the picker can mark them.
-// Paid means paid EVERYWHERE this payroll covers. Two shops that share a
-// roster are one payday and one press of the button; a payday closed at one
-// and not the other is half-closed, and showing it as done would hide a
-// cheque that never went out.
 async function paidPaydays(userId) {
-  const ids = asCompanyIds(userId);
   return (await query(
-    `SELECT payday::text AS payday FROM pos_payroll_runs
-      WHERE user_id = ANY($1::text[])
-      GROUP BY payday HAVING COUNT(DISTINCT user_id) >= $2`,
-    [ids, ids.length])).rows.map(r => r.payday);
+    `SELECT DISTINCT payday::text AS payday FROM pos_payroll_runs WHERE user_id = ANY($1::text[])`,
+    [asCompanyIds(userId)])).rows.map(r => r.payday);
 }
 
 // Mark a payday paid, or reopen it.

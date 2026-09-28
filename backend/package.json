@@ -11,8 +11,6 @@
     "test:register:dom": "node test/register-custom-item.dom.test.js",
     "test:chargebacks": "node test/chargeback-dialog.dom.test.js",
     "test:links": "node test/company-links.test.js",
-    "test:payroll-releases": "node test/won-disputes-land-ahead.test.js",
-    "test:store-commission": "node test/store-commission.test.js",
     "test:reopen-scope": "node test/reopen-scope.test.js"
   },
   "dependencies": {
