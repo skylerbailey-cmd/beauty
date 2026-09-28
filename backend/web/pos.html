@@ -8897,11 +8897,17 @@ async function loadPayroll() {
     if (!resp.ok) throw new Error(data.error || 'Could not load payroll');
 
     lastPayroll = data;
-    note.innerHTML = `Paid ${fmtPayday(data.payday)} for work from ${fmtPayday(data.period.start)} to ${fmtPayday(data.period.end)}, across both companies.`
+    // Name the shops this run actually covers rather than asserting both. A
+    // page that says "across both companies" while listing one is how a
+    // half-closed payday went unnoticed.
+    const shops = data.companies || [];
+    const across = shops.length > 1 ? ` across ${shops.join(' and ')}` : (shops.length ? ` at ${shops[0]}` : '');
+    const closes = shops.length > 1 ? ` at ${shops.join(' and ')}` : '';
+    note.innerHTML = `Paid ${fmtPayday(data.payday)} for work from ${fmtPayday(data.period.start)} to ${fmtPayday(data.period.end)},${across}.`
       + (data.paid
         ? ` <b style="color:var(--success)">✓ Paid${data.paid_by ? ' by ' + escapeHtml(data.paid_by) : ''}</b> — figures are locked; anything closing now lands on the next payday.
-            <button class="btn" style="background:none;border:none;color:var(--accent);text-decoration:underline;padding:0;font:inherit;cursor:pointer" onclick="setPayrollPaid(false)">Reopen</button>`
-        : ` <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:4px 10px;font-size:.78rem" onclick="setPayrollPaid(true)">Mark as paid</button>`);
+            <button class="btn" style="background:none;border:none;color:var(--accent);text-decoration:underline;padding:0;font:inherit;cursor:pointer" onclick="setPayrollPaid(false)">Reopen${closes}</button>`
+        : ` <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:4px 10px;font-size:.78rem" onclick="setPayrollPaid(true)">Mark as paid${closes}</button>`);
 
     const rows = (data.employees || []).filter(e => e.commission_earned !== 0 || e.adjustments.length);
     if (!rows.length) { body.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid)">Nothing owed for this period.</div>'; return; }

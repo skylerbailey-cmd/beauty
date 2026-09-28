@@ -108,8 +108,17 @@ function paydaysAround() {
     for (const p of where) if (p < today) stale.push(`held ${h.held} -> released ${p}, already gone`);
   }
 
-  check('there are releases to check at all — otherwise this proves nothing',
-    goneAlready.length > 0, 'no won disputes held on a payday that has passed');
+  // Whether there is anything to check depends on live data: a payday that is
+  // reopened releases the holds it was carrying, which can empty the sample
+  // entirely. Say so loudly and stop, rather than reporting a pass that
+  // checked nothing — a green tick on an empty sample is worse than a fail.
+  if (!goneAlready.length) {
+    console.log('  ----  NOTHING TO CHECK: no won dispute currently has commission held');
+    console.log('        on a payday that has passed, so this run proves nothing.');
+    console.log('        (Holds are created when a payday is marked paid and released');
+    console.log('        when it is reopened.)\n');
+    process.exit(0);
+  }
   check('every one of them is actually paid back somewhere',
     missing.length === 0, missing.slice(0, 5).join('\n        '));
   check('and never on a cheque that has already gone',

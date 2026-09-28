@@ -1552,9 +1552,23 @@ async function payrollForPayday(userId, payday, settings) {
   // Paydays already handed out. Their figures are settled, so anything that
   // happens afterwards has to land on a paycheck that hasn't gone out yet.
   const paidRuns = (await query(
-    `SELECT payday::text AS payday, paid_at, paid_by FROM pos_payroll_runs WHERE user_id = ANY($1::text[])`,
+    `SELECT user_id, payday::text AS payday, paid_at, paid_by FROM pos_payroll_runs WHERE user_id = ANY($1::text[])`,
     [ids])).rows;
-  const thisRun = paidRuns.find(r => r.payday === payday) || null;
+
+  // Which store each person's record belongs to. A payday is closed BY a
+  // company FOR its own staff: one store settling its cheques says nothing
+  // about whether the other has settled its own. Keyed on payday alone, one
+  // store marking a payday paid silently closed it for the other store's
+  // people too — so the same payday read different figures depending on which
+  // account you were signed into, and a cheque nobody had sent stopped
+  // accepting the disputes that belonged on it.
+  const empCompany = new Map((await query(
+    'SELECT id, user_id FROM pos_employees WHERE user_id = ANY($1::text[])', [ids]
+  )).rows.map((r) => [r.id, r.user_id]));
+  // Closed only when every shop in this run has closed it — see paidPaydays.
+  const runsForThis = paidRuns.filter(r => r.payday === payday);
+  const closedHere = new Set(runsForThis.map(r => r.user_id));
+  const thisRun = ids.every((id) => closedHere.has(id)) ? (runsForThis[0] || null) : null;
 
   // Paydays closed for one person only. A person is settled when either their
   // own cheque went out or the whole payday did, whichever came first.
@@ -1569,13 +1583,14 @@ async function payrollForPayday(userId, payday, settings) {
     if (!own.has(r.payday) || day > own.get(r.payday)) own.set(r.payday, day);
   }
   const thisEmpRuns = new Map(empRuns.filter(r => r.payday === payday).map(r => [r.employee_id, r]));
-  // The day each closed payday was actually closed off. Two companies can close
-  // the same payday at different moments; the later one is what matters, since
-  // until then the figures were still moving.
+  // The day each store closed each payday. Two companies can close the same
+  // payday at different moments, or one may not have closed it at all, so
+  // this is keyed by both.
   const closedOn = new Map();
   for (const r of paidRuns) {
     const day = r.paid_at ? new Date(r.paid_at).toISOString().slice(0, 10) : '9999-12-31';
-    if (!closedOn.has(r.payday) || day > closedOn.get(r.payday)) closedOn.set(r.payday, day);
+    const key = `${r.user_id}|${r.payday}`;
+    if (!closedOn.has(key) || day > closedOn.get(key)) closedOn.set(key, day);
   }
 
   // Where a deduction actually lands, given the day the thing happened (`on` —
@@ -1590,7 +1605,8 @@ async function payrollForPayday(userId, payday, settings) {
   // sitting on the closed cheque that already accounted for it, so that cheque
   // still explains the figure it paid, and no later one picks it up again.
   // Closed for this person: their own cheque, or the whole payday.
-  const closedFor = (empId, p) => empClosedOn.get(empId)?.get(p) || closedOn.get(p) || null;
+  const closedFor = (empId, p) =>
+    empClosedOn.get(empId)?.get(p) || closedOn.get(`${empCompany.get(empId)}|${p}`) || null;
 
   const landsOn = (date, on, empId) => {
     let p = paydayForDate(date, sched);
@@ -1973,10 +1989,17 @@ async function payrollForPayday(userId, payday, settings) {
 }
 
 // Which paydays have already been handed out, so the picker can mark them.
+// Paid means paid EVERYWHERE this payroll covers. Two shops that share a
+// roster are one payday and one press of the button; a payday closed at one
+// and not the other is half-closed, and showing it as done would hide a
+// cheque that never went out.
 async function paidPaydays(userId) {
+  const ids = asCompanyIds(userId);
   return (await query(
-    `SELECT DISTINCT payday::text AS payday FROM pos_payroll_runs WHERE user_id = ANY($1::text[])`,
-    [asCompanyIds(userId)])).rows.map(r => r.payday);
+    `SELECT payday::text AS payday FROM pos_payroll_runs
+      WHERE user_id = ANY($1::text[])
+      GROUP BY payday HAVING COUNT(DISTINCT user_id) >= $2`,
+    [ids, ids.length])).rows.map(r => r.payday);
 }
 
 // Mark a payday paid, or reopen it.
