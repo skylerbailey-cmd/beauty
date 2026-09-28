@@ -271,6 +271,23 @@ async function initSchema() {
       brands TEXT DEFAULT '[]'
     );
 
+    -- Stores that share a roster. Two shops under one owner whose staff work
+    -- across both: linking them lets a person see their own figures from both
+    -- when they check their commission, instead of the half that happens to
+    -- belong to the till they are standing at.
+    --
+    -- A link says nothing about who may read what on its own. It only makes
+    -- the other company a candidate; the person still has to prove their own
+    -- name and PIN there. Both directions are stored, so either shop's staff
+    -- get the same view.
+    CREATE TABLE IF NOT EXISTS pos_company_links (
+      user_id TEXT NOT NULL,
+      linked_user_id TEXT NOT NULL,
+      linked_by TEXT DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      PRIMARY KEY (user_id, linked_user_id)
+    );
+
     -- Registry of stable (email-derived) user IDs, so the one-time legacy-data
     -- bridge can tell a real account from an orphaned pre-migration dataset.
     CREATE TABLE IF NOT EXISTS pos_known_users (
@@ -1337,6 +1354,50 @@ async function companiesByIds(ids) {
     `SELECT user_id, store_name FROM pos_settings
       WHERE user_id = ANY($1::text[])
         AND TRIM(COALESCE(store_name, '')) <> '' ORDER BY store_name`, [list])).rows;
+}
+
+// ─── Stores that share a roster ─────────────────────────────────────────────
+
+// A company's id is derived from its sign-in address and nothing else
+// (uuidv5 of mailto:<email>), so an address resolves to an id without a
+// lookup. That matters here: the users table lives in SQLite, which is wiped
+// on every deploy, and a link between two shops has to outlast that.
+function companyIdForEmail(email) {
+  const clean = String(email || '').trim().toLowerCase();
+  if (!clean) return null;
+  const { v5: uuidv5 } = require('uuid');
+  return uuidv5('mailto:' + clean, uuidv5.URL);
+}
+
+// Whether a company exists at all — it has settings, staff or sales here.
+async function companyExists(userId) {
+  if (!userId) return false;
+  const r = await query(
+    `SELECT 1 FROM pos_settings WHERE user_id = $1
+     UNION ALL SELECT 1 FROM pos_employees WHERE user_id = $1 LIMIT 1`, [userId]);
+  return r.rowCount > 0;
+}
+
+async function linkedCompanyIds(userId) {
+  if (!userId) return [];
+  return (await query(
+    'SELECT linked_user_id FROM pos_company_links WHERE user_id = $1', [userId]
+  )).rows.map((r) => r.linked_user_id);
+}
+
+// Stored both ways round, so neither shop is the senior partner.
+async function linkCompanies(a, b, byName) {
+  await query(
+    `INSERT INTO pos_company_links (user_id, linked_user_id, linked_by) VALUES ($1,$2,$3), ($2,$1,$3)
+     ON CONFLICT (user_id, linked_user_id) DO NOTHING`,
+    [a, b, byName || '']);
+}
+
+async function unlinkCompanies(a, b) {
+  await query(
+    `DELETE FROM pos_company_links
+     WHERE (user_id = $1 AND linked_user_id = $2) OR (user_id = $2 AND linked_user_id = $1)`,
+    [a, b]);
 }
 
 // Every company on the server. Nothing a signed-in shop can reach may call
@@ -3796,6 +3857,11 @@ module.exports = {
   // Customers
   findOrCreateCustomer,
   addCustomerProducts,
+  companyIdForEmail,
+  companyExists,
+  linkedCompanyIds,
+  linkCompanies,
+  unlinkCompanies,
   getCustomers,
   getCustomer,
   getCustomerByEmail,

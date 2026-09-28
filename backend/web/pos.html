@@ -1633,6 +1633,26 @@
         <div id="impReview" style="display:none;margin-top:14px"></div>
       </div>
 
+      <!-- Two shops, one roster. Staff who work across both see their own
+           figures from both when they check their commission — which is what
+           their pay actually is. Everything else stays separate. -->
+      <div class="report-card" data-sgroup="brands" style="margin-top:16px">
+        <h3>Stores that share your staff</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
+          If your people work across two of your shops, link them here. Each person then sees
+          <b>their own</b> sales and commission from both stores, broken down by store, instead of
+          only the half they rang up at this one. Nothing else is shared: customers, products,
+          takings and reports stay separate, and staff still see only their own figures.
+        </p>
+        <div id="linkedStoresList" style="margin-bottom:12px"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <input type="email" id="linkStoreEmail" placeholder="other store's sign-in email" autocapitalize="off" spellcheck="false"
+                 style="flex:1;min-width:230px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;outline:none">
+          <button class="btn btn-confirm" onclick="openLinkStore()">Link a store</button>
+        </div>
+        <div id="linkStoreStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:8px"></div>
+      </div>
+
       <!-- Closing the account. Last card, its own group, and visibly not the
            same kind of thing as everything above it. -->
       <div class="report-card" data-sgroup="danger" style="margin-top:16px;border-color:#E4C4C8">
@@ -2380,6 +2400,44 @@
     <div id="businessCardBody" style="max-height:60vh;overflow:auto"></div>
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="document.getElementById('businessCardModal').classList.remove('show')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Linking two stores. Admin at both is the whole check: it is the one claim
+     only someone entitled to both sets of books can make. -->
+<div class="modal-overlay" id="linkStoreModal">
+  <div class="modal" style="max-width:440px">
+    <h2>Link a store</h2>
+    <p class="sub">Staff who work at both will see their own figures from both. Prove you run both.</p>
+    <div class="field">
+      <label>Other store's sign-in email</label>
+      <input type="email" id="lsEmail" autocapitalize="off" spellcheck="false" placeholder="them@theirshop.com">
+    </div>
+    <div style="display:flex;gap:10px">
+      <div class="field" style="flex:1">
+        <label>Your admin name here</label>
+        <input type="text" id="lsName" placeholder="admin">
+      </div>
+      <div class="field" style="flex:1">
+        <label>PIN here</label>
+        <input type="password" id="lsPin" inputmode="numeric" autocomplete="off">
+      </div>
+    </div>
+    <div style="display:flex;gap:10px">
+      <div class="field" style="flex:1">
+        <label>Admin name there</label>
+        <input type="text" id="lsOtherName" placeholder="same, if it is">
+      </div>
+      <div class="field" style="flex:1">
+        <label>PIN there</label>
+        <input type="password" id="lsOtherPin" inputmode="numeric" autocomplete="off">
+      </div>
+    </div>
+    <div id="lsError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger);margin-bottom:8px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="document.getElementById('linkStoreModal').classList.remove('show')">Cancel</button>
+      <button class="btn btn-confirm" onclick="submitLinkStore()">Link the stores</button>
     </div>
   </div>
 </div>
@@ -7739,7 +7797,7 @@ function loadTabData(tabName) {
     const f = document.getElementById('emailsFrame');
     if (f && !f.src) f.src = f.dataset.src; // load once, on first open
   }
-  if (tabName === 'settings') applySettingsAccessUI();
+  if (tabName === 'settings') { applySettingsAccessUI(); loadLinkedStores(); }
 }
 
 // Which half of the Transactions tab is showing. Sales is one row per sale;
@@ -8181,8 +8239,18 @@ function renderPaySummary(paycheck) {
       <td style="font-weight:700;${opts.colour ? 'color:' + opts.colour : ''}">${amount}</td>
     </tr>`;
 
+  // Someone working across two of the owner's shops gets a row from each, so
+  // say which is which before totalling them. One store, and this is silent.
+  const byStore = rows.filter(r => r.store_name);
+  const perStore = new Set(byStore.map(r => r.store_name)).size > 1
+    ? byStore.map(r => line(
+        `<span style="padding-left:10px;color:var(--mid)">${escapeHtml(r.store_name)}</span>`,
+        `$${money(r.commission_earned)}`)).join('')
+    : '';
+
   const html =
     line('Commission earned', `$${money(earned)}`, { top: true })
+    + perStore
     + lines.map(a => line(escapeHtml(label(a)),
         `${Number(a.amount) < 0 ? '−' : '+'}$${money(Math.abs(Number(a.amount)))}`,
         { colour: Number(a.amount) < 0 ? 'var(--danger)' : 'var(--success)' })).join('')
@@ -9509,6 +9577,82 @@ async function saveCompanyName() {
 function escapeHtml(str) {
   if (!str) return '';
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── Stores that share a roster ─────────────────────────────────────────────
+async function loadLinkedStores() {
+  const el = document.getElementById('linkedStoresList');
+  if (!el) return;
+  try {
+    const resp = await fetch(`${API}/api/pos/company-links`, { credentials: 'include' });
+    const data = await resp.json();
+    const links = data.links || [];
+    el.innerHTML = links.length
+      ? links.map(l => `
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);font-family:system-ui,sans-serif;font-size:.85rem">
+          <span style="flex:1;font-weight:600">${escapeHtml(l.store_name || 'Linked store')}</span>
+          <span style="font-size:.78rem;color:var(--mid)">shares staff</span>
+          <button type="button" onclick="unlinkStore('${escapeHtml(l.user_id)}')"
+                  style="border:1px solid var(--border);background:var(--white);color:var(--danger);border-radius:6px;padding:4px 9px;cursor:pointer;font-size:.76rem">Unlink</button>
+        </div>`).join('')
+      : '<div style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)">No stores linked. Each person sees only what they rang up here.</div>';
+  } catch (_) { el.innerHTML = ''; }
+}
+
+function openLinkStore() {
+  document.getElementById('lsEmail').value = document.getElementById('linkStoreEmail').value.trim();
+  document.getElementById('lsName').value = '';
+  document.getElementById('lsPin').value = '';
+  document.getElementById('lsOtherName').value = '';
+  document.getElementById('lsOtherPin').value = '';
+  document.getElementById('lsError').textContent = '';
+  document.getElementById('linkStoreModal').classList.add('show');
+  setTimeout(() => document.getElementById('lsEmail').focus(), 60);
+}
+
+async function submitLinkStore() {
+  const errEl = document.getElementById('lsError');
+  errEl.textContent = '';
+  const body = {
+    email: document.getElementById('lsEmail').value.trim(),
+    name: document.getElementById('lsName').value.trim(),
+    pin: document.getElementById('lsPin').value.trim(),
+    other_name: document.getElementById('lsOtherName').value.trim(),
+    other_pin: document.getElementById('lsOtherPin').value.trim(),
+  };
+  if (!body.email || !body.name || !body.pin) {
+    errEl.textContent = 'Enter the other store\'s email and your admin name and PIN here.';
+    return;
+  }
+  try {
+    const resp = await fetch(`${API}/api/pos/company-links`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      credentials: 'include', body: JSON.stringify(body),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Could not link the stores');
+    document.getElementById('linkStoreModal').classList.remove('show');
+    document.getElementById('linkStoreEmail').value = '';
+    document.getElementById('linkStoreStatus').textContent = `Linked with ${data.linked}. Staff who work at both now see both.`;
+    await loadLinkedStores();
+  } catch (err) { errEl.textContent = err.message; }
+}
+
+async function unlinkStore(otherId) {
+  if (!confirm('Unlink this store?\n\nStaff will go back to seeing only what they rang up here.')) return;
+  const name = prompt('Your admin name for this store:');
+  if (!name) return;
+  const pin = prompt('Your PIN:');
+  if (!pin) return;
+  try {
+    const resp = await fetch(`${API}/api/pos/company-links`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ name, pin, other_id: otherId, remove: true }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Could not unlink');
+    await loadLinkedStores();
+  } catch (err) { alert(err.message); }
 }
 
 function getLinkedAccounts() {

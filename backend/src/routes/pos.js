@@ -769,12 +769,27 @@ router.post('/transactions/mine', async (req, res) => {
   if (end) opts.endDate = range.endDate;
 
   const role = roleOf(employee);
-  // A manager or admin sees whatever company scope is active (their own by
-  // default); a sales employee is always limited to their own company's sales.
-  const scope = canManage(employee) ? scopeIds(req) : [req.session.userId];
-  const transactions = canManage(employee)
-    ? await pgDb.getTransactions(scope, opts)
-    : await pgDb.getEmployeeTransactions(req.session.userId, employee.id, opts);
+  // A manager or admin sees every sale in whatever company scope is active —
+  // that scope is theirs to widen, with manager credentials, and must not be
+  // widened here on anyone else's behalf.
+  //
+  // A sales employee sees only their own sales, so their list follows them
+  // across linked stores: one record per store, each read with that store's
+  // own employee id.
+  let scope;
+  let transactions;
+  if (canManage(employee)) {
+    scope = scopeIds(req);
+    transactions = await pgDb.getTransactions(scope, opts);
+  } else {
+    const mine = await personalScope(req, employee, pin);
+    scope = personalIds(mine);
+    transactions = [];
+    for (const at of mine) {
+      transactions.push(...await pgDb.getEmployeeTransactions(at.company_id, at.employee_id, opts));
+    }
+    transactions.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  }
 
   // Label each row so a combined view shows which company a sale belongs to.
   const names = {};
@@ -1587,6 +1602,102 @@ router.get('/reports/employees', async (req, res) => {
 // a product other shops sign up to is somebody else's payroll.
 const payrollScope = async (req) => scopeIds(req);
 
+// ─── One person, two stores ─────────────────────────────────────────────────
+//
+// Staff who work across both of an owner's shops have a separate employee
+// record at each, and the commission reports already match a person by name
+// rather than by record id so that one person's figures span both. What they
+// could not do was see it: an employee's reads are locked to the till they
+// are standing at, and only a manager who verifies at BOTH shops could widen
+// that. So someone working four days at one shop and two at the other saw
+// two thirds of their own pay.
+//
+// This is what they may see, worked out per request from two separate facts:
+//
+//   1. the shops are linked — an admin of both said they share a roster, and
+//      that link lives in Postgres, not on the device; and
+//   2. their own name and PIN is an active employee at the other shop.
+//
+// Neither alone is enough. Without (1) a name and PIN that happened to
+// collide with someone at an unrelated shop would open that shop's figures,
+// which with four-digit PINs and common first names is not a remote
+// possibility. Without (2) anyone at either shop could read a colleague's.
+//
+// Deliberately NOT stored on the session: a register is shared, and one
+// person widening their own view must not widen the next person's.
+async function personalScope(req, employee, pin) {
+  const here = req.session.userId;
+  const found = [{ company_id: here, employee_id: employee.id }];
+  if (!employee || !pin) return found;
+  let linked = [];
+  try { linked = await pgDb.linkedCompanyIds(here); } catch (_) { return found; }
+  for (const other of linked) {
+    if (other === here) continue;
+    // Their own credentials, checked there. verifyEmployeePin already
+    // requires an exact name match and an active record.
+    const them = await pgDb.verifyEmployeePin(pin, other, employee.name);
+    if (them) found.push({ company_id: other, employee_id: them.id });
+  }
+  return found;
+}
+
+// The company ids out of that, for the report reads.
+const personalIds = (scope) => scope.map((s) => s.company_id);
+
+// An admin keeps the session scope they chose; everyone else gets the shops
+// their own credentials open.
+async function figuresScope(req, employee, pin) {
+  return isAdmin(employee) ? scopeIds(req) : personalIds(await personalScope(req, employee, pin));
+}
+
+// ─── Linking two stores ─────────────────────────────────────────────────────
+
+// Which stores this one shares a roster with.
+router.get('/company-links', async (req, res) => {
+  const ids = await pgDb.linkedCompanyIds(req.session.userId);
+  const companies = ids.length ? await pgDb.companiesByIds(ids) : [];
+  res.json({ links: companies.map((c) => ({ user_id: c.user_id, store_name: c.store_name })) });
+});
+
+// Link, or unlink, another store. Proving admin at BOTH is the whole check:
+// it is the one claim that can only be made by someone entitled to both sets
+// of books, and it is exactly what the link then relies on.
+router.post('/company-links', async (req, res) => {
+  const here = req.session.userId;
+  const { name, pin, email, other_name, other_pin, remove } = req.body;
+
+  const mine = await pgDb.verifyEmployeePin(pin, here, name);
+  if (!isAdmin(mine)) {
+    return res.status(403).json({ error: 'Linking stores needs an admin name and PIN for this store.' });
+  }
+
+  // Linking is by address; unlinking names the store by the id already on
+  // screen, so nobody has to remember an address to undo it.
+  const otherId = req.body.other_id || pgDb.companyIdForEmail(email);
+  if (!otherId) return res.status(400).json({ error: 'Enter the other store\'s sign-in email address.' });
+  if (otherId === here) return res.status(400).json({ error: 'That is this store.' });
+  if (!(await pgDb.companyExists(otherId))) {
+    return res.status(404).json({ error: 'No SkySale store uses that email address.' });
+  }
+
+  if (remove) {
+    await pgDb.unlinkCompanies(here, otherId);
+    return res.json({ ok: true, removed: true });
+  }
+
+  // An admin there too — their name and PIN at that store, which may differ.
+  const theirs = await pgDb.verifyEmployeePin(other_pin || pin, otherId, other_name || name);
+  if (!isAdmin(theirs)) {
+    return res.status(403).json({
+      error: 'That store\'s admin name and PIN did not match. Linking needs admin access to both stores.',
+    });
+  }
+
+  await pgDb.linkCompanies(here, otherId, mine.name);
+  const [company] = await pgDb.companiesByIds([otherId]);
+  res.json({ ok: true, linked: company?.store_name || email });
+});
+
 // Commission owed on a given payday, with returns and chargebacks itemised.
 // Manager-gated like the rest of the commission figures.
 router.post('/reports/payroll', async (req, res) => {
@@ -1745,14 +1856,21 @@ router.post('/reports/my-paycheck', async (req, res) => {
   if (!me) return res.status(401).json({ error: 'Invalid name or PIN' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.json({ rows: [] });
 
-  const scope = await payrollScope(req);
+  // An admin sees the whole run for whatever scope they chose; everyone else
+  // sees their own rows, from every linked store their own PIN opens. Payroll
+  // already returns one row per person PER STORE, each carrying its store
+  // name, so a shared employee gets a line for each and the summary adds up.
+  const scope = isAdmin(me) ? await payrollScope(req) : personalIds(await personalScope(req, me, pin));
   const settings = await pgDb.getSettings(req.session.userId);
   const run = await pgDb.payrollForPayday(scope, payday, settings);
   const mine = String(me.name).trim().toLowerCase();
   const rows = isAdmin(me)
     ? run.employees
     : run.employees.filter(e => String(e.employee_name).trim().toLowerCase() === mine);
-  res.json({ payday, period: run.period, paid: run.paid, rows, role: roleOf(me) });
+  res.json({
+    payday, period: run.period, paid: run.paid, rows, role: roleOf(me),
+    store_count: new Set(rows.map(r => r.company_id).filter(Boolean)).size || 1,
+  });
 });
 
 // Amounts added to, or taken off, a paycheck by hand. An employee sees their
@@ -1762,8 +1880,7 @@ router.post('/reports/my-adjustments', async (req, res) => {
   const me = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
   if (!me) return res.status(401).json({ error: 'Invalid name or PIN' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.json({ adjustments: [] });
-  // The companies this session was granted — not every company on the server.
-  const scope = scopeIds(req);
+  const scope = await figuresScope(req, me, pin);
   const rows = await pgDb.adjustmentsForPayday(scope, payday, isAdmin(me) ? null : me.name);
   res.json({ adjustments: rows, payday, role: roleOf(me) });
 });
@@ -1777,8 +1894,7 @@ router.post('/reports/chargebacks', async (req, res) => {
   if (!employee) return res.status(401).json({ error: 'Invalid name or PIN' });
 
   const { startDate, endDate } = await rangeFor(req, start, end);
-  // The companies this session was granted — not every company on the server.
-  const scope = scopeIds(req);
+  const scope = await figuresScope(req, employee, pin);
   let rows = await pgDb.chargebacksForRange(scope, startDate, endDate);
 
   if (!isAdmin(employee)) {
@@ -1804,8 +1920,7 @@ router.post('/reports/employee-detail', async (req, res) => {
   }
 
   const { startDate, endDate } = await rangeFor(req, start, end);
-  // The companies this session was granted — not every company on the server.
-  const scope = scopeIds(req);
+  const scope = await figuresScope(req, me, pin);
 
   const activity = await pgDb.employeeActivityForRange(scope, who, startDate, endDate, store || null);
 
