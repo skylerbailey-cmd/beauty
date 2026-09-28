@@ -2086,7 +2086,12 @@ router.post('/reports/employee-personal', async (req, res) => {
     // that exists: a common name and a lucky number would attach somebody
     // else's sales to this person's commission report, and confirm their PIN
     // while doing it.
-    const scopedCompanies = await pgDb.companiesByIds(scopeIds(req));
+    // Their own company, plus any store linked to it as sharing a roster
+    // where this same name and PIN is an active employee. The loop below
+    // re-verifies each one anyway, so the credentials remain the proof and
+    // the link only decides which stores are worth asking about.
+    const scopedCompanies = await pgDb.companiesByIds(
+      personalIds(await personalScope(req, employee, pin)));
     for (const co of scopedCompanies) {
       const there = co.user_id === req.session.userId
         ? employee
