@@ -8267,7 +8267,12 @@ function renderPaySummary(paycheck) {
   const html =
     line('Commission earned', `$${money(earned)}`, { top: true })
     + perStore
-    + lines.map(a => line(escapeHtml(label(a)),
+    // The receipt the line came off. Two disputes on one cheque are otherwise
+    // told apart only by their amounts, and the first question anybody asks
+    // about a deduction is which sale it was.
+    + lines.map(a => line(
+        escapeHtml(label(a))
+          + (a.receipt ? ` <span style="color:var(--mid);font-weight:400">· ${escapeHtml(a.receipt)}</span>` : ''),
         `${Number(a.amount) < 0 ? '−' : '+'}$${money(Math.abs(Number(a.amount)))}`,
         { colour: Number(a.amount) < 0 ? 'var(--danger)' : 'var(--success)' })).join('')
     + line('Commission on the upcoming paycheck', `$${money(total)}`, { strong: true });
