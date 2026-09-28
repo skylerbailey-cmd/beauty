@@ -8182,6 +8182,16 @@ async function loadPendingChargebacks() {
     const released = all
       .filter(c => c.status === 'won' && c.withheld_payday && paidOut(c.withheld_payday))
       .sort(byName);
+    // Everything else: disputes that are over. A dispute won before any cheque
+    // held it took nothing and owes nothing, and one lost without ever being
+    // withheld came off the paycheck for its own period. Neither is pending
+    // and neither is a release, so all three lists above skip them — and this
+    // panel says it shows every dispute touching this person's sales, so a
+    // settled one vanishing reads as the system losing it.
+    const shown = new Set([...pending, ...alreadyHeld, ...released].map(c => c.chargeback_id ?? c.id));
+    const settled = all
+      .filter(c => c.status !== 'pending' && !shown.has(c.chargeback_id ?? c.id))
+      .sort(byName);
     // The summary is built from the paycheck itself rather than reassembled
     // here — a dispute already recorded against this cheque still comes off it,
     // and working that out twice is how the two figures drifted $700 apart.
@@ -8197,7 +8207,8 @@ async function loadPendingChargebacks() {
     }
     if (mine !== pendingCbRequest) return;
     put(renderPendingChargebacks(pending, alreadyHeld, data.role === 'admin')
-      + renderReleased(released));
+      + renderReleased(released)
+      + renderSettledChargebacks(settled));
     renderPaySummary(paycheck);
   } catch (err) {
     // Say so rather than leaving a blank where a deduction should be — an
@@ -8298,11 +8309,49 @@ function renderReleased(rows) {
     </div>`;
 }
 
+// Disputes that are over and moved no money on any upcoming cheque. Listed
+// because this panel promises every dispute, and because "it was won" is the
+// first thing someone asks about a sale they remember being disputed.
+function renderSettledChargebacks(rows) {
+  if (!rows || !rows.length) return '';
+  const outcome = (c) => {
+    if (c.status === 'lost') {
+      return c.withheld_payday
+        ? `Lost — came off the ${escapeHtml(c.withheld_payday)} paycheck`
+        : 'Lost — taken off the paycheck for the period it was sold in';
+    }
+    return c.withheld_payday
+      ? 'Won — the cheque holding it never went out, so nothing was taken'
+      : 'Won — nothing was ever held, the commission was paid as normal';
+  };
+  return `
+    <div style="margin-top:18px">
+      <div style="font-family:system-ui,sans-serif;font-size:.85rem;font-weight:600;margin-bottom:4px">Settled disputes</div>
+      <div style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-bottom:8px">
+        Closed, and nothing further is owed either way. Here so a dispute you remember doesn't look like it vanished.
+      </div>
+      <table class="report-table">
+        <thead><tr><th>Receipt</th><th>Sold</th><th>Customer</th><th>Store</th><th>Closed</th><th>Outcome</th><th>Commission involved</th></tr></thead>
+        <tbody>${rows.map(c => `
+          <tr>
+            <td><button onclick="findDisputedSale('${escapeHtml(c.receipt_number)}', '${escapeHtml(c.sale_date)}')"
+                  style="border:none;background:none;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-decoration:underline">${escapeHtml(c.receipt_number)}</button></td>
+            <td>${escapeHtml(c.sale_date)}</td>
+            <td>${escapeHtml(c.customer_name || '-')}</td>
+            <td>${escapeHtml(c.store_name || '-')}</td>
+            <td>${escapeHtml(c.closed_at || '-')}</td>
+            <td style="color:${c.status === 'lost' ? 'var(--danger)' : 'var(--mid)'}">${outcome(c)}</td>
+            <td style="color:var(--mid)">$${money(Number(c.commission_at_risk || 0))}</td>
+          </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+}
+
 function renderPendingChargebacks(rows, alreadyHeld, isManager) {
   alreadyHeld = alreadyHeld || [];
   if (!rows.length && !alreadyHeld.length) {
     return `<div style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin-top:12px">
-      No open disputes — nothing is being held from pay.</div>`;
+      No open disputes — nothing is being held from pay. Any that have already been settled are listed below.</div>`;
   }
   // Only what is still to be taken adds up to the figure owed. The rest is
   // shown for the same reason it is shown on the paycheck: it is still in
