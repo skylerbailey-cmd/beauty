@@ -336,6 +336,23 @@ async function initSchema() {
   // The reminder staff see before taking a return, in the shop's own words.
   // One list, shown on the return screen and again in the confirmation, so a
   // shop writes its policy once. Blank means the reminder is switched off.
+  // The nightly reconciliation: whether to run it, and whether to say
+  // something when the day does not reconcile. Off until a shop turns them on.
+  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS audit_auto_enabled INTEGER DEFAULT 0');
+  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS audit_alert_enabled INTEGER DEFAULT 0');
+  // One row per company per day audited, so a restart, a second web process or
+  // a re-deploy cannot run the same morning twice.
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_audit_auto_runs (
+    user_id TEXT NOT NULL,
+    audited_day DATE NOT NULL,
+    ran_at TIMESTAMPTZ DEFAULT NOW(),
+    days_off INTEGER DEFAULT 0,
+    difference REAL DEFAULT 0,
+    alerted INTEGER DEFAULT 0,
+    note TEXT DEFAULT '',
+    PRIMARY KEY (user_id, audited_day)
+  )`);
+
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS return_policy_title TEXT DEFAULT 'Before processing a return'");
   await migrate(`ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS return_policy_points TEXT DEFAULT 'Inspect each item — make sure nothing has been **opened or used**.
 Ask the customer if they''d like to do an **exchange** instead.
@@ -1257,6 +1274,42 @@ async function getSavedAudits(userId) {
      WHERE s.user_id = $1
      ORDER BY s.created_at DESC`,
     [userId])).rows;
+}
+
+// Companies that want the nightly reconciliation, with what they need to
+// decide when 9am is for them.
+async function companiesWantingAutoAudit() {
+  return (await query(
+    `SELECT user_id, COALESCE(timezone, 'America/Los_Angeles') AS timezone,
+            COALESCE(store_name, '') AS store_name,
+            COALESCE(audit_alert_enabled, 0) AS audit_alert_enabled
+       FROM pos_settings WHERE COALESCE(audit_auto_enabled, 0) = 1`)).rows;
+}
+
+// Claim a morning for one company. The insert is the lock: whoever wins it
+// runs the audit, and anybody else — a second process, a restart, the next
+// tick five minutes later — gets nothing back and does nothing.
+async function claimAutoAudit(userId, day) {
+  const r = await query(
+    `INSERT INTO pos_audit_auto_runs (user_id, audited_day) VALUES ($1, $2::date)
+     ON CONFLICT (user_id, audited_day) DO NOTHING RETURNING user_id`, [userId, day]);
+  return r.rowCount > 0;
+}
+
+async function recordAutoAudit(userId, day, fields) {
+  await query(
+    `UPDATE pos_audit_auto_runs
+        SET days_off = $3, difference = $4, alerted = $5, note = $6, ran_at = NOW()
+      WHERE user_id = $1 AND audited_day = $2::date`,
+    [userId, day, fields.days_off || 0, fields.difference || 0,
+     fields.alerted ? 1 : 0, String(fields.note || '').slice(0, 500)]);
+}
+
+async function recentAutoAudits(userId, limit = 14) {
+  return (await query(
+    `SELECT audited_day::text AS audited_day, ran_at, days_off, difference, alerted, note
+       FROM pos_audit_auto_runs WHERE user_id = $1
+      ORDER BY audited_day DESC LIMIT $2`, [userId, limit])).rows;
 }
 
 async function saveAudit(userId, label, from, to) {
@@ -3051,6 +3104,7 @@ async function updateSettings(userId, fields) {
     'store_email', 'store_phone', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'payarc_token', 'payarc_merchant_id', 'payarc_env', 'payroll_paydays', 'payroll_lag', 'sale_alert_phone', 'sale_alert_carrier', 'sale_alert_enabled', 'sale_alert_recipients',
     'booking_slot_step', 'booking_lead_hours',
     'return_policy_title', 'return_policy_points',
+    'audit_auto_enabled', 'audit_alert_enabled',
     // The shop's own address on the app domain. Left off this list it is
     // silently dropped — the save reports success and the subdomain never
     // exists, which is exactly what happened.
@@ -4005,6 +4059,10 @@ module.exports = {
   getAuditReviews,
   setAuditReview,
   getSavedAudits,
+  companiesWantingAutoAudit,
+  claimAutoAudit,
+  recordAutoAudit,
+  recentAutoAudits,
   saveAudit,
   deleteSavedAudit,
   moveTransactionToCompany,

@@ -280,6 +280,23 @@ app.listen(PORT, async () => {
     console.error('[startup] Error during watch restoration:', err.message);
   }
 
+  // The nightly reconciliation. Checked every ten minutes rather than
+  // scheduled for a particular moment: shops are in different timezones, the
+  // process restarts on every deploy, and a missed 9am would mean a day
+  // nobody ever reconciled. Each company's morning is claimed once in the
+  // database, so checking often costs nothing and running twice cannot happen.
+  try {
+    const { runNightlyAudits } = require('./routes/pos');
+    if (typeof runNightlyAudits === 'function') {
+      const tick = () => runNightlyAudits().catch((e) => console.error('[audit] tick failed:', e.message));
+      setInterval(tick, 10 * 60 * 1000);
+      setTimeout(tick, 30 * 1000);   // and once shortly after boot
+      console.log('[audit] nightly reconciliation checks every 10 minutes');
+    }
+  } catch (err) {
+    console.error('[audit] could not start the nightly reconciliation:', err.message);
+  }
+
   // Keep-alive: ping own public URL every 5 minutes to prevent Railway from sleeping
   const publicDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
   if (publicDomain) {

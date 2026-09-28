@@ -2893,8 +2893,9 @@ async function demoAudit(userId, settings, req) {
   };
 }
 
-router.get('/reconciliation-audit', async (req, res) => {
-  const userId = req.session.userId;
+// The audit itself, with no request around it, so the nightly run can ask
+// for exactly what the button asks for.
+async function reconciliationAudit(userId, opts = {}) {
   const settings = await pgDb.getSettings(userId);
   const dbaId = (settings.maverick_dba_id || '').trim();
   const token = (settings.maverick_token || '').trim();
@@ -2913,14 +2914,14 @@ router.get('/reconciliation-audit', async (req, res) => {
   const isDemo = String(settings.slug || '') === 'demo'
     && String(process.env.DEMO_EMAIL || '').includes('@');
   if (isDemo && !hasMaverick && !hasPayarc) {
-    return res.json(await demoAudit(userId, settings, req));
+    return demoAudit(userId, settings, opts.req);
   }
 
-  if (!hasMaverick && !hasPayarc) return res.json({ configured: false });
+  if (!hasMaverick && !hasPayarc) return { configured: false };
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: tz });
-  let from = (req.query.from || '').trim();
-  let to = (req.query.to || '').trim();
+  let from = String(opts.from || '').trim();
+  let to = String(opts.to || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(to)) to = today;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(from)) {
     const d = new Date(to + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 6);
@@ -2952,9 +2953,9 @@ router.get('/reconciliation-audit', async (req, res) => {
         }
       }
     }
-    if (!r.ok) return res.json({ configured: true, from, to, error: r.error });
+    if (!r.ok) return { configured: true, from, to, error: r.error };
   } catch (e) {
-    return res.json({ configured: true, from, to, error: e.message });
+    return { configured: true, from, to, error: e.message };
   }
 
   // Each day in the range gets its own day-centered fetch (fetchMerchantDay),
@@ -3153,13 +3154,159 @@ router.get('/reconciliation-audit', async (req, res) => {
   if (hasPayarc) processors.push('Payarc');
   if (payarcDiag) debug.payarc = payarcDiag;
 
-  res.json({
+  return {
     configured: true, from, to, days, totals, dba_id: usedDbaId,
     processors,
     // A processor that failed is reported rather than silently contributing 0,
     // which would read as "settled nothing" and look like a real shortfall.
     processor_errors: payarcError ? [{ processor: 'Payarc', error: payarcError }] : [],
     _debug: debug,
+  };
+}
+
+router.get('/reconciliation-audit', async (req, res) => {
+  res.json(await reconciliationAudit(req.session.userId, {
+    from: req.query.from, to: req.query.to, req,
+  }));
+});
+
+// ─── The nightly reconciliation ─────────────────────────────────────────────
+//
+// At 9am on the shop's own clock, yesterday is reconciled against whatever the
+// processor settled. A shop that never opens the Transactions tab still finds
+// out that a day did not balance, which is the whole point: a card sale that
+// never settled is money gone, and nobody goes looking for it.
+//
+// Runs off the same function the button uses, so the two can never drift.
+
+function localNow(tz) {
+  // 'en-CA' gives YYYY-MM-DD, and the hour comes back on a 24-hour clock.
+  const d = new Date();
+  const day = d.toLocaleDateString('en-CA', { timeZone: tz });
+  const hour = Number(d.toLocaleString('en-US', { timeZone: tz, hour: '2-digit', hour12: false }).match(/\d+/)?.[0] ?? 0);
+  return { day, hour };
+}
+
+function yesterdayIn(tz) {
+  const d = new Date(new Date().toLocaleString('en-US', { timeZone: tz }));
+  d.setDate(d.getDate() - 1);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function auditAlertText(store, day, off, difference) {
+  const money2 = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return [
+    `${store || 'Your shop'}: ${day} did not reconcile`,
+    `${off} day${off === 1 ? '' : 's'} off by $${money2(Math.abs(difference))}`,
+    difference > 0 ? '(merchant settled more than the register recorded)'
+      : '(the register recorded more than the merchant settled)',
+    'Open Transactions → Audit.',
+  ].join(' · ');
+}
+
+// Same delivery as a sale alert: the shop's own numbers and carriers, sent
+// from its own mailbox. Never throws — a failed text must not stop the run.
+async function sendAuditAlert(userId, settings, text) {
+  try {
+    const addresses = smsAddressesFor(settings);
+    if (!addresses.length) {
+      console.log(`[audit] ${userId}: mismatch, but no usable number is saved.`);
+      return false;
+    }
+    const user = await getSendingUser(userId);
+    if (!user?.refresh_token) {
+      console.log(`[audit] ${userId}: mismatch, but no Gmail is connected to send from.`);
+      return false;
+    }
+    let sent = 0;
+    for (const to of addresses) {
+      const reach = await gatewayReachable(to);
+      if (!reach.ok) { console.error(`[audit] alert to ${to} skipped: ${reach.why}`); continue; }
+      try { await sendGmail(user, to, '', text, 'text/plain'); sent++; }
+      catch (err) { console.error(`[audit] alert to ${to} failed:`, err.message); }
+    }
+    return sent > 0;
+  } catch (err) {
+    console.error('[audit] alert failed:', err.message);
+    return false;
+  }
+}
+
+async function runNightlyAuditFor(company) {
+  const tz = company.timezone || 'America/Los_Angeles';
+  const { hour } = localNow(tz);
+  if (hour < 9) return;                       // not yet nine where they are
+  const day = yesterdayIn(tz);
+  // The claim is the lock — see claimAutoAudit.
+  if (!(await pgDb.claimAutoAudit(company.user_id, day))) return;
+
+  try {
+    const result = await reconciliationAudit(company.user_id, { from: day, to: day });
+    if (!result || result.configured === false) {
+      await pgDb.recordAutoAudit(company.user_id, day, { note: 'no processor connected' });
+      return;
+    }
+    if (result.error) {
+      await pgDb.recordAutoAudit(company.user_id, day, { note: `could not read the processor: ${result.error}` });
+      return;
+    }
+    const days = result.days || [];
+    const off = days.filter((d) => !d.matched).length;
+    const difference = Number(result.totals?.difference || 0);
+    let alerted = false;
+    if (off && Number(company.audit_alert_enabled)) {
+      const settings = await pgDb.getSettings(company.user_id);
+      alerted = await sendAuditAlert(company.user_id, settings,
+        auditAlertText(settings.store_name, day, off, difference));
+    }
+    await pgDb.recordAutoAudit(company.user_id, day, {
+      days_off: off, difference, alerted,
+      note: off ? '' : 'reconciled',
+    });
+    console.log(`[audit] ${company.store_name || company.user_id} ${day}: ${off ? off + ' day(s) off' : 'reconciled'}${alerted ? ', alerted' : ''}`);
+  } catch (err) {
+    await pgDb.recordAutoAudit(company.user_id, day, { note: `failed: ${err.message}` });
+    console.error(`[audit] ${company.user_id} ${day} failed:`, err.message);
+  }
+}
+
+// Called on a timer. Deliberately quiet when nobody has switched it on.
+async function runNightlyAudits() {
+  let companies = [];
+  try { companies = await pgDb.companiesWantingAutoAudit(); } catch (_) { return; }
+  for (const c of companies) {
+    try { await runNightlyAuditFor(c); } catch (err) {
+      console.error('[audit] nightly run failed for', c.user_id, err.message);
+    }
+  }
+}
+
+// What the Audit tab shows at the top: is it on, and how have the last two
+// weeks gone.
+router.get('/audit-auto', async (req, res) => {
+  const userId = req.session.userId;
+  const settings = await pgDb.getSettings(userId);
+  res.json({
+    enabled: !!Number(settings?.audit_auto_enabled),
+    alert_enabled: !!Number(settings?.audit_alert_enabled),
+    alerts_possible: !!Number(settings?.sale_alert_enabled) || smsAddressesFor(settings).length > 0,
+    timezone: settings?.timezone || 'America/Los_Angeles',
+    runs: await pgDb.recentAutoAudits(userId, 14),
+  });
+});
+
+router.post('/audit-auto', async (req, res) => {
+  const userId = req.session.userId;
+  const fields = {};
+  if (req.body.enabled !== undefined) fields.audit_auto_enabled = req.body.enabled ? 1 : 0;
+  if (req.body.alert_enabled !== undefined) fields.audit_alert_enabled = req.body.alert_enabled ? 1 : 0;
+  if (Object.keys(fields).length) await pgDb.updateSettings(userId, fields);
+  const settings = await pgDb.getSettings(userId);
+  res.json({
+    ok: true,
+    enabled: !!Number(settings?.audit_auto_enabled),
+    alert_enabled: !!Number(settings?.audit_alert_enabled),
   });
 });
 
@@ -3876,3 +4023,4 @@ router.patch('/custom-products/:id', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.runNightlyAudits = runNightlyAudits;

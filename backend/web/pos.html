@@ -920,6 +920,7 @@
     <div style="max-width:1500px;margin:0 auto;padding:20px 20px 0">
       <div class="tx-views">
         <button class="tx-view-btn active" data-view="sales" onclick="switchTxView('sales')">Sales</button>
+        <button class="tx-view-btn" data-view="audit" onclick="switchTxView('audit')">Audit</button>
         <button class="tx-view-btn" data-view="customers" onclick="switchTxView('customers')">Customers</button>
       </div>
     </div>
@@ -951,6 +952,64 @@
         <button class="btn" id="runAuditBtn" style="background:var(--accent2);color:#fff;padding:8px 16px" onclick="runAudit()">Run Batch Audit</button>
         <span id="batchStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)"></span>
       </div>
+
+      <div class="report-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <h3 style="margin:0">Transaction History</h3>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span id="importStatus" style="font-family:system-ui,sans-serif;font-size:.8rem"></span>
+            <input type="file" id="importFile" accept=".csv" style="display:none" onchange="handleImportFile(this, 'transactions')">
+            <button class="btn" id="importCsvBtn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:7px 14px;font-size:.82rem" onclick="document.getElementById('importFile').click()">Import CSV</button>
+            <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportTransactionsCSV()">Export CSV</button>
+            <button class="btn" id="chargebackSelectedBtn" style="background:var(--accent2);color:#fff;padding:7px 14px;font-size:.82rem;display:none" onclick="openBulkChargeback()">Set Chargeback Status</button>
+            <button class="btn" id="deleteSelectedTxBtn" style="background:var(--danger);color:#fff;padding:7px 14px;font-size:.82rem;display:none" onclick="startBulkDeleteTransactions()">Delete Selected</button>
+          </div>
+        </div>
+        <div id="txSummary" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:10px 0"></div>
+        <div class="table-scroll">
+        <table class="report-table">
+          <thead><tr><th id="txSelectAllHeader" style="display:none;width:28px"><input type="checkbox" id="txSelectAll" onchange="toggleSelectAllTx(this.checked)"></th><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Items</th><th>Subtotal</th><th>Total</th><th>Payment</th><th id="txCompanyHeader" style="display:none">Company</th><th></th></tr></thead>
+          <tbody id="txHistoryBody"></tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+    </div><!-- /txViewSales -->
+
+  <!-- Audit: the nightly reconciliation, every audit kept, and the result of
+       whichever one is open. Its own view because reading an audit and
+       reading the day's sales are different jobs. -->
+  <div id="txViewAudit" style="display:none">
+    <div class="report-card" id="autoAuditCard">
+      <h3 style="margin:0 0 4px">Nightly reconciliation</h3>
+      <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
+        Each morning at <b>9am</b> on this store's clock, yesterday is checked against what the
+        processor actually settled — so a card sale that never funded turns up the next day rather
+        than at month end. <span id="autoAuditTz"></span>
+      </p>
+      <label style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.88rem;cursor:pointer;margin-bottom:8px">
+        <input type="checkbox" id="autoAuditOn" onchange="saveAutoAudit()" style="width:16px;height:16px;accent-color:var(--success);cursor:pointer">
+        <span>Run the audit automatically every morning</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.88rem;cursor:pointer">
+        <input type="checkbox" id="autoAuditAlert" onchange="saveAutoAudit()" style="width:16px;height:16px;accent-color:var(--success);cursor:pointer">
+        <span>Text me when a day doesn't reconcile <span style="color:var(--mid)">— to the same numbers as sale alerts</span></span>
+      </label>
+      <div id="autoAuditStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-top:8px"></div>
+      <div id="autoAuditRuns" style="margin-top:12px"></div>
+    </div>
+
+    <div class="report-card">
+      <h3 style="margin:0 0 4px">Run an audit</h3>
+      <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:10px">
+        Any range you like. The result opens below, and can be saved to come back to.
+      </p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-family:system-ui,sans-serif;font-size:.85rem">
+        <label>From: <input type="date" id="auditFrom" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem"></label>
+        <label>To: <input type="date" id="auditTo" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem"></label>
+        <button class="btn" style="background:var(--accent2);color:#fff;padding:8px 16px" onclick="runAudit('tab')">Run Batch Audit</button>
+      </div>
+    </div>
 
       <!-- Saved audits — ranges kept to come back to. Re-run against live data
            on open, so they reflect later edits to the transactions. -->
@@ -985,28 +1044,8 @@
         </div>
       </div>
 
-      <div class="report-card">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-          <h3 style="margin:0">Transaction History</h3>
-          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <span id="importStatus" style="font-family:system-ui,sans-serif;font-size:.8rem"></span>
-            <input type="file" id="importFile" accept=".csv" style="display:none" onchange="handleImportFile(this, 'transactions')">
-            <button class="btn" id="importCsvBtn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:7px 14px;font-size:.82rem" onclick="document.getElementById('importFile').click()">Import CSV</button>
-            <button class="btn btn-confirm" style="padding:7px 14px;font-size:.82rem" onclick="exportTransactionsCSV()">Export CSV</button>
-            <button class="btn" id="chargebackSelectedBtn" style="background:var(--accent2);color:#fff;padding:7px 14px;font-size:.82rem;display:none" onclick="openBulkChargeback()">Set Chargeback Status</button>
-            <button class="btn" id="deleteSelectedTxBtn" style="background:var(--danger);color:#fff;padding:7px 14px;font-size:.82rem;display:none" onclick="startBulkDeleteTransactions()">Delete Selected</button>
-          </div>
-        </div>
-        <div id="txSummary" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:10px 0"></div>
-        <div class="table-scroll">
-        <table class="report-table">
-          <thead><tr><th id="txSelectAllHeader" style="display:none;width:28px"><input type="checkbox" id="txSelectAll" onchange="toggleSelectAllTx(this.checked)"></th><th>Receipt #</th><th>Date</th><th>Type</th><th>Employee</th><th>Customer</th><th>Items</th><th>Subtotal</th><th>Total</th><th>Payment</th><th id="txCompanyHeader" style="display:none">Company</th><th></th></tr></thead>
-          <tbody id="txHistoryBody"></tbody>
-        </table>
-        </div>
-      </div>
-    </div>
-    </div><!-- /txViewSales -->
+  </div><!-- /txViewAudit -->
+
 
   <div id="txViewCustomers" style="display:none">
     <div style="max-width:1500px;margin:0 auto;padding:20px">
@@ -1558,8 +1597,17 @@
           <em>Email address instead of a text</em> and use the phone's email address: it arrives as a
           notification and no carrier sits in the way to drop it.
         </p>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:system-ui,sans-serif;font-size:.85rem;margin-bottom:10px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:system-ui,sans-serif;font-size:.85rem;margin-bottom:6px">
           <input type="checkbox" id="settingsAlertEnabled" style="width:16px;height:16px;accent-color:var(--accent)"> Send a text on every completed sale
+        </label>
+        <!-- The same numbers, a different reason to use them. One is a running
+             commentary on the day; the other only speaks when something is
+             wrong, which is why a shop may well want the second without the
+             first. -->
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:system-ui,sans-serif;font-size:.85rem;margin-bottom:10px">
+          <input type="checkbox" id="settingsAuditAlertEnabled" style="width:16px;height:16px;accent-color:var(--accent)">
+          Send a text when a day doesn't reconcile with the merchant
+          <span style="color:var(--mid)">— needs the nightly audit, on the Transactions → Audit tab</span>
         </label>
         <!-- One row per person. Each needs its own carrier, so they can't just
              be a list of numbers. -->
@@ -7111,6 +7159,8 @@ function refreshSaleAlertState() {
   alertRecipients = list.map(r => ({ phone: r.phone || '', carrier: r.carrier || '' }));
   if (!alertRecipients.length) alertRecipients = [{ phone: '', carrier: '' }];
   document.getElementById('settingsAlertEnabled').checked = !!Number(storeSettings.sale_alert_enabled);
+  const auditAlertBox = document.getElementById('settingsAuditAlertEnabled');
+  if (auditAlertBox) auditAlertBox.checked = !!Number(storeSettings.audit_alert_enabled);
   renderAlertRecipients();
 }
 
@@ -7158,9 +7208,12 @@ function usableAlertRecipients() {
 async function saveSaleAlerts() {
   const statusEl = document.getElementById('saleAlertStatus');
   const enabled = document.getElementById('settingsAlertEnabled').checked;
+  const auditAlerts = !!document.getElementById('settingsAuditAlertEnabled')?.checked;
   const usable = usableAlertRecipients();
   const partial = alertRecipients.filter(r => (r.phone || r.carrier) && !usable.includes(r)).length;
-  if (enabled && !usable.length) {
+  // Both kinds of text go to the same numbers, so either one being on needs
+  // somewhere to send it.
+  if ((enabled || auditAlerts) && !usable.length) {
     statusEl.style.color = 'var(--danger)';
     statusEl.textContent = 'Add a 10-digit mobile number with its carrier — or an email address — before switching alerts on.';
     return;
@@ -7173,6 +7226,7 @@ async function saveSaleAlerts() {
       body: JSON.stringify({
         sale_alert_recipients: JSON.stringify(usable),
         sale_alert_enabled: enabled ? 1 : 0,
+        audit_alert_enabled: auditAlerts ? 1 : 0,
         // Keep the original single fields in step with the first recipient so
         // nothing reading them falls out of date.
         sale_alert_phone: usable[0]?.phone || '',
@@ -7521,13 +7575,25 @@ async function deleteSavedAudit(id) {
   } catch (err) { alert(err.message); }
 }
 
-async function runAudit() {
-  // Uses the same date range selected for the transaction history
-  const from = document.getElementById('histStart').value;
-  const to = document.getElementById('histEnd').value;
+// Run from the Sales filters ('sales', the default) or from the Audit tab's
+// own date boxes ('tab'). Either way the result belongs on the Audit tab, so
+// that is where it lands — a result appearing behind the tab you are looking
+// at is a result nobody sees.
+async function runAudit(source) {
+  const fromTab = source === 'tab';
+  const from = document.getElementById(fromTab ? 'auditFrom' : 'histStart').value;
+  const to = document.getElementById(fromTab ? 'auditTo' : 'histEnd').value;
   const statusEl = document.getElementById('batchStatus');
   const resultEl = document.getElementById('batchResult');
-  if (!from || !to) { statusEl.style.color = 'var(--danger)'; statusEl.textContent = 'Pick a From/To date range above.'; return; }
+  switchTxView('audit');
+  if (!from || !to) {
+    statusEl.style.color = 'var(--danger)';
+    statusEl.textContent = fromTab ? 'Pick a From and To date.' : 'Pick a From/To date range on the Sales tab.';
+    return;
+  }
+  // Keep the two sets of boxes saying the same thing.
+  const af = document.getElementById('auditFrom'), at = document.getElementById('auditTo');
+  if (af && !fromTab) { af.value = from; at.value = to; }
   statusEl.style.color = 'var(--mid)';
   statusEl.textContent = 'Fetching batches…';
   resultEl.style.display = 'none';
@@ -7935,11 +8001,102 @@ let txView = 'sales';
 function switchTxView(view) {
   txView = view;
   document.getElementById('txViewSales').style.display = view === 'sales' ? '' : 'none';
+  document.getElementById('txViewAudit').style.display = view === 'audit' ? '' : 'none';
   document.getElementById('txViewCustomers').style.display = view === 'customers' ? '' : 'none';
   document.querySelectorAll('.tx-view-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
   // Loaded the first time it's asked for, not on every tab open — the customer
   // report is a heavier query than the sales list.
   if (view === 'customers' && !custReportData.length) loadCustomers();
+  if (view === 'audit') {
+    loadSavedAudits();
+    loadAutoAudit();
+    // Default the boxes to the range the Sales tab is showing, so the tab is
+    // usable the moment it opens.
+    const af = document.getElementById('auditFrom'), at = document.getElementById('auditTo');
+    if (af && !af.value) af.value = document.getElementById('histStart').value || '';
+    if (at && !at.value) at.value = document.getElementById('histEnd').value || '';
+  }
+}
+
+// ─── The nightly reconciliation, as the shop sees it ─────────────────────────
+async function loadAutoAudit() {
+  const on = document.getElementById('autoAuditOn');
+  const alertBox = document.getElementById('autoAuditAlert');
+  if (!on) return;
+  try {
+    const resp = await fetch(`${API}/api/pos/audit-auto`, { credentials: 'include' });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    on.checked = !!data.enabled;
+    alertBox.checked = !!data.alert_enabled;
+    const tzEl = document.getElementById('autoAuditTz');
+    if (tzEl) tzEl.textContent = data.timezone ? `This store's clock is ${data.timezone.replace(/_/g, ' ')}.` : '';
+    // A text nobody can receive is worth saying out loud rather than
+    // discovering on the morning a day does not balance.
+    const status = document.getElementById('autoAuditStatus');
+    if (status) {
+      status.style.color = 'var(--mid)';
+      status.textContent = (alertBox.checked && !data.alerts_possible)
+        ? 'No phone number is saved for alerts — add one under Settings → Sale Text Alerts, or nothing can be sent.'
+        : '';
+      if (alertBox.checked && !data.alerts_possible) status.style.color = 'var(--danger)';
+    }
+    renderAutoAuditRuns(data.runs || []);
+  } catch (_) { /* the rest of the tab still works */ }
+}
+
+function renderAutoAuditRuns(runs) {
+  const box = document.getElementById('autoAuditRuns');
+  if (!box) return;
+  if (!runs.length) {
+    box.innerHTML = '<div style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid)">No automatic run yet. The first one happens at 9am tomorrow.</div>';
+    return;
+  }
+  box.innerHTML = `
+    <div style="font-family:system-ui,sans-serif;font-size:.78rem;font-weight:700;color:var(--mid);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Recent mornings</div>
+    <table class="report-table" style="font-size:.82rem">
+      <thead><tr><th>Day audited</th><th>Result</th><th>Difference</th><th>Alerted</th></tr></thead>
+      <tbody>${runs.map(r => {
+        const off = Number(r.days_off) || 0;
+        const note = String(r.note || '');
+        const result = note && off === 0 && note !== 'reconciled'
+          ? `<span style="color:var(--mid)">${escapeHtml(note)}</span>`
+          : (off
+            ? `<span style="color:var(--danger);font-weight:600">did not reconcile</span>`
+            : '<span style="color:var(--success);font-weight:600">✓ reconciled</span>');
+        return `<tr>
+          <td>${escapeHtml(r.audited_day)}</td>
+          <td>${result}</td>
+          <td style="${off ? 'color:var(--danger);font-weight:600' : 'color:var(--mid)'}">${off ? (Number(r.difference) > 0 ? '+' : '') + '$' + money(r.difference) : '—'}</td>
+          <td style="color:var(--mid)">${r.alerted ? 'texted' : '—'}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+}
+
+async function saveAutoAudit() {
+  const status = document.getElementById('autoAuditStatus');
+  const body = {
+    enabled: document.getElementById('autoAuditOn').checked,
+    alert_enabled: document.getElementById('autoAuditAlert').checked,
+  };
+  status.style.color = 'var(--mid)';
+  status.textContent = 'Saving…';
+  try {
+    const resp = await fetch(`${API}/api/pos/audit-auto`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      credentials: 'include', body: JSON.stringify(body),
+    });
+    if (!resp.ok) throw new Error((await resp.json().catch(() => ({}))).error || 'Could not save');
+    status.style.color = 'var(--success)';
+    status.textContent = body.enabled
+      ? (body.alert_enabled ? 'On. You will be texted when a day does not reconcile.' : 'On. Results appear here each morning.')
+      : 'Off. Nothing will run automatically.';
+    loadAutoAudit();
+  } catch (err) {
+    status.style.color = 'var(--danger)';
+    status.textContent = err.message;
+  }
 }
 
 // Everything on screen that belongs to a single company. Wiped the moment a
