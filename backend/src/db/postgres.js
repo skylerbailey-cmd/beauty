@@ -841,7 +841,7 @@ async function getCustomerByEmail(email, userId) {
   return c;
 }
 
-async function updateCustomer(id, fields) {
+async function updateCustomer(id, fields, opts = {}) {
   const allowed = ['name', 'email', 'phone', 'birthday', 'address', 'notes'];
   const sets = [];
   const params = [];
@@ -852,6 +852,16 @@ async function updateCustomer(id, fields) {
       params.push(fields[key]);
       idx++;
     }
+  }
+  // When an import knows a customer registered before we first saw them, the
+  // earlier date is the true one. `onlyEarlier` keeps it from ever moving
+  // forward, which would throw away how long they have been a customer.
+  if (fields.created_at !== undefined && fields.created_at) {
+    sets.push(opts.onlyEarlier
+      ? `created_at = LEAST(created_at, $${idx}::timestamptz)`
+      : `created_at = $${idx}::timestamptz`);
+    params.push(fields.created_at);
+    idx++;
   }
   if (sets.length === 0) return;
   sets.push('updated_at = NOW()');
@@ -3986,10 +3996,11 @@ async function findCustomerIdByContact(userId, email, phone) {
 // A plain insert, for a row with no contact details to match on.
 async function createCustomerRecord(userId, c) {
   const r = await query(
-    `INSERT INTO customers (name, email, phone, birthday, address, notes, user_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+    `INSERT INTO customers (name, email, phone, birthday, address, notes, user_id, created_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7, COALESCE($8::timestamptz, NOW())) RETURNING *`,
     [String(c.name || '').trim(), String(c.email || '').trim(), String(c.phone || '').trim(),
-     c.birthday || null, String(c.address || '').trim(), String(c.notes || '').trim(), userId]);
+     c.birthday || null, String(c.address || '').trim(), String(c.notes || '').trim(), userId,
+     c.created_at || null]);
   return r.rows[0];
 }
 

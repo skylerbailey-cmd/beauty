@@ -3554,7 +3554,12 @@ router.post('/import-customers', async (req, res) => {
       const name = String(row.name || '').trim();
       if (!name) { skipped++; continue; }
 
-      const email = String(row.email || '').trim();
+      // "none" is not an email address. The browser already strips the words
+      // the old till used for "empty", but the same rows can arrive from a
+      // script or a retry, and one bad email address is not one bad record —
+      // every later row matches it and the list collapses into one customer.
+      const emailRaw = String(row.email || '').trim();
+      const email = /^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(emailRaw) ? emailRaw : '';
       const phone = String(row.phone || '').trim();
 
       // Someone with neither can't be matched against anyone, and matching on
@@ -3567,6 +3572,9 @@ router.post('/import-customers', async (req, res) => {
       if (row.address) extras.address = String(row.address).trim();
       if (row.notes) extras.notes = String(row.notes).trim();
       if (/^\d{4}-\d{2}-\d{2}$/.test(String(row.birthday || ''))) extras.birthday = row.birthday;
+      // How long somebody has been a customer is worth keeping: it is what the
+      // "new this month" count and the customer list's own ordering read.
+      const registered = /^\d{4}-\d{2}-\d{2}$/.test(String(row.registered || '')) ? row.registered : '';
 
       if (existing) {
         // Only fill what's missing — a file shouldn't blank a phone number
@@ -3579,10 +3587,13 @@ router.post('/import-customers', async (req, res) => {
           if (fields[k] && String(existing[k] || '').trim()) delete fields[k];
         }
         if (extras.birthday && existing.birthday) delete fields.birthday;
-        if (Object.keys(fields).length) await pgDb.updateCustomer(existing.id, fields);
+        // Backdate somebody we already hold if the old system knew them
+        // earlier than we did — never forward, which would lose their history.
+        if (registered) fields.created_at = registered;
+        if (Object.keys(fields).length) await pgDb.updateCustomer(existing.id, fields, { onlyEarlier: true });
         updated++;
       } else {
-        await pgDb.createCustomerRecord(userId, { name, email, phone, ...extras });
+        await pgDb.createCustomerRecord(userId, { name, email, phone, ...extras, created_at: registered || null });
         created++;
       }
     } catch (e) {

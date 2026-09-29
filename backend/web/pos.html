@@ -5568,10 +5568,21 @@ const IMPORT_CUSTOMER_FIELDS = [
   { key: 'phone', label: 'Phone',
     hint: 'Used to match when there is no email.',
     syn: ['phone','phonenumber','telephone','tel','mobile','cell','cellphone','customerphone','clientphone','homephone','contactnumber'] },
+  { key: 'phone2', label: 'Second phone',
+    hint: 'Kept with their notes, or used as the phone when there is no other one.',
+    syn: ['phone2','phonetwo','secondphone','altphone','alternatephone','alternativephone','otherphone','mobile2','workphone','homephone2','phoneb'] },
   { key: 'birthday', label: 'Birthday',
     syn: ['birthday','birthdate','dateofbirth','dob','born'] },
+  { key: 'registered', label: 'Registered',
+    hint: 'The day they first became a customer. Left alone, today is used.',
+    syn: ['registered','registereddate','dateregistered','registrationdate','datecreated','createdat','created','createdon','customersince','membersince','signupdate','signedup','joined','joindate','dateadded','addedon','firstvisit'] },
   { key: 'address', label: 'Address',
     syn: ['address','address1','streetaddress','street','mailingaddress','addressline1','location'] },
+  // The old list keeps the address in four columns; this one keeps it in a
+  // single line, so City, State and Zip are folded onto the end of it.
+  { key: 'city', label: 'City', syn: ['city','town','suburb'] },
+  { key: 'state', label: 'State', syn: ['state','province','region','county'] },
+  { key: 'zip', label: 'Postcode', syn: ['zip','zipcode','postalcode','postcode','postal'] },
   { key: 'notes', label: 'Notes',
     syn: ['notes','note','comments','comment','remarks','memo','description','details'] },
 ];
@@ -5580,6 +5591,42 @@ const IMPORT_FIELD_SETS = { transactions: IMPORT_TRANSACTION_FIELDS, customers: 
 const importFields = () => IMPORT_FIELD_SETS[(importState && importState.kind) || 'transactions'];
 
 const importNorm = (h) => String(h == null ? '' : h).toLowerCase().replace(/[^a-z0-9]/g, '');
+
+// Every till in the world writes "nothing here" its own way. The old system
+// this shop is coming off wrote the word "none" into every empty email, phone
+// and note, and "0000-00-00" into every empty birthday. Taken at face value
+// that is catastrophic: 717 people would all share the email address "none",
+// and since a customer is recognised BY their email, the second one imported
+// would be treated as the first coming back, and the whole client list would
+// collapse into a single record. So a value that means nothing is nothing.
+const IMPORT_BLANKS = new Set([
+  'none', 'nonone', 'n/a', 'na', 'null', 'nil', 'nan', 'undefined', 'unknown', 'unkown',
+  '-', '--', '.', 'x', 'xx', 'xxx', 'blank', 'empty', 'nothing', 'no', 'noemail',
+  'no email', 'nophone', 'no phone', 'none given', 'not given', 'not provided',
+  'no data', 'n.a.', '(none)', '(blank)', '0000-00-00', '0000-00-00 00:00:00',
+  '00/00/0000', '1900-01-01', '0', '000-000-0000',
+]);
+const importBlank = (v) => IMPORT_BLANKS.has(String(v == null ? '' : v).trim().toLowerCase());
+const importValue = (v) => (importBlank(v) ? '' : String(v == null ? '' : v).trim().replace(/\s+/g, ' '));
+
+// A phone we can't dial is a phone we can't match a person on either. The old
+// list has thirty of them — "1234", a four-digit extension, somebody's room
+// number — and calling those a contact detail would promise a match that can
+// never happen.
+const importPhoneDigits = (v) => {
+  const d = importValue(v).replace(/\D/g, '');
+  return d.length >= 10 && !/^(\d)\1+$/.test(d) ? d : '';
+};
+const importIsEmail = (v) => /^[^@\s]+@[^@\s.]+\.[^@\s]{2,}$/.test(importValue(v));
+
+// Names arrive from the old till lowercased and double-spaced — "om  chauham".
+// Spacing is always wrong to keep; capitals are only added when the file has
+// none of its own, so a shop that types "McDonald" or "de Luca" keeps it.
+function importName(v) {
+  const s = importValue(v);
+  if (!s || s !== s.toLowerCase()) return s;
+  return s.replace(/[a-z]+/g, (w) => w[0].toUpperCase() + w.slice(1));
+}
 
 // ── Reading the file ───────────────────────────────────────────────────────
 
@@ -5998,28 +6045,48 @@ function importRowKey(cells) {
 function buildImportCustomerRows(limit) {
   const st = importState;
   const m = st.map;
-  const get = (r, key) => (m[key] === undefined ? '' : String(r[m[key]] == null ? '' : r[m[key]]).trim());
+  const get = (r, key) => (m[key] === undefined ? '' : importValue(r[m[key]]));
   const source = limit ? st.rows.slice(0, limit) : st.rows;
   const out = [];
 
   for (const r of source) {
     // A file that splits the name in two is as common as one that doesn't.
-    const name = get(r, 'name') || [get(r, 'first'), get(r, 'last')].filter(Boolean).join(' ');
-    const email = get(r, 'email');
+    const name = importName(get(r, 'name')) ||
+      [importName(get(r, 'first')), importName(get(r, 'last'))].filter(Boolean).join(' ');
+    const email = importIsEmail(get(r, 'email')) ? get(r, 'email') : '';
+    // Only one phone column here, so a second number becomes the phone when
+    // there is no first one, and a note when there is.
     const phone = get(r, 'phone');
-    if (!name && !email && !phone) continue;   // a blank trailing line
+    const phone2 = get(r, 'phone2');
+    const dialable = importPhoneDigits(phone) ? phone : (importPhoneDigits(phone2) ? phone2 : '');
+    const spare = dialable === phone2 ? '' : phone2;
+    if (!name && !email && !phone && !phone2) continue;   // a blank trailing line
 
-    const birthdayRaw = get(r, 'birthday');
-    const birthday = birthdayRaw ? (importDate(birthdayRaw, st.dayFirst) || '').slice(0, 10) : '';
+    const day = (key) => {
+      const raw = get(r, key);
+      return raw ? (importDate(raw, st.dayFirst) || '').slice(0, 10) : '';
+    };
+
+    // One address line, so the four columns the old list keeps it in are
+    // joined back up the way they would be written on an envelope.
+    const address = [
+      get(r, 'address'), get(r, 'city'),
+      [get(r, 'state'), get(r, 'zip')].filter(Boolean).join(' '),
+    ].filter(Boolean).join(', ');
+
+    const notes = [get(r, 'notes'), spare ? `Second phone: ${spare}` : '']
+      .filter(Boolean).join('\n');
 
     out.push({
-      name, email, phone,
-      birthday: birthday || '',
-      address: get(r, 'address'),
-      notes: get(r, 'notes'),
-      // Someone with neither an email nor a phone can't be matched against
-      // the people already on file, so importing twice would duplicate them.
-      contactable: !!(email || phone),
+      name, email,
+      phone: dialable || phone || phone2,
+      birthday: day('birthday'),
+      registered: day('registered'),
+      address, notes,
+      // Someone with neither an email nor a phone we can dial can't be matched
+      // against the people already on file, so importing twice would enter
+      // them twice.
+      contactable: !!(email || dialable),
     });
   }
   return { rows: out, considered: source.length };
@@ -6047,7 +6114,25 @@ function renderCustomerImportNotes() {
   }
   notes.push(`${withEmail} of the first ${preview.considered} have an email address.`);
   if (noContact) {
-    notes.push(`<span style="color:var(--danger)">${noContact} have neither an email nor a phone</span>, so they can't be matched against anyone already on file — importing this file twice would enter them twice. They'll be skipped unless you say otherwise at the next step.`);
+    notes.push(`<span style="color:var(--danger)">${noContact} have neither an email nor a phone we can dial</span>, so they can't be matched against anyone already on file — importing this file twice would enter them twice. They'll be skipped unless you say otherwise at the next step.`);
+  }
+
+  // Say out loud that "none" and "0000-00-00" were thrown away, so nobody is
+  // left wondering where a column full of values went.
+  const blanks = new Set();
+  for (const f of IMPORT_CUSTOMER_FIELDS) {
+    if (st.map[f.key] === undefined) continue;
+    for (const r of st.rows.slice(0, preview.considered)) {
+      const raw = String(r[st.map[f.key]] == null ? '' : r[st.map[f.key]]).trim();
+      if (raw && importBlank(raw)) blanks.add(raw.toLowerCase());
+    }
+  }
+  if (blanks.size) {
+    notes.push(`${[...blanks].slice(0, 4).map(b => `<code>${escapeHtml(b)}</code>`).join(', ')} mean${blanks.size === 1 ? 's' : ''} "nothing here" and will be left out rather than saved as someone's email or phone number.`);
+  }
+  if (st.map.registered !== undefined) {
+    const reg = preview.rows.filter(r => r.registered).length;
+    notes.push(`${reg} have a date they registered; the rest will be dated today.`);
   }
   if (st.map.birthday !== undefined) {
     const unread = preview.rows.filter(r => r.birthday === '').length;
