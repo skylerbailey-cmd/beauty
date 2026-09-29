@@ -1043,7 +1043,7 @@
           </div>
           <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Each day compares the merchant's settled card batches to the POS's recorded card sales (net of returns) over the selected date range. Click any day to see the sales/credits breakdown and every individual transaction.</p>
           <table class="report-table">
-            <thead><tr><th style="width:70px">Reviewed</th><th>Date</th><th>Merchant Settled</th><th>POS Card (net)</th><th>Difference</th><th>Status</th><th>Explanation</th></tr></thead>
+            <thead><tr><th style="width:140px">Review</th><th>Date</th><th>Merchant Settled</th><th>POS Card (net)</th><th>Difference</th><th>Status</th><th>Explanation</th></tr></thead>
             <tbody id="batchBody"></tbody>
             <!-- Totals for the whole range. The stat boxes above carry the
                  same figures, but a long audit is read by scrolling the
@@ -7501,22 +7501,56 @@ async function loadAuditReviews(from, to) {
 
 // Ticking a day is a note to yourself that it's been checked — it doesn't
 // change any figures, so it saves immediately with no confirmation.
-async function setDayReviewed(date, reviewed) {
+// Where a day has got to. A tick could only say finished or not, and the
+// middle state is the one that actually takes the time: somebody has opened
+// the day, found the missing charge and is waiting on the processor.
+const REVIEW_STATES = [
+  ['needs', 'Needs review', 'var(--danger)'],
+  ['pending', 'Pending review', '#b26a00'],
+  ['completed', 'Review completed', 'var(--success)'],
+];
+
+function reviewSelect(date, rev, title) {
+  const current = rev.status || (rev.reviewed ? 'completed' : 'needs');
+  const colour = (REVIEW_STATES.find(x => x[0] === current) || REVIEW_STATES[0])[2];
+  return `<select onchange="setDayReviewed('${date}', this.value)" title="${escapeHtml(title || '')}"
+      data-day="${escapeHtml(date)}"
+      style="font-family:system-ui,sans-serif;font-size:.76rem;font-weight:600;padding:4px 6px;
+             border:1.5px solid var(--border);border-radius:7px;background:var(--white);
+             cursor:pointer;color:${colour}">
+    ${REVIEW_STATES.map(([v, label]) =>
+      `<option value="${v}"${v === current ? ' selected' : ''}>${label}</option>`).join('')}
+  </select>`;
+}
+
+async function setDayReviewed(date, status) {
   const previous = auditReviews[date];
-  auditReviews[date] = { ...(previous || {}), reviewed, reviewed_by: txCreds?.name || '', reviewed_at: new Date().toISOString() };
+  auditReviews[date] = {
+    ...(previous || {}), status,
+    reviewed: status === 'completed',
+    reviewed_by: txCreds?.name || '',
+    reviewed_at: status === 'completed' ? new Date().toISOString() : null,
+  };
+  const box = document.querySelector(`#batchBody select[data-day="${date}"]`);
+  const paint = (value) => {
+    if (!box) return;
+    const st = REVIEW_STATES.find(x => x[0] === value) || REVIEW_STATES[0];
+    box.value = st[0];
+    box.style.color = st[2];
+  };
+  paint(status);
   try {
     const resp = await fetch(`${API}/api/pos/audit-reviews`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ date, reviewed, reviewed_by: txCreds?.name || '' }),
+      body: JSON.stringify({ date, status, reviewed_by: txCreds?.name || '' }),
     });
     if (!resp.ok) throw new Error((await resp.json()).error || 'Could not save');
     loadSavedAudits(); // keep the "n of m reviewed" counts honest
   } catch (err) {
-    // Put the tick back where it was rather than leaving the screen claiming
+    // Put it back where it was rather than leaving the screen claiming
     // something was saved when it wasn't.
     if (previous === undefined) delete auditReviews[date]; else auditReviews[date] = previous;
-    const box = document.querySelector(`#batchBody input[onchange*="'${date}'"]`);
-    if (box) box.checked = !!previous?.reviewed;
+    paint(previous?.status || (previous?.reviewed ? 'completed' : 'needs'));
     alert('Could not save that: ' + err.message);
   }
 }
@@ -7732,14 +7766,13 @@ function renderAudit(data) {
   const rows = data.days || [];
   document.getElementById('batchBody').innerHTML = rows.map(d => {
     const rev = auditReviews[d.date] || {};
-    const revTitle = rev.reviewed
-      ? `Reviewed${rev.reviewed_by ? ' by ' + rev.reviewed_by : ''}${rev.reviewed_at ? ' on ' + new Date(rev.reviewed_at).toLocaleDateString() : ''} — click to un-review`
-      : 'Tick once you have checked this day';
+    const revTitle = rev.status === 'completed'
+      ? `Reviewed${rev.reviewed_by ? ' by ' + rev.reviewed_by : ''}${rev.reviewed_at ? ' on ' + new Date(rev.reviewed_at).toLocaleDateString() : ''}`
+      : 'Where this day has got to';
     return `
     <tr style="cursor:pointer;${d.matched ? (d.merchant_over_limit ? 'background:#fff7e6' : '') : 'background:#fff6f8'}" onclick="openDayDrilldown('${d.date}')" title="Click to see every individual transaction for this day">
-      <td onclick="event.stopPropagation()" style="text-align:center">
-        <input type="checkbox" ${rev.reviewed ? 'checked' : ''} onchange="setDayReviewed('${d.date}', this.checked)"
-               title="${escapeHtml(revTitle)}" style="width:16px;height:16px;accent-color:var(--success);cursor:pointer">
+      <td onclick="event.stopPropagation()">
+        ${reviewSelect(d.date, rev, revTitle)}
       </td>
       <td>${d.date}</td>
       <td>$${money(d.merchant_total)}<br><span style="font-size:.7rem;color:var(--mid)">${
@@ -7856,15 +7889,62 @@ function renderBatchTotals(rows, t, mismatches) {
 }
 
 let currentDrilldownDate = null;
+// Lines on the open day that have already been worked through, keyed
+// "side:ref". Loaded with the day so the ticks are right on first paint.
+let auditLineReviews = {};
+
+// A tick is only offered where there is something to work through. A matched
+// line needs nothing done to it, and a column of ticks nobody should touch
+// makes the ones that matter harder to see.
+function lineTick(date, side, ref, matched) {
+  const key = `${side}:${String(ref || '')}`;
+  if (matched || !ref) return '';
+  const done = !!auditLineReviews[key];
+  const who = done ? auditLineReviews[key].by : '';
+  const title = done
+    ? `Worked through${who ? ' by ' + who : ''} — click to untick`
+    : 'Tick once you have dealt with this line';
+  return `<input type="checkbox" ${done ? 'checked' : ''}
+    onchange="setLineReviewed('${escapeHtml(date)}','${side}','${escapeHtml(String(ref)).replace(/'/g, "\\'")}', this.checked)"
+    title="${escapeHtml(title)}"
+    style="width:15px;height:15px;accent-color:var(--success);cursor:pointer">`;
+}
+
+async function setLineReviewed(date, side, ref, reviewed) {
+  const key = `${side}:${ref}`;
+  const previous = auditLineReviews[key];
+  if (reviewed) auditLineReviews[key] = { by: txCreds?.name || '', at: new Date().toISOString() };
+  else delete auditLineReviews[key];
+  try {
+    const resp = await fetch(`${API}/api/pos/audit-line-reviews`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ date, side, ref, reviewed, reviewed_by: txCreds?.name || '' }),
+    });
+    if (!resp.ok) throw new Error((await resp.json()).error || 'Could not save');
+  } catch (err) {
+    // Put the tick back rather than leaving the screen claiming it saved.
+    if (previous === undefined) delete auditLineReviews[key]; else auditLineReviews[key] = previous;
+    const box = document.querySelector(`#drilldownBody input[onchange*="'${side}','${ref}'"]`);
+    if (box) box.checked = previous !== undefined;
+    alert('Could not save that: ' + err.message);
+  }
+}
+
 async function openDayDrilldown(date) {
   currentDrilldownDate = date;
+  auditLineReviews = {};
   const modal = document.getElementById('dayDrilldownModal');
   const body = document.getElementById('drilldownBody');
   document.getElementById('drilldownDate').textContent = date;
   body.innerHTML = '<div style="padding:20px;text-align:center;color:var(--mid);font-family:system-ui,sans-serif">Loading…</div>';
   modal.classList.add('show');
   try {
-    const resp = await fetch(`${API}/api/pos/reconciliation-day?date=${encodeURIComponent(date)}`, { credentials: 'include' });
+    const [resp, ticks] = await Promise.all([
+      fetch(`${API}/api/pos/reconciliation-day?date=${encodeURIComponent(date)}`, { credentials: 'include' }),
+      fetch(`${API}/api/pos/audit-line-reviews?date=${encodeURIComponent(date)}`, { credentials: 'include' })
+        .then(r => (r.ok ? r.json() : { lines: {} })).catch(() => ({ lines: {} })),
+    ]);
+    auditLineReviews = ticks.lines || {};
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Failed');
     if (data.error) throw new Error(data.error);
@@ -7909,6 +7989,7 @@ async function openDayDrilldown(date) {
 
     const posRows = allPos.map(p => `
       <tr style="${p.matched ? '' : 'background:#fff6f8'}">
+        <td style="text-align:center">${lineTick(date, 'pos', p.receipt, p.matched)}</td>
         <td style="font-family:monospace">${escapeHtml(p.receipt || '-')}</td>
         <td>${dirLabel(p)}</td>
         <td>${p.last4 ? '••' + escapeHtml(p.last4) : '-'}</td>
@@ -7916,17 +7997,18 @@ async function openDayDrilldown(date) {
         <td style="text-align:right;font-weight:600">${p.dir === 'credit' ? '−' : ''}$${money2(p.amount)}</td>
         <td>${statusCell(p)}</td>
         <td>${escapeHtml(p.employees || '-')} ${p.id ? `<button onclick="startEditTransaction(${p.id})" style="border:none;background:none;cursor:pointer;color:var(--accent-deep);text-decoration:underline;font-size:.78rem">${p.employees ? 'Edit' : '+ Add'}</button>` : ''}</td>
-      </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No POS card transactions this day</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--mid)">No POS card transactions this day</td></tr>';
 
     const merchRows = allMerch.map(m => `
       <tr style="${m.matched ? '' : 'background:#fff6f8'}">
+        <td style="text-align:center">${lineTick(date, 'merchant', m.batch_id, m.matched)}</td>
         <td style="font-family:monospace">${escapeHtml(m.batch_id || '-')}</td>
         <td>${dirLabel(m)}</td>
         <td>${m.last4 ? '••' + escapeHtml(m.last4) : '-'}</td>
         <td>${escapeHtml(m.brand || '-')}</td>
         <td style="text-align:right;font-weight:600">${m.dir === 'credit' ? '−' : ''}$${money2(m.amount)}</td>
         <td>${statusCell(m)}</td>
-      </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No settled merchant records this day</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--mid)">No settled merchant records this day</td></tr>';
 
     const failed = data.failed_merchant || [];
     const failedSection = failed.length ? `
@@ -7996,7 +8078,7 @@ async function openDayDrilldown(date) {
       <div style="margin-bottom:18px">
         <h3 style="margin:0 0 6px">All POS card transactions <span style="font-weight:400;color:var(--mid);font-size:.82rem">(${allPos.length})</span></h3>
         <table class="report-table">
-          <thead><tr><th>Receipt #</th><th>Type</th><th>Card</th><th>Customer</th><th style="text-align:right">Amount</th><th>Status</th><th>Employee</th></tr></thead>
+          <thead><tr><th style="width:34px" title="Tick a line you have already worked through">✓</th><th>Receipt #</th><th>Type</th><th>Card</th><th>Customer</th><th style="text-align:right">Amount</th><th>Status</th><th>Employee</th></tr></thead>
           <tbody>${posRows}</tbody>
         </table>
       </div>
@@ -8004,7 +8086,7 @@ async function openDayDrilldown(date) {
       <div>
         <h3 style="margin:0 0 6px">All merchant settled records <span style="font-weight:400;color:var(--mid);font-size:.82rem">(${allMerch.length})</span></h3>
         <table class="report-table">
-          <thead><tr><th>Batch #</th><th>Type</th><th>Card</th><th>Brand</th><th style="text-align:right">Amount</th><th>Status</th></tr></thead>
+          <thead><tr><th style="width:34px" title="Tick a line you have already worked through">✓</th><th>Batch #</th><th>Type</th><th>Card</th><th>Brand</th><th style="text-align:right">Amount</th><th>Status</th></tr></thead>
           <tbody>${merchRows}</tbody>
         </table>
       </div>

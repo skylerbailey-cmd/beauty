@@ -2808,10 +2808,30 @@ router.get('/audit-reviews', async (req, res) => {
 });
 
 router.post('/audit-reviews', async (req, res) => {
-  const { date, reviewed, reviewed_by } = req.body;
+  const { date, status, reviewed, reviewed_by } = req.body;
   if (!date) return res.status(400).json({ error: 'date is required' });
-  await pgDb.setAuditReview(req.session.userId, date, !!reviewed, String(reviewed_by || '').trim());
-  res.json({ ok: true, date, reviewed: !!reviewed });
+  // `reviewed` is the old true/false shape. Anything still sending it means
+  // the same thing it always did.
+  const asked = status !== undefined ? String(status) : (reviewed ? 'completed' : 'needs');
+  const result = await pgDb.setAuditReview(
+    req.session.userId, date, asked, String(reviewed_by || '').trim());
+  res.json({ ok: true, date, status: result.status, reviewed: result.status === 'completed' });
+});
+
+// Which lines on a day have already been looked at.
+router.get('/audit-line-reviews', async (req, res) => {
+  const date = String(req.query.date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date is required' });
+  res.json({ lines: await pgDb.getAuditLineReviews(req.session.userId, date) });
+});
+
+router.post('/audit-line-reviews', async (req, res) => {
+  const { date, side, ref, reviewed, reviewed_by } = req.body;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) return res.status(400).json({ error: 'date is required' });
+  if (!String(ref || '').trim()) return res.status(400).json({ error: 'which line?' });
+  const out = await pgDb.setAuditLineReview(
+    req.session.userId, date, side, ref, !!reviewed, String(reviewed_by || '').trim());
+  res.json({ ok: true, ...out });
 });
 
 router.get('/saved-audits', async (req, res) => {

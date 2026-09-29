@@ -565,6 +565,29 @@ Exchanges are only allowed within **7 days** of purchase.'`);
     reviewed_at TIMESTAMPTZ,
     PRIMARY KEY (user_id, audit_date)
   )`);
+  // Reviewing a day is not a yes/no: somebody opens it, finds the missing
+  // charge, and it sits with the processor for a week. 'pending' is that
+  // week. The old reviewed flag is kept in step with it, because the saved
+  // audit list counts finished days off it.
+  await migrate("ALTER TABLE pos_audit_reviews ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'needs'");
+  await migrate("UPDATE pos_audit_reviews SET status = 'completed' WHERE reviewed = 1 AND COALESCE(status,'') <> 'completed'");
+  await migrate("UPDATE pos_audit_reviews SET status = 'needs' WHERE COALESCE(status, '') = ''");
+
+  // A day that does not reconcile can have a dozen lines in it, and working
+  // through them takes more than one sitting. This remembers which ones have
+  // already been looked at, so the second sitting starts where the first
+  // stopped. Keyed by the reference on screen — a receipt on the till side, a
+  // batch on the processor's.
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_audit_line_reviews (
+    user_id TEXT NOT NULL,
+    audit_date DATE NOT NULL,
+    side TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    reviewed_by TEXT DEFAULT '',
+    reviewed_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (user_id, audit_date, side, ref)
+  )`);
+
   await migrate(`CREATE TABLE IF NOT EXISTS pos_saved_audits (
     id SERIAL PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -1238,7 +1261,8 @@ async function deleteTransaction(id, userId) {
 // Which days in a range have been ticked off as reviewed, as { 'YYYY-MM-DD': {...} }.
 async function getAuditReviews(userId, from, to) {
   const rows = (await query(
-    `SELECT audit_date, reviewed, reviewed_by, reviewed_at
+    `SELECT audit_date, reviewed, COALESCE(NULLIF(status, ''), 'needs') AS status,
+            reviewed_by, reviewed_at
      FROM pos_audit_reviews
      WHERE user_id = $1 AND audit_date >= $2 AND audit_date <= $3`,
     [userId, from, to])).rows;
@@ -1246,22 +1270,64 @@ async function getAuditReviews(userId, from, to) {
   // audit_date is a DATE and the type parser hands DATEs back as plain strings
   // (see setTypeParser above), so it's already the 'YYYY-MM-DD' key we want.
   for (const r of rows) {
-    byDate[r.audit_date] = { reviewed: !!r.reviewed, reviewed_by: r.reviewed_by || '', reviewed_at: r.reviewed_at };
+    byDate[r.audit_date] = {
+      status: r.status, reviewed: r.status === 'completed',
+      reviewed_by: r.reviewed_by || '', reviewed_at: r.reviewed_at,
+    };
   }
   return byDate;
 }
 
-async function setAuditReview(userId, date, reviewed, reviewedBy) {
+// Which individual lines on a day have been looked at already.
+async function getAuditLineReviews(userId, date) {
+  const rows = (await query(
+    `SELECT side, ref, reviewed_by, reviewed_at FROM pos_audit_line_reviews
+      WHERE user_id = $1 AND audit_date = $2::date`, [userId, date])).rows;
+  const out = {};
+  for (const r of rows) out[`${r.side}:${r.ref}`] = { by: r.reviewed_by || '', at: r.reviewed_at };
+  return out;
+}
+
+async function setAuditLineReview(userId, date, side, ref, reviewed, by) {
+  const which = side === 'merchant' ? 'merchant' : 'pos';
+  const key = String(ref || '').trim();
+  if (!key) return { ok: false };
+  if (!reviewed) {
+    await query(
+      `DELETE FROM pos_audit_line_reviews
+        WHERE user_id = $1 AND audit_date = $2::date AND side = $3 AND ref = $4`,
+      [userId, date, which, key]);
+    return { ok: true, reviewed: false };
+  }
   await query(
-    `INSERT INTO pos_audit_reviews (user_id, audit_date, reviewed, reviewed_by, reviewed_at)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO pos_audit_line_reviews (user_id, audit_date, side, ref, reviewed_by, reviewed_at)
+     VALUES ($1, $2::date, $3, $4, $5, NOW())
+     ON CONFLICT (user_id, audit_date, side, ref) DO UPDATE
+       SET reviewed_by = EXCLUDED.reviewed_by, reviewed_at = NOW()`,
+    [userId, date, which, key, by || '']);
+  return { ok: true, reviewed: true };
+}
+
+const REVIEW_STATUSES = ['needs', 'pending', 'completed'];
+
+async function setAuditReview(userId, date, status, reviewedBy) {
+  const value = REVIEW_STATUSES.includes(status) ? status : 'needs';
+  // Only a finished review carries a name and a time; the other two are
+  // states the day is in, not something somebody did.
+  const done = value === 'completed';
+  const touched = value !== 'needs';
+  await query(
+    `INSERT INTO pos_audit_reviews (user_id, audit_date, status, reviewed, reviewed_by, reviewed_at)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (user_id, audit_date) DO UPDATE
-       SET reviewed = EXCLUDED.reviewed,
+       SET status = EXCLUDED.status,
+           reviewed = EXCLUDED.reviewed,
            reviewed_by = EXCLUDED.reviewed_by,
            reviewed_at = EXCLUDED.reviewed_at`,
-    [userId, date, reviewed ? 1 : 0, reviewed ? (reviewedBy || '') : '', reviewed ? new Date() : null]
+    [userId, date, value, done ? 1 : 0,
+     touched ? (reviewedBy || '') : '', done ? new Date() : null]
   );
-  return { ok: true };
+  return { ok: true, status: value };
 }
 
 // Saved audits, each with how many of its days have been reviewed so the list
@@ -3775,7 +3841,7 @@ const OWNED_BY_USER = [
   'pos_payroll_runs', 'pos_commission_plans',
   'pos_appointments', 'pos_availability', 'pos_closed_dates', 'pos_treatments',
   'pos_custom_products', 'pos_product_prices', 'pos_product_visibility',
-  'pos_saved_audits', 'pos_audit_reviews',
+  'pos_saved_audits', 'pos_audit_reviews', 'pos_audit_line_reviews',
   'welcome_emails', 'sent_emails', 'campaigns',
   'customers',
   'pos_gmail_tokens', 'pos_employees',
@@ -4062,6 +4128,8 @@ module.exports = {
   getAuditReviews,
   setAuditReview,
   getSavedAudits,
+  getAuditLineReviews,
+  setAuditLineReview,
   companiesWantingAutoAudit,
   claimAutoAudit,
   recordAutoAudit,
