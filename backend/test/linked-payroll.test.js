@@ -180,6 +180,14 @@ const money = (n) => Math.round(Number(n || 0) * 100) / 100;
     /isAdmin\(employee\) \? linkedScope\(req\)/.test(src));
   check('linkedScope reads the link out of Postgres',
     /linkedScope = async[\s\S]{0,400}pgDb\.linkedCompanyIds/.test(src));
+  // The commission table asks for this by name. It is the report an owner
+  // opens to see what everyone earned, and it was resolving through the same
+  // session flag — so "All employees" meant the employees of whichever shop
+  // you happened to be standing in.
+  check('the combined report (all=1) is scoped by the link',
+    /req\.query\.all === '1'\) return linkedScope\(req\)/.test(src));
+  check('and asking for one shop still gets one shop',
+    /req\.query\.all === '0'\) return \[req\.session\.userId\]/.test(src));
   check('company-scope no longer needs the SQLite user table',
     !/getUserByEmail/.test(src.slice(src.indexOf("router.post('/company-scope'"), src.indexOf("router.post('/company-scope'") + 1800)));
 

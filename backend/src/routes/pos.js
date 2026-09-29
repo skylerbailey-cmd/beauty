@@ -1584,32 +1584,6 @@ async function rangeFor(req, start, end) {
 // The combined view is still available and still works the same way — it is
 // granted by company-scope, which verifies a manager's name and PIN at each
 // company being added. Asking for `all=1` now gets exactly that.
-const reportScope = async (req) => {
-  // A report about a shop rather than a person: this shop only, said
-  // explicitly, because the session may have been widened elsewhere.
-  if (req.query.all === '0') return [req.session.userId];
-  // Everything else — including all=1 — is what this session was granted.
-  return scopeIds(req);
-};
-
-router.get('/reports/sales', async (req, res) => {
-  const { start, end } = req.query;
-  const { startDate, endDate } = await rangeFor(req, start, end);
-  res.json({ report: await pgDb.getSalesReport(await reportScope(req), startDate, endDate) });
-});
-
-router.get('/reports/employees', async (req, res) => {
-  const { start, end } = req.query;
-  // No dates = today's leaderboard; either way the clock is the store's.
-  const { startDate, endDate } = await rangeFor(req, start, end);
-  res.json({ report: await pgDb.getEmployeeSalesReport(await reportScope(req), startDate, endDate) });
-});
-
-// Payroll covers the companies this session was granted, the way the
-// commission figures do: a manager runs one payday across the shops they have
-// proved they manage, rather than switching accounts to find the other half
-// of somebody's pay. It covered every company on the server before, which on
-// a product other shops sign up to is somebody else's payroll.
 // Two shops that share a roster share a paycheck, so an admin looking at
 // payroll has to see all of it. That used to need company-scope to have been
 // set in this session — and company-scope resolved the other shop out of
@@ -1632,6 +1606,39 @@ const linkedScope = async (req) => {
   return [...ids];
 };
 
+const reportScope = async (req) => {
+  // A report about a shop rather than a person: this shop only, said
+  // explicitly, because the session may have been widened elsewhere.
+  if (req.query.all === '0') return [req.session.userId];
+  // all=1 is the commission table asking for the combined view by name. It
+  // used to resolve to whatever company-scope had been set in this session,
+  // which is the flag SQLite kept wiping on deploy — so the report that says
+  // "All employees" quietly meant "the employees of whichever shop you are
+  // standing in", with the other shop's half of everyone's commission
+  // missing. Linked shops share a roster; a roster report covers it.
+  if (req.query.all === '1') return linkedScope(req);
+  // Anything else is what this session was granted, unchanged.
+  return scopeIds(req);
+};
+
+router.get('/reports/sales', async (req, res) => {
+  const { start, end } = req.query;
+  const { startDate, endDate } = await rangeFor(req, start, end);
+  res.json({ report: await pgDb.getSalesReport(await reportScope(req), startDate, endDate) });
+});
+
+router.get('/reports/employees', async (req, res) => {
+  const { start, end } = req.query;
+  // No dates = today's leaderboard; either way the clock is the store's.
+  const { startDate, endDate } = await rangeFor(req, start, end);
+  res.json({ report: await pgDb.getEmployeeSalesReport(await reportScope(req), startDate, endDate) });
+});
+
+// Payroll covers the companies this session was granted, the way the
+// commission figures do: a manager runs one payday across the shops they have
+// proved they manage, rather than switching accounts to find the other half
+// of somebody's pay. It covered every company on the server before, which on
+// a product other shops sign up to is somebody else's payroll.
 const payrollScope = async (req) => linkedScope(req);
 
 // ─── One person, two stores ─────────────────────────────────────────────────
