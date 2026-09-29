@@ -1850,6 +1850,11 @@ async function payrollForPayday(userId, payday, settings) {
       company_id: companyId || null, store_name: storeNames.get(companyId) || '',
       sales_total: 0, sale_count: 0, returns_netted: 0,
       commission_earned: 0, adjustments: [], total: 0,
+      // Their own sales and their share of the floor, kept apart as well as
+      // added together — a manager whose commission is larger than anything
+      // they personally rang up deserves to see which part is which.
+      own_commission: 0, store_commission: 0,
+      store_rate: Number(plans.get(id)?.store_rate) || 0,
     });
     return byEmp.get(id);
   };
@@ -1860,17 +1865,44 @@ async function payrollForPayday(userId, payday, settings) {
   // report and the cheque gave different answers for the same fortnight and
   // the cheque was the one that underpaid.
   const plans = new Map((await query(
-    `SELECT p.employee_id, p.plan_type, p.base_rate, p.tier_rate, p.tier_threshold
+    `SELECT p.employee_id, p.plan_type, p.base_rate, p.tier_rate, p.tier_threshold,
+            p.store_rate, p.user_id, e.name AS employee_name, e.commission_rate
        FROM pos_commission_plans p
-      WHERE p.user_id = ANY($1::text[]) AND p.plan_type <> 'flat'`, [ids]))
+       JOIN pos_employees e ON e.id = p.employee_id
+      WHERE p.user_id = ANY($1::text[])`, [ids]))
     .rows.map((p) => [p.employee_id, p]));
+
+  // A manager's share of the whole floor. Payroll knew nothing about this —
+  // it is set per employee in Settings and the commissions report paid it,
+  // but the CHEQUE never did, so a manager on 4% of the shop saw it on one
+  // screen and not in their pay. Summed per shop, because the share is of
+  // the shop whose roster they are on.
+  const storeNetByCompany = new Map();
+  if ([...plans.values()].some((p) => Number(p.store_rate) > 0)) {
+    const net = (await query(`
+      SELECT t.user_id, COALESCE(SUM(CASE WHEN t.type = 'return'
+             THEN -ABS(t.subtotal) ELSE t.subtotal END), 0) AS net
+        FROM pos_transactions t
+       WHERE t.user_id = ANY($1::text[])
+         AND ${saleDay} >= $2::date AND ${saleDay} <= $3::date
+       GROUP BY t.user_id`, [ids, period.start, period.end])).rows;
+    for (const n of net) storeNetByCompany.set(n.user_id, Number(n.net) || 0);
+  }
+  const storeCut = (empId) => {
+    const plan = plans.get(empId);
+    const rate = Number(plan?.store_rate) || 0;
+    if (!rate) return 0;
+    return round2((storeNetByCompany.get(plan.user_id) || 0) * rate / 100);
+  };
 
   // A threshold is judged per DAY, so a period total cannot answer it: the
   // same $10,000 is worth more over five big days than twenty small ones.
   // Kept on the shop's own clock, like everything else that asks what day a
   // sale happened on.
   const dailyNet = new Map();   // employee_id -> Map(day -> net sales)
-  if (plans.size) {
+  const tiered = [...plans.values()].filter((p) => p.plan_type === 'daily_threshold')
+    .map((p) => p.employee_id);
+  if (tiered.length) {
     const days = (await query(`
       SELECT te.employee_id, ${saleDay}::text AS day, COALESCE(SUM(${EMP_SHARE}), 0) AS net
         FROM pos_transactions t
@@ -1879,7 +1911,7 @@ async function payrollForPayday(userId, payday, settings) {
          AND te.employee_id = ANY($2::int[])
          AND ${saleDay} >= $3::date AND ${saleDay} <= $4::date
        GROUP BY te.employee_id, 2`,
-      [ids, [...plans.keys()], period.start, period.end])).rows;
+      [ids, tiered, period.start, period.end])).rows;
     for (const d of days) {
       if (!dailyNet.has(d.employee_id)) dailyNet.set(d.employee_id, new Map());
       dailyNet.get(d.employee_id).set(d.day, Number(d.net) || 0);
@@ -1893,7 +1925,7 @@ async function payrollForPayday(userId, payday, settings) {
   const planCommission = (empId) => {
     const plan = plans.get(empId);
     const byDay = dailyNet.get(empId);
-    if (!plan || !byDay) return null;
+    if (!plan || plan.plan_type !== 'daily_threshold' || !byDay) return null;
     const cap = Number(plan.tier_threshold) || 0;
     const base = Number(plan.base_rate) || 0;
     const tier = Number(plan.tier_rate) || 0;
@@ -1908,8 +1940,22 @@ async function payrollForPayday(userId, payday, settings) {
     const r = row(e.employee_id, e.employee_name, e.commission_rate, e.company_id);
     r.sales_total = round2(Number(e.sales_total));
     r.sale_count = Number(e.sale_count);
-    r.commission_earned = planCommission(e.employee_id)
+    r.own_commission = planCommission(e.employee_id)
       ?? round2(r.sales_total * r.commission_rate / 100);
+    r.store_commission = storeCut(e.employee_id);
+    r.commission_earned = round2(r.own_commission + r.store_commission);
+  }
+
+  // A manager paid a share of the floor is owed it whether or not they rang
+  // anything up themselves. Without this they would have no row at all in a
+  // fortnight they spent managing rather than selling, and the share would
+  // silently not be paid.
+  for (const [empId, plan] of plans) {
+    if (!(Number(plan.store_rate) > 0)) continue;
+    if (byEmp.has(empId)) continue;
+    const r = row(empId, plan.employee_name, plan.commission_rate, plan.user_id);
+    r.store_commission = storeCut(empId);
+    r.commission_earned = round2(r.own_commission + r.store_commission);
   }
 
   // A return reverses the commission on the paycheck paying its sale.
@@ -1940,8 +1986,9 @@ async function payrollForPayday(userId, payday, settings) {
       if (byDay) {
         byDay.set(rt.sale_date, (byDay.get(rt.sale_date) || 0) - Number(rt.share));
       }
-      r.commission_earned = planCommission(rt.employee_id)
+      r.own_commission = planCommission(rt.employee_id)
         ?? round2(r.sales_total * r.commission_rate / 100);
+      r.commission_earned = round2(r.own_commission + r.store_commission);
       continue;
     }
 
@@ -3341,8 +3388,14 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
   // A cut of the whole shop's trade, if this person is on one. Worked out
   // once here and added to whichever plan shape applies below, because it is
   // the same money however their own sales are counted.
+  // A cut of THIS shop's trade — the one whose roster this person is on, not
+  // every shop in scope. It was taking the whole scope, so a manager with a
+  // record at each of two shops had both their 4% lines counting both shops'
+  // sales: 8% of the combined floor rather than 4% of each. The plan belongs
+  // to a company, and that company is the floor it pays a share of.
   const storeRate = Number(plan?.store_rate) || 0;
-  const storeSales = storeRate > 0 ? await storeNetSales(userId, startDate, endDate) : 0;
+  const storeScope = plan?.user_id ? [plan.user_id] : asCompanyIds(userId);
+  const storeSales = storeRate > 0 ? await storeNetSales(storeScope, startDate, endDate) : 0;
   const storeCommission = storeSales * storeRate / 100;
 
   if (!plan || plan.plan_type === 'flat') {

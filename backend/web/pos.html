@@ -8860,12 +8860,25 @@ function renderPaySummary(paycheck) {
   // nothing the table above hasn't already said per employee AND per shop.
   const stores = new Map();
   for (const r of rows.filter(r => r.store_name)) {
-    stores.set(r.store_name, (stores.get(r.store_name) || 0) + Number(r.commission_earned || 0));
+    const cur = stores.get(r.store_name) || { earned: 0, floor: 0, rate: 0 };
+    cur.earned += Number(r.commission_earned || 0);
+    cur.floor += Number(r.store_commission || 0);
+    cur.rate = Number(r.store_rate) || cur.rate;
+    stores.set(r.store_name, cur);
   }
-  const perStore = stores.size > 1 && people.size === 1
-    ? [...stores].map(([name, amt]) => line(
-        `<span style="padding-left:10px;color:var(--mid)">${escapeHtml(name)}</span>`,
-        `$${money(amt)}`)).join('')
+  // A manager is paid a share of everything their shop took, on top of their
+  // own sales, and it is a share of THAT shop — so it is named beside that
+  // shop's line rather than folded into one figure. Without it their
+  // commission is simply larger than anything they rang up, with no
+  // explanation on the cheque.
+  const floorNote = (v) => (v.floor
+    ? ` <span style="font-weight:400;color:var(--mid)">· incl. $${money(v.floor)} of the floor @ ${v.rate}%</span>`
+    : '');
+  const anyFloor = [...stores.values()].some(v => v.floor);
+  const perStore = people.size === 1 && (stores.size > 1 || anyFloor)
+    ? [...stores].map(([name, v]) => line(
+        `<span style="padding-left:10px;color:var(--mid)">${escapeHtml(name)}</span>${floorNote(v)}`,
+        `$${money(v.earned)}`)).join('')
     : '';
   const whose = (a) => (people.size > 1 && a.employee_name
     ? `<strong>${escapeHtml(a.employee_name)}</strong> · ` : '');

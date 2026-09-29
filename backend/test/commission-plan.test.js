@@ -177,6 +177,88 @@ const money = (n) => Math.round(Number(n || 0) * 100) / 100;
   check('and the cheque never pays more than the sales support',
     withReturn.earned < 1100, `$${withReturn.earned}`);
 
+  console.log('\n── A manager\'s share of the floor ──');
+  // Set per person in Settings, as a percentage of everything the shop takes.
+  // Two things were wrong: payroll never paid it at all — the commissions
+  // report did, so a manager saw it on one screen and not in their pay — and
+  // the share was worked out over every shop in scope rather than the one
+  // whose roster they are on, so a manager with a record at two shops got
+  // 4% of both floors twice over.
+  await cleanupSales();
+  await c.query(`UPDATE pos_commission_plans SET store_rate = 4 WHERE employee_id = $1`, [emp]);
+  // Another person's sales, so the floor is bigger than Nadia's own.
+  const other = (await c.query(
+    `INSERT INTO pos_employees (name, pin, role, active, user_id, commission_rate)
+     VALUES ('Ruth','8181','sales',1,$1,30) RETURNING id`, [SHOP])).rows[0].id;
+  const otherSale = async (whenUtc, amount) => {
+    receipt++;
+    const id = (await c.query(
+      `INSERT INTO pos_transactions (type, subtotal, tax_amount, total, receipt_number, user_id, created_at)
+       VALUES ('sale',$1,0,$1,$2,$3,$4::timestamptz) RETURNING id`,
+      [amount, `ZZ-O${receipt}`, SHOP, whenUtc])).rows[0].id;
+    await c.query(
+      `INSERT INTO pos_transaction_employees (transaction_id, employee_id, commission_type, commission_value, commission_amount)
+       VALUES ($1,$2,'percent',100,$3)`, [id, other, amount]);
+  };
+  await sale('2026-07-08T18:00:00Z', 1000);        // Nadia: 1000 @ 35% = 350
+  await otherSale('2026-07-09T18:00:00Z', 4000);   // the floor is now 5000
+  const withStore = await cheque('2026-08-01');
+  check('their own sales are unchanged', money(withStore.earned - 200) === 350,
+    `earned $${withStore.earned}`);
+  const full = await pgDb.payrollForPayday([SHOP], '2026-08-01', settings);
+  const me = full.employees.find((x) => x.employee_id === emp);
+  check('the shop cut is 4% of everything the shop took', money(me.store_commission) === 200,
+    `$${me.store_commission}, expected $200 (4% of $5,000)`);
+  check('own and shop are kept apart', money(me.own_commission) === 350, `$${me.own_commission}`);
+  check('and added together for the cheque', money(me.commission_earned) === 550,
+    `$${me.commission_earned}`);
+  check('the rate rides along so it can be labelled', Number(me.store_rate) === 4, String(me.store_rate));
+  check('the report agrees with the cheque',
+    await run('2026-07-01', '2026-07-15') === 550, `report $${await run('2026-07-01', '2026-07-15')}`);
+
+  console.log('\n── Only their own shop\'s floor ──');
+  const OTHER_SHOP = SHOP + '-2';
+  await c.query(
+    `INSERT INTO pos_settings (user_id, store_name, payroll_paydays, payroll_lag, tax_rate, timezone)
+     VALUES ($1,'ZZ Plan Shop 2','1,15','previous',0.0875,'America/Denver')
+     ON CONFLICT (user_id) DO NOTHING`, [OTHER_SHOP]);
+  const farEmp = (await c.query(
+    `INSERT INTO pos_employees (name, pin, role, active, user_id, commission_rate)
+     VALUES ('Ruth','8282','sales',1,$1,30) RETURNING id`, [OTHER_SHOP])).rows[0].id;
+  const far = (await c.query(
+    `INSERT INTO pos_transactions (type, subtotal, tax_amount, total, receipt_number, user_id, created_at)
+     VALUES ('sale',9000,0,9000,'ZZ-FAR',$1,'2026-07-09T18:00:00Z'::timestamptz) RETURNING id`,
+    [OTHER_SHOP])).rows[0].id;
+  await c.query(
+    `INSERT INTO pos_transaction_employees (transaction_id, employee_id, commission_type, commission_value, commission_amount)
+     VALUES ($1,$2,'percent',100,9000)`, [far, farEmp]);
+
+  const across = await pgDb.payrollForPayday([SHOP, OTHER_SHOP], '2026-08-01', settings);
+  const meAcross = across.employees.find((x) => x.employee_id === emp);
+  check('a $9,000 day at the other shop adds nothing to their share',
+    money(meAcross.store_commission) === 200,
+    `$${meAcross.store_commission}, expected $200 — $560 means it counted both shops`);
+
+  console.log('\n── A manager who sold nothing still gets their share ──');
+  await c.query(`DELETE FROM pos_transaction_employees WHERE employee_id = $1`, [emp]);
+  const quiet = await pgDb.payrollForPayday([SHOP], '2026-08-01', settings);
+  const idle = quiet.employees.find((x) => x.employee_id === emp);
+  check('they are on the payroll at all', !!idle, 'no row for a manager with no sales of their own');
+  check('with nothing of their own', idle && money(idle.own_commission) === 0, idle && String(idle.own_commission));
+  // The sales are still on the floor — only the credit to them was removed —
+  // so the shop took the same $5,000 and their share of it is unchanged.
+  check('and the shop cut still paid in full', idle && money(idle.store_commission) === 200,
+    idle && `$${idle.store_commission}, expected $200 (4% of the $5,000 the shop took)`);
+  check('so their whole cheque is the floor', idle && money(idle.commission_earned) === 200,
+    idle && `$${idle.commission_earned}`);
+
+  await c.query(`UPDATE pos_commission_plans SET store_rate = 0 WHERE employee_id = $1`, [emp]);
+  await c.query(`DELETE FROM pos_transaction_employees WHERE transaction_id IN
+    (SELECT id FROM pos_transactions WHERE user_id = $1)`, [OTHER_SHOP]);
+  await c.query('DELETE FROM pos_transactions WHERE user_id = $1', [OTHER_SHOP]);
+  await c.query('DELETE FROM pos_employees WHERE user_id = $1', [OTHER_SHOP]);
+  await c.query('DELETE FROM pos_settings WHERE user_id = $1', [OTHER_SHOP]);
+
   async function cleanupSales() {
     await c.query(`DELETE FROM pos_transaction_employees WHERE transaction_id IN
       (SELECT id FROM pos_transactions WHERE user_id = $1)`, [SHOP]);
