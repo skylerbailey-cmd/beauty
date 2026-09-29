@@ -75,7 +75,7 @@ const render = (rows, extra = {}) => {
 };
 const text = (el) => el.textContent.replace(/\s+/g, ' ').trim();
 
-setTimeout(() => {
+setTimeout(async () => {
   console.log('\n── One person, across both shops ──');
   let el = render([REBECCA_GLOW, REBECCA_DW]);
   let t = text(el);
@@ -172,6 +172,75 @@ setTimeout(() => {
   w.eval('renderCommissionRange()');
   check('a single day reads as one date, not a range',
     id('empReportRange').textContent === 'Sep 3, 2026', id('empReportRange').textContent);
+
+  console.log('\n── A report opens on the paycheck being worked towards ──');
+  // Not on today. Today is a few hours of trading under a paycheck covering a
+  // fortnight, which reads as the two figures disagreeing rather than as two
+  // questions. This used to be skipped when the tab was reopened already
+  // signed in — exactly the case where nothing has been picked.
+  w.eval(`rptPaydays = [
+    { payday: '2026-10-01', upcoming: true,  paid: false, period: { start: '2026-09-01', end: '2026-09-15' } },
+    { payday: '2026-09-15', upcoming: false, paid: true,  period: { start: '2026-08-16', end: '2026-08-31' } }];
+    rptDatesChosen = false;`);
+  id('rptStart').value = '2026-09-29';
+  id('rptEnd').value = '2026-09-29';
+  await w.eval('defaultToUpcomingPaycheck()');
+  check('the dates land on the upcoming pay period',
+    id('rptStart').value === '2026-09-01' && id('rptEnd').value === '2026-09-15',
+    `${id('rptStart').value} .. ${id('rptEnd').value}`);
+  check('and that paycheck is the one selected',
+    w.eval('rptSelectedPayday') === '2026-10-01', w.eval('rptSelectedPayday'));
+
+  // Once somebody picks a period it is theirs, and nothing overrides it.
+  w.eval("selectPaycheck('2026-09-15')");
+  check('choosing an older cheque is remembered', w.eval('rptDatesChosen') === true);
+  w.eval('rptStart.value = "2026-08-16"; rptEnd.value = "2026-08-31";');
+  await w.eval('rptDatesChosen ? Promise.resolve(false) : defaultToUpcomingPaycheck()');
+  check('and is not replaced by the upcoming one',
+    id('rptStart').value === '2026-08-16' && id('rptEnd').value === '2026-08-31',
+    `${id('rptStart').value} .. ${id('rptEnd').value}`);
+
+  check('typing a date counts as choosing one',
+    /rptDatesChosen = true/.test(w.document.getElementById('rptStart').getAttribute('onchange') || ''),
+    w.document.getElementById('rptStart').getAttribute('onchange'));
+
+  console.log('\n── Each shop on its own, then both ──');
+  // An owner running two shops reads the commissions one shop at a time —
+  // it is what each shop cost to run — and a single combined line makes that
+  // a subtraction done by hand.
+  const report = [
+    { employee_id: 1, employee_name: 'Sal', company_name: 'Glow SF', commission_rate: 45,
+      sale_count: 16, net_total: 30137.84, net_after_chargebacks: 30137.84, chargeback_total: 0 },
+    { employee_id: 2, employee_name: 'Rebecca', company_name: 'Glow SF', commission_rate: 36,
+      sale_count: 7, net_total: 2250, net_after_chargebacks: 2250, chargeback_total: 0 },
+    { employee_id: 3, employee_name: 'Sal', company_name: 'Desert Wellness', commission_rate: 45,
+      sale_count: 17, net_total: 37185, net_after_chargebacks: 37185, chargeback_total: 0 },
+    { employee_id: 4, employee_name: 'Rebecca', company_name: 'Desert Wellness', commission_rate: 36,
+      sale_count: 2, net_total: 1048.5, net_after_chargebacks: 1048.5, chargeback_total: 0 },
+  ];
+  w.eval(`lastEmployeesReport = ${JSON.stringify(report)}; renderManagerCommissions();`);
+  const tbl = id('empReportBody').textContent.replace(/\s+/g, ' ');
+
+  check('Glow SF gets its own subtotal', /All employees — Glow SF/.test(tbl), tbl.slice(-300));
+  check('Desert Wellness gets its own', /All employees — Desert Wellness/.test(tbl));
+  check('and both together is still the last line',
+    /All employees — (Glow SF \+ Desert Wellness|Desert Wellness \+ Glow SF)/.test(tbl));
+
+  // Glow SF: 30137.84*.45 + 2250*.36 = 13562.03 + 810 = 14372.03
+  // Desert:  37185*.45   + 1048.50*.36 = 16733.25 + 377.46 = 17110.71
+  check('the Glow SF subtotal is its own people', /14,372\.03/.test(tbl), tbl.slice(-400));
+  check('the Desert Wellness subtotal is its own', /17,110\.71/.test(tbl));
+  check('and the grand total is the two added up', /31,482\.74/.test(tbl), tbl.slice(-260));
+  check('sale counts split the same way',
+    /23/.test(tbl) && /19/.test(tbl) && /42/.test(tbl));
+
+  console.log('\n── One shop needs no split ──');
+  w.eval(`lastEmployeesReport = ${JSON.stringify(report.filter(r => r.company_name === 'Glow SF'))};
+          renderManagerCommissions();`);
+  const one = id('empReportBody').textContent.replace(/\s+/g, ' ');
+  check('there is a single total', (one.match(/All employees/g) || []).length === 1,
+    `${(one.match(/All employees/g) || []).length} total rows`);
+  check('and the shop is not named twice over', !/All employees — Glow SF/.test(one), one.slice(-200));
 
   console.log('\n── A held line still moves no money ──');
   el = render([{ ...REBECCA_GLOW, adjustments: [

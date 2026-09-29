@@ -1130,13 +1130,16 @@
            hidden until someone unlocks with their name + PIN, and never
            affects the always-visible Today's Sales Leaderboard. -->
       <div class="date-range" id="reportsDateFilter" style="display:none;flex-wrap:wrap">
+        <!-- Each of these is somebody choosing a period, which is what stops
+             the report defaulting to the upcoming paycheck over the top of
+             them the next time it refreshes. -->
         <label>From:</label>
-        <input type="date" id="rptStart">
+        <input type="date" id="rptStart" onchange="rptDatesChosen = true">
         <label>To:</label>
-        <input type="date" id="rptEnd">
-        <button class="btn btn-confirm" onclick="loadReports()">Update</button>
-        <button class="btn half-month" onclick="setHalfMonth('rptStart','rptEnd','first',loadReports)" title="1st to 15th of the month in the From box">1st–15th</button>
-        <button class="btn half-month" onclick="setHalfMonth('rptStart','rptEnd','second',loadReports)" title="16th to the end of the month in the From box">16th–End</button>
+        <input type="date" id="rptEnd" onchange="rptDatesChosen = true">
+        <button class="btn btn-confirm" onclick="rptDatesChosen = true; loadReports()">Update</button>
+        <button class="btn half-month" onclick="rptDatesChosen = true; setHalfMonth('rptStart','rptEnd','first',loadReports)" title="1st to 15th of the month in the From box">1st–15th</button>
+        <button class="btn half-month" onclick="rptDatesChosen = true; setHalfMonth('rptStart','rptEnd','second',loadReports)" title="16th to the end of the month in the From box">16th–End</button>
         <!-- No company picker here on purpose: everything below this filter —
              KPIs, leaderboard, commissions, payroll, top products — always
              covers both companies, so there is nothing to choose between.
@@ -8668,8 +8671,31 @@ function commissionRow(e) {
 // more than one company — with a single company the reader would be adding up
 // unrelated people, but across companies these are the same person's figures
 // (or the whole group's), and the sum is the number actually wanted.
-function commissionTotalsRow(rows, label) {
-  if (!rows || rows.length < 2) return '';
+// A subtotal per shop, then the two together. An owner running two shops
+// reads the commissions one shop at a time — it is what each one cost to
+// run — and a single combined line makes that a subtraction done by hand.
+// Only when the table actually spans more than one shop; one shop's own
+// report already has its total.
+function commissionStoreTotals(rows) {
+  const byStore = new Map();
+  for (const r of rows || []) {
+    const name = r.company_name || r._store;
+    if (!name) continue;
+    if (!byStore.has(name)) byStore.set(name, []);
+    byStore.get(name).push(r);
+  }
+  if (byStore.size < 2) return '';
+  return [...byStore]
+    .map(([name, group]) => ({ name, group, c: group.reduce((s, e) => s + commissionAmt(e, commissionBase(e)), 0) }))
+    .sort((a, b) => b.c - a.c)
+    .map(({ name, group }) => commissionTotalsRow(group, `All employees — ${name}`, { subtotal: true }))
+    .join('');
+}
+
+function commissionTotalsRow(rows, label, opts = {}) {
+  // A shop with one person on it still needs its subtotal line, or the grand
+  // total below stops being the sum of what is above it.
+  if (!rows || (rows.length < 2 && !opts.subtotal)) return '';
   const sum = (f) => rows.reduce((s, e) => s + (Number(e[f]) || 0), 0);
   const commission = rows.reduce((s, e) => s + commissionAmt(e, commissionBase(e)), 0);
   const chargeback = sum('chargeback_total');
@@ -8680,8 +8706,13 @@ function commissionTotalsRow(rows, label) {
   const openable = names.length === 1
     ? ` onclick="openEmployeeDetail('${escapeHtml(String(names[0])).replace(/'/g, "\\'")}', '')"`
     : '';
+  // A subtotal sits below the rows it adds up and above the grand total, so
+  // it is quieter than both — one rule above it, no fill behind it.
+  const style = opts.subtotal
+    ? 'border-top:1.5px solid var(--border);font-weight:600'
+    : 'border-top:2px solid var(--border);font-weight:700;background:var(--cream)';
   return `
-    <tr${openable} style="border-top:2px solid var(--border);font-weight:700;background:var(--cream)${openable ? ';cursor:pointer' : ''}">
+    <tr${openable} style="${style}${openable ? ';cursor:pointer' : ''}">
       <td>${escapeHtml(label || 'Total')}</td>
       <td>${sum('sale_count')}</td>
       <td>$${money(sum('net_total'))}</td>
@@ -9494,12 +9525,32 @@ function renderPaycheckChips() {
   }).join('');
 }
 
+// Has anybody actually chosen a period? Until they have, a report opens on
+// the paycheck being worked towards rather than on whatever the date boxes
+// were left holding.
+let rptDatesChosen = false;
+
+// The paycheck currently being worked towards, in the date boxes.
+async function defaultToUpcomingPaycheck() {
+  await loadPaycheckFilters();
+  const next = rptPaydays.find(p => p.upcoming) || rptPaydays[0];
+  if (!next) return false;
+  const a = document.getElementById('rptStart'), b = document.getElementById('rptEnd');
+  if (!a || !b) return false;
+  a.value = next.period.start;
+  b.value = next.period.end;
+  rptSelectedPayday = next.payday;
+  renderPaycheckChips();
+  return true;
+}
+
 // Fill the date boxes with a pay period and re-run whatever is on screen.
 // loadReports() refreshes the manager sections and, at its end, the unlocked
 // employee's own figures — so this covers both kinds of viewer.
 function selectPaycheck(payday) {
   const p = rptPaydays.find(x => x.payday === payday);
   if (!p) return;
+  rptDatesChosen = true;
   rptSelectedPayday = payday;
   document.getElementById('rptStart').value = p.period.start;
   document.getElementById('rptEnd').value = p.period.end;
@@ -9780,6 +9831,7 @@ function renderCommissionRange() {
 function showCommissionsFor(start, end) {
   const a = document.getElementById('rptStart'), b = document.getElementById('rptEnd');
   if (!a || !b || !start || !end) return;
+  rptDatesChosen = true;
   a.value = start;
   b.value = end;
   loadReports();
@@ -9797,6 +9849,8 @@ function renderManagerCommissions() {
         ? { ...r, employee_name: `${r.employee_name} — ${r.company_name}`,
             _person: r.employee_name, _store: r.company_name }
         : r)).join('')
+      // Each shop on its own, then both together.
+      + (spans ? commissionStoreTotals(rows) : '')
       + (rows.length > 1 ? commissionTotalsRow(rows, spans ? `All employees — ${stores.join(' + ')}` : 'All employees') : '')) ||
     '<tr><td colspan="6" style="text-align:center;color:var(--mid)">No data</td></tr>';
 }
@@ -9897,19 +9951,16 @@ async function unlockPersonalReport(silent) {
   if (!pin) { if (!silent) errorEl.textContent = 'Enter your PIN'; return; }
 
   // Opening a report lands on the paycheck being worked towards, not on today.
-  // Today is almost never the question — "what is my next cheque" is — and a
-  // range of today alone reads as zero sales, which looks like a fault.
-  // Only on the first unlock: after that the dates are whatever was picked.
-  if (!silent) {
-    await loadPaycheckFilters();
-    const next = rptPaydays.find(p => p.upcoming) || rptPaydays[0];
-    if (next) {
-      document.getElementById('rptStart').value = next.period.start;
-      document.getElementById('rptEnd').value = next.period.end;
-      rptSelectedPayday = next.payday;
-      renderPaycheckChips();
-    }
-  }
+  // Today is almost never the question — "what is my next cheque", or on the
+  // manager's side "what do I owe everyone" — and a range of today alone
+  // shows a few hours of trading under a paycheck covering a fortnight, which
+  // reads as the two figures disagreeing rather than as two questions.
+  //
+  // This used to be skipped on a silent unlock — reopening the tab already
+  // signed in — and a silent unlock is exactly the case where nothing has
+  // been picked, so it landed on today. It now runs until somebody actually
+  // chooses a period, and never overrides them once they have.
+  if (!rptDatesChosen) await defaultToUpcomingPaycheck();
 
   const start = document.getElementById('rptStart').value;
   const end = document.getElementById('rptEnd').value;
