@@ -8789,12 +8789,6 @@ function renderPaySummary(paycheck) {
 
   const earned = rows.reduce((s, e) => s + Number(e.commission_earned || 0), 0);
   const total = rows.reduce((s, e) => s + Number(e.total || 0), 0);
-  // Every line that moves money on this paycheck. A 'held' line moves none —
-  // the dispute came off an earlier cheque — and the Chargebacks section
-  // further down this page lists it with the payday it was held on, so
-  // repeating it here only pads the figures it sits among.
-  const lines = rows.flatMap(e => e.adjustments || []).filter(a => a.kind !== 'held');
-
   const label = (a) => {
     if (a.kind === 'manual') return a.note || 'Adjustment';
     if (a.kind === 'won') return 'Released — dispute won, held back earlier';
@@ -8815,26 +8809,65 @@ function renderPaySummary(paycheck) {
     </tr>`;
 
   // Someone working across two of the owner's shops gets a row from each, so
-  // say which is which before totalling them. One store, and this is silent.
-  const byStore = rows.filter(r => r.store_name);
-  const perStore = new Set(byStore.map(r => r.store_name)).size > 1
-    ? byStore.map(r => line(
-        `<span style="padding-left:10px;color:var(--mid)">${escapeHtml(r.store_name)}</span>`,
-        `$${money(r.commission_earned)}`)).join('')
+  // say which is which before totalling them. Summed PER SHOP, not per row:
+  // on an admin's screen these rows are every employee at both shops, and a
+  // line each would be two dozen of them instead of two.
+  const stores = new Map();
+  for (const r of rows.filter(r => r.store_name)) {
+    stores.set(r.store_name, (stores.get(r.store_name) || 0) + Number(r.commission_earned || 0));
+  }
+  const perStore = stores.size > 1
+    ? [...stores].map(([name, amt]) => line(
+        `<span style="padding-left:10px;color:var(--mid)">${escapeHtml(name)}</span>`,
+        `$${money(amt)}`)).join('')
+    : '';
+
+  // An admin's summary covers everybody. "Released — dispute won" four times
+  // over, with no name against any of it, reads as the same dispute counted
+  // four times — when it is two disputes belonging to two people who split
+  // the sale. Whose it is has to be on the line.
+  const people = new Set(rows.map(r => r.employee_name).filter(Boolean));
+  const whose = (a) => (people.size > 1 && a.employee_name
+    ? `<strong>${escapeHtml(a.employee_name)}</strong> · ` : '');
+  // Every line that moves money on this paycheck. A 'held' line moves none —
+  // the dispute came off an earlier cheque — and the Chargebacks section
+  // further down this page lists it with the payday it was held on, so
+  // repeating it here only pads the figures it sits among.
+  const named = rows.flatMap(e => (e.adjustments || [])
+    .filter(a => a.kind !== 'held')
+    .map(a => ({ ...a, employee_name: e.employee_name })));
+
+  // This block is the chosen paycheck. On the admin screen it sits directly
+  // under a table that obeys the date boxes above it, and the two are almost
+  // never the same period — so the total below was being read as the total of
+  // the table, and the two numbers looked like a bug. Say which is which.
+  const when = (d) => {
+    const t = Date.parse(`${d}T12:00:00`);
+    return isFinite(t) ? new Date(t).toLocaleDateString(undefined,
+      { month: 'short', day: 'numeric', year: 'numeric' }) : d;
+  };
+  const p = paycheck.period;
+  const heading = paycheck.payday
+    ? line(`<span style="color:var(--mid);font-weight:600">Paycheck of ${escapeHtml(when(paycheck.payday))}` +
+        `${p && p.start && p.end ? ` · earned ${escapeHtml(when(p.start))} – ${escapeHtml(when(p.end))}` : ''}` +
+        `${people.size > 1 ? ` · ${people.size} people` : ''}` +
+        `</span>`, '', { top: true })
     : '';
 
   const html =
-    line('Commission earned', `$${money(earned)}`, { top: true })
+    heading
+    + line('Commission earned', `$${money(earned)}`, { top: !heading })
     + perStore
     // The receipt the line came off. Two disputes on one cheque are otherwise
     // told apart only by their amounts, and the first question anybody asks
     // about a deduction is which sale it was.
-    + lines.map(a => line(
-        escapeHtml(label(a))
+    + named.map(a => line(
+        whose(a) + escapeHtml(label(a))
           + (a.receipt ? ` <span style="color:var(--mid);font-weight:400">· ${escapeHtml(a.receipt)}</span>` : ''),
         `${Number(a.amount) < 0 ? '−' : '+'}$${money(Math.abs(Number(a.amount)))}`,
         { colour: Number(a.amount) < 0 ? 'var(--danger)' : 'var(--success)' })).join('')
-    + line('Commission on the upcoming paycheck', `$${money(total)}`, { strong: true });
+    + line(people.size > 1 ? 'Total on this paycheck — everyone' : 'Commission on the upcoming paycheck',
+        `$${money(total)}`, { strong: true });
 
   for (const el of targets) el.innerHTML = html;
 }

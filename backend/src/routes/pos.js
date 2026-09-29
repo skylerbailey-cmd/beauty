@@ -1490,19 +1490,29 @@ router.post('/company-scope', async (req, res) => {
     return res.json({ ok: true, included: [], rejected: [] });
   }
 
-  const { getUserByEmail } = require('../db');
+  // A company's id is derived from its sign-in address, so the address alone
+  // names it. This used to go through the SQLite user table instead, which is
+  // rebuilt empty on every deploy — so a shop that had not signed in on this
+  // machine since the last release came back "not signed in on this device
+  // yet", and the widened view could not be turned on at all. Postgres is
+  // where the companies actually live, and it is the same answer every time.
   const ids = [userId];
   const included = [];
   const rejected = [];
   for (const raw of companies) {
     const email = String(raw || '').trim().toLowerCase();
     if (!email) continue;
-    const u = getUserByEmail(email);
-    if (!u) { rejected.push({ email, reason: 'not signed in on this device yet' }); continue; }
-    if (ids.includes(u.id)) continue;
-    const mgr = await verifyManager(u.id, name, pin);
-    if (mgr) { ids.push(u.id); included.push(u.company_name || email); }
-    else rejected.push({ email, company: u.company_name || email, reason: 'that name and PIN is not an active manager there' });
+    const id = pgDb.companyIdForEmail(email);
+    if (!id || !(await pgDb.companyExists(id))) {
+      rejected.push({ email, reason: 'no SkySale store uses that email address' });
+      continue;
+    }
+    if (ids.includes(id)) continue;
+    const [company] = await pgDb.companiesByIds([id]);
+    const label = company?.store_name || email;
+    const mgr = await verifyManager(id, name, pin);
+    if (mgr) { ids.push(id); included.push(label); }
+    else rejected.push({ email, company: label, reason: 'that name and PIN is not an active manager there' });
   }
 
   req.session.companyScope = ids.length > 1 ? ids : null;
@@ -1600,7 +1610,29 @@ router.get('/reports/employees', async (req, res) => {
 // proved they manage, rather than switching accounts to find the other half
 // of somebody's pay. It covered every company on the server before, which on
 // a product other shops sign up to is somebody else's payroll.
-const payrollScope = async (req) => scopeIds(req);
+// Two shops that share a roster share a paycheck, so an admin looking at
+// payroll has to see all of it. That used to need company-scope to have been
+// set in this session — and company-scope resolved the other shop out of
+// SQLite, which is wiped on every deploy. So the combined view quietly
+// collapsed to one shop every time the app shipped, and an adjustment entered
+// at the other one vanished from the cheque it belonged to while the
+// employee's own screen still showed it.
+//
+// The link itself is the better proof anyway: making one takes an admin name
+// and PIN at BOTH shops, which is more than a session flag ever asked for. So
+// a linked shop is in scope because it is linked, and company-scope stays as
+// a way to widen further, not as the thing holding it up.
+const linkedScope = async (req) => {
+  const here = req.session.userId;
+  const ids = new Set(scopeIds(req));
+  ids.add(here);
+  try {
+    for (const other of await pgDb.linkedCompanyIds(here)) ids.add(other);
+  } catch (_) { /* a link we can't read is one we don't widen on */ }
+  return [...ids];
+};
+
+const payrollScope = async (req) => linkedScope(req);
 
 // ─── One person, two stores ─────────────────────────────────────────────────
 //
@@ -1647,7 +1679,11 @@ const personalIds = (scope) => scope.map((s) => s.company_id);
 // An admin keeps the session scope they chose; everyone else gets the shops
 // their own credentials open.
 async function figuresScope(req, employee, pin) {
-  return isAdmin(employee) ? scopeIds(req) : personalIds(await personalScope(req, employee, pin));
+  // An admin sees every shop sharing this roster, for the same reason payroll
+  // does — the commission figures are what the paycheck is built from, and a
+  // person who works at both has one of each. Everyone else gets the shops
+  // their own name and PIN open.
+  return isAdmin(employee) ? linkedScope(req) : personalIds(await personalScope(req, employee, pin));
 }
 
 // ─── Linking two stores ─────────────────────────────────────────────────────
