@@ -8886,6 +8886,10 @@ function renderPaySummary(paycheck) {
   const named = rows.flatMap(e => (e.adjustments || [])
     .filter(a => a.kind !== 'held')
     .map(a => ({ ...a, employee_name: e.employee_name })));
+  // Both shops' floor shares together, directly under the commission they
+  // sit beside — rather than one per shop, each buried among that shop's
+  // disputes, which is where grouping the rows by shop leaves them.
+  named.sort((a, b) => (a.kind === 'store' ? 0 : 1) - (b.kind === 'store' ? 0 : 1));
 
   // This block is the chosen paycheck. On the admin screen it sits directly
   // under a table that obeys the date boxes above it, and the two are almost

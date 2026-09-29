@@ -271,6 +271,21 @@ setTimeout(async () => {
     !/incl\./.test(t) && !/20,896\.05/.test(t), t.slice(0, 300));
   check('the cheque still comes to the same money', /36,994\.83/.test(t), t.slice(-160));
 
+  // Grouped by shop, each shop's floor share would sit buried among that
+  // shop's dispute lines. Both belong together, under the commission.
+  el = render([
+    { ...SAL_FLOOR[0], adjustments: [...SAL_FLOOR[0].adjustments,
+      { kind: 'won', amount: 1530, receipt: '1502-1268LC2' }] },
+    { ...SAL_FLOOR[1], adjustments: [...SAL_FLOOR[1].adjustments,
+      { kind: 'won', amount: 2087, receipt: '1501-1216LC1' }] },
+  ]);
+  const order = [...el.querySelectorAll('tr')]
+    .map((tr) => tr.querySelector('td').textContent.replace(/\s+/g, ' ').trim());
+  const lastFloor = order.map((x) => /of everything the shop took/.test(x)).lastIndexOf(true);
+  const firstDispute = order.findIndex((x) => /Released/.test(x));
+  check('both floor lines come before any dispute line',
+    lastFloor > -1 && firstDispute > lastFloor, order.join(' | ').slice(0, 300));
+
   console.log('\n── Somebody with no share of the floor is told nothing ──');
   el = render([REBECCA_GLOW, REBECCA_DW]);
   check('no floor line', !/of everything the shop took/.test(el.textContent),
