@@ -79,13 +79,15 @@ setTimeout(async () => {
   console.log('\n── One person, across both shops ──');
   let el = render([REBECCA_GLOW, REBECCA_DW]);
   let t = text(el);
-  check('both shops are named', /Glow SF/.test(t) && /Desert Wellness/.test(t), t.slice(0, 200));
-  check('her Glow SF commission is there', /810\.00/.test(t));
-  check('and her Desert Wellness commission', /377\.46/.test(t));
+  // The table directly above this already gives commission per shop, per
+  // person. Repeating it underneath is the same two numbers twice on one
+  // card, which reads as a second, disagreeing answer rather than a breakdown.
+  check('the per-shop commission is not repeated from the table',
+    !/Glow SF/.test(t) && !/Desert Wellness/.test(t), t.slice(0, 220));
+  check('both shops are still totalled into one figure',
+    /1,187\.46/.test(t), t.slice(0, 200));
   check('the advance from the other shop is on the cheque', /cash advance/.test(t) && /500\.00/.test(t));
   check('which comes to the figure on her own screen', /1,618\.06/.test(t), t.slice(-160));
-  check('one shop line per shop, not per row',
-    (t.match(/Glow SF/g) || []).length === 1, `${(t.match(/Glow SF/g) || []).length} mentions`);
   check('nobody is named when the cheque is one person\'s', !/Rebecca/.test(t));
 
   console.log('\n── The paycheck says which period it is ──');
@@ -262,6 +264,7 @@ setTimeout(async () => {
   t = text(el);
   check('commission earned is what he sold, and only that',
     /30,295\.28/.test(t), t.slice(0, 260));
+  check('and it is not broken down per shop again', !/Glow SF<\/span>/.test(el.innerHTML));
   check('the floor share is its own line for each shop',
     /Glow SF — 4% of everything the shop took/.test(t)
     && /Desert Wellness — 4% of everything the shop took/.test(t), t.slice(0, 460));
@@ -285,6 +288,14 @@ setTimeout(async () => {
   const firstDispute = order.findIndex((x) => /Released/.test(x));
   check('both floor lines come before any dispute line',
     lastFloor > -1 && firstDispute > lastFloor, order.join(' | ').slice(0, 300));
+  // A shop share and a released dispute are both green four-figure additions.
+  // Read as one list they look like the same kind of thing, when one is this
+  // fortnight's pay and the other is money being handed back.
+  const trs = [...el.querySelectorAll('tr')];
+  const firstDisputeRow = trs.find((tr) => /Released/.test(tr.textContent));
+  check('and a rule separates the two kinds',
+    /border-top/.test(firstDisputeRow.getAttribute('style') || ''),
+    firstDisputeRow.getAttribute('style'));
 
   console.log('\n── Somebody with no share of the floor is told nothing ──');
   el = render([REBECCA_GLOW, REBECCA_DW]);

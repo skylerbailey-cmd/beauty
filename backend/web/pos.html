@@ -8842,7 +8842,7 @@ function renderPaySummary(paycheck) {
     return 'Held from pay — dispute opened';
   };
   const line = (text, amount, opts = {}) => `
-    <tr style="${opts.strong ? 'font-weight:700;background:var(--cream);' : ''}${opts.top ? 'border-top:2px solid var(--border);' : ''}">
+    <tr style="${opts.strong ? 'font-weight:700;background:var(--cream);' : ''}${opts.top ? 'border-top:2px solid var(--border);' : ''}${opts.rule ? 'border-top:1.5px solid var(--border);' : ''}">
       <td colspan="5" style="${opts.strong ? 'font-weight:700' : ''}">${text}</td>
       <td style="font-weight:700;${opts.colour ? 'color:' + opts.colour : ''}">${amount}</td>
     </tr>`;
@@ -8853,30 +8853,6 @@ function renderPaySummary(paycheck) {
   // the sale. Whose it is has to be on the line.
   const people = new Set(rows.map(r => r.employee_name).filter(Boolean));
 
-  // Someone working across two of the owner's shops gets a row from each, so
-  // say which is which before totalling them — on THEIR cheque, where the two
-  // halves of one person's pay is what the split means.
-  //
-  // Never on the all-employees report. There it is a column of shop names
-  // with amounts beside them and no indication of whose any of it is, saying
-  // nothing the table above hasn't already said per employee AND per shop.
-  const stores = new Map();
-  for (const r of rows.filter(r => r.store_name)) {
-    const cur = stores.get(r.store_name) || { earned: 0, floor: 0, rate: 0 };
-    cur.earned += Number(r.commission_earned || 0);
-    cur.floor += Number(r.store_commission || 0);
-    cur.rate = Number(r.store_rate) || cur.rate;
-    stores.set(r.store_name, cur);
-  }
-  // These are commission on their OWN sales, per shop. A manager's share of
-  // the floor is not that — it is a share of what the shop took, whoever rang
-  // it up — so it is a line of its own further down rather than a number
-  // folded in here with a footnote.
-  const perStore = people.size === 1 && stores.size > 1
-    ? [...stores].map(([name, v]) => line(
-        `<span style="padding-left:10px;color:var(--mid)">${escapeHtml(name)}</span>`,
-        `$${money(v.earned)}`)).join('')
-    : '';
   const whose = (a) => (people.size > 1 && a.employee_name
     ? `<strong>${escapeHtml(a.employee_name)}</strong> · ` : '');
   // Every line that moves money on this paycheck. A 'held' line moves none —
@@ -8923,15 +8899,20 @@ function renderPaySummary(paycheck) {
   const html =
     heading
     + line('Commission earned', `$${money(earned)}`, { top: !heading })
-    + perStore
     // The receipt the line came off. Two disputes on one cheque are otherwise
     // told apart only by their amounts, and the first question anybody asks
     // about a deduction is which sale it was.
-    + named.map(a => line(
+    //
+    // A rule where the shop shares end and the disputes begin: they are both
+    // green additions of four figures, and read as one list they look like
+    // the same kind of thing when one is this fortnight's pay and the other
+    // is money being given back.
+    + named.map((a, i) => line(
         whose(a) + escapeHtml(label(a))
           + (a.receipt ? ` <span style="color:var(--mid);font-weight:400">· ${escapeHtml(a.receipt)}</span>` : ''),
         `${Number(a.amount) < 0 ? '−' : '+'}$${money(Math.abs(Number(a.amount)))}`,
-        { colour: Number(a.amount) < 0 ? 'var(--danger)' : 'var(--success)' })).join('')
+        { colour: Number(a.amount) < 0 ? 'var(--danger)' : 'var(--success)',
+          rule: i > 0 && named[i - 1].kind === 'store' && a.kind !== 'store' })).join('')
     + line(people.size > 1 ? 'Total on this paycheck — everyone' : 'Commission on the upcoming paycheck',
         `$${money(total)}`, { strong: true });
 
