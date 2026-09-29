@@ -8808,25 +8808,28 @@ function renderPaySummary(paycheck) {
       <td style="font-weight:700;${opts.colour ? 'color:' + opts.colour : ''}">${amount}</td>
     </tr>`;
 
-  // Someone working across two of the owner's shops gets a row from each, so
-  // say which is which before totalling them. Summed PER SHOP, not per row:
-  // on an admin's screen these rows are every employee at both shops, and a
-  // line each would be two dozen of them instead of two.
-  const stores = new Map();
-  for (const r of rows.filter(r => r.store_name)) {
-    stores.set(r.store_name, (stores.get(r.store_name) || 0) + Number(r.commission_earned || 0));
-  }
-  const perStore = stores.size > 1
-    ? [...stores].map(([name, amt]) => line(
-        `<span style="padding-left:10px;color:var(--mid)">${escapeHtml(name)}</span>`,
-        `$${money(amt)}`)).join('')
-    : '';
-
   // An admin's summary covers everybody. "Released — dispute won" four times
   // over, with no name against any of it, reads as the same dispute counted
   // four times — when it is two disputes belonging to two people who split
   // the sale. Whose it is has to be on the line.
   const people = new Set(rows.map(r => r.employee_name).filter(Boolean));
+
+  // Someone working across two of the owner's shops gets a row from each, so
+  // say which is which before totalling them — on THEIR cheque, where the two
+  // halves of one person's pay is what the split means.
+  //
+  // Never on the all-employees report. There it is a column of shop names
+  // with amounts beside them and no indication of whose any of it is, saying
+  // nothing the table above hasn't already said per employee AND per shop.
+  const stores = new Map();
+  for (const r of rows.filter(r => r.store_name)) {
+    stores.set(r.store_name, (stores.get(r.store_name) || 0) + Number(r.commission_earned || 0));
+  }
+  const perStore = stores.size > 1 && people.size === 1
+    ? [...stores].map(([name, amt]) => line(
+        `<span style="padding-left:10px;color:var(--mid)">${escapeHtml(name)}</span>`,
+        `$${money(amt)}`)).join('')
+    : '';
   const whose = (a) => (people.size > 1 && a.employee_name
     ? `<strong>${escapeHtml(a.employee_name)}</strong> · ` : '');
   // Every line that moves money on this paycheck. A 'held' line moves none —

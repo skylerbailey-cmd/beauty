@@ -106,7 +106,11 @@ setTimeout(() => {
   check('the total is everyone, and says so', /Total on this paycheck — everyone/.test(t));
   check('and it adds up', /20,331\.31/.test(t), t.slice(-200));
 
-  console.log('\n── Still only two shop lines with fifteen people ──');
+  console.log('\n── No shop breakdown on an all-employees report ──');
+  // The table above it already names the shop on every employee's row. A
+  // column of bare shop names and amounts under it says nothing more, and
+  // whose any of it is cannot be told — which is how twenty-three unlabelled
+  // amounts ended up under a report that was supposed to be the commissions.
   const many = [];
   for (let i = 0; i < 15; i++) {
     many.push({ employee_id: 100 + i, employee_name: `P${i}`, store_name: 'Glow SF',
@@ -116,10 +120,10 @@ setTimeout(() => {
   }
   el = render(many);
   t = text(el);
-  check('Glow SF is named once', (t.match(/Glow SF/g) || []).length === 1,
-    `${(t.match(/Glow SF/g) || []).length} mentions`);
-  check('Desert Wellness once', (t.match(/Desert Wellness/g) || []).length === 1);
-  check('with each shop summed', /1,500\.00/.test(t) && /750\.00/.test(t), t.slice(0, 220));
+  const storeLines = (t.match(/Glow SF/g) || []).length + (t.match(/Desert Wellness/g) || []).length;
+  check('not one shop line among thirty rows', storeLines === 0, `${storeLines} shop mentions`);
+  check('the earned total is still all of it', /2,250\.00/.test(t), t.slice(0, 200));
+  check('and it still says how many people', /15 people/.test(t), t.slice(0, 200));
 
   console.log('\n── One shop stays quiet about it ──');
   el = render([REBECCA_GLOW]);
