@@ -49,6 +49,8 @@ const money = (n) => Math.round(Number(n || 0) * 100) / 100;
 
   const cleanup = async () => {
     await c.query('DELETE FROM pos_payroll_adjustments WHERE user_id = ANY($1::text[])', [SHOPS]);
+    await c.query('DELETE FROM pos_payroll_runs WHERE user_id = ANY($1::text[])', [SHOPS]);
+    await c.query('DELETE FROM pos_payroll_balances WHERE user_id = ANY($1::text[])', [SHOPS]);
     await c.query(`DELETE FROM pos_transaction_employees WHERE transaction_id IN
       (SELECT id FROM pos_transactions WHERE user_id = ANY($1::text[]))`, [SHOPS]);
     await c.query('DELETE FROM pos_transactions WHERE user_id = ANY($1::text[])', [SHOPS]);
@@ -141,6 +143,29 @@ const money = (n) => Math.round(Number(n || 0) * 100) / 100;
   check('and is not reachable from either of them',
     !linkedFromA.includes(C) && !linkedFromB.includes(C));
   check('so its staff stay off their payroll', !both.has('Ruth'), [...both.keys()].join(', '));
+
+  console.log('\n── One cheque closes once ──');
+  // The part of this with teeth. Payroll spanning both shops means marking a
+  // payday paid at one closes it at the other, because it is one payment.
+  // What must not happen is a half-closed state: closed where it was pressed
+  // and still open next door, which would let the same cheque be paid twice.
+  await pgDb.linkCompanies(A, B, 'test');
+  await pgDb.setPayrollPaid([A, B], PAYDAY, true, 'test');
+  const closedFromA = await pgDb.paidPaydays([A, B]);
+  const closedFromB = await pgDb.paidPaydays([B, A]);
+  check('closed from shop A', closedFromA.includes(PAYDAY), JSON.stringify(closedFromA));
+  check('and shop B sees it closed too', closedFromB.includes(PAYDAY), JSON.stringify(closedFromB));
+  check('the run is stored once, not once per shop',
+    Number((await c.query('SELECT COUNT(*) n FROM pos_payroll_runs WHERE user_id = ANY($1::text[]) AND payday = $2::date',
+      [SHOPS, PAYDAY])).rows[0].n) === 1);
+
+  // Reopening has to undo exactly what closing did, from either side.
+  await pgDb.setPayrollPaid([B, A], PAYDAY, false, 'test');
+  check('reopening from the OTHER shop reopens it', !(await pgDb.paidPaydays([A, B])).includes(PAYDAY));
+  check('and leaves no run behind',
+    Number((await c.query('SELECT COUNT(*) n FROM pos_payroll_runs WHERE user_id = ANY($1::text[])',
+      [SHOPS])).rows[0].n) === 0);
+  check('the money is untouched by the round trip', (await run([A, B])).get('Nadia').total === 580);
 
   console.log('\n── Unlinking puts it back ──');
   await pgDb.unlinkCompanies(A, B);
