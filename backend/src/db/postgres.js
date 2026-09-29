@@ -3254,6 +3254,11 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
   // a company id — zeroing the sales of every employee on a commission plan.
   const txResult = await query(`
     SELECT t.id, t.type, t.created_at, te.commission_value,
+      -- The day this sale happened in the shop that rang it up. Each company
+      -- carries its own clock, so two shops in scope are each bucketed on
+      -- theirs rather than on whichever one is signed in.
+      (COALESCE(t.original_sale_date, t.created_at)
+        AT TIME ZONE COALESCE(NULLIF(s.timezone, ''), 'America/Los_Angeles'))::date AS sale_day,
       -- Same deduction as the report: a sale whose dispute was lost stops
       -- paying commission. Pending ones are left alone here — they are held
       -- from the paycheck, not struck off what was earned.
@@ -3268,6 +3273,7 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
         ELSE 1 END AS commission_amount
     FROM pos_transactions t
     JOIN pos_transaction_employees te ON t.id = te.transaction_id
+    LEFT JOIN pos_settings s ON s.user_id = t.user_id
     WHERE te.employee_id = $1 AND t.user_id = ANY($2::text[])
       AND COALESCE(t.original_sale_date, t.created_at) >= $3
       AND COALESCE(t.original_sale_date, t.created_at) <= $4
@@ -3308,32 +3314,52 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
   }
 
   if (plan.plan_type === 'daily_threshold') {
-    // Group transactions by calendar day
+    // A day is a day IN THE SHOP. This grouped by `toISOString()` — UTC — so
+    // for a Denver store every sale after 6pm fell into the next day's
+    // bucket, splitting one trading day in two. A genuine $8,950 day read as
+    // $325 and the rest, which is under the threshold, so it paid the base
+    // rate on money that had earned the higher one. The day now comes from
+    // the shop's own clock, and from each shop's own clock when two are in
+    // scope, the same way payroll decides which paycheck a sale falls on.
     const byDay = {};
     for (const tx of txResult.rows) {
-      const day = new Date(tx.created_at).toISOString().slice(0, 10);
+      const day = String(tx.sale_day).slice(0, 10);
       if (!byDay[day]) byDay[day] = [];
       byDay[day].push(tx);
     }
 
+    // The threshold is a step in the RATE, not a switch on the whole day:
+    // the first $2,000 earns the base rate and only what is above it earns
+    // the tier rate. Paying the tier rate on the whole of a day that crossed
+    // the line made the $2,000th dollar worth more than the ones before it —
+    // on a $17,586 day that is $200 of commission conjured by the crossing
+    // itself. A day that stays under is untouched either way.
+    const marginal = (net) => {
+      const cap = Number(plan.tier_threshold) || 0;
+      const base = Number(plan.base_rate) || 0;
+      const tier = Number(plan.tier_rate) || 0;
+      if (net <= cap) return net * base / 100;
+      return (cap * base / 100) + ((net - cap) * tier / 100);
+    };
+
     let salesTotal = 0, returnsTotal = 0, saleCount = 0, returnCount = 0, commissionTotal = 0;
     for (const [, dayTxs] of Object.entries(byDay)) {
-      // Which rate the day earns depends on that day's net credited SALES
+      // What the day earns is decided on that day's net credited SALES
       // (pre-tax, this employee's share) — not on commission dollars, and not
       // on the tax-inclusive total, which would push them over the threshold
-      // early and inflate the payout.
+      // early and inflate the payout. Returns are netted off first, so a sale
+      // that came back never counts towards the higher rate.
       const dayNetSales = dayTxs.reduce((sum, tx) => {
         const amt = Number(tx.commission_amount) || 0;
         return sum + (tx.type === 'sale' ? amt : -amt);
       }, 0);
 
-      const rate = dayNetSales > plan.tier_threshold ? plan.tier_rate : plan.base_rate;
+      commissionTotal += marginal(dayNetSales);
 
       for (const tx of dayTxs) {
         const empShare = Number(tx.commission_amount) || 0;
-        const commission = empShare * (rate / 100);
-        if (tx.type === 'sale') { salesTotal += empShare; commissionTotal += commission; saleCount++; }
-        else { returnsTotal += empShare; commissionTotal -= commission; returnCount++; }
+        if (tx.type === 'sale') { salesTotal += empShare; saleCount++; }
+        else { returnsTotal += empShare; returnCount++; }
       }
     }
     return {
