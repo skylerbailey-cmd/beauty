@@ -144,6 +144,39 @@ const money = (n) => Math.round(Number(n || 0) * 100) / 100;
     await run('2026-06-01', '2026-06-30') !== money(2000 * 0.35 + 7000 * 0.40),
     'the whole period treated as one day would be $3,500');
 
+  console.log('\n── The cheque pays the plan, not a flat rate ──');
+  // The report worked the plan out properly and payroll did not — it paid
+  // commission_rate on the period total and never read the plan at all. So
+  // the two screens gave different answers for the same fortnight, and the
+  // one that decides what somebody is paid was the one that underpaid.
+  await cleanupSales();
+  await sale('2026-07-08T18:00:00Z', 3000);   // 8 Jul: 700 + 400 = 1100
+  await sale('2026-07-09T18:00:00Z', 1000);   // 9 Jul: 350
+  const settings = await pgDb.getSettings(SHOP);
+  const cheque = async (payday) => {
+    const r = await pgDb.payrollForPayday([SHOP], payday, settings);
+    const e = r.employees.find((x) => x.employee_id === emp);
+    return e ? { earned: money(e.commission_earned), sales: money(e.sales_total) } : null;
+  };
+  const jul = await cheque('2026-08-01');     // pays 1-15 July
+  check('the sales are the same either way', jul.sales === 4000, `$${jul.sales}`);
+  check('the cheque pays the plan', jul.earned === 1450,
+    `$${jul.earned}, expected $1450 — $1400 is the flat 35% payroll used to pay`);
+  check('which is what the report says too',
+    jul.earned === await run('2026-07-01', '2026-07-15'),
+    `cheque $${jul.earned}, report $${await run('2026-07-01', '2026-07-15')}`);
+
+  console.log('\n── A return in the same period comes off its own day ──');
+  await cleanupSales();
+  await sale('2026-07-08T18:00:00Z', 3000);
+  await sale('2026-07-10T18:00:00Z', 1200, 'return');
+  // The return belongs to the 10th, which had no sales — the 8th keeps its
+  // $3,000 and the day the money came back goes negative.
+  const withReturn = await cheque('2026-08-01');
+  check('the sales figure drops by the return', withReturn.sales === 1800, `$${withReturn.sales}`);
+  check('and the cheque never pays more than the sales support',
+    withReturn.earned < 1100, `$${withReturn.earned}`);
+
   async function cleanupSales() {
     await c.query(`DELETE FROM pos_transaction_employees WHERE transaction_id IN
       (SELECT id FROM pos_transactions WHERE user_id = $1)`, [SHOP]);

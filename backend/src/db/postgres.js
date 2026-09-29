@@ -1854,11 +1854,62 @@ async function payrollForPayday(userId, payday, settings) {
     return byEmp.get(id);
   };
 
+  // Anybody whose pay is not a flat percentage of what they sold. Payroll
+  // used to know nothing about these: it paid commission_rate on the period
+  // total, while the commissions report worked the plan out properly, so the
+  // report and the cheque gave different answers for the same fortnight and
+  // the cheque was the one that underpaid.
+  const plans = new Map((await query(
+    `SELECT p.employee_id, p.plan_type, p.base_rate, p.tier_rate, p.tier_threshold
+       FROM pos_commission_plans p
+      WHERE p.user_id = ANY($1::text[]) AND p.plan_type <> 'flat'`, [ids]))
+    .rows.map((p) => [p.employee_id, p]));
+
+  // A threshold is judged per DAY, so a period total cannot answer it: the
+  // same $10,000 is worth more over five big days than twenty small ones.
+  // Kept on the shop's own clock, like everything else that asks what day a
+  // sale happened on.
+  const dailyNet = new Map();   // employee_id -> Map(day -> net sales)
+  if (plans.size) {
+    const days = (await query(`
+      SELECT te.employee_id, ${saleDay}::text AS day, COALESCE(SUM(${EMP_SHARE}), 0) AS net
+        FROM pos_transactions t
+        JOIN pos_transaction_employees te ON te.transaction_id = t.id
+       WHERE t.user_id = ANY($1::text[]) AND t.type = 'sale'
+         AND te.employee_id = ANY($2::int[])
+         AND ${saleDay} >= $3::date AND ${saleDay} <= $4::date
+       GROUP BY te.employee_id, 2`,
+      [ids, [...plans.keys()], period.start, period.end])).rows;
+    for (const d of days) {
+      if (!dailyNet.has(d.employee_id)) dailyNet.set(d.employee_id, new Map());
+      dailyNet.get(d.employee_id).set(d.day, Number(d.net) || 0);
+    }
+  }
+
+  // "35% for anything under $2,000, anything over that is 40%" — the step is
+  // in the RATE, not a switch on the whole day. Paying the tier rate on all
+  // of a day that crossed the line makes the dollar that crosses it worth
+  // more than every dollar before it.
+  const planCommission = (empId) => {
+    const plan = plans.get(empId);
+    const byDay = dailyNet.get(empId);
+    if (!plan || !byDay) return null;
+    const cap = Number(plan.tier_threshold) || 0;
+    const base = Number(plan.base_rate) || 0;
+    const tier = Number(plan.tier_rate) || 0;
+    let total = 0;
+    for (const net of byDay.values()) {
+      total += net <= cap ? net * base / 100 : (cap * base / 100) + ((net - cap) * tier / 100);
+    }
+    return round2(total);
+  };
+
   for (const e of earned) {
     const r = row(e.employee_id, e.employee_name, e.commission_rate, e.company_id);
     r.sales_total = round2(Number(e.sales_total));
     r.sale_count = Number(e.sale_count);
-    r.commission_earned = round2(r.sales_total * r.commission_rate / 100);
+    r.commission_earned = planCommission(e.employee_id)
+      ?? round2(r.sales_total * r.commission_rate / 100);
   }
 
   // A return reverses the commission on the paycheck paying its sale.
@@ -1882,7 +1933,15 @@ async function payrollForPayday(userId, payday, settings) {
     if (naturalPayday === payday) {
       r.sales_total = round2(r.sales_total - Number(rt.share));
       r.returns_netted = round2((r.returns_netted || 0) + Number(rt.share));
-      r.commission_earned = round2(r.sales_total * r.commission_rate / 100);
+      // On a threshold plan the return comes off the day the sale was rung
+      // up, before that day is measured — a sale that came back should never
+      // have counted towards the higher rate in the first place.
+      const byDay = dailyNet.get(rt.employee_id);
+      if (byDay) {
+        byDay.set(rt.sale_date, (byDay.get(rt.sale_date) || 0) - Number(rt.share));
+      }
+      r.commission_earned = planCommission(rt.employee_id)
+        ?? round2(r.sales_total * r.commission_rate / 100);
       continue;
     }
 
