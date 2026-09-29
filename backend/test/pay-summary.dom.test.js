@@ -139,6 +139,40 @@ setTimeout(() => {
   w.eval('renderPaySummary({ rows: [] })');
   check('and so is a paycheck with no rows', id('empPersonalPaySummary').innerHTML === '');
 
+  console.log('\n── Two periods in one card, both labelled ──');
+  // The table's dates are set far above it; the paycheck below covers a pay
+  // period. They are almost never the same, which is how a table showing two
+  // days of sales ended up under a paycheck covering a fortnight, with both
+  // numbers looking wrong.
+  id('rptStart').value = '2026-09-28';
+  id('rptEnd').value = '2026-09-29';
+  w.eval('renderCommissionRange()');
+  check('the table says which dates it is answering for',
+    /Sep 28, 2026 – Sep 29, 2026/.test(id('empReportRange').textContent),
+    id('empReportRange').textContent);
+
+  el = render([REBECCA_GLOW, REBECCA_DW]);
+  check('and the paycheck offers to line them up',
+    /show the table for these dates/.test(el.textContent), el.textContent.slice(0, 200));
+  w.eval("showCommissionsFor('2026-09-01','2026-09-15')");
+  check('clicking it moves the boxes',
+    id('rptStart').value === '2026-09-01' && id('rptEnd').value === '2026-09-15',
+    `${id('rptStart').value} .. ${id('rptEnd').value}`);
+  w.eval('renderCommissionRange()');
+  check('and the table relabels itself',
+    /Sep 1, 2026 – Sep 15, 2026/.test(id('empReportRange').textContent),
+    id('empReportRange').textContent);
+
+  el = render([REBECCA_GLOW, REBECCA_DW]);
+  check('with the periods matching, nothing is offered',
+    !/show the table for these dates/.test(el.textContent), el.textContent.slice(0, 200));
+
+  id('rptStart').value = '2026-09-03';
+  id('rptEnd').value = '2026-09-03';
+  w.eval('renderCommissionRange()');
+  check('a single day reads as one date, not a range',
+    id('empReportRange').textContent === 'Sep 3, 2026', id('empReportRange').textContent);
+
   console.log('\n── A held line still moves no money ──');
   el = render([{ ...REBECCA_GLOW, adjustments: [
     { kind: 'held', amount: 0, receipt: 'ZZ-1' },

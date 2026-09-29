@@ -1199,6 +1199,12 @@
 
           <div class="report-card" id="rptEveryoneCard">
             <h3>Employee Commissions &amp; Sales</h3>
+            <!-- The dates this table is answering for. They are set far above
+                 it, and the paycheck summary in the foot is a different period
+                 again — so a table showing two days of sales sat under a
+                 paycheck covering a fortnight, and the two figures looked like
+                 a fault. Both ends now say which period they mean. -->
+            <div id="empReportRange" style="font-size:.82rem;color:var(--mid);margin:-6px 0 10px"></div>
             <table class="report-table">
               <thead><tr><th>Employee</th><th>Sales</th><th>Net Sales $</th><th>Charged Back</th><th>Counts As</th><th>Commission</th></tr></thead>
               <tbody id="empReportBody"></tbody>
@@ -8850,11 +8856,23 @@ function renderPaySummary(paycheck) {
       { month: 'short', day: 'numeric', year: 'numeric' }) : d;
   };
   const p = paycheck.period;
+  // When the table above is on a different period — which is most of the
+  // time, since its dates are set separately — offer to point it at this one.
+  // That is the question being asked when the two figures don't match.
+  const rptStart = (document.getElementById('rptStart') || {}).value;
+  const rptEnd = (document.getElementById('rptEnd') || {}).value;
+  const mismatched = p && p.start && p.end && rptStart && rptEnd
+    && (rptStart !== p.start || rptEnd !== p.end);
+  const align = mismatched
+    ? ` · <a href="#" onclick="event.preventDefault();showCommissionsFor('${p.start}','${p.end}')"
+         style="color:var(--accent);font-weight:600">show the table for these dates</a>`
+    : '';
+
   const heading = paycheck.payday
     ? line(`<span style="color:var(--mid);font-weight:600">Paycheck of ${escapeHtml(when(paycheck.payday))}` +
         `${p && p.start && p.end ? ` · earned ${escapeHtml(when(p.start))} – ${escapeHtml(when(p.end))}` : ''}` +
         `${people.size > 1 ? ` · ${people.size} people` : ''}` +
-        `</span>`, '', { top: true })
+        `</span>${align}`, '', { top: true })
     : '';
 
   const html =
@@ -9736,7 +9754,39 @@ async function loadPayroll() {
   }
 }
 
+// "Sep 1, 2026". Bare dates only — these never carry a time.
+function fmtReportDay(d) {
+  const t = Date.parse(`${d}T12:00:00`);
+  return isFinite(t)
+    ? new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+    : d;
+}
+
+// The period the table above is answering for, said out loud underneath its
+// own heading rather than only in two boxes at the top of the page.
+function renderCommissionRange() {
+  const el = document.getElementById('empReportRange');
+  if (!el) return;
+  const start = (document.getElementById('rptStart') || {}).value;
+  const end = (document.getElementById('rptEnd') || {}).value;
+  el.textContent = start && end
+    ? (start === end ? fmtReportDay(start) : `${fmtReportDay(start)} – ${fmtReportDay(end)}`)
+    : '';
+}
+
+// Point the report at a period — used by the paycheck summary, so "earned
+// Sep 1 – Sep 15" under a table showing two days of sales is one click from
+// being the same question.
+function showCommissionsFor(start, end) {
+  const a = document.getElementById('rptStart'), b = document.getElementById('rptEnd');
+  if (!a || !b || !start || !end) return;
+  a.value = start;
+  b.value = end;
+  loadReports();
+}
+
 function renderManagerCommissions() {
+  renderCommissionRange();
   const rows = lastEmployeesReport || [];
   // Commissions always cover every company, so name the store on each row and
   // always total — an employee working at both has a row for each.
