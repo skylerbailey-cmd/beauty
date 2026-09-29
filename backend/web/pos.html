@@ -722,6 +722,22 @@
     }
     .em-nav-btn { width: auto; white-space: nowrap; padding: 9px 13px; }
   }
+
+    /* Something is happening. An audit reads a fortnight of batches from the
+       processor and can take a while; with no sign of life the only thing to
+       do is press the button again. */
+    .busy { display: none; align-items: center; gap: 10px; padding: 14px 16px;
+      font-family: system-ui, sans-serif; font-size: .88rem; color: var(--mid); }
+    .busy.on { display: flex; }
+    .busy .spin {
+      width: 18px; height: 18px; flex: 0 0 18px; border-radius: 50%;
+      border: 2.5px solid var(--border); border-top-color: var(--accent);
+      animation: busy-spin .7s linear infinite;
+    }
+    @keyframes busy-spin { to { transform: rotate(360deg); } }
+    /* A reader who has asked for less motion still needs to know it is
+       working, so the ring stays and simply stops turning. */
+    @media (prefers-reduced-motion: reduce) { .busy .spin { animation: none; } }
   </style>
 </head>
 <body>
@@ -980,6 +996,11 @@
        whichever one is open. Its own view because reading an audit and
        reading the day's sales are different jobs. -->
   <div id="txViewAudit" style="display:none">
+    <div class="busy" id="auditBusy" role="status" aria-live="polite">
+      <span class="spin"></span>
+      <span id="auditBusyText">Reading your processor's batches…</span>
+    </div>
+
     <div class="report-card" id="autoAuditCard">
       <h3 style="margin:0 0 4px">Nightly reconciliation</h3>
       <!-- The switches live in Settings with the merchant connection they
@@ -7573,6 +7594,10 @@ function daysBetween(from, to) {
 async function openSavedAudit(from, to) {
   document.getElementById('histStart').value = from;
   document.getElementById('histEnd').value = to;
+  // Switch and show the spinner before the fetch, so the wait starts with
+  // something on screen rather than a tab that looks like it did nothing.
+  switchTxView('audit');
+  auditBusy(true, `Opening the audit for ${from} to ${to}…`);
   await runAudit();
 }
 
@@ -7607,6 +7632,13 @@ async function runAudit(source) {
   statusEl.style.color = 'var(--mid)';
   statusEl.textContent = 'Fetching batches…';
   resultEl.style.display = 'none';
+  // The status line above lives on the Sales tab, and by now we are on the
+  // Audit one — so say it where the reader is. A fortnight of batches can
+  // take a good few seconds, and with nothing moving the only thing to do is
+  // press the button again.
+  const busyBox = document.getElementById('auditBusy');
+  if (busyBox) { busyBox.style.color = ''; busyBox.querySelector('.spin').style.display = ''; }
+  auditBusy(true, `Reading your processor's batches for ${from} to ${to}…`);
   try {
     const resp = await fetch(`${API}/api/pos/reconciliation-audit?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, { credentials: 'include' });
     const data = await resp.json();
@@ -7632,7 +7664,43 @@ async function runAudit(source) {
   } catch (err) {
     statusEl.style.color = 'var(--danger)';
     statusEl.textContent = 'Failed: ' + err.message;
+    auditFailed(err.message);
+  } finally {
+    auditBusy(false);
   }
+}
+
+// Turn the spinner on or off, and keep the buttons from being pressed twice
+// while a run is in flight — a second audit of the same range is a second
+// round trip to the processor for an answer already on its way.
+function auditBusy(on, message) {
+  const box = document.getElementById('auditBusy');
+  if (box) {
+    // Switching off runs in a `finally`, which fires after the catch that
+    // wrote the failure here — so it must not wipe it. A failure stays up
+    // until the next run replaces it.
+    const failed = box.dataset.failed === '1';
+    if (on) { box.dataset.failed = ''; box.classList.add('on'); }
+    else if (!failed) box.classList.remove('on');
+    if (message) document.getElementById('auditBusyText').textContent = message;
+  }
+  for (const btn of document.querySelectorAll('[onclick^="runAudit"], [onclick^="openSavedAudit"]')) {
+    btn.disabled = !!on;
+    btn.style.opacity = on ? '.5' : '';
+    btn.style.cursor = on ? 'wait' : '';
+  }
+}
+
+// A failure on the Audit tab needs saying on the Audit tab, for the same
+// reason the progress does.
+function auditFailed(message) {
+  const box = document.getElementById('auditBusy');
+  if (!box) return;
+  box.classList.add('on');
+  box.dataset.failed = '1';
+  box.querySelector('.spin').style.display = 'none';
+  box.style.color = 'var(--danger)';
+  document.getElementById('auditBusyText').textContent = 'Could not run the audit: ' + message;
 }
 
 function renderAudit(data) {

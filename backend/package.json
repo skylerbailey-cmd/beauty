@@ -17,7 +17,8 @@
     "test:store-day": "node test/payroll-store-day.test.js",
     "test:return-policy": "node test/return-policy.dom.test.js",
     "test:audit-totals": "node test/audit-totals.dom.test.js",
-    "test:audit-tab": "node test/audit-tab.dom.test.js"
+    "test:audit-tab": "node test/audit-tab.dom.test.js",
+    "test:audit-spinner": "node test/audit-spinner.dom.test.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
