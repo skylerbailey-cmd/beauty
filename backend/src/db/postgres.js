@@ -1942,20 +1942,29 @@ async function payrollForPayday(userId, payday, settings) {
     r.sale_count = Number(e.sale_count);
     r.own_commission = planCommission(e.employee_id)
       ?? round2(r.sales_total * r.commission_rate / 100);
-    r.store_commission = storeCut(e.employee_id);
-    r.commission_earned = round2(r.own_commission + r.store_commission);
+    r.commission_earned = r.own_commission;
   }
 
   // A manager paid a share of the floor is owed it whether or not they rang
   // anything up themselves. Without this they would have no row at all in a
   // fortnight they spent managing rather than selling, and the share would
   // silently not be paid.
+  // A manager's share of the floor is its own line on the cheque, not part of
+  // the commission figure. It is not commission on anything they sold — it is
+  // a share of what the shop took — so folding it in makes their commission
+  // larger than their own sales with only a footnote to explain it.
   for (const [empId, plan] of plans) {
     if (!(Number(plan.store_rate) > 0)) continue;
-    if (byEmp.has(empId)) continue;
+    // A manager paid a share of the floor is owed it whether or not they rang
+    // anything up themselves, so the row is created if it does not exist.
     const r = row(empId, plan.employee_name, plan.commission_rate, plan.user_id);
-    r.store_commission = storeCut(empId);
-    r.commission_earned = round2(r.own_commission + r.store_commission);
+    const amount = storeCut(empId);
+    if (!amount) continue;
+    r.store_commission = amount;
+    r.adjustments.push({
+      kind: 'store', amount,
+      note: `${storeNames.get(plan.user_id) || 'the shop'} — ${Number(plan.store_rate)}% of everything the shop took`,
+    });
   }
 
   // A return reverses the commission on the paycheck paying its sale.
@@ -1988,7 +1997,7 @@ async function payrollForPayday(userId, payday, settings) {
       }
       r.own_commission = planCommission(rt.employee_id)
         ?? round2(r.sales_total * r.commission_rate / 100);
-      r.commission_earned = round2(r.own_commission + r.store_commission);
+      r.commission_earned = r.own_commission;
       continue;
     }
 

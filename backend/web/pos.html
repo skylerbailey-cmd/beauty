@@ -8624,18 +8624,16 @@ function commissionBase(e) {
   return e.net_after_chargebacks != null ? Number(e.net_after_chargebacks) : Number(e.net_total) || 0;
 }
 
-// " (incl. $400 store)" — said only when there is one, because a manager whose
-// commission is larger than their own sales otherwise looks like a mistake.
-function storeCutNote(e) {
-  const cut = Number(e.store_commission) || 0;
-  if (!cut) return '';
-  return ` <span style="font-size:.72rem;color:var(--mid);font-weight:400">incl. $${money(cut)} store @ ${Number(e.store_rate) || 0}%</span>`;
-}
-
 function commissionAmt(e, amount) {
   // An employee on a commission plan has their payout computed server-side
   // (tiered rates depend on each day's sales, and it deducts disputes the same
   // way), so use that figure. Everyone else earns their flat rate.
+  //
+  // `own_commission` rather than `commission_total`: the total folds in a
+  // manager's share of the shop's whole take, which is not commission on the
+  // sales this row is reporting. That share is a line of its own on the
+  // paycheck below.
+  if (e.own_commission != null) return Number(e.own_commission) || 0;
   if (e.has_special_plan && e.commission_total != null) return Number(e.commission_total) || 0;
   const rate = Number(e.commission_rate) || 0;
   return (Number(amount) || 0) * rate / 100;
@@ -8663,7 +8661,7 @@ function commissionRow(e) {
              style="border:none;background:none;padding:0;font:inherit;color:var(--danger);font-weight:600;cursor:pointer;text-decoration:underline">−$${money(Number(e.chargeback_total || 0))}</button>`
         : '<span style="color:var(--mid)">—</span>'}</td>
       <td title="Net sales less anything lost to a dispute — what commission is earned on">$${money(commissionBase(e))}</td>
-      <td style="font-weight:600">$${money(commissionAmt(e, commissionBase(e)))}${storeCutNote(e)}</td>
+      <td style="font-weight:600">$${money(commissionAmt(e, commissionBase(e)))}</td>
     </tr>`;
 }
 
@@ -8827,6 +8825,10 @@ function renderPaySummary(paycheck) {
   const earned = rows.reduce((s, e) => s + Number(e.commission_earned || 0), 0);
   const total = rows.reduce((s, e) => s + Number(e.total || 0), 0);
   const label = (a) => {
+    // A share of everything the shop took, which is not commission on
+    // anything this person sold — so it is its own line, with the shop it
+    // came from named on it.
+    if (a.kind === 'store') return a.note || 'Share of the shop';
     if (a.kind === 'manual') return a.note || 'Adjustment';
     if (a.kind === 'won') return 'Released — dispute won, held back earlier';
     if (a.kind === 'lost') return 'Dispute lost — taken back';
@@ -8866,18 +8868,13 @@ function renderPaySummary(paycheck) {
     cur.rate = Number(r.store_rate) || cur.rate;
     stores.set(r.store_name, cur);
   }
-  // A manager is paid a share of everything their shop took, on top of their
-  // own sales, and it is a share of THAT shop — so it is named beside that
-  // shop's line rather than folded into one figure. Without it their
-  // commission is simply larger than anything they rang up, with no
-  // explanation on the cheque.
-  const floorNote = (v) => (v.floor
-    ? ` <span style="font-weight:400;color:var(--mid)">· incl. $${money(v.floor)} of the floor @ ${v.rate}%</span>`
-    : '');
-  const anyFloor = [...stores.values()].some(v => v.floor);
-  const perStore = people.size === 1 && (stores.size > 1 || anyFloor)
+  // These are commission on their OWN sales, per shop. A manager's share of
+  // the floor is not that — it is a share of what the shop took, whoever rang
+  // it up — so it is a line of its own further down rather than a number
+  // folded in here with a footnote.
+  const perStore = people.size === 1 && stores.size > 1
     ? [...stores].map(([name, v]) => line(
-        `<span style="padding-left:10px;color:var(--mid)">${escapeHtml(name)}</span>${floorNote(v)}`,
+        `<span style="padding-left:10px;color:var(--mid)">${escapeHtml(name)}</span>`,
         `$${money(v.earned)}`)).join('')
     : '';
   const whose = (a) => (people.size > 1 && a.employee_name

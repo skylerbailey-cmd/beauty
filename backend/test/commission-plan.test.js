@@ -203,18 +203,20 @@ const money = (n) => Math.round(Number(n || 0) * 100) / 100;
   await sale('2026-07-08T18:00:00Z', 1000);        // Nadia: 1000 @ 35% = 350
   await otherSale('2026-07-09T18:00:00Z', 4000);   // the floor is now 5000
   const withStore = await cheque('2026-08-01');
-  check('their own sales are unchanged', money(withStore.earned - 200) === 350,
-    `earned $${withStore.earned}`);
+  check('the commission figure is what they sold, and only that',
+    withStore.earned === 350, `$${withStore.earned} — $550 means the floor share was folded in`);
   const full = await pgDb.payrollForPayday([SHOP], '2026-08-01', settings);
   const me = full.employees.find((x) => x.employee_id === emp);
-  check('the shop cut is 4% of everything the shop took', money(me.store_commission) === 200,
-    `$${me.store_commission}, expected $200 (4% of $5,000)`);
-  check('own and shop are kept apart', money(me.own_commission) === 350, `$${me.own_commission}`);
-  check('and added together for the cheque', money(me.commission_earned) === 550,
-    `$${me.commission_earned}`);
-  check('the rate rides along so it can be labelled', Number(me.store_rate) === 4, String(me.store_rate));
-  check('the report agrees with the cheque',
-    await run('2026-07-01', '2026-07-15') === 550, `report $${await run('2026-07-01', '2026-07-15')}`);
+  const floor = me.adjustments.filter((a) => a.kind === 'store');
+  check('the shop cut is a line of its own', floor.length === 1,
+    `${floor.length} store lines`);
+  check('worth 4% of everything the shop took', money(floor[0].amount) === 200,
+    `$${floor[0].amount}, expected $200 (4% of $5,000)`);
+  check('and it names the shop it came from', /ZZ Plan Shop/.test(floor[0].note), floor[0].note);
+  check('the rate is on the row too', Number(me.store_rate) === 4, String(me.store_rate));
+  check('the cheque still comes to the same money', money(me.total) === 550, `$${me.total}`);
+  check('which is what the report says', await run('2026-07-01', '2026-07-15') === 550,
+    `report $${await run('2026-07-01', '2026-07-15')}`);
 
   console.log('\n── Only their own shop\'s floor ──');
   const OTHER_SHOP = SHOP + '-2';
@@ -235,22 +237,24 @@ const money = (n) => Math.round(Number(n || 0) * 100) / 100;
 
   const across = await pgDb.payrollForPayday([SHOP, OTHER_SHOP], '2026-08-01', settings);
   const meAcross = across.employees.find((x) => x.employee_id === emp);
+  const acrossFloor = meAcross.adjustments.filter((a) => a.kind === 'store');
   check('a $9,000 day at the other shop adds nothing to their share',
-    money(meAcross.store_commission) === 200,
-    `$${meAcross.store_commission}, expected $200 — $560 means it counted both shops`);
+    money(acrossFloor[0].amount) === 200,
+    `$${acrossFloor[0].amount}, expected $200 — $560 means it counted both shops`);
 
   console.log('\n── A manager who sold nothing still gets their share ──');
   await c.query(`DELETE FROM pos_transaction_employees WHERE employee_id = $1`, [emp]);
   const quiet = await pgDb.payrollForPayday([SHOP], '2026-08-01', settings);
   const idle = quiet.employees.find((x) => x.employee_id === emp);
   check('they are on the payroll at all', !!idle, 'no row for a manager with no sales of their own');
-  check('with nothing of their own', idle && money(idle.own_commission) === 0, idle && String(idle.own_commission));
+  check('with no commission of their own', idle && money(idle.commission_earned) === 0,
+    idle && String(idle.commission_earned));
   // The sales are still on the floor — only the credit to them was removed —
   // so the shop took the same $5,000 and their share of it is unchanged.
-  check('and the shop cut still paid in full', idle && money(idle.store_commission) === 200,
-    idle && `$${idle.store_commission}, expected $200 (4% of the $5,000 the shop took)`);
-  check('so their whole cheque is the floor', idle && money(idle.commission_earned) === 200,
-    idle && `$${idle.commission_earned}`);
+  const idleFloor = idle.adjustments.filter((a) => a.kind === 'store');
+  check('and the shop cut still paid in full', money(idleFloor[0].amount) === 200,
+    `$${idleFloor[0].amount}, expected $200 (4% of the $5,000 the shop took)`);
+  check('so their whole cheque is the floor', money(idle.total) === 200, `$${idle.total}`);
 
   await c.query(`UPDATE pos_commission_plans SET store_rate = 0 WHERE employee_id = $1`, [emp]);
   await c.query(`DELETE FROM pos_transaction_employees WHERE transaction_id IN

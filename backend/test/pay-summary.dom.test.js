@@ -246,32 +246,40 @@ setTimeout(async () => {
   // On top of their own sales, and a share of THAT shop — so it belongs
   // beside that shop's line. Without it their commission is simply bigger
   // than anything they rang up, with nothing on the cheque to say why.
-  el = render([
+  const SAL_FLOOR = [
     { employee_id: 1, employee_name: 'Sal', store_name: 'Glow SF',
-      commission_earned: 16098.78, own_commission: 13562.03, store_commission: 2536.75,
-      store_rate: 4, adjustment_total: 0, total: 16098.78, adjustments: [] },
+      commission_earned: 13562.03, own_commission: 13562.03, store_commission: 2536.75,
+      store_rate: 4, adjustment_total: 2536.75, total: 16098.78,
+      adjustments: [{ kind: 'store', amount: 2536.75,
+        note: 'Glow SF — 4% of everything the shop took' }] },
     { employee_id: 45, employee_name: 'Sal', store_name: 'Desert Wellness',
-      commission_earned: 20896.05, own_commission: 16733.25, store_commission: 4162.80,
-      store_rate: 4, adjustment_total: 0, total: 20896.05, adjustments: [] },
-  ]);
+      commission_earned: 16733.25, own_commission: 16733.25, store_commission: 4162.80,
+      store_rate: 4, adjustment_total: 4162.80, total: 20896.05,
+      adjustments: [{ kind: 'store', amount: 4162.80,
+        note: 'Desert Wellness — 4% of everything the shop took' }] },
+  ];
+  el = render(SAL_FLOOR);
   t = text(el);
-  check('each shop is named', /Glow SF/.test(t) && /Desert Wellness/.test(t));
-  check('with its own floor share spelled out',
-    /2,536\.75 of the floor @ 4%/.test(t) && /4,162\.80 of the floor @ 4%/.test(t), t.slice(0, 320));
-  check('and the shares are different, being different shops',
-    !/2,536\.75 of the floor[\s\S]*2,536\.75 of the floor/.test(t));
-  check('the cheque is both shops added up', /36,994\.83/.test(t), t.slice(-160));
+  check('commission earned is what he sold, and only that',
+    /30,295\.28/.test(t), t.slice(0, 260));
+  check('the floor share is its own line for each shop',
+    /Glow SF — 4% of everything the shop took/.test(t)
+    && /Desert Wellness — 4% of everything the shop took/.test(t), t.slice(0, 460));
+  check('each with that shop\'s amount',
+    /\+\$2,536\.75/.test(t) && /\+\$4,162\.80/.test(t), t.slice(0, 460));
+  check('and it is not folded into the commission figure',
+    !/incl\./.test(t) && !/20,896\.05/.test(t), t.slice(0, 300));
+  check('the cheque still comes to the same money', /36,994\.83/.test(t), t.slice(-160));
 
   console.log('\n── Somebody with no share of the floor is told nothing ──');
   el = render([REBECCA_GLOW, REBECCA_DW]);
-  check('no floor line', !/of the floor/.test(el.textContent), el.textContent.slice(0, 200));
+  check('no floor line', !/of everything the shop took/.test(el.textContent),
+    el.textContent.slice(0, 200));
 
   console.log('\n── One shop, but a share of it ──');
-  el = render([{ employee_id: 1, employee_name: 'Sal', store_name: 'Glow SF',
-    commission_earned: 16098.78, own_commission: 13562.03, store_commission: 2536.75,
-    store_rate: 4, adjustment_total: 0, total: 16098.78, adjustments: [] }]);
-  check('it is still explained', /2,536\.75 of the floor @ 4%/.test(el.textContent),
-    el.textContent.slice(0, 220));
+  el = render([SAL_FLOOR[0]]);
+  check('it is still its own line', /Glow SF — 4% of everything the shop took/.test(el.textContent),
+    el.textContent.slice(0, 260));
 
   console.log('\n── A held line still moves no money ──');
   el = render([{ ...REBECCA_GLOW, adjustments: [
