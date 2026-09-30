@@ -1568,6 +1568,10 @@
   <!-- ─── CALENDAR TAB (treatment sessions) ─── -->
   <div class="tab-content" id="tab-calendar">
     <div style="max-width:1000px;margin:0 auto;padding:20px">
+      <div class="sleep-banner" role="status" hidden>
+        <b>This shop is asleep.</b> New sessions can't be booked or moved, and no emails go out.
+        Sessions already booked can still be cancelled. A manager can wake it in <a href="#" onclick="event.preventDefault(); helpGo('settings/account');">Settings → Account</a>.
+      </div>
 
       <!-- The week's book -->
       <div class="report-card">
@@ -1661,6 +1665,10 @@
 
   <!-- ─── EMAILS TAB (embedded Email Suite) ─── -->
   <div class="tab-content" id="tab-emails">
+    <div class="sleep-banner" role="status" hidden style="margin:16px 20px 0">
+      <b>This shop is asleep,</b> so no emails go out — welcome emails, mass emails and replies are paused.
+      A manager can wake it in <a href="#" onclick="event.preventDefault(); helpGo('settings/account');">Settings → Account</a>.
+    </div>
     <!-- One list of places to be, on the left, owned by this page.
          The email suite runs in a frame and used to bring its own sidebar,
          which meant two navigations stacked at right angles and mass email
@@ -3530,7 +3538,7 @@ function renderSubscription() {
     return;
   }
 
-  const sleep = subMoney(st.sleep_cents);
+  const sleep = subMoney(st.sleep_cents || 1500);
   const sleepBtn = btn(`Put to sleep — ${sleep} a month`, 'sleepShop()');
 
   // Asleep: paid for, keeping everything, selling nothing.
@@ -3539,7 +3547,8 @@ function renderSubscription() {
       + `everything this shop has recorded — sales, customers, reports and payroll — here and `
       + `readable. The register takes no sales, returns or exchanges until it wakes.`
       + (st.cancel_at_period_end
-        ? ` <b style="color:#A8323C">Cancelled</b> — it ends on <b>${escapeHtml(subDay(st.current_period_end))}</b>.`
+        ? ` <b style="color:#A8323C">Cancelled</b> — it ends on <b>${escapeHtml(subDay(st.current_period_end))}</b>, `
+          + `and everything is deleted on <b>${escapeHtml(subDay(st.deletes_on))}</b>.`
         : ` Next bill on <b>${escapeHtml(subDay(st.current_period_end))}</b>.`);
     actions.innerHTML = btn(`Wake the shop — back to ${subMoney(st.monthly_cents)} a month`, 'wakeShop()', 'btn-confirm')
       + (st.cancel_at_period_end ? btn('Keep the subscription', 'resumeSubscription()') : btn('Cancel subscription', 'cancelSubscription()'))
@@ -3550,9 +3559,10 @@ function renderSubscription() {
   if (st.cancel_at_period_end && st.may_sell) {
     box.innerHTML = `<b style="color:#A8323C">Cancelled.</b> This shop keeps working until `
       + `<b>${escapeHtml(subDay(st.current_period_end))}</b>, which is the end of the period `
-      + `already paid for. After that the register stops taking new sales — everything `
-      + `recorded stays here and stays readable.`
-      + ` Or put it to sleep for ${sleep} a month instead of leaving.`;
+      + `already paid for. After that the register stops taking new sales, and 30 days later `
+      + `everything recorded is deleted`
+      + (st.deletes_on ? ` — on <b>${escapeHtml(subDay(st.deletes_on))}</b>` : '') + '.'
+      + ` To keep it, put the shop to sleep for ${sleep} a month instead of leaving.`;
     actions.innerHTML = btn('Keep the subscription', 'resumeSubscription()', 'btn-confirm')
       + btn(`Sleep instead — ${sleep} a month`, 'sleepShop()')
       + btn('Update card', 'openBillingPortal()');
@@ -3598,14 +3608,19 @@ function renderSubscription() {
     ? 'The last payment did not go through, so new sales are paused.'
     : 'This subscription has ended, so new sales are paused.';
   box.innerHTML = `<b style="color:#A8323C">Not active.</b> ${why} Everything already `
-    + `recorded is still here — reports, payroll and history all still open.`;
+    + `recorded is still here — reports, payroll and history all still open`
+    + (st.deletes_on
+      ? ` — until <b>${escapeHtml(subDay(st.deletes_on))}</b>, when it is deleted. Start again, or keep it `
+        + `asleep for ${sleep} a month, to keep it.`
+      : '.');
   actions.innerHTML = btn('Start it again', 'startCheckout()', 'btn-confirm')
+    + (st.status === 'canceled' ? btn(`Keep it asleep — ${sleep} a month`, "startCheckout('sleep')") : '')
     + (st.has_customer ? btn('Update card', 'openBillingPortal()') : '');
 }
 
 // ─── Sleep ──────────────────────────────────────────────────────────────────
 function sleepShop() {
-  const sleep = subMoney(subState?.sleep_cents), full = subMoney(subState?.monthly_cents);
+  const sleep = subMoney(subState?.sleep_cents || 1500), full = subMoney(subState?.monthly_cents);
   if (!confirm(`Put this shop to sleep?\n\n`
     + `It costs ${sleep} a month instead of ${full}. Everything recorded stays here and stays `
     + `readable — sales, customers, reports and payroll.\n\n`
@@ -3647,9 +3662,9 @@ async function changeSleep(which) {
   }
 }
 
+// One on each tab that has things a sleeping shop cannot do.
 function showSleepBanner() {
-  const banner = document.getElementById('sleepBanner');
-  if (banner) banner.hidden = !subState?.asleep;
+  document.querySelectorAll('.sleep-banner').forEach((b) => { b.hidden = !subState?.asleep; });
 }
 
 // Asked once when the register opens, so a sleeping shop is told before
@@ -3661,14 +3676,14 @@ async function checkSleeping() {
   } catch (_) { /* the server refuses the sale regardless */ }
 }
 
-async function startCheckout() {
+async function startCheckout(plan) {
   const note = document.getElementById('subNote');
   note.style.color = 'var(--mid)';
   note.textContent = 'Opening Stripe…';
   try {
     const resp = await fetch(`${API}/api/billing/checkout`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      credentials: 'include', body: JSON.stringify({ return_to: '/pos.html' }),
+      credentials: 'include', body: JSON.stringify({ return_to: '/pos.html', plan: plan === 'sleep' ? 'sleep' : undefined }),
     });
     const data = await resp.json();
     if (!resp.ok || !data.url) throw new Error(data.error || 'Could not start checkout');
@@ -3679,14 +3694,21 @@ async function startCheckout() {
   }
 }
 
-async function openBillingPortal() {
+function openBillingPortal() {
+  withManagerCode('billing-portal', goToBillingPortal);
+}
+
+async function goToBillingPortal() {
   const note = document.getElementById('subNote');
   note.style.color = 'var(--mid)';
   note.textContent = 'Opening your billing page…';
+  const manager = approvedManager;
+  approvedManager = null;
   try {
     const resp = await fetch(`${API}/api/billing/portal`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      credentials: 'include', body: JSON.stringify({ return_to: '/pos.html' }),
+      credentials: 'include',
+      body: JSON.stringify({ return_to: '/pos.html', manager_name: manager?.name, manager_pin: manager?.pin }),
     });
     const data = await resp.json();
     if (!resp.ok || !data.url) throw new Error(data.error || 'Could not open the billing page');
@@ -3697,23 +3719,31 @@ async function openBillingPortal() {
   }
 }
 
-async function cancelSubscription() {
+function cancelSubscription() {
   const when = subState?.current_period_end ? subDay(subState.current_period_end) : 'the end of the period';
   const trial = subState?.trialing;
+  const sleep = subMoney(subState?.sleep_cents || 1500);
   if (!confirm(trial
     ? 'Cancel the subscription?\n\nYou are still in the free trial, so nothing has been charged '
-      + 'and nothing will be.\n\nThe register stops taking new sales when the trial ends. '
-      + 'Everything already recorded stays here.'
+      + 'and nothing will be.\n\nThe register stops taking new sales when the trial ends, and '
+      + '30 days after that everything recorded is deleted for good.'
     : `Cancel the subscription?\n\nThis shop keeps working until ${when} — the period you have `
-      + `already paid for. After that the register stops taking new sales.\n\n`
-      + `Everything already recorded stays here, and you can restart before then.`)) return;
+      + `already paid for. After that the register stops taking new sales, and 30 days later `
+      + `everything recorded is deleted for good: sales, customers, staff, payroll.\n\n`
+      + `To keep it without trading, put the shop to sleep for ${sleep} a month instead.`)) return;
+  withManagerCode('cancel-subscription', confirmCancelSubscription);
+}
 
+async function confirmCancelSubscription() {
   const note = document.getElementById('subNote');
   note.style.color = 'var(--mid)';
   note.textContent = 'Cancelling…';
+  const manager = approvedManager;
+  approvedManager = null;
   try {
     const resp = await fetch(`${API}/api/billing/cancel`, {
-      method: 'POST', credentials: 'include',
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ manager_name: manager?.name, manager_pin: manager?.pin }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Could not cancel');
@@ -7121,6 +7151,8 @@ const MANAGER_ACTIONS = {
   'export-transactions': { title: 'Export Transactions', what: 'export transactions' },
   'export-customers':    { title: 'Export Customers',    what: 'export customers' },
   'sleep':               { title: 'Put the Shop to Sleep', what: 'put the shop to sleep' },
+  'cancel-subscription': { title: 'Cancel the Subscription', what: 'cancel the subscription' },
+  'billing-portal':      { title: 'Billing',               what: 'open the billing page' },
   'wake':                { title: 'Wake the Shop',       what: 'wake the shop' },
 };
 let approvedManager = null;   // { name, pin } for the action in progress

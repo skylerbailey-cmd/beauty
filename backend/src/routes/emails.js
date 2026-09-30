@@ -13,6 +13,7 @@ const {
   getUser,
 } = require('../db');
 const { sendDraft, deleteDraft, createDraft, archiveThread } = require('../services/gmail');
+const { refuseWhileAsleep } = require('../lib/sleep');
 
 const router = express.Router();
 
@@ -176,7 +177,7 @@ router.get('/:id', (req, res) => {
 // ─── POST /api/emails/:id/send ─────────────────────────────────────────────────
 // Send the draft via Gmail API
 
-router.post('/:id/send', async (req, res) => {
+router.post('/:id/send', refuseWhileAsleep('emails'), async (req, res) => {
   try {
     const email = getEmail(req.params.id);
     if (!email) {

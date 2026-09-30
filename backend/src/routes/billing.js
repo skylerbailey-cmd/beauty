@@ -79,10 +79,23 @@ function describe(sub) {
     cancel_at_period_end: !!sub?.cancel_at_period_end,
     canceled_at: sub?.canceled_at || null,
     has_customer: !!sub?.stripe_customer_id,
+    // When a cancelled shop's books go (services/retention.js): 30 days after
+    // the subscription stops — or will stop, for one cancelled but running.
+    deletes_on: deletesOnFor(sub),
     monthly_cents: billing.MONTHLY_CENTS,
     sleep_cents: billing.SLEEP_CENTS,
     trial_days: billing.TRIAL_DAYS,
   };
+}
+
+function deletesOnFor(sub) {
+  const { deletesOn } = require('../services/retention');
+  if (sub?.status === 'canceled') {
+    const stopped = sub.ended_at || sub.current_period_end || sub.canceled_at;
+    return stopped ? deletesOn(stopped, sub.deletion_warned_at) : null;
+  }
+  if (sub?.cancel_at_period_end && sub.current_period_end) return deletesOn(sub.current_period_end);
+  return null;
 }
 
 router.get('/status', requireSignedIn, async (req, res) => {
@@ -128,7 +141,10 @@ router.post('/checkout',
       const email = (getUser(userId) || {}).email || '';
 
       const customerId = await customerFor(userId, email, settings?.store_name);
-      const price = await billing.monthlyPriceId();
+      // A shop whose subscription has ended can come back asleep, to keep its
+      // books without trading. No free trial on that: there is nothing to try.
+      const asleep = req.body?.plan === 'sleep';
+      const price = await billing.priceIdFor(asleep ? 'sleep' : 'full');
       const back = String(req.body?.return_to || '').startsWith('/')
         ? req.body.return_to : '/signup.html';
 
@@ -140,7 +156,7 @@ router.post('/checkout',
         // use, which is more than cards; naming them locks the rest out.
         line_items: [{ price, quantity: 1 }],
         subscription_data: {
-          trial_period_days: billing.TRIAL_DAYS,
+          ...(asleep ? {} : { trial_period_days: billing.TRIAL_DAYS }),
           metadata: { skysale_company_id: userId },
         },
         // The card is taken now and charged when the trial ends, so a shop
@@ -211,9 +227,14 @@ router.post('/sync', requireSignedIn, requireBilling, async (req, res) => {
 // Ending it the moment the button is pressed would take days they have paid
 // for and turn a cancellation into a refund request — and it would close a
 // till mid-shift.
+// It takes a manager's name and code: ending the subscription ends the shop's
+// books 30 days later.
 router.post('/cancel', requireSignedIn, requireBilling, async (req, res) => {
   const userId = req.session.userId;
   try {
+    if (!(await managerOf(userId, req.body?.manager_name, req.body?.manager_pin))) {
+      return res.status(403).json({ error: 'Only a manager can cancel the subscription. Enter a manager name and code.' });
+    }
     const row = await pgDb.getSubscription(userId);
     if (!row?.stripe_subscription_id) {
       return res.status(400).json({ error: 'There is no subscription to cancel.' });
@@ -344,9 +365,14 @@ router.post('/wake', requireSignedIn, requireBilling,
 
 // Stripe's own billing pages: change the card, read past invoices. Hosted by
 // them, so none of it is built — or held — here.
+// A manager's too: Stripe's page can change the card, and — depending on how
+// the portal is set up in the Dashboard — cancel.
 router.post('/portal', requireSignedIn, requireBilling, async (req, res) => {
   const userId = req.session.userId;
   try {
+    if (!(await managerOf(userId, req.body?.manager_name, req.body?.manager_pin))) {
+      return res.status(403).json({ error: 'Only a manager can open the billing page. Enter a manager name and code.' });
+    }
     const row = await pgDb.getSubscription(userId);
     if (!row?.stripe_customer_id) {
       return res.status(400).json({ error: 'There is nothing to manage yet.' });

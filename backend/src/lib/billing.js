@@ -169,6 +169,11 @@ function summarise(subscription) {
     current_period_end: periodEnd(subscription),
     cancel_at_period_end: !!subscription.cancel_at_period_end,
     canceled_at: subscription.canceled_at ? new Date(subscription.canceled_at * 1000) : null,
+    // When it actually stopped. Not canceled_at: Stripe sets that when Cancel
+    // is pressed, and a shop cancelled at the end of the month keeps working
+    // until then — counting from the press would delete a shop's books a day
+    // after it stopped selling.
+    ended_at: subscription.ended_at ? new Date(subscription.ended_at * 1000) : null,
     plan: planOf(subscription),
   };
 }

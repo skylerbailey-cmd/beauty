@@ -659,6 +659,10 @@ Exchanges are only allowed within **7 days** of purchase.'`);
   )`);
   // 'full' or 'sleep' — read off the subscription's price by billing.planOf.
   await migrate("ALTER TABLE pos_subscriptions ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'full'");
+  // When a cancelled subscription actually stopped, and when the shop was
+  // warned that its books go 30 days after that (services/retention.js).
+  await migrate('ALTER TABLE pos_subscriptions ADD COLUMN IF NOT EXISTS ended_at TIMESTAMPTZ');
+  await migrate('ALTER TABLE pos_subscriptions ADD COLUMN IF NOT EXISTS deletion_warned_at TIMESTAMPTZ');
   await migrate('CREATE INDEX IF NOT EXISTS idx_pg_subs_customer ON pos_subscriptions(stripe_customer_id)');
   await migrate('CREATE INDEX IF NOT EXISTS idx_pg_subs_sub ON pos_subscriptions(stripe_subscription_id)');
 
@@ -1677,7 +1681,8 @@ async function getSubscription(userId) {
 // here, and neither knows everything the other does.
 async function saveSubscription(userId, fields = {}) {
   const cols = ['stripe_customer_id', 'stripe_subscription_id', 'status',
-    'trial_end', 'current_period_end', 'cancel_at_period_end', 'canceled_at', 'plan'];
+    'trial_end', 'current_period_end', 'cancel_at_period_end', 'canceled_at', 'plan',
+    'ended_at', 'deletion_warned_at'];
   const given = cols.filter((c) => fields[c] !== undefined);
   const sets = given.map((c, i) => `${c} = $${i + 2}`);
   await query(
@@ -1686,6 +1691,22 @@ async function saveSubscription(userId, fields = {}) {
      ON CONFLICT (user_id) DO UPDATE SET ${[...sets, 'updated_at = NOW()'].join(', ')}`,
     [userId, ...given.map((c) => fields[c])]);
   return getSubscription(userId);
+}
+
+// Cancelled subscriptions, with when each actually stopped. A row from before
+// ended_at was kept falls back to the end of the period it had paid for, then
+// to when it was cancelled — the latest date that can be known, so nothing is
+// deleted early for want of a column.
+async function endedSubscriptions() {
+  return (await query(
+    `SELECT *, COALESCE(ended_at, current_period_end, canceled_at) AS stopped_at
+       FROM pos_subscriptions
+      WHERE status = 'canceled'
+        AND COALESCE(ended_at, current_period_end, canceled_at) IS NOT NULL`)).rows;
+}
+
+async function deleteSubscriptionRow(userId) {
+  await query('DELETE FROM pos_subscriptions WHERE user_id = $1', [userId]);
 }
 
 // The webhook knows the Stripe ids, not the company — this is the way back.
@@ -4429,6 +4450,8 @@ module.exports = {
   companyForStripeCustomer,
   companyForStripeSubscription,
   LIVE_SUB_STATUSES,
+  endedSubscriptions,
+  deleteSubscriptionRow,
   linkedCompanyIds,
   linkCompanies,
   unlinkCompanies,

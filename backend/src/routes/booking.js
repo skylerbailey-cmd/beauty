@@ -13,6 +13,7 @@ const express = require('express');
 const router = express.Router();
 const pgDb = require('../db/postgres');
 const appts = require('../services/appointments');
+const { refuseWhileAsleep } = require('../lib/sleep');
 const { formatAddress } = appts;
 
 // What the customer is allowed to see about their own booking.
@@ -78,7 +79,9 @@ router.get('/:token/slots', load, async (req, res) => {
 
 // ─── POST /api/booking/:token/reschedule ─────────────────────────────────────
 
-router.post('/:token/reschedule', load, async (req, res) => {
+// A customer moving their own booking is a booking; cancelling one is not
+// refused, so a sleeping shop's customers can still call theirs off.
+router.post('/:token/reschedule', load, refuseWhileAsleep('bookings', (req) => req.appt?.user_id), async (req, res) => {
   const { start } = req.body || {};
   if (!start || !isFinite(Date.parse(start))) {
     return res.status(400).json({ error: 'Pick a time first.' });

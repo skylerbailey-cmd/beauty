@@ -118,6 +118,7 @@ router.post('/', express.raw({ type: 'application/json', limit: '1mb' }), async 
           status: object.status || 'canceled',
           cancel_at_period_end: false,
           canceled_at: object.canceled_at ? new Date(object.canceled_at * 1000) : new Date(),
+          ended_at: object.ended_at ? new Date(object.ended_at * 1000) : new Date(),
           current_period_end: billing.periodEnd(object),
         });
         break;

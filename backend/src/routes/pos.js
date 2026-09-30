@@ -3,6 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const pgDb = require('../db/postgres');
+const { refuseWhileAsleep } = require('../lib/sleep');
 const billing = require('../lib/billing');
 const { PRODUCTS, BUNDLES, generateWelcomeEmailBody } = require('./welcome');
 
@@ -1292,7 +1293,7 @@ router.post('/settings/test-sale-alert', async (req, res) => {
 
 // ─── Email Receipt ─────────────────────────────────────────────────────────
 
-router.post('/transactions/:id/email', async (req, res) => {
+router.post('/transactions/:id/email', refuseWhileAsleep('emails'), async (req, res) => {
   const found = await txInScope(req);
   if (!found) return res.status(404).json({ error: 'Transaction not found' });
   const tx = found.tx;
@@ -1400,7 +1401,7 @@ router.post('/transactions/:id/email', async (req, res) => {
 // Generates the SAME personalized welcome email as the Welcome Emails tool,
 // straight from the transaction's products, and sends it via Gmail.
 
-router.post('/transactions/:id/welcome', async (req, res) => {
+router.post('/transactions/:id/welcome', refuseWhileAsleep('emails'), async (req, res) => {
   const found = await txInScope(req);
   if (!found) return res.status(404).json({ error: 'Transaction not found' });
   // Everything below — the brands, the store name, the mailbox it leaves from —
@@ -1480,7 +1481,7 @@ router.post('/transactions/:id/welcome', async (req, res) => {
 
 // ─── Mass Email (to a filtered customer list, sent individually) ────────────
 
-router.post('/mass-email', async (req, res) => {
+router.post('/mass-email', refuseWhileAsleep('emails'), async (req, res) => {
   const userId = req.session.userId;
   const { recipients, subject, message } = req.body;
   if (!Array.isArray(recipients) || recipients.length === 0) {
@@ -3887,7 +3888,7 @@ router.get('/appointments/slots', async (req, res) => {
   }
 });
 
-router.post('/appointments', async (req, res) => {
+router.post('/appointments', refuseWhileAsleep('bookings'), async (req, res) => {
   const b = req.body || {};
   const email = String(b.customer_email || '').trim();
   if (!String(b.customer_name || '').trim()) return res.status(400).json({ error: 'Who is the appointment for?' });
@@ -3946,7 +3947,7 @@ router.post('/appointments', async (req, res) => {
   }
 });
 
-router.patch('/appointments/:id', async (req, res) => {
+router.patch('/appointments/:id', refuseWhileAsleep('bookings'), async (req, res) => {
   const b = req.body || {};
   try {
     const userId = req.session.userId;
@@ -4020,7 +4021,7 @@ router.post('/appointments/:id/cancel', async (req, res) => {
 
 // Resend the confirmation — for the customer who deleted it, or for a booking
 // made before Gmail was connected.
-router.post('/appointments/:id/resend', async (req, res) => {
+router.post('/appointments/:id/resend', refuseWhileAsleep('emails'), async (req, res) => {
   try {
     const appt = await pgDb.getAppointment(req.params.id, req.session.userId);
     if (!appt) return res.status(404).json({ error: 'Appointment not found' });
@@ -4070,9 +4071,26 @@ router.post('/close-account', async (req, res) => {
     });
   }
 
+  // The subscription goes with it. Deleting the shop used to leave its Stripe
+  // subscription running — a closed shop still being charged every month.
+  // Stopped first: if Stripe refuses, nothing is deleted and they can try
+  // again, rather than an account that is gone and a card still billed.
+  const sub = await pgDb.getSubscription(userId).catch(() => null);
+  if (sub?.stripe_subscription_id && billing.configured() && !['canceled', 'incomplete_expired'].includes(sub.status)) {
+    try {
+      await billing.stripe().subscriptions.cancel(sub.stripe_subscription_id);
+    } catch (err) {
+      console.error('[pos] Could not end the subscription when closing:', err.message);
+      return res.status(502).json({
+        error: 'Nothing was deleted — the subscription could not be stopped, so the account was left as it is. Please try again.',
+      });
+    }
+  }
+
   let result;
   try {
     result = await pgDb.deleteCompany(userId);
+    await pgDb.deleteSubscriptionRow(userId);
   } catch (err) {
     console.error('[pos] Closing the account failed:', err.message);
     // The delete runs in one transaction, so a failure here has rolled back

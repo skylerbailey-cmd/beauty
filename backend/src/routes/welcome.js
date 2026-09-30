@@ -16,6 +16,7 @@ router.use((req, res, next) => {
   next();
 });
 const pgDb = require('../db/postgres');
+const { refuseWhileAsleep } = require('../lib/sleep');
 
 // ─── Product catalog (hardcoded with usage instructions) ────────────────────
 
@@ -1441,7 +1442,7 @@ router.post('/generate', async (req, res) => {
 });
 
 // POST /api/welcome/send — send the welcome email via the logged-in user's Gmail
-router.post('/send', async (req, res) => {
+router.post('/send', refuseWhileAsleep('emails'), async (req, res) => {
   const { customerEmail, customerName, products, emailBody } = req.body;
 
   if (!customerEmail || typeof customerEmail !== 'string') {
@@ -1598,7 +1599,7 @@ router.get('/campaigns', async (req, res) => {
 });
 
 // POST /api/welcome/campaign — send a marketing campaign to all customers
-router.post('/campaign', async (req, res) => {
+router.post('/campaign', refuseWhileAsleep('emails'), async (req, res) => {
   const { subject, body } = req.body;
 
   if (!subject || typeof subject !== 'string' || !subject.trim()) {

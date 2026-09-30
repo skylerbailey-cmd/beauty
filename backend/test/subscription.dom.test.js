@@ -25,7 +25,7 @@ let confirmText = null;
 const dom = new JSDOM(html, { url: 'https://glowsf.sky-sale.com/pos.html', runScripts: 'dangerously',
   beforeParse(w) {
     w.fetch = (url, opts = {}) => {
-      calls.push({ url: String(url), method: opts.method || 'GET' });
+      calls.push({ url: String(url), method: opts.method || 'GET', body: opts.body });
       return Promise.resolve({ ok: true, json: async () => ({ url: 'https://checkout.stripe.test/s/x' }) });
     };
     w.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {} });
@@ -98,7 +98,9 @@ setTimeout(() => {
   check('and that the shop keeps working until the period ends',
     /keeps working until/.test(v.text) && v.text.includes(asShown(PERIOD_END)), v.text);
   check('and what stops then', /stops taking new sales/.test(v.text));
-  check('and that the records stay', /stays readable|stays here/.test(v.text), v.text);
+  // Kept for 30 days after it ends, then deleted — and sleep offered to keep them.
+  check('and that the records go 30 days after', /30 days later/.test(v.text) && /deleted/.test(v.text), v.text);
+  check('and how to keep them', /put the shop to sleep/.test(v.text), v.text);
   check('undoing it is the main button', v.buttons[0] === 'Keep the subscription', v.buttons.join(','));
   check('and cancelling is not offered twice', !v.buttons.includes('Cancel subscription'));
 
@@ -138,7 +140,8 @@ setTimeout(() => {
   w.eval('cancelSubscription()');
   check('it confirms', !!confirmText, String(confirmText));
   check('naming the day it stops', (confirmText || '').includes(asShown(PERIOD_END)), confirmText);
-  check('and saying the records stay', /stays here/.test(confirmText || ''), confirmText);
+  check('and saying the records are deleted 30 days after', /30 days later/.test(confirmText || '') && /deleted for good/.test(confirmText || ''), confirmText);
+  check('and offering sleep instead', /put the shop to sleep/.test(confirmText || ''), confirmText);
   check('saying no cancels nothing',
     !calls.some((c) => /billing\/cancel/.test(c.url)), calls.map((c) => c.url).join(' | '));
 
@@ -156,11 +159,14 @@ setTimeout(() => {
       calls.some((c) => c.method === 'POST' && /api\/billing\/checkout/.test(c.url)),
       calls.map((c) => c.url).join(' | '));
     calls.length = 0;
+    // A manager signed in to Settings has already given their code.
+    w.eval("settingsAccess = { id: 1, name: 'Mia', role: 'manager' }; settingsCreds = { name: 'Mia', pin: '9999' };");
     w.eval('openBillingPortal()');
     setTimeout(() => {
       check('updating a card opens the billing portal',
         calls.some((c) => c.method === 'POST' && /api\/billing\/portal/.test(c.url)),
         calls.map((c) => c.url).join(' | '));
+      check('with the manager’s code', calls.some((c) => /api\/billing\/portal/.test(c.url) && /"manager_pin":"9999"/.test(c.body || '')));
 
       console.log('\n── Opening the tab reads it fresh ──');
       // A trial ending, a card failing and a cancellation from Stripe's own

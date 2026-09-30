@@ -305,6 +305,21 @@ app.listen(PORT, async () => {
     console.error('[audit] could not start the nightly reconciliation:', err.message);
   }
 
+  // Cancelled shops' books, 30 days after their subscription stopped. Hourly,
+  // for the same reasons as the audits: restarts, and nothing depends on the
+  // minute it runs.
+  try {
+    const { runRetention } = require('./services/retention');
+    const tick = () => runRetention().then((d) => {
+      if (d.deleted.length || d.warned.length) console.log(`[retention] warned ${d.warned.length}, deleted ${d.deleted.length}`);
+    }).catch((e) => console.error('[retention] tick failed:', e.message));
+    setInterval(tick, 60 * 60 * 1000);
+    setTimeout(tick, 2 * 60 * 1000);
+    console.log('[retention] cancelled shops are checked hourly');
+  } catch (err) {
+    console.error('[retention] could not start:', err.message);
+  }
+
   // Keep-alive: ping own public URL every 5 minutes to prevent Railway from sleeping
   const publicDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
   if (publicDomain) {
