@@ -173,10 +173,19 @@ router.get('/link/:token',
       return res.redirect('/signup.html?problem=link');
     }
 
+    // The address as typed may be a variant of the one that actually opens
+    // their shop — to Gmail a dot is nothing, to a hash it is a different
+    // company. Resolve before deriving the id, or an owner who types their
+    // own address slightly differently lands in an empty shop and their
+    // sales look gone.
+    try { email = await pgDb.resolveCompanyEmail(email); } catch (_) {}
+
     const { findOrCreateUserByEmail } = require('../db');
     const { user } = findOrCreateUserByEmail(email, null);
 
     try { await pgDb.rememberUser(user.id); } catch (_) {}
+    // Record it so a later variant finds its way here too.
+    try { await pgDb.rememberCompanyEmail(user.id, email); } catch (_) {}
 
     req.session.userId = user.id;
     // As above: a combined payroll view belongs to the session that
@@ -233,8 +242,14 @@ const idForEmail = (email) => {
 // Move to another company this browser has already signed in to.
 
 router.post('/switch', async (req, res) => {
-  const email = normalise(req.body?.email);
+  let email = normalise(req.body?.email);
   if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Which company?' });
+
+  // Same resolution as signing in. Without it a switcher entry holding a
+  // variant of the address hashes to a company this browser never proved,
+  // and the switch is refused with "sign in to that company first" for a
+  // company they are already signed in to.
+  try { email = await pgDb.resolveCompanyEmail(email); } catch (_) {}
 
   const userId = idForEmail(email);
   if (!hasAuthenticated(req, userId)) {

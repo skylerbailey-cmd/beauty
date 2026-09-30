@@ -372,6 +372,26 @@ Exchanges are only allowed within **7 days** of purchase.'`);
   // device is not a thing the software should decide.
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS return_window_days INTEGER DEFAULT 14');
 
+  // Which address opens which shop.
+  //
+  // A company id is a hash of the sign-in address, which makes it stable
+  // across redeploys but also makes it literal: to Gmail,
+  // glow.sf.santafe@ and glowsf.santafe@ are one inbox, and to a hash they
+  // are two different shops. The link arrives either way, so an owner who
+  // types their own address with one dot out of place lands in a brand new
+  // empty shop and their six months of sales appear to be gone.
+  //
+  // So the canonical form is recorded alongside the id, and sign-in looks a
+  // shop up by it. The id itself never changes — rehashing on a new rule
+  // would orphan every company that already exists.
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_company_emails (
+    canonical_email TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    email TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  await migrate('CREATE INDEX IF NOT EXISTS idx_pg_company_emails_user ON pos_company_emails(user_id)');
+
   // For business cards. The phone is optional; the title starts as the one
   // almost everyone here has, and is editable per person.
   await migrate("ALTER TABLE pos_employees ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT ''");
@@ -1551,6 +1571,71 @@ async function companyExists(userId) {
     `SELECT 1 FROM pos_settings WHERE user_id = $1
      UNION ALL SELECT 1 FROM pos_employees WHERE user_id = $1 LIMIT 1`, [userId]);
   return r.rowCount > 0;
+}
+
+// ─── Which address opens which shop ─────────────────────────────────────────
+
+// Gmail ignores dots in the local part, and everything after a "+". Two
+// addresses that differ only that way are the same inbox and must be the same
+// shop. Every other provider is left alone — a dot is significant there, and
+// folding them would merge two genuinely different customers.
+function canonicalEmail(email) {
+  const raw = String(email || '').trim().toLowerCase();
+  const at = raw.lastIndexOf('@');
+  if (at < 1) return raw;
+  let local = raw.slice(0, at);
+  const domain = raw.slice(at + 1);
+  if (domain === 'gmail.com' || domain === 'googlemail.com') {
+    local = local.split('+')[0].replace(/\./g, '');
+    return `${local}@gmail.com`;
+  }
+  const plus = local.indexOf('+');
+  if (plus > 0) local = local.slice(0, plus);
+  return `${local}@${domain}`;
+}
+
+// Has a shop actually been set up at this id, or is it an empty shell someone
+// created by mistyping their address once?
+async function companyIsReal(userId) {
+  if (!userId) return false;
+  const r = await query(
+    `SELECT 1 FROM pos_settings
+      WHERE user_id = $1 AND (COALESCE(store_name,'') <> '' OR COALESCE(slug,'') <> '') LIMIT 1`,
+    [userId]);
+  return r.rows.length > 0;
+}
+
+// Remember that this address opens this shop, so a later variant of it finds
+// its way home. Never overwrites: the first real sign-in wins, and a second
+// shop cannot claim an address already pointing somewhere else.
+async function rememberCompanyEmail(userId, email) {
+  const canon = canonicalEmail(email);
+  if (!userId || !canon) return;
+  await query(
+    `INSERT INTO pos_company_emails (canonical_email, user_id, email)
+     VALUES ($1, $2, $3) ON CONFLICT (canonical_email) DO NOTHING`,
+    [canon, userId, String(email).trim().toLowerCase()]);
+}
+
+// The address whose id should actually be used for this sign-in.
+//
+//   1. the address as typed, if a shop exists there — never move somebody
+//      off a shop that is really theirs;
+//   2. an address already recorded as opening a shop, matched on the
+//      canonical form — this is what rescues a mistyped dot;
+//   3. otherwise the address as typed, and a new shop begins.
+async function resolveCompanyEmail(email) {
+  const typed = String(email || '').trim().toLowerCase();
+  if (!typed) return typed;
+  try {
+    if (await companyIsReal(companyIdForEmail(typed))) return typed;
+    const r = await query(
+      'SELECT email FROM pos_company_emails WHERE canonical_email = $1 LIMIT 1',
+      [canonicalEmail(typed)]);
+    const known = r.rows[0]?.email;
+    if (known && await companyIsReal(companyIdForEmail(known))) return known;
+  } catch (_) { /* a lookup that fails must not block a sign-in */ }
+  return typed;
 }
 
 // ─── What a shop is paying ──────────────────────────────────────────────────
@@ -4292,6 +4377,10 @@ module.exports = {
   addCustomerProducts,
   companyIdForEmail,
   companyExists,
+  canonicalEmail,
+  companyIsReal,
+  rememberCompanyEmail,
+  resolveCompanyEmail,
   getSubscription,
   saveSubscription,
   companyForStripeCustomer,
