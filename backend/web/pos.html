@@ -1500,7 +1500,7 @@
       <div class="settings-subtabs" id="settingsSubtabs">
         <button class="sub-btn active" data-sgo="store">Store</button>
         <button class="sub-btn" data-sgo="brands">Brands &amp; products</button>
-        <button class="sub-btn" data-sgo="merchant">Merchant connections</button>
+        <button class="sub-btn" data-sgo="merchant">Alerts &amp; connections</button>
         <button class="sub-btn" data-sgo="staff">Employees</button>
         <button class="sub-btn" data-sgo="danger">Account</button>
       </div>
@@ -1587,6 +1587,64 @@
         <div id="brandCheckboxes" style="display:flex;flex-direction:column;gap:10px"></div>
       </div>
 
+      <!-- Who gets told, and when. The sale alert and the mismatch alert go to
+           the same phone numbers through the same gateway, so they were one
+           thing described in two places on two different tabs — and the one
+           that sets the numbers up said "switch the other on under Merchant
+           connections", which is where it now already is. -->
+      <div class="report-card" data-sgroup="merchant" id="alertsCard">
+        <h3>Alerts</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
+          Both alerts below go to the same numbers, through your carrier's email-to-text
+          gateway using this company's Gmail connection — so there is nothing to pay for, but
+          delivery is up to the carrier and can be slow or dropped.
+        </p>
+        <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:-6px 0 14px">
+          <strong>AT&amp;T no longer runs one.</strong> Both <code>txt.att.net</code> and
+          <code>mms.att.net</code> have been shut down, so nothing can be delivered to an AT&amp;T
+          number this way — Sprint, Boost and Cricket are gone too. For those, pick
+          <em>Email address instead of a text</em> and use the phone's email address: it arrives as a
+          notification and no carrier sits in the way to drop it.
+        </p>
+
+        <div style="font-family:system-ui,sans-serif;font-size:.8rem;font-weight:700;color:var(--mid);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">On every sale</div>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:system-ui,sans-serif;font-size:.85rem;margin-bottom:14px">
+          <input type="checkbox" id="settingsAlertEnabled" style="width:16px;height:16px;accent-color:var(--accent)"> Send a text on every completed sale
+        </label>
+
+        <div style="font-family:system-ui,sans-serif;font-size:.8rem;font-weight:700;color:var(--mid);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;padding-top:12px;border-top:1px solid var(--border)">Nightly reconciliation</div>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:10px">
+          Check yesterday against what the processor actually settled, every morning, without
+          anyone having to remember — so a card sale that never funded turns up the next day
+          rather than at month end. Results appear under <b>Transactions &rarr; Audit</b>.
+        </p>
+        <label style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.88rem;cursor:pointer;margin-bottom:10px">
+          <input type="checkbox" id="autoAuditOn" onchange="saveAutoAudit()" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer">
+          <span>Run the audit automatically every day</span>
+        </label>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:system-ui,sans-serif;font-size:.88rem;margin-bottom:10px">
+          <label for="autoAuditAt">Run it at</label>
+          <input type="time" id="autoAuditAt" onchange="saveAutoAudit()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem">
+          <span id="autoAuditTz" style="color:var(--mid)"></span>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.88rem;cursor:pointer">
+          <input type="checkbox" id="autoAuditAlert" onchange="saveAutoAudit()" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer">
+          <span>Text me when a day doesn't reconcile</span>
+        </label>
+        <div id="autoAuditSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-top:8px"></div>
+
+        <div style="font-family:system-ui,sans-serif;font-size:.8rem;font-weight:700;color:var(--mid);text-transform:uppercase;letter-spacing:.5px;margin:18px 0 8px;padding-top:12px;border-top:1px solid var(--border)">Who gets them</div>
+        <!-- One row per person. Each needs its own carrier, so they can't just
+             be a list of numbers. -->
+        <div id="alertRecipients"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
+          <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);font-size:.82rem;padding:7px 12px" onclick="addAlertRecipient()">+ Add number</button>
+          <button class="btn btn-confirm" onclick="saveSaleAlerts()">Save</button>
+          <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border)" onclick="testSaleAlert()">Send test to all</button>
+        </div>
+        <div id="saleAlertStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
+      </div>
+
       <!-- Maverick Payments connection (for batch reconciliation) -->
       <div class="report-card" data-sgroup="merchant" id="maverickConfigCard" style="margin-top:16px">
         <h3>Maverick Payments Connection<button class="help-dot" type="button" onclick="openSettingsHelp('maverick', this)" aria-label="How to find these details" title="How to find these details">?</button></h3>
@@ -1604,36 +1662,6 @@
         <div id="maverickSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
       </div>
 
-      <!-- Text alert on each sale, via the carrier's email-to-SMS gateway -->
-      <div class="report-card" data-sgroup="store" style="margin-top:16px">
-        <h3>Sale Text Alerts</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
-          Get a text whenever a sale is completed. Sent through your carrier's email-to-text gateway using this company's Gmail connection, so there's nothing to pay for — but delivery is up to the carrier and can be slow or dropped.
-        </p>
-        <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:-6px 0 12px">
-          <strong>AT&amp;T no longer runs one.</strong> Both <code>txt.att.net</code> and
-          <code>mms.att.net</code> have been shut down, so nothing can be delivered to an AT&amp;T
-          number this way — Sprint, Boost and Cricket are gone too. For those, pick
-          <em>Email address instead of a text</em> and use the phone's email address: it arrives as a
-          notification and no carrier sits in the way to drop it.
-        </p>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-family:system-ui,sans-serif;font-size:.85rem;margin-bottom:6px">
-          <input type="checkbox" id="settingsAlertEnabled" style="width:16px;height:16px;accent-color:var(--accent)"> Send a text on every completed sale
-        </label>
-        <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:0 0 10px">
-          These numbers are also used to tell you when a day doesn't reconcile with your
-          merchant — switch that on under <b>Merchant connections</b>.
-        </p>
-        <!-- One row per person. Each needs its own carrier, so they can't just
-             be a list of numbers. -->
-        <div id="alertRecipients"></div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px">
-          <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);font-size:.82rem;padding:7px 12px" onclick="addAlertRecipient()">+ Add number</button>
-          <button class="btn btn-confirm" onclick="saveSaleAlerts()">Save</button>
-          <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border)" onclick="testSaleAlert()">Send test to all</button>
-        </div>
-        <div id="saleAlertStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
-      </div>
 
       <!-- Pay schedule — drives the Payroll section in Reports -->
       <div class="report-card" data-sgroup="store" style="margin-top:16px">
@@ -1678,30 +1706,6 @@
         <div id="payarcSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
       </div>
 
-      <!-- The nightly reconciliation belongs with the connection it uses: with
-           no processor connected there is nothing for it to check. -->
-      <div class="report-card" data-sgroup="merchant" style="margin-top:16px">
-        <h3>Nightly reconciliation</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
-          Check yesterday against what the processor actually settled, every morning, without
-          anyone having to remember — so a card sale that never funded turns up the next day
-          rather than at month end. Results appear under <b>Transactions → Audit</b>.
-        </p>
-        <label style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.88rem;cursor:pointer;margin-bottom:10px">
-          <input type="checkbox" id="autoAuditOn" onchange="saveAutoAudit()" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer">
-          <span>Run the audit automatically every day</span>
-        </label>
-        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-family:system-ui,sans-serif;font-size:.88rem;margin-bottom:10px">
-          <label for="autoAuditAt">Run it at</label>
-          <input type="time" id="autoAuditAt" onchange="saveAutoAudit()" style="padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem">
-          <span id="autoAuditTz" style="color:var(--mid)"></span>
-        </div>
-        <label style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.88rem;cursor:pointer">
-          <input type="checkbox" id="autoAuditAlert" onchange="saveAutoAudit()" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer">
-          <span>Text me when a day doesn't reconcile <span style="color:var(--mid)">— to the same numbers as sale alerts</span></span>
-        </label>
-        <div id="autoAuditSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-top:8px"></div>
-      </div>
 
       <!-- Two processors are supported today. A shop on a third has no way to
            tell from this page whether that is permanent or whether we simply
@@ -7332,7 +7336,7 @@ function usableAlertRecipients() {
 async function saveSaleAlerts() {
   const statusEl = document.getElementById('saleAlertStatus');
   const enabled = document.getElementById('settingsAlertEnabled').checked;
-  // The mismatch text is switched on under Merchant connections; it shares
+  // The mismatch text is switched on in the same Alerts card; it shares
   // these numbers, so either one being on needs somewhere to send it.
   const auditAlerts = !!Number(storeSettings.audit_alert_enabled);
   const usable = usableAlertRecipients();
@@ -8300,7 +8304,7 @@ async function loadAutoAudit() {
       if (!el) continue;
       el.style.color = needsNumber ? 'var(--danger)' : 'var(--mid)';
       el.textContent = needsNumber
-        ? 'No phone number is saved, so nothing can be sent — add one under Sale Text Alerts.'
+        ? 'No phone number is saved, so nothing can be sent — add one under Who gets them, below.'
         : '';
     }
 
@@ -8310,8 +8314,8 @@ async function loadAutoAudit() {
       state.innerHTML = data.enabled
         ? `Runs every day at <b>${escapeHtml(prettyTime(at))}</b>${tz ? ' ' + escapeHtml(tz.startsWith('on') ? tz : 'on this store\'s clock (' + tz + ')') : ''}, checking the day before.`
           + (data.alert_enabled ? ' You are texted when a day does not reconcile.' : '')
-          + ' <span style="color:var(--mid)">Change this under Settings → Merchant connections.</span>'
-        : 'Not running automatically. Switch it on under <b>Settings → Merchant connections</b> to check each day without having to remember.';
+          + ' <span style="color:var(--mid)">Change this under Settings → Alerts &amp; connections.</span>'
+        : 'Not running automatically. Switch it on under <b>Settings → Alerts &amp; connections</b> to check each day without having to remember.';
     }
     renderAutoAuditRuns(data.runs || []);
   } catch (_) { /* the rest of the tab still works */ }

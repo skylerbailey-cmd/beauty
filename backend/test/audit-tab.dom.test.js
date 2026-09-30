@@ -97,7 +97,8 @@ setTimeout(() => {
     check('the Audit tab says when it runs, in words',
       /7:30am/.test(id('autoAuditState').textContent), id('autoAuditState').textContent);
     check('and points at where to change it',
-      /Merchant connections/.test(id('autoAuditState').textContent));
+      /Alerts & connections/.test(id('autoAuditState').textContent),
+      id('autoAuditState').textContent);
     check('alerts on with nowhere to send says so',
       /No phone number is saved/.test(id('autoAuditSaveStatus').textContent), id('autoAuditSaveStatus').textContent);
     const runs = id('autoAuditRuns').textContent.replace(/\s+/g, ' ');
@@ -151,8 +152,29 @@ setTimeout(() => {
       check('the sale-alert checkbox is still there', !!id('settingsAlertEnabled'));
       check('the mismatch switch is NOT duplicated under Sale Text Alerts',
         !id('settingsAuditAlertEnabled'));
-      check('Sale Text Alerts points at where it lives',
-        /Merchant connections/.test(id('settingsAlertEnabled').closest('.report-card').textContent));
+      // Both alerts go to the same numbers through the same gateway. They used
+      // to sit on two different Settings tabs, and the one that sets the
+      // numbers up told you to switch the other on somewhere else.
+      check('both alerts are in one card',
+        id('settingsAlertEnabled').closest('.report-card')
+          === id('autoAuditOn').closest('.report-card'));
+      check('with the numbers they share',
+        !!id('alertRecipients')
+        && id('alertRecipients').closest('.report-card') === id('autoAuditOn').closest('.report-card'));
+      check('and nothing left pointing at another tab',
+        !/switch that on under/.test(id('alertsCard').textContent),
+        id('alertsCard').textContent.slice(0, 160));
+
+      console.log('\n── Alerts & connections ──');
+      const tab = w.document.querySelector('[data-sgo="merchant"]');
+      check('the tab is renamed', /Alerts & connections/.test(tab.textContent), tab.textContent);
+      const merchantCards = [...w.document.querySelectorAll('[data-sgroup="merchant"]')];
+      check('and the alerts sit above the connections',
+        merchantCards[0].id === 'alertsCard',
+        merchantCards.map((c) => c.id || '(unnamed)').join(', '));
+      check('the processor connections are still there',
+        merchantCards.some((c) => c.id === 'maverickConfigCard')
+        && merchantCards.some((c) => c.id === 'payarcConfigCard'));
 
       console.log(`\n${pass} passed, ${fail} failed\n`);
       process.exit(fail ? 1 : 0);
