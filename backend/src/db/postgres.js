@@ -3466,13 +3466,38 @@ async function getDaySummary(userId, dateStr, tz) {
 
 // ─── Settings ───────────────────────────────────────────────────────────────
 
+// A row of every column's DEFAULT, without inserting anything.
+//
+// Worked out from the catalogue and evaluated once, so it is whatever the
+// schema actually says rather than a second copy of the defaults kept in
+// JavaScript and drifting from it.
+let settingsTemplate = null;
+async function defaultSettingsRow() {
+  if (settingsTemplate) return settingsTemplate;
+  const cols = (await query(
+    `SELECT column_name, column_default FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'pos_settings'
+      ORDER BY ordinal_position`)).rows;
+  const parts = cols.map((c) => `${c.column_default ? `(${c.column_default})` : 'NULL'} AS "${c.column_name}"`);
+  const row = (await query(`SELECT ${parts.join(', ')}`)).rows[0];
+  settingsTemplate = row;
+  return row;
+}
+
+// Reading a shop's settings does NOT create a shop.
+//
+// This used to INSERT when it found no row, which meant that merely ASKING
+// about an id brought a company into being — and everything asks. A mistyped
+// sign-in address, a background job, a lookup with a wrong id typed by hand:
+// each left a nameless company behind. Eight of them had accumulated.
+//
+// Writing is what creates a shop, and updateSettings already inserts its own
+// row, so nothing needed this. A company that does not exist now reads as the
+// defaults, which is what an empty row would have said anyway.
 async function getSettings(userId) {
-  let result = await query('SELECT * FROM pos_settings WHERE user_id = $1', [userId]);
-  if (result.rows.length === 0) {
-    await query('INSERT INTO pos_settings (user_id) VALUES ($1) ON CONFLICT DO NOTHING', [userId]);
-    result = await query('SELECT * FROM pos_settings WHERE user_id = $1', [userId]);
-  }
-  return result.rows[0];
+  const result = await query('SELECT * FROM pos_settings WHERE user_id = $1', [userId]);
+  if (result.rows.length) return result.rows[0];
+  return { ...(await defaultSettingsRow()), user_id: userId };
 }
 
 async function updateSettings(userId, fields) {

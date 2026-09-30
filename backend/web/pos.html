@@ -1600,7 +1600,11 @@
       <!-- Brands & Products -->
       <div class="report-card" data-sgroup="brands" style="margin-top:16px">
         <h3>Product Brands &amp; Catalog</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Select brands and configure which products are available. Set prices and minimum price thresholds.</p>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
+          Every range this register can show — the ones you imported and the ones we carry,
+          in one list. Tick the ones you stock; anything unticked is hidden from the register
+          without being deleted.
+        </p>
         <!-- Built from what this shop actually has. It used to be six rows of
              markup naming the brands this server carries, which for a shop
              that imported its own range is a list of other people's
@@ -2807,7 +2811,7 @@ function renderBrandFilters() {
   const byKey = new Map();
   for (const p of products) {
     if (p.visible === false) continue;
-    if (!(p.isCustom || selectedBrands.includes(BRAND_KEY_MAP[p.brand] || String(p.brand).toLowerCase()))) continue;
+    if (!brandIsOn(p)) continue;
     const key = String(p.brand || '').trim().toLowerCase();
     if (key && !byKey.has(key)) byKey.set(key, p.brand);
   }
@@ -2815,6 +2819,25 @@ function renderBrandFilters() {
   const container = document.getElementById('brandFilters');
   container.innerHTML = `<button class="brand-filter-btn ${!activeBrand ? 'active' : ''}" onclick="filterBrand(null)">All</button>` +
     brands.map(b => `<button class="brand-filter-btn ${activeBrand === b ? 'active' : ''}" onclick="filterBrand('${b}')">${b}</button>`).join('');
+}
+
+// The key a shop's OWN brand is stored under. Prefixed, because a shop can
+// import a range with the same name as one we carry and they are not the
+// same thing — theirs has their prices on it.
+const ownBrandKey = (brand) => 'own:' + String(brand || '').trim().toLowerCase();
+
+// The marker that says the own-brand switches below have been set at all.
+// Without it there would be no way to tell "this shop turned every one of
+// its own brands off" from "this shop has never opened that screen", and a
+// shop that had never opened it would have its whole range vanish.
+const OWN_BRANDS_CHOSEN = 'own';
+
+function brandIsOn(p) {
+  if (p.isCustom) {
+    if (!selectedBrands.includes(OWN_BRANDS_CHOSEN)) return true;
+    return selectedBrands.includes(ownBrandKey(p.brand));
+  }
+  return selectedBrands.includes(BRAND_KEY_MAP[p.brand] || String(p.brand).toLowerCase());
 }
 
 function filterBrand(brand) {
@@ -2832,8 +2855,7 @@ function renderProducts() {
   const grid = document.getElementById('productGrid');
   const filtered = products.filter(p => {
     if (p.visible === false) return false;
-    const brandKey = BRAND_KEY_MAP[p.brand] || p.brand.toLowerCase();
-    if (!p.isCustom && !selectedBrands.includes(brandKey)) return false;
+    if (!brandIsOn(p)) return false;
     if (activeBrand && String(p.brand || '').toLowerCase() !== String(activeBrand).toLowerCase()) return false;
     if (search && !p.name.toLowerCase().includes(search) && !p.brand.toLowerCase().includes(search)) return false;
     return true;
@@ -10656,64 +10678,63 @@ const CATALOG_BRANDS = [
   ['lumieres', 'Lumières', 'Red/NIR/blue light therapy devices'],
 ];
 
+// Every row is the same row. A brand a shop imported and a brand we carry
+// are both just "a range this register can show", and the only difference
+// worth drawing is a quiet tag saying where it came from — not two lists
+// with different rules, one of which could not be switched off at all.
 const brandRow = (key, name, sub, opts = {}) => `
   <div class="brand-config-row" data-brand-key="${key}">
     <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;background:var(--cream)">
-      ${opts.fixed
-        ? '<input type="checkbox" checked disabled style="accent-color:var(--accent-deep)">'
-        : `<input type="checkbox" value="${key}" ${opts.on ? 'checked' : ''} onchange="saveBrands()" style="accent-color:var(--accent-deep)">`}
+      <input type="checkbox" value="${escapeHtml(key)}" ${opts.on ? 'checked' : ''} onchange="saveBrands()" style="accent-color:var(--accent-deep);width:16px;height:16px;cursor:pointer">
       <div style="flex:1;min-width:0">
-        <div style="font-weight:600;font-size:.88rem;color:var(--dark)">${escapeHtml(name)}</div>
+        <div style="font-weight:600;font-size:.88rem;color:var(--dark)">${escapeHtml(name)}
+          <span style="font-weight:400;font-size:.68rem;color:var(--mid);text-transform:uppercase;letter-spacing:.4px;margin-left:6px">${opts.mine ? 'yours' : 'SkySale'}</span>
+        </div>
         <div style="font-size:.72rem;color:var(--mid)">${escapeHtml(sub)}</div>
       </div>
-      <button onclick="toggleBrandProducts('${key}')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--accent-deep)">${opts.fixed ? 'Manage' : 'Products'}</button>
+      <button onclick="toggleBrandProducts('${key}')" style="padding:5px 12px;border:1px solid var(--border);border-radius:6px;background:var(--white);cursor:pointer;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--accent-deep)">${opts.mine ? 'Manage' : 'Products'}</button>
     </div>
     <div class="brand-products-panel" id="brandPanel-${key}" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:500px;overflow-y:auto"></div>
   </div>`;
-
-const sectionLabel = (text) =>
-  `<div style="font-family:system-ui,sans-serif;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mid);margin:6px 0 2px">${text}</div>`;
 
 function renderBrandCheckboxes() {
   const box = document.getElementById('brandCheckboxes');
   if (!box) return;
 
   // Their own range, named by the suppliers their products actually came from.
-  const ownBrands = [...new Set(products.filter(p => p.isCustom).map(p => p.brand).filter(Boolean))].sort();
-  const anyCatalogOn = CATALOG_BRANDS.some(([key]) => selectedBrands.includes(key));
+  const ownBrands = [...new Set(products.filter(p => p.isCustom).map(p => p.brand).filter(Boolean))];
+  const chosen = selectedBrands.includes(OWN_BRANDS_CHOSEN);
 
-  let html = '';
-  html += sectionLabel('Your products');
-  if (ownBrands.length) {
-    for (const b of ownBrands) {
-      const n = products.filter(p => p.isCustom && p.brand === b).length;
-      html += brandRow(`own:${b}`, b, `${n} product${n === 1 ? '' : 's'} you added or imported`, { fixed: true });
-    }
-  }
-  html += brandRow('custom', 'All your products', 'Everything you added or imported, in one list', { fixed: true });
+  const rows = ownBrands.map((b) => {
+    const n = products.filter(p => p.isCustom && p.brand === b).length;
+    return {
+      name: b,
+      key: ownBrandKey(b),
+      sub: `${n} product${n === 1 ? '' : 's'} you added or imported`,
+      mine: true,
+      // Never chosen means every one of their own is on, which is what a
+      // shop that has never opened this screen already sees.
+      on: chosen ? selectedBrands.includes(ownBrandKey(b)) : true,
+    };
+  }).concat(CATALOG_BRANDS.map(([key, name, sub]) => ({
+    name, key, sub, mine: false, on: selectedBrands.includes(key),
+  })));
 
-  // Ours, second, and out of the way unless they use them.
-  html += `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
-      ${sectionLabel('Also available from SkySale')}
-      <div style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-bottom:8px">
-        Ranges we carry. Switch on any you stock; leave them off and your register shows only your own.
-      </div>
-      <div id="catalogBrands" style="display:${anyCatalogOn ? 'flex' : 'none'};flex-direction:column;gap:10px">
-        ${CATALOG_BRANDS.map(([key, name, sub]) => brandRow(key, name, sub, { on: selectedBrands.includes(key) })).join('')}
-      </div>
-      ${anyCatalogOn ? '' : `<button onclick="showCatalogBrands(this)" style="background:none;border:none;padding:0;cursor:pointer;color:var(--accent-deep);font-family:system-ui,sans-serif;font-size:.8rem;text-decoration:underline">Show the ${CATALOG_BRANDS.length} ranges we carry</button>`}
-    </div>`;
+  // One list, in one order. Sorted by name so a shop's own ranges are not
+  // penned into a section above ours with different rules.
+  rows.sort((a, b) => a.name.localeCompare(b.name));
 
-  box.innerHTML = html;
-}
-
-function showCatalogBrands(btn) {
-  document.getElementById('catalogBrands').style.display = 'flex';
-  btn.remove();
+  box.innerHTML = rows.map(r => brandRow(r.key, r.name, r.sub, r)).join('')
+    || '<div style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)">No ranges yet.</div>';
 }
 
 async function saveBrands() {
   const brands = [...document.querySelectorAll('#brandCheckboxes input[type=checkbox]:checked')].map(cb => cb.value);
+  // Record that these switches have been set, so "all of my own are off" can
+  // be told from "this shop has never been here" — which must keep showing
+  // everything. The disabled always-on checkboxes this replaces had no value
+  // attribute, so every save was also writing the string "on" into the list.
+  if (!brands.includes(OWN_BRANDS_CHOSEN)) brands.push(OWN_BRANDS_CHOSEN);
   // No guard on zero. The brands here are a catalogue this server happens to
   // carry, not the shop's own range — a shop that sells only what it imported
   // should be able to switch all of them off, and refusing that left every
