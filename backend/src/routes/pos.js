@@ -422,6 +422,21 @@ async function validateEmployeeAssignment(userId, employeeAssignments, employeeI
 //
 // If billing is not configured on this server at all, nothing is gated. A
 // missing STRIPE_SECRET_KEY must never be able to close every till.
+// How many days a return may be taken in. -1 is no limit, 0 is no returns.
+// Anything unreadable falls back to a fortnight rather than to "never" — a
+// column that failed to load should not stop a shop taking returns.
+function returnWindowDays(settings) {
+  const raw = settings?.return_window_days;
+  const n = Number(raw);
+  return Number.isFinite(n) && raw !== null && raw !== '' ? Math.trunc(n) : 14;
+}
+
+function withinReturnWindow(daysSince, windowDays) {
+  if (windowDays < 0) return true;    // no limit
+  if (windowDays === 0) return false; // no returns
+  return daysSince <= windowDays;
+}
+
 async function mayRingUpSales(userId) {
   if (!billing.configured()) return true;
   const sub = await pgDb.getSubscription(userId).catch(() => null);
@@ -580,10 +595,28 @@ router.post('/transactions', async (req, res) => {
     if (orig.type !== 'sale') {
       return res.status(400).json({ error: 'Can only return against a sale receipt' });
     }
+    // Outside the shop's return window, a manager may still take the return.
+    //
+    // It used to be a flat refusal, and that is the wrong shape: a customer
+    // standing at the counter on day fifteen with a faulty device is a
+    // judgement call, not something the software should settle. The window is
+    // policy for whoever is on the floor; the override is the manager saying
+    // they have decided otherwise, and it is recorded against their name the
+    // same way an unmatched card is.
     const saleDate = new Date(orig.created_at);
     const daysSince = (Date.now() - saleDate.getTime()) / (1000 * 60 * 60 * 24);
-    if (daysSince > 14) {
-      return res.status(400).json({ error: `Return window expired. Sale was ${Math.floor(daysSince)} days ago (14-day limit).` });
+    const windowDays = returnWindowDays(await pgDb.getSettings(userId));
+    if (!withinReturnWindow(daysSince, windowDays)) {
+      const manager = await verifyManager(userId, manager_name, manager_pin);
+      if (!manager) {
+        return res.status(403).json({
+          error: windowDays === 0
+            ? 'This shop does not take returns. A manager must approve this one.'
+            : `This sale was ${Math.floor(daysSince)} days ago and the return window is `
+              + `${windowDays} day${windowDays === 1 ? '' : 's'}. A manager must approve this return.`,
+          needsManagerOverride: true,
+        });
+      }
     }
 
     // Match the refunded card(s) to the card(s) used on the original sale. With

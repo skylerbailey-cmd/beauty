@@ -1740,6 +1740,33 @@
 
       <!-- The reminder staff get before taking a return, in the shop's own
            words. Shown on the return screen and again in the confirmation. -->
+      <!-- How long a return may be taken in. Sits above the reminder, because
+           it is the rule; the reminder is only what staff are told about it. -->
+      <div class="report-card" data-sgroup="store" id="returnWindowCard" style="margin-top:16px">
+        <h3>Return window</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
+          How long after a sale your staff can take a return without asking anyone.
+          A manager can always approve one outside it — this is the rule for the
+          floor, not a lock on you.
+        </p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-family:system-ui,sans-serif;font-size:.85rem">
+          <select id="setReturnWindowMode" onchange="onReturnWindowModeChange()"
+            style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;background:var(--white)">
+            <option value="days">Returns accepted within…</option>
+            <option value="unlimited">Returns accepted any time — no limit</option>
+            <option value="none">No returns</option>
+          </select>
+          <span id="setReturnWindowDaysWrap" style="display:inline-flex;gap:6px;align-items:center">
+            <input type="number" id="setReturnWindowDays" min="1" max="3650" step="1"
+              style="width:84px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem">
+            <label for="setReturnWindowDays">days of the sale</label>
+          </span>
+          <button class="btn btn-confirm" onclick="saveReturnWindow()">Save</button>
+        </div>
+        <div id="returnWindowExample" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);background:var(--cream);border-radius:8px;padding:10px 12px;margin-top:10px"></div>
+        <div id="returnWindowStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
+      </div>
+
       <div class="report-card" data-sgroup="store" style="margin-top:16px">
         <h3>Return policy reminder</h3>
         <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
@@ -3321,6 +3348,89 @@ async function resumeSubscription() {
   }
 }
 
+// ─── The return window, in Settings ────────────────────────────────────────
+
+function onReturnWindowModeChange() {
+  const mode = document.getElementById('setReturnWindowMode').value;
+  document.getElementById('setReturnWindowDaysWrap').style.display = mode === 'days' ? 'inline-flex' : 'none';
+  renderReturnWindowExample();
+}
+
+function returnWindowFromForm() {
+  const mode = document.getElementById('setReturnWindowMode').value;
+  if (mode === 'unlimited') return -1;
+  if (mode === 'none') return 0;
+  const n = parseInt(document.getElementById('setReturnWindowDays').value, 10);
+  return Number.isFinite(n) && n > 0 ? n : 14;
+}
+
+function renderReturnWindowExample() {
+  const el = document.getElementById('returnWindowExample');
+  if (!el) return;
+  const n = returnWindowFromForm();
+  const sale = new Date();
+  sale.setDate(sale.getDate() - 1);
+  const when = sale.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+  el.innerHTML = n < 0
+    ? `A sale from <b>${when}</b> — or from any date at all — can be returned by anyone on the floor.`
+    : n === 0
+      ? `No return can be taken without a manager, however recent the sale. Staff looking up a receipt `
+        + `see <b>"This shop does not take returns"</b> and the option to fetch one.`
+      : `A sale from <b>${when}</b> can be returned until `
+        + `<b>${new Date(sale.getTime() + n * 86400000).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}</b>. `
+        + `After that a manager has to approve it.`;
+}
+
+function fillReturnWindowSettings() {
+  const sel = document.getElementById('setReturnWindowMode');
+  const box = document.getElementById('setReturnWindowDays');
+  if (!sel || !box) return;
+  const n = returnWindowDays();
+  sel.value = n < 0 ? 'unlimited' : n === 0 ? 'none' : 'days';
+  box.value = n > 0 ? n : 14;
+  onReturnWindowModeChange();
+}
+
+async function saveReturnWindow() {
+  const status = document.getElementById('returnWindowStatus');
+  const days = returnWindowFromForm();
+  status.style.color = 'var(--mid)';
+  status.textContent = 'Saving…';
+  try {
+    const resp = await fetch(`${API}/api/pos/settings`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      credentials: 'include', body: JSON.stringify({ return_window_days: days }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Could not save');
+    storeSettings.return_window_days = days;
+    status.style.color = 'var(--success)';
+    status.textContent = days < 0 ? 'Saved — returns have no time limit.'
+      : days === 0 ? 'Saved — no returns without a manager.'
+      : `Saved — ${days} day${days === 1 ? '' : 's'}.`;
+    renderReturnWindowExample();
+  } catch (err) {
+    status.style.color = 'var(--danger)';
+    status.textContent = err.message;
+  }
+}
+
+// The shop's return window, from Settings. -1 is no limit, 0 is no returns.
+// Falls back to a fortnight rather than to "never" if settings have not
+// loaded — a slow settings fetch should not read as "this shop takes no
+// returns" to somebody standing at the counter.
+function returnWindowDays() {
+  const raw = storeSettings?.return_window_days;
+  const n = Number(raw);
+  return Number.isFinite(n) && raw !== null && raw !== undefined && raw !== '' ? Math.trunc(n) : 14;
+}
+
+function withinReturnWindow(daysSince, windowDays) {
+  if (windowDays < 0) return true;
+  if (windowDays === 0) return false;
+  return daysSince <= windowDays;
+}
+
 function renderReturnPolicyNote() {
   const box = document.getElementById('returnPolicyNote');
   const titleEl = document.getElementById('returnPolicyTitle');
@@ -3407,10 +3517,19 @@ async function lookupReceipt() {
     // answered below, so an expired receipt still prints instead of erroring.
     const saleDate = new Date(tx.created_at);
     const daysSince = (Date.now() - saleDate.getTime()) / (1000 * 60 * 60 * 24);
-    const canReturn = tx.type === 'sale' && daysSince <= 14;
-    const whyNot = tx.type !== 'sale'
-      ? 'This is a return receipt — returns can only be made against a sale.'
-      : `Return window expired — this sale was ${Math.floor(daysSince)} days ago, and the limit is 14.`;
+    const windowDays = returnWindowDays();
+
+    // A return receipt is the one thing that genuinely cannot be returned
+    // against — there is no sale underneath it. Everything else can go ahead;
+    // past the window it needs a manager, which the server asks for when the
+    // return is submitted, the same way it does for an unmatched card.
+    const canReturn = tx.type === 'sale';
+    const needsOverride = canReturn && !withinReturnWindow(daysSince, windowDays);
+    const whyNot = 'This is a return receipt — returns can only be made against a sale.';
+    const overrideWhy = windowDays === 0
+      ? 'This shop does not take returns — a manager can approve this one.'
+      : `This sale was ${Math.floor(daysSince)} days ago and the return window is `
+        + `${windowDays} day${windowDays === 1 ? '' : 's'}. A manager can approve it.`;
 
     returnOriginalTx = canReturn ? tx : null;
     lookedUpTx = tx;
@@ -3419,17 +3538,25 @@ async function lookupReceipt() {
     note.style.display = (canReturn && !note.dataset.empty) ? '' : 'none';
     document.getElementById('returnActions').style.display = canReturn ? 'inline-flex' : 'none';
     const notAllowed = document.getElementById('returnNotAllowed');
-    notAllowed.style.display = canReturn ? 'none' : '';
-    notAllowed.textContent = canReturn ? '' : whyNot;
+    // Amber for "a manager can wave this through", red for "there is nothing
+    // here to return against". They are not the same refusal and should not
+    // read the same.
+    notAllowed.style.display = (canReturn && !needsOverride) ? 'none' : '';
+    notAllowed.style.color = needsOverride ? '#b26a00' : 'var(--danger)';
+    notAllowed.textContent = !canReturn ? whyNot : (needsOverride ? overrideWhy : '');
 
-    const daysLeft = Math.max(0, Math.ceil(14 - daysSince));
+    const daysLeft = windowDays > 0 ? Math.max(0, Math.ceil(windowDays - daysSince)) : 0;
 
     document.getElementById('returnOrigReceipt').textContent = tx.receipt_number;
     document.getElementById('returnOrigDate').textContent = saleDate.toLocaleDateString();
     document.getElementById('returnOrigCustomer').textContent = tx.customer_name ? `Customer: ${tx.customer_name}` : '';
     const exchangeDaysLeft = Math.max(0, Math.ceil(7 - daysSince));
     const exchangeOk = daysSince <= 7;
-    document.getElementById('returnOrigDaysLeft').innerHTML = canReturn
+    document.getElementById('returnOrigDaysLeft').innerHTML = needsOverride
+      ? `<span style="color:#b26a00">Outside the return window — needs a manager</span>`
+      : canReturn && windowDays < 0
+        ? `<span style="color:var(--success)">No time limit on returns</span>`
+      : canReturn
       ? `<span style="color:${daysLeft <= 3 ? 'var(--danger)' : 'var(--success)'}">${daysLeft} day${daysLeft !== 1 ? 's' : ''} left to return</span>`
         + ` &nbsp;·&nbsp; <span style="color:${exchangeOk ? 'var(--success)' : 'var(--danger)'}">${exchangeOk ? `Exchange available (${exchangeDaysLeft} day${exchangeDaysLeft !== 1 ? 's' : ''} left)` : 'Exchange window expired (7-day limit)'}</span>`
       : `<span style="color:var(--mid)">${tx.type === 'return' ? 'Return receipt' : 'Sale'} from ${saleDate.toLocaleDateString()}</span>`;
@@ -8451,7 +8578,7 @@ function loadTabData(tabName) {
     const f = document.getElementById('emailsFrame');
     if (f && !f.src) f.src = f.dataset.src; // load once, on first open
   }
-  if (tabName === 'settings') { applySettingsAccessUI(); loadLinkedStores(); fillReturnPolicySettings(); loadAutoAudit(); }
+  if (tabName === 'settings') { applySettingsAccessUI(); loadLinkedStores(); fillReturnPolicySettings(); fillReturnWindowSettings(); loadAutoAudit(); }
 }
 
 // Which half of the Transactions tab is showing. Sales is one row per sale;

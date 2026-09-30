@@ -359,6 +359,19 @@ async function initSchema() {
   await migrate(`ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS return_policy_points TEXT DEFAULT 'Inspect each item — make sure nothing has been **opened or used**.
 Ask the customer if they''d like to do an **exchange** instead.
 Exchanges are only allowed within **7 days** of purchase.'`);
+  // How long after a sale a return may be taken, in days. Three shapes in
+  // one column, because this is one question with three answers:
+  //
+  //    > 0   that many days
+  //      0   no returns at all
+  //     -1   no limit
+  //
+  // A manager can always take a return outside it, whichever is set. The
+  // window is shop policy for the people on the floor, not a lock on the
+  // owner — a customer standing there on day fifteen with a faulty $15,000
+  // device is not a thing the software should decide.
+  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS return_window_days INTEGER DEFAULT 14');
+
   // For business cards. The phone is optional; the title starts as the one
   // almost everyone here has, and is editable per person.
   await migrate("ALTER TABLE pos_employees ADD COLUMN IF NOT EXISTS phone TEXT DEFAULT ''");
@@ -3366,7 +3379,7 @@ async function updateSettings(userId, fields) {
   const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip',
     'store_email', 'store_phone', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'payarc_token', 'payarc_merchant_id', 'payarc_env', 'payroll_paydays', 'payroll_lag', 'sale_alert_phone', 'sale_alert_carrier', 'sale_alert_enabled', 'sale_alert_recipients',
     'booking_slot_step', 'booking_lead_hours',
-    'return_policy_title', 'return_policy_points',
+    'return_policy_title', 'return_policy_points', 'return_window_days',
     'audit_auto_enabled', 'audit_alert_enabled', 'audit_auto_time',
     // The shop's own address on the app domain. Left off this list it is
     // silently dropped — the save reports success and the subdomain never
