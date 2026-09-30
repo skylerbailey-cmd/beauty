@@ -116,6 +116,59 @@ setTimeout(() => {
   id('setReturnWindowMode').value = 'unlimited';
   check('and no limit sends minus one', w.eval('returnWindowFromForm()') === -1);
 
+  console.log('\n── Exchanges have their own window ──');
+  // Usually shorter than the refund window — swap it for a week, refund it
+  // for a fortnight — so it is its own number, not derived from the other.
+  const setBoth = (r, x) => w.eval(
+    `storeSettings = { return_window_days: ${JSON.stringify(r)}, exchange_window_days: ${JSON.stringify(x)} };`);
+  setBoth(14, 7);
+  check('seven days by default', w.eval('exchangeWindowDays()') === 7);
+  setBoth(30, 10);
+  check('and it does not follow the return window',
+    w.eval('exchangeWindowDays()') === 10 && w.eval('returnWindowDays()') === 30);
+  w.eval('storeSettings = { return_window_days: 30 };');
+  check('a missing one falls back to seven, not to the return window',
+    w.eval('exchangeWindowDays()') === 7, String(w.eval('exchangeWindowDays()')));
+  setBoth(14, 0);
+  check('no exchanges is a setting', w.eval('exchangeWindowDays()') === 0);
+  setBoth(14, -1);
+  check('and so is no limit', w.eval('exchangeWindowDays()') === -1);
+
+  console.log('\n── Both are on one card ──');
+  setBoth(21, 5);
+  w.eval('fillReturnWindowSettings()');
+  check('the return window loads', id('setReturnWindowMode').value === 'days'
+    && id('setReturnWindowDays').value === '21',
+    `${id('setReturnWindowMode').value}/${id('setReturnWindowDays').value}`);
+  check('and the exchange window beside it', id('setExchangeWindowMode').value === 'days'
+    && id('setExchangeWindowDays').value === '5',
+    `${id('setExchangeWindowMode').value}/${id('setExchangeWindowDays').value}`);
+  const ex = id('returnWindowExample').textContent;
+  check('the example covers both', /returned until/.test(ex) && /Exchanged until/.test(ex), ex);
+
+  id('setExchangeWindowMode').value = 'none';
+  w.eval('onExchangeWindowModeChange()');
+  check('no exchanges hides the day box',
+    id('setExchangeWindowDaysWrap').style.display === 'none');
+  check('and the example says so',
+    /No exchanges/.test(id('returnWindowExample').textContent),
+    id('returnWindowExample').textContent);
+  check('the form sends zero for it', w.eval('exchangeWindowFromForm()') === 0);
+  id('setExchangeWindowMode').value = 'unlimited';
+  check('and minus one for no limit', w.eval('exchangeWindowFromForm()') === -1);
+  id('setExchangeWindowMode').value = 'days';
+  id('setExchangeWindowDays').value = '';
+  check('an empty box is seven, not none', w.eval('exchangeWindowFromForm()') === 7);
+
+  console.log('\n── Nothing is hardcoded to seven any more ──');
+  const page = fs.readFileSync(path.join(__dirname, '..', 'web', 'pos.html'), 'utf8');
+  check('the lookup screen reads the setting',
+    /const exDays = exchangeWindowDays\(\);/.test(page));
+  check('and no literal seven-day test is left',
+    !/daysSince <= 7/.test(page), 'pos.html still tests against a literal 7');
+  check('the expired message names the shop\'s own number',
+    /Exchange window expired \(\$\{exDays\}-day limit\)/.test(page));
+
   console.log('\n── The server side agrees with the browser ──');
   // Two copies of the same rule; they have to answer the same way or the
   // screen offers a return the server then refuses.

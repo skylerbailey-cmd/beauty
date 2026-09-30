@@ -1782,6 +1782,21 @@
               style="width:84px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem">
             <label for="setReturnWindowDays">days of the sale</label>
           </span>
+        </div>
+        <!-- Exchanges are usually a shorter window than refunds. Same card,
+             because they are one policy answered twice. -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-family:system-ui,sans-serif;font-size:.85rem;margin-top:10px">
+          <select id="setExchangeWindowMode" onchange="onExchangeWindowModeChange()"
+            style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;background:var(--white)">
+            <option value="days">Exchanges within…</option>
+            <option value="unlimited">Exchanges any time — no limit</option>
+            <option value="none">No exchanges</option>
+          </select>
+          <span id="setExchangeWindowDaysWrap" style="display:inline-flex;gap:6px;align-items:center">
+            <input type="number" id="setExchangeWindowDays" min="1" max="3650" step="1"
+              style="width:84px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem">
+            <label for="setExchangeWindowDays">days of the sale</label>
+          </span>
           <button class="btn btn-confirm" onclick="saveReturnWindow()">Save</button>
         </div>
         <div id="returnWindowExample" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);background:var(--cream);border-radius:8px;padding:10px 12px;margin-top:10px"></div>
@@ -3393,17 +3408,37 @@ function renderReturnWindowExample() {
   const el = document.getElementById('returnWindowExample');
   if (!el) return;
   const n = returnWindowFromForm();
+  const x = exchangeWindowFromForm();
   const sale = new Date();
   sale.setDate(sale.getDate() - 1);
   const when = sale.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
-  el.innerHTML = n < 0
+  const day = (d) => new Date(sale.getTime() + d * 86400000)
+    .toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+  const exchangeLine = x < 0 ? ' Exchanges have no time limit.'
+    : x === 0 ? ' No exchanges.'
+    : ` Exchanged until <b>${day(x)}</b>.`;
+  el.innerHTML = (n < 0
     ? `A sale from <b>${when}</b> — or from any date at all — can be returned by anyone on the floor.`
     : n === 0
       ? `No return can be taken without a manager, however recent the sale. Staff looking up a receipt `
         + `see <b>"This shop does not take returns"</b> and the option to fetch one.`
       : `A sale from <b>${when}</b> can be returned until `
-        + `<b>${new Date(sale.getTime() + n * 86400000).toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}</b>. `
-        + `After that a manager has to approve it.`;
+        + `<b>${day(n)}</b>. `
+        + `After that a manager has to approve it.`) + exchangeLine;
+}
+
+function onExchangeWindowModeChange() {
+  const mode = document.getElementById('setExchangeWindowMode').value;
+  document.getElementById('setExchangeWindowDaysWrap').style.display = mode === 'days' ? 'inline-flex' : 'none';
+  renderReturnWindowExample();
+}
+
+function exchangeWindowFromForm() {
+  const mode = document.getElementById('setExchangeWindowMode').value;
+  if (mode === 'unlimited') return -1;
+  if (mode === 'none') return 0;
+  const n = parseInt(document.getElementById('setExchangeWindowDays').value, 10);
+  return Number.isFinite(n) && n > 0 ? n : 7;
 }
 
 function fillReturnWindowSettings() {
@@ -3413,22 +3448,34 @@ function fillReturnWindowSettings() {
   const n = returnWindowDays();
   sel.value = n < 0 ? 'unlimited' : n === 0 ? 'none' : 'days';
   box.value = n > 0 ? n : 14;
+
+  const xsel = document.getElementById('setExchangeWindowMode');
+  const xbox = document.getElementById('setExchangeWindowDays');
+  if (xsel && xbox) {
+    const x = exchangeWindowDays();
+    xsel.value = x < 0 ? 'unlimited' : x === 0 ? 'none' : 'days';
+    xbox.value = x > 0 ? x : 7;
+    onExchangeWindowModeChange();
+  }
   onReturnWindowModeChange();
 }
 
 async function saveReturnWindow() {
   const status = document.getElementById('returnWindowStatus');
   const days = returnWindowFromForm();
+  const exchange = exchangeWindowFromForm();
   status.style.color = 'var(--mid)';
   status.textContent = 'Saving…';
   try {
     const resp = await fetch(`${API}/api/pos/settings`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      credentials: 'include', body: JSON.stringify({ return_window_days: days }),
+      credentials: 'include',
+      body: JSON.stringify({ return_window_days: days, exchange_window_days: exchange }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Could not save');
     storeSettings.return_window_days = days;
+    storeSettings.exchange_window_days = exchange;
     status.style.color = 'var(--success)';
     status.textContent = days < 0 ? 'Saved — returns have no time limit.'
       : days === 0 ? 'Saved — no returns without a manager.'
@@ -3454,6 +3501,15 @@ function withinReturnWindow(daysSince, windowDays) {
   if (windowDays < 0) return true;
   if (windowDays === 0) return false;
   return daysSince <= windowDays;
+}
+
+// Exchanges are usually a shorter window than refunds — swap it for a week,
+// refund it for a fortnight — so it is its own number, not derived from the
+// other one.
+function exchangeWindowDays() {
+  const raw = storeSettings?.exchange_window_days;
+  const n = Number(raw);
+  return Number.isFinite(n) && raw !== null && raw !== undefined && raw !== '' ? Math.trunc(n) : 7;
 }
 
 function renderReturnPolicyNote() {
@@ -3575,15 +3631,19 @@ async function lookupReceipt() {
     document.getElementById('returnOrigReceipt').textContent = tx.receipt_number;
     document.getElementById('returnOrigDate').textContent = saleDate.toLocaleDateString();
     document.getElementById('returnOrigCustomer').textContent = tx.customer_name ? `Customer: ${tx.customer_name}` : '';
-    const exchangeDaysLeft = Math.max(0, Math.ceil(7 - daysSince));
-    const exchangeOk = daysSince <= 7;
+    const exDays = exchangeWindowDays();
+    const exchangeDaysLeft = exDays > 0 ? Math.max(0, Math.ceil(exDays - daysSince)) : 0;
+    const exchangeOk = withinReturnWindow(daysSince, exDays);
     document.getElementById('returnOrigDaysLeft').innerHTML = needsOverride
       ? `<span style="color:#b26a00">Outside the return window — needs a manager</span>`
       : canReturn && windowDays < 0
         ? `<span style="color:var(--success)">No time limit on returns</span>`
       : canReturn
       ? `<span style="color:${daysLeft <= 3 ? 'var(--danger)' : 'var(--success)'}">${daysLeft} day${daysLeft !== 1 ? 's' : ''} left to return</span>`
-        + ` &nbsp;·&nbsp; <span style="color:${exchangeOk ? 'var(--success)' : 'var(--danger)'}">${exchangeOk ? `Exchange available (${exchangeDaysLeft} day${exchangeDaysLeft !== 1 ? 's' : ''} left)` : 'Exchange window expired (7-day limit)'}</span>`
+        + (exDays === 0 ? '' : ` &nbsp;·&nbsp; <span style="color:${exchangeOk ? 'var(--success)' : 'var(--danger)'}">${
+            exDays < 0 ? 'Exchange available'
+            : exchangeOk ? `Exchange available (${exchangeDaysLeft} day${exchangeDaysLeft !== 1 ? 's' : ''} left)`
+            : `Exchange window expired (${exDays}-day limit)`}</span>`)
       : `<span style="color:var(--mid)">${tx.type === 'return' ? 'Return receipt' : 'Sale'} from ${saleDate.toLocaleDateString()}</span>`;
     document.getElementById('returnOrigTotal').textContent = `$${money(tx.total)}`;
 

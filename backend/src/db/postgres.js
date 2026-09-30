@@ -371,6 +371,11 @@ Exchanges are only allowed within **7 days** of purchase.'`);
   // owner — a customer standing there on day fifteen with a faulty $15,000
   // device is not a thing the software should decide.
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS return_window_days INTEGER DEFAULT 14');
+  // The same three shapes as the return window: > 0 days, 0 none, -1 no
+  // limit. Usually shorter than the return window — a shop will swap an item
+  // for a week and refund it for a fortnight — which is why it is its own
+  // number rather than being derived from the other.
+  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS exchange_window_days INTEGER DEFAULT 7');
 
   // Which address opens which shop.
   //
@@ -3474,7 +3479,7 @@ async function updateSettings(userId, fields) {
   const allowed = ['store_name', 'store_address', 'store_city', 'store_state', 'store_zip',
     'store_email', 'store_phone', 'receipt_footer', 'timezone', 'tax_rate', 'theme', 'brands', 'maverick_dba_id', 'maverick_token', 'payarc_token', 'payarc_merchant_id', 'payarc_env', 'payroll_paydays', 'payroll_lag', 'sale_alert_phone', 'sale_alert_carrier', 'sale_alert_enabled', 'sale_alert_recipients',
     'booking_slot_step', 'booking_lead_hours',
-    'return_policy_title', 'return_policy_points', 'return_window_days',
+    'return_policy_title', 'return_policy_points', 'return_window_days', 'exchange_window_days',
     'audit_auto_enabled', 'audit_alert_enabled', 'audit_auto_time',
     // The shop's own address on the app domain. Left off this list it is
     // silently dropped — the save reports success and the subdomain never
