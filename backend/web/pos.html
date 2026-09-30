@@ -2409,7 +2409,7 @@
     <div id="importMapNotes" style="font-family:system-ui,sans-serif;font-size:.84rem;color:var(--ink,var(--dark));margin-top:14px;line-height:1.5"></div>
 
     <div class="modal-actions">
-      <button class="btn btn-cancel" onclick="closeImportMapping()">Cancel</button>
+      <button class="btn btn-cancel" onclick="closeImportMapping(); csvManager = null;">Cancel</button>
       <button class="btn btn-confirm" id="importMapGo" onclick="confirmImportMapping()">Import</button>
     </div>
   </div>
@@ -5224,7 +5224,8 @@ async function loadTransactions() {
   if (!resp.ok) { alert(data.error || 'Failed to load transactions'); return; }
   txAccess = { id: data.employee.id, name: data.employee.name, role: data.role };
   const canManage = canManageRole(txAccess.role);
-  document.getElementById('importCsvBtn').style.display = canManage ? '' : 'none';
+  // Import is shown to everyone: a sales employee can still start one and
+  // have a manager put their code in (see withCsvManager).
   document.getElementById('runAuditBtn').style.display = canManage ? '' : 'none';
   histTransactions = data.transactions || [];
   // Server is the authority on how many companies the scope actually covers —
@@ -6062,6 +6063,9 @@ function downloadCSV(filename, rows) {
 }
 
 function exportTransactionsCSV() {
+  withCsvManager('export-transactions', () => { csvManager = null; writeTransactionsCSV(); });
+}
+function writeTransactionsCSV() {
   const rows = [['Receipt', 'Date', 'Type', 'Employees', 'Customer', 'Email', 'Card Last 4', 'Payment', 'Items', 'Subtotal', 'Tax', 'Total', 'Charged Back', 'Chargeback Note']];
   (filteredTransactions || []).forEach(tx => {
     rows.push([
@@ -6433,11 +6437,15 @@ async function handleImportFile(input, kind) {
   input.value = '';
   if (!file) return;
   kind = kind || 'transactions';
+  withCsvManager(`import-${kind}`, () => readImportFile(file, kind));
+}
+
+async function readImportFile(file, kind) {
 
   const text = stripBom(await file.text());
   const delimiter = sniffDelimiter(text);
   const grid = parseDelimited(text, delimiter).filter(r => r.some(c => String(c).trim() !== ''));
-  if (grid.length < 2) { alert('That file has no rows in it.'); return; }
+  if (grid.length < 2) { csvManager = null; alert('That file has no rows in it.'); return; }
 
   const header = grid[0].map(h => String(h).trim());
   const rows = grid.slice(1).filter(r => r.length > 1);
@@ -6750,6 +6758,9 @@ async function confirmCustomerImport() {
 }
 
 async function importCustomerRows(rows) {
+  try { return await sendCustomerRows(rows); } finally { csvManager = null; }
+}
+async function sendCustomerRows(rows) {
   const statusEl = document.getElementById('custImportStatus');
   const totals = { created: 0, updated: 0, skipped: 0, failed: 0 };
   const CHUNK = 100;
@@ -6761,7 +6772,7 @@ async function importCustomerRows(rows) {
     try {
       const resp = await fetch(`${API}/api/pos/import-customers`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ rows: rows.slice(i, i + CHUNK) }),
+        body: JSON.stringify({ rows: rows.slice(i, i + CHUNK), manager_name: csvManager?.name, manager_pin: csvManager?.pin }),
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || 'Import failed');
@@ -6818,6 +6829,9 @@ async function confirmImportMapping() {
 }
 
 async function importRows(rows) {
+  try { return await sendTransactionRows(rows); } finally { csvManager = null; }
+}
+async function sendTransactionRows(rows) {
   const statusEl = document.getElementById('importStatus');
   const totals = { imported: 0, dupe: 0, failed: 0 };
   const CHUNK = 40;
@@ -6827,7 +6841,7 @@ async function importRows(rows) {
     try {
       const resp = await fetch(`${API}/api/pos/import-transactions`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify({ rows: rows.slice(i, i + CHUNK) }),
+        body: JSON.stringify({ rows: rows.slice(i, i + CHUNK), manager_name: csvManager?.name, manager_pin: csvManager?.pin }),
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || 'Import failed');
@@ -6859,6 +6873,9 @@ async function importRows(rows) {
 }
 
 function exportCustomersCSV() {
+  withCsvManager('export-customers', () => { csvManager = null; writeCustomersCSV(); });
+}
+function writeCustomersCSV() {
   const list = custFiltered || [];
   const rows = [['Name', 'Email', 'Phone', 'Birthday', 'Address', 'First Purchase', 'Last Purchase',
                  'Purchases', 'Returns', 'Total Spent', 'Employee(s)', 'Items Purchased']];
@@ -6877,6 +6894,35 @@ function exportCustomersCSV() {
 }
 
 // ─── Transaction Edit / Delete (manager-gated) ──────────────────────────────
+// ─── Import and export need a manager ───────────────────────────────────────
+// A spreadsheet of every customer's name, email and phone, or of every sale,
+// is the shop's whole book leaving in one file — and an import rewrites it.
+// Both take a manager's name and code. A manager already signed in on the
+// Transactions tab has given it, so is not asked again; anyone else can still
+// start one and have a manager approve it on the spot.
+//
+// The server checks the code on every import request. An export is written in
+// the browser from what is already on screen, so the code is what stands
+// between a sales employee and the file.
+const CSV_ACTIONS = {
+  'import-transactions': { title: 'Import Transactions', what: 'import transactions' },
+  'import-customers':    { title: 'Import Customers',    what: 'import customers' },
+  'export-transactions': { title: 'Export Transactions', what: 'export transactions' },
+  'export-customers':    { title: 'Export Customers',    what: 'export customers' },
+};
+let csvManager = null;   // { name, pin } for the import in progress
+let pendingCsvRun = null;
+
+function withCsvManager(action, run) {
+  if (canManageRole(txAccess?.role) && txCreds?.name && txCreds?.pin) {
+    csvManager = { name: txCreds.name, pin: txCreds.pin };
+    return run();
+  }
+  pendingCsvRun = run;
+  openManagerAuth(action, null,
+    `Only a manager can ${CSV_ACTIONS[action].what}. Enter the manager name and code to continue.`);
+}
+
 let managerAction = null;   // { type: 'edit'|'delete', txId }
 let managerCreds = null;    // { name, pin } captured after manager verification
 let editTx = null;          // working copy of the transaction being edited
@@ -6927,7 +6973,7 @@ function openManagerAuth(type, txId, msg, receipt) {
     hiddenDrilldownForAuth = true;
   }
   const titles = { delete: 'Delete Transaction', 'bulk-delete': 'Delete Transactions', edit: 'Edit Transaction', 'return-override': 'Manager Override — Card Mismatch' };
-  document.getElementById('managerAuthTitle').textContent = titles[type] || 'Manager Authorization';
+  document.getElementById('managerAuthTitle').textContent = titles[type] || CSV_ACTIONS[type]?.title || 'Manager Authorization';
   document.getElementById('managerAuthMsg').textContent = msg;
   document.getElementById('managerAuthName').value = '';
   document.getElementById('managerAuthPin').value = '';
@@ -6938,6 +6984,7 @@ function openManagerAuth(type, txId, msg, receipt) {
 function closeManagerAuth() {
   document.getElementById('managerAuthModal').classList.remove('show');
   managerAction = null;
+  pendingCsvRun = null;
   pendingTabSwitch = null;
   if (hiddenDrilldownForAuth) {
     hiddenDrilldownForAuth = false;
@@ -6959,9 +7006,15 @@ async function submitManagerAuth() {
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Verification failed');
-    managerCreds = { name, pin };
     const action = managerAction;
+    const csvRun = pendingCsvRun;
     closeManagerAuth();
+    if (action.type in CSV_ACTIONS) {
+      csvManager = { name, pin };
+      await csvRun?.();
+      return;
+    }
+    managerCreds = { name, pin };
     if (action.type === 'delete') {
       await performDeleteTransaction(action.txId);
     } else if (action.type === 'bulk-delete') {
@@ -12938,10 +12991,10 @@ const TOUR_STEPS = [
       return { el: row.el, text: `Receipt ${row.cell('Receipt #')}${who ? ' for ' + who : ''}: ${row.cell('Total')} on ${row.cell('Date')}. Open it to see the receipt`
         + (r >= 2 ? '; tick sales like this one to mark a chargeback on them or delete them.' : '. This view is read-only.') };
     } },
-  { who: 'staff', tab: 'history', view: 'sales', at: parentOf('#importCsvBtn'), title: (r) => r >= 2 ? 'Import & export' : 'Export',
+  { who: 'staff', tab: 'history', view: 'sales', at: parentOf('#importCsvBtn'), title: 'Import & export',
     text: (r) => r >= 2
-      ? 'Bring in past sales from a spreadsheet, or export what is on screen as a CSV.'
-      : 'Export what is on screen as a CSV.' },
+      ? 'Bring in past sales from a spreadsheet, or export what is on screen as a CSV. Both take a manager’s code — yours, since you are signed in as one.'
+      : 'Bring in past sales from a spreadsheet, or export what is on screen as a CSV. Both need a manager to put in their name and code.' },
   { who: 'manager', tab: 'history', view: 'audit', at: '#autoAuditCard', title: 'Nightly reconciliation',
     text: 'Each night the register is checked against your card processor’s records and anything that does not match is flagged. It is switched on in Settings → Alerts & connections.' },
   { who: 'manager', tab: 'history', view: 'audit', at: cardOf('#auditFrom'), title: 'Run an audit',
@@ -12953,10 +13006,10 @@ const TOUR_STEPS = [
       return first && { el: first, text: `A saved audit: ${tourText(first.querySelector('div > div'))}. Open it to pick up where you left off, or run it again against today’s figures.` };
     } },
   { who: 'staff', tab: 'history', view: 'customers', at: cardOf('#custReportBody'), title: 'Customers',
-    text: 'One row per customer with what they have spent. Search, sort, filter by product or employee, and import or export as CSV.',
+    text: 'One row per customer with what they have spent. Search, sort and filter by product or employee. Importing or exporting the list takes a manager’s code.',
     live: () => {
       const r = tourRow('#custReportBody');
-      return r && { el: r.el, text: `${r.cell('Customer')} has spent ${r.cell('Total Spent')} over ${r.cell('Purchases')} purchase${r.cell('Purchases') === '1' ? '' : 's'}. Every customer has a row like this — search, sort, filter, and import or export as CSV.` };
+      return r && { el: r.el, text: `${r.cell('Customer')} has spent ${r.cell('Total Spent')} over ${r.cell('Purchases')} purchase${r.cell('Purchases') === '1' ? '' : 's'}. Every customer has a row like this — search, sort and filter them. Importing or exporting the list takes a manager’s code.` };
     } },
 
   // Settings

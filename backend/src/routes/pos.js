@@ -2302,6 +2302,11 @@ router.post('/import-transactions', async (req, res) => {
   const userId = req.session.userId;
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
   if (!rows) return res.status(400).json({ error: 'rows array required' });
+  // An import rewrites the shop's records in bulk, so it takes a manager.
+  const { manager_name, manager_pin } = req.body;
+  if (!(await verifyManager(userId, manager_name, manager_pin))) {
+    return res.status(403).json({ error: 'Only a manager can import. Enter a manager name and code.' });
+  }
 
   const settings = await pgDb.getSettings(userId);
   const storeName = (settings.store_name || '').trim().toLowerCase();
@@ -3646,6 +3651,11 @@ router.post('/import-customers', async (req, res) => {
   const userId = req.session.userId;
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
   if (!rows) return res.status(400).json({ error: 'rows array required' });
+  // An import rewrites the shop's records in bulk, so it takes a manager.
+  const { manager_name, manager_pin } = req.body;
+  if (!(await verifyManager(userId, manager_name, manager_pin))) {
+    return res.status(403).json({ error: 'Only a manager can import. Enter a manager name and code.' });
+  }
 
   let created = 0, updated = 0, skipped = 0, failed = 0;
 
