@@ -12729,15 +12729,22 @@ function answerTourOffer(take) {
 //
 // It asks who is taking it first, and shows each person only what their own
 // PIN opens: a sales employee is not walked through payroll they will never
-// see, and someone who gives no PIN sees only what needs none. Being verified
-// here unlocks nothing — the tour never calls switchTab, so every PIN gate is
-// where it was, and it fetches no tab's data. It changes only what is
-// showing, records each change as it makes it, and undoes all of them when it
-// ends, so the page comes back exactly as it was left.
+// see, and someone who gives no PIN sees only what needs none.
 //
-// Tables on the locked tabs are hidden while it shows them (.tour-mask): what
-// is in them was put there by whoever last unlocked the tab, and that need
-// not be the person taking the tour.
+// With a PIN it shows the shop's real figures, not an empty frame. Each tab
+// is opened the same way typing that PIN into it would open it — the same
+// unlock, the same request, the server deciding what comes back — so the tour
+// can never show more than the PIN would. Where there is data, the step lights
+// up an actual row (a receipt, a customer, your own commission) and says what
+// it is. It never calls switchTab.
+//
+// When it ends, everything it opened is locked again and emptied, the PIN is
+// dropped, and whoever had a tab open before the tour gets it back as it was.
+// Every change it makes to what is showing is recorded and undone.
+//
+// Until a tab's data has come back for this PIN its tables stay hidden
+// (.tour-mask): what is in them was put there by whoever last unlocked the
+// tab, and that need not be the person taking the tour.
 
 // Who a step is for. Rank: 0 no PIN, 1 any employee, 2 manager, 3 admin —
 // the same lines the tabs draw (canManageRole for Transactions and Settings,
@@ -12747,12 +12754,35 @@ const TOUR_WHO = {
   nopin: (r) => r === 0,
   staff: (r) => r >= 1,
   sales: (r) => r === 1,
+  nonadmin: (r) => r === 1 || r === 2,
   manager: (r) => r >= 2,
   admin: (r) => r === 3,
 };
 
 const cardOf = (sel) => () => document.querySelector(sel)?.closest('.report-card');
 const parentOf = (sel) => () => document.querySelector(sel)?.parentElement;
+
+// The first real row of a table — not the "No data" line a table shows when
+// it has none — as { el, cell } where cell('Total') reads a column by its
+// heading, so a reordered table cannot put the wrong figure in a sentence.
+function tourRow(bodySel) {
+  const body = document.querySelector(bodySel);
+  const tr = [...(body?.rows || [])].find(r => r.cells.length > 2 && r.getClientRects().length);
+  if (!tr) return null;
+  // Only the headings on screen: a column hidden for this reader (the tick
+  // boxes, Company) has no cell in their rows either.
+  const heads = [...(body.closest('table')?.querySelectorAll('thead th') || [])]
+    .filter(th => th.getClientRects().length).map(th => th.textContent.trim());
+  const cell = (name) => {
+    const td = tr.cells[heads.indexOf(name)];
+    if (!td) return '';
+    // Some tables are forms — treatments are edited in place.
+    const field = td.querySelector('input, select');
+    return (td.textContent.replace(/\s+/g, ' ').trim() || field?.value || '').trim();
+  };
+  return { el: tr, cell };
+}
+const tourText = (el) => (el?.textContent || '').replace(/\s+/g, ' ').trim();
 
 const TOUR_STEPS = [
   // Register
@@ -12765,7 +12795,12 @@ const TOUR_STEPS = [
   { tab: 'register', at: '#brandFilters', title: 'Filter by brand',
     text: 'Show one brand at a time. Which brands appear here is set in Settings → Brands & products.' },
   { tab: 'register', at: '#productGrid', title: 'Tap to add',
-    text: 'Tap a product to put it in the sale on the right.' },
+    text: 'Tap a product to put it in the sale on the right.',
+    live: () => {
+      const tile = document.querySelector('#productGrid .product-tile:not(.one-off)');
+      const name = tourText(tile?.querySelector('.p-name'));
+      return tile && name && { el: tile, text: `Tap ${name} to put it in the sale on the right. Every product works the same way.` };
+    } },
   { tab: 'register', at: '#tab-register .mode-toggle', title: 'Sale or Look Up',
     text: 'Look Up finds an earlier receipt by its number — to reprint it, email it again, or take a return or exchange against it. Your return window and policy decide what can come back.' },
   { tab: 'register', at: '#printDayBtn', title: 'End of day report',
@@ -12786,24 +12821,57 @@ const TOUR_STEPS = [
   // Reports
   { tab: 'reports', at: '#posSubtabs [data-tab="reports"]', title: 'Reports',
     text: 'Sales, commission and payroll. What opens here depends on whose PIN is entered.' },
-  { tab: 'reports', at: cardOf('#todayLeaderboard'), title: 'Today’s leaderboard',
-    text: 'Today’s sales by employee. Anyone can see this — no PIN needed.' },
+  { tab: 'reports', open: true, at: cardOf('#todayLeaderboard'), title: 'Today’s leaderboard',
+    text: 'Today’s sales by employee. Anyone can see this — no PIN needed.',
+    live: () => {
+      const top = document.querySelector('#todayLeaderboard [style*="font-weight:600"]');
+      const name = tourText(top);
+      return name && { el: top.closest('#todayLeaderboard > div') || top,
+        text: `${name} is out in front today. Everyone’s sales today are listed here — no PIN needed.` };
+    } },
   { tab: 'reports', at: cardOf('#empPersonalLocked'), title: 'Open your figures',
-    text: 'Your name and PIN here open your own sales and commission. A manager’s PIN opens the whole shop’s reports.' },
+    text: (r) => r
+      ? 'Your name and PIN here open your own sales and commission. The tour has opened them for you — they lock again when it ends.'
+      : 'Your name and PIN here open your own sales and commission. A manager’s PIN opens the whole shop’s reports.' },
   { who: 'staff', tab: 'reports', view: 'commissions', at: '#reportsDateFilter', title: 'Choose a period',
     text: 'The dates the figures below cover. 1st–15th and 16th–End jump straight to either half of the month.' },
-  { who: 'staff', tab: 'reports', view: 'commissions', at: cardOf('#empPersonalReport'), title: 'Your sales & commission',
-    text: 'Every sale you were on in the period and the commission it earned you. Open a row to see the receipts behind it.' },
+  { who: 'nonadmin', tab: 'reports', view: 'commissions', at: cardOf('#empPersonalReport'), title: 'Your sales & commission',
+    text: 'Every sale you were on in the period and the commission it earned you. Open a row to see the receipts behind it.',
+    live: () => {
+      const r = tourRow('#empPersonalBody');
+      return r && { el: r.el, text: `This is you: ${r.cell('Sales')} sales, ${r.cell('Net Sales $')} net, and ${r.cell('Commission')} commission for this period. Open the row to see every receipt behind it.` };
+    } },
   { who: 'admin', tab: 'reports', view: 'commissions', at: '#rptEveryoneCard', title: 'Everyone’s commission',
-    text: 'Each employee’s sales and commission for the period, side by side.' },
+    text: 'Each employee’s sales and commission for the period, side by side.',
+    live: () => {
+      const r = tourRow('#empReportBody');
+      return r && { el: r.el, text: `One row per person. ${r.cell('Employee')}: ${r.cell('Sales')} sales and ${r.cell('Commission')} commission this period. Open a row for the receipts behind it.` };
+    } },
   { who: 'staff', tab: 'reports', view: 'commissions', at: '#rptReturnsCard', title: 'Returns',
-    text: 'Refunds in the period — what takes the net figure below the gross.' },
+    text: 'Refunds in the period — what takes the net figure below the gross.',
+    live: () => {
+      const r = tourRow('#rptReturnsBody');
+      return r && { el: r.el, text: 'A refund from this period. Returns like this are what take the net figure below the gross.' };
+    } },
   { who: 'staff', tab: 'reports', view: 'commissions', at: cardOf('#rptChargebacksBody'), title: 'Chargebacks',
-    text: 'Sales a customer has disputed with their bank, and where each one stands.' },
+    text: 'Sales a customer has disputed with their bank, and where each one stands.',
+    live: () => {
+      const r = tourRow('#rptChargebacksBody');
+      return r && { el: r.el, text: 'A sale a customer has disputed with their bank. Each one shows where it stands, and what it does to commission.' };
+    } },
   { who: 'admin', tab: 'reports', view: 'payroll', at: cardOf('#payrollBody'), title: 'Payroll',
-    text: 'What each person is owed on a payday, once disputes are taken into account. The arrows step between paychecks; the schedule is set in Settings.' },
+    text: 'What each person is owed on a payday, once disputes are taken into account. The arrows step between paychecks; the schedule is set in Settings.',
+    live: () => {
+      const note = tourText(document.getElementById('payrollPeriodNote'));
+      return note && { el: document.getElementById('payrollBody')?.closest('.report-card'),
+        text: `${note.replace(/\s*(Mark|Set|Undo)\b.*$/, '')} Each person’s pay is listed below. The arrows step between paychecks.` };
+    } },
   { who: 'admin', tab: 'reports', view: 'products', at: cardOf('#prodReportBody'), title: 'Top products',
-    text: 'Sales totals for the period and the products that sold best.' },
+    text: 'Sales totals for the period and the products that sold best.',
+    live: () => {
+      const r = tourRow('#prodReportBody');
+      return r && { el: r.el, text: `${r.cell('Product')} is at the top: ${r.cell('Units Sold')} sold for ${r.cell('Revenue')} this period.` };
+    } },
   { who: 'admin', tab: 'reports', view: 'products', at: '#flaggedReturnsCard', title: 'Returns with changed employees',
     text: 'Returns where the employees on the refund are not the ones on the original sale. Worth a look, because it moves commission.' },
 
@@ -12811,13 +12879,21 @@ const TOUR_STEPS = [
   { tab: 'calendar', at: '#posSubtabs [data-tab="calendar"]', title: 'Calendar',
     text: 'The book for treatment sessions.' },
   { tab: 'calendar', at: cardOf('#calWeekBody'), title: 'The week',
-    text: 'Every session booked this week. Previous and Next move between weeks.' },
+    text: 'Every session booked this week. Previous and Next move between weeks.',
+    live: () => {
+      const appt = document.querySelector('#calWeekBody [onclick^="openApptModal("]');
+      return appt && { el: appt, text: `A booked session: ${tourText(appt)}. Tap one to see it, move it or cancel it. Previous and Next move between weeks.` };
+    } },
   { tab: 'calendar', at: '#tab-calendar [onclick="openApptModal()"]', title: 'New session',
     text: 'Book a treatment session for a customer.' },
   { tab: 'calendar', at: cardOf('#calAvailBody'), title: 'Available hours',
     text: 'The hours sessions can be booked into, how long each slot is, and how much notice a booking needs.' },
   { tab: 'calendar', at: cardOf('#calTreatmentBody'), title: 'Treatments',
-    text: 'The treatments you offer and how long each one takes.' },
+    text: 'The treatments you offer and how long each one takes.',
+    live: () => {
+      const r = tourRow('#calTreatmentBody');
+      return r && { el: r.el, text: `${r.cell('Treatment')}, ${r.cell('Minutes')} minutes. Each treatment you offer has a row like this, and its length decides how long it holds the book.` };
+    } },
   { tab: 'calendar', at: cardOf('#calClosedBody'), title: 'Closed dates',
     text: 'Holidays and other days nothing can be booked.' },
 
@@ -12829,7 +12905,12 @@ const TOUR_STEPS = [
   { tab: 'emails', at: '#emailsNav [data-emailview="welcome"]', title: 'Welcome emails',
     text: 'The email a customer gets after buying, built from the usage notes on the products they bought.' },
   { tab: 'emails', view: 'mass', at: cardOf('#massPresets'), title: 'Mass email: who it goes to',
-    text: 'Pick who gets it — by product bought, employee, dates, amount spent or birth month — and see how many people that is.' },
+    text: 'Pick who gets it — by product bought, employee, dates, amount spent or birth month — and see how many people that is.',
+    live: () => {
+      const n = tourText(document.getElementById('massCount'));
+      return n && !/Loading|Could not/.test(n) && { el: document.getElementById('massPresets')?.closest('.report-card'),
+        text: `Pick who gets it — by product bought, employee, dates, amount spent or birth month. As it stands: ${n}` };
+    } },
   { tab: 'emails', view: 'mass', at: cardOf('#massSubject'), title: 'Mass email: the message',
     text: 'Write the subject and the message, check the sample, and press Send.' },
 
@@ -12849,7 +12930,14 @@ const TOUR_STEPS = [
   { who: 'staff', tab: 'history', view: 'sales', at: cardOf('#txHistoryBody'), title: 'Transaction history',
     text: (r) => r >= 2
       ? 'Open any sale to see its receipt. Tick sales to mark a chargeback on them or delete them.'
-      : 'Open a sale to see its receipt. This view is read-only.' },
+      : 'Open a sale to see its receipt. This view is read-only.',
+    live: (r) => {
+      const row = tourRow('#txHistoryBody');
+      if (!row) return null;
+      const who = row.cell('Customer');
+      return { el: row.el, text: `Receipt ${row.cell('Receipt #')}${who ? ' for ' + who : ''}: ${row.cell('Total')} on ${row.cell('Date')}. Open it to see the receipt`
+        + (r >= 2 ? '; tick sales like this one to mark a chargeback on them or delete them.' : '. This view is read-only.') };
+    } },
   { who: 'staff', tab: 'history', view: 'sales', at: parentOf('#importCsvBtn'), title: (r) => r >= 2 ? 'Import & export' : 'Export',
     text: (r) => r >= 2
       ? 'Bring in past sales from a spreadsheet, or export what is on screen as a CSV.'
@@ -12859,9 +12947,17 @@ const TOUR_STEPS = [
   { who: 'manager', tab: 'history', view: 'audit', at: cardOf('#auditFrom'), title: 'Run an audit',
     text: 'Check any range of dates against the processor, whenever you like.' },
   { who: 'manager', tab: 'history', view: 'audit', at: '#savedAuditsCard', title: 'Saved audits',
-    text: 'Audits you kept, to come back to or run again against today’s figures.' },
+    text: 'Audits you kept, to come back to or run again against today’s figures. You have none saved yet — Save This Audit on any audit keeps it here.',
+    live: () => {
+      const first = document.querySelector('#savedAuditsList > div');
+      return first && { el: first, text: `A saved audit: ${tourText(first.querySelector('div > div'))}. Open it to pick up where you left off, or run it again against today’s figures.` };
+    } },
   { who: 'staff', tab: 'history', view: 'customers', at: cardOf('#custReportBody'), title: 'Customers',
-    text: 'One row per customer with what they have spent. Search, sort, filter by product or employee, and import or export as CSV.' },
+    text: 'One row per customer with what they have spent. Search, sort, filter by product or employee, and import or export as CSV.',
+    live: () => {
+      const r = tourRow('#custReportBody');
+      return r && { el: r.el, text: `${r.cell('Customer')} has spent ${r.cell('Total Spent')} over ${r.cell('Purchases')} purchase${r.cell('Purchases') === '1' ? '' : 's'}. Every customer has a row like this — search, sort, filter, and import or export as CSV.` };
+    } },
 
   // Settings
   { who: 'nopin', tab: 'settings', at: '#posSubtabs [data-tab="settings"]', title: 'Settings',
@@ -12875,7 +12971,13 @@ const TOUR_STEPS = [
   { who: 'manager', tab: 'settings', view: 'store', at: '#settingsSubtabs', title: 'Five sections',
     text: 'Store, Brands & products, Alerts & connections, Employees, and Account.' },
   { who: 'manager', tab: 'settings', view: 'store', at: cardOf('#settingsStoreName'), title: 'Store details',
-    text: 'Name, address, contact details, receipt footer, time zone and tax rate — what goes on every receipt.' },
+    text: 'Name, address, contact details, receipt footer, time zone and tax rate — what goes on every receipt.',
+    live: () => {
+      const name = document.getElementById('settingsStoreName')?.value.trim();
+      const tax = document.getElementById('settingsTaxRate')?.value.trim();
+      return name && { el: document.getElementById('settingsStoreName').closest('.report-card'),
+        text: `${name}’s name, address, contact details, receipt footer, time zone${tax ? ` and ${tax}% tax rate` : ' and tax rate'} — what goes on every receipt.` };
+    } },
   { who: 'manager', tab: 'settings', view: 'store', at: cardOf('#settingsPaydays'), title: 'Pay schedule',
     text: 'When payday falls and which period it covers. Reports → Payroll is dated from this.' },
   { who: 'manager', tab: 'settings', view: 'store', at: '#returnWindowCard', title: 'Return window',
@@ -12885,17 +12987,31 @@ const TOUR_STEPS = [
   { who: 'manager', tab: 'settings', view: 'store', at: cardOf('#linkedStoresList'), title: 'Stores that share your staff',
     text: 'Link your other shops, so people who work across them see their pay from both.' },
   { who: 'manager', tab: 'settings', view: 'brands', at: cardOf('#brandCheckboxes'), title: 'Brands',
-    text: 'Every range the register can show. Untick one to hide it from the register without deleting anything.' },
+    text: 'Every range the register can show. Untick one to hide it from the register without deleting anything.',
+    live: () => {
+      const on = [...document.querySelectorAll('#brandCheckboxes .brand-config-row')].find(r => r.querySelector('input:checked'));
+      const name = tourText(on?.querySelector('[style*="font-weight:600"]')).replace(/\s*(yours|SkySale)$/i, '');
+      return on && name && { el: on, text: `${name} is ticked, so it shows on the register. Untick any range to hide it without deleting anything.` };
+    } },
   { who: 'manager', tab: 'settings', view: 'brands', at: cardOf('#impUrl'), title: 'Add products from a supplier',
     text: 'Paste a supplier’s product page and SkySale reads the names, prices and usage notes off it. Nothing is saved until you have checked it.' },
   { who: 'manager', tab: 'settings', view: 'merchant', at: '#alertsCard', title: 'Alerts',
     text: 'A text on every sale, and a warning when the nightly audit finds a mismatch, sent to the numbers you list.' },
   { who: 'manager', tab: 'settings', view: 'merchant', at: '#maverickConfigCard', title: 'Maverick Payments',
-    text: 'Connect your Maverick account so audits can check your sales against it. The ? explains where to find each detail.' },
+    text: 'Connect your Maverick account so audits can check your sales against it. The ? explains where to find each detail.',
+    live: () => {
+      const st = tourText(document.getElementById('maverickConnStatus'));
+      return st && { el: document.getElementById('maverickConfigCard'), text: `${st.replace(/\.?$/, '.')} This connection lets audits check your sales against Maverick. The ? explains where to find each detail.` };
+    } },
   { who: 'manager', tab: 'settings', view: 'merchant', at: '#payarcConfigCard', title: 'Payarc',
     text: 'The same, for shops that process with Payarc.' },
   { who: 'manager', tab: 'settings', view: 'staff', at: cardOf('#empManagerView'), title: 'Employees',
-    text: 'Add staff with their PIN, commission and role, copy a roster from another of your stores, and switch off anyone who has left.' },
+    text: 'Add staff with their PIN, commission and role, copy a roster from another of your stores, and switch off anyone who has left.',
+    live: () => {
+      const row = document.querySelector('#empList .emp-row');
+      const name = tourText(row?.querySelector('.emp-name'));
+      return row && name && { el: row, text: `${name}, ${tourText(row.querySelector('.emp-role'))}. Everyone on the roster has a row like this with their commission; add staff above, or switch off anyone who has left.` };
+    } },
   { who: 'manager', tab: 'settings', view: 'danger', at: '#subscriptionCard', title: 'Subscription',
     text: 'Your SkySale plan and billing.' },
   { who: 'manager', tab: 'settings', view: 'danger', at: cardOf('#closeAccountBtn'), title: 'Close this account',
@@ -12903,13 +13019,15 @@ const TOUR_STEPS = [
 
   // Done
   { at: '#helpBtn', title: 'That’s the tour',
-    text: 'Take it again any time from this ? button.' },
+    text: (r) => r
+      ? 'Everything the tour opened with your PIN locks again when you close it. Take it again any time from this ? button.'
+      : 'Take it again any time from this ? button.' },
 ];
 
 let tour = null;
 
-// Every change the tour makes goes through these two, which remember what was
-// there first. endTour replays them backwards.
+// Every change the tour makes to what is showing goes through these two,
+// which remember what was there first. endTour replays them backwards.
 function tourStyle(el, prop, val) {
   if (!el) return;
   const before = el.style[prop];
@@ -12923,12 +13041,65 @@ function tourClass(el, cls, on) {
   el.classList.toggle(cls, on);
 }
 
+// ── Opening each tab for real ──
+// Once per tab per tour. Resolves true when the tab's own data for this PIN
+// is on screen; false leaves its tables hidden.
+const TOUR_LOADERS = {
+  async reports() {
+    await loadTodayLeaderboard().catch(() => {});
+    if (!tour.rank) return false;
+    personalCreds = { ...tour.creds };
+    await unlockPersonalReport(true);
+    if (!personalCreds) return false; // refused
+    if (tour.rank === 3) await Promise.allSettled([loadReports(), loadPaydayOptions()]);
+    return true;
+  },
+  async calendar() { await loadCalendar(); return true; },
+  async emails() {
+    const f = document.getElementById('emailsFrame');
+    if (f && !f.src) f.src = f.dataset.src;
+    await loadMassEmail();
+    return true;
+  },
+  async history() {
+    if (!tour.rank) return false;
+    txCreds = { ...tour.creds };
+    await loadTransactions();
+    if (!txAccess) return false;
+    await Promise.allSettled([loadCustomers(), tour.rank >= 2 ? loadAutoAudit() : null]);
+    return true;
+  },
+  async settings() {
+    if (!tour.rank) return false;
+    settingsAccess = { ...tour.who };
+    settingsCreds = { ...tour.creds };
+    applySettingsAccessUI();
+    if (tour.rank >= 2) {
+      await Promise.allSettled([loadEmployees(), loadStoreSettings(), loadLinkedStores(), loadSubscription()]);
+      renderBrandCheckboxes();
+      try { fillReturnPolicySettings(); fillReturnWindowSettings(); } catch (_) {}
+    }
+    return true;
+  },
+};
+
+function tourLoad(tab) {
+  if (!tab || !TOUR_LOADERS[tab]) return Promise.resolve(false);
+  if (!tour.loading[tab]) {
+    tour.loading[tab] = TOUR_LOADERS[tab]()
+      .catch(() => false)
+      .then(ok => { if (tour) tour.loaded[tab] = !!ok; return !!ok; });
+  }
+  return tour.loading[tab];
+}
+
 function tourShowTab(name) {
   document.querySelectorAll('.tab-content').forEach(t => tourClass(t, 'show', t.id === `tab-${name}`));
   document.querySelectorAll('#posSubtabs button').forEach(b => tourClass(b, 'active', b.dataset.tab === name));
   const tab = document.getElementById(`tab-${name}`);
-  if (name === 'history' || name === 'settings') tourClass(tab, 'tour-mask', true);
-  if (name === 'settings') {
+  const live = !!tour.loaded[name];
+  if (name === 'history' || name === 'settings') tourClass(tab, 'tour-mask', !live);
+  if (name === 'settings' && !live) {
     const r = tour.rank;
     tourStyle(document.getElementById('settingsManagerOnly'), 'display', r >= 2 ? '' : 'none');
     tourStyle(document.getElementById('empManagerView'), 'display', r >= 2 ? '' : 'none');
@@ -12939,6 +13110,7 @@ function tourShowTab(name) {
 function tourStage(step) {
   if (!step.tab) return;
   tourShowTab(step.tab);
+  const live = !!tour.loaded[step.tab];
   const $ = (x) => document.getElementById(x);
   if (step.tab === 'history') {
     const v = step.view || 'sales';
@@ -12960,24 +13132,40 @@ function tourStage(step) {
       tourClass(b, 'active', b.dataset.emailview === (mass ? 'mass' : 'welcome')));
   }
   if (step.tab === 'reports' && step.view) {
-    tourStyle($('reportsDateFilter'), 'display', 'flex');
-    tourStyle($('rptLayout'), 'display', 'flex');
-    tourClass($('rptLayout'), 'tour-mask', true);
-    tourStyle($('rptNav'), 'display', 'none'); // drawn for whoever last signed in
     document.querySelectorAll('.rpt-section').forEach(s =>
       tourStyle(s, 'display', s.dataset.section === step.view ? '' : 'none'));
-    if (step.view === 'commissions') {
-      tourStyle($('empPersonalReport'), 'display', 'block');
-      tourStyle($('empPersonalTableWrap'), 'display', '');
-      tourStyle($('rptEveryoneCard'), 'display', tour.rank === 3 ? '' : 'none');
-      tourStyle($('rptReturnsCard'), 'display', '');
+    if (live) {
+      // The report's own unlock has laid the tab out; just say which section.
+      document.querySelectorAll('#rptNav button').forEach(b =>
+        tourClass(b, 'active', b.getAttribute('onclick') === `showReportSection('${step.view}')`));
+    } else {
+      tourStyle($('reportsDateFilter'), 'display', 'flex');
+      tourStyle($('rptLayout'), 'display', 'flex');
+      tourClass($('rptLayout'), 'tour-mask', true);
+      tourStyle($('rptNav'), 'display', 'none'); // drawn for whoever last signed in
+      if (step.view === 'commissions') {
+        tourStyle($('empPersonalReport'), 'display', 'block');
+        tourStyle($('empPersonalTableWrap'), 'display', '');
+        tourStyle($('rptEveryoneCard'), 'display', tour.rank === 3 ? '' : 'none');
+        tourStyle($('rptReturnsCard'), 'display', '');
+      }
     }
   }
 }
 
-function tourTarget(step) {
+const tourVisible = (el) => !!(el && el.isConnected && el.getClientRects().length);
+
+// Where the light goes and what the card says: a real row when the tab's
+// data is there and has one, otherwise the section itself.
+function tourResolve(step) {
+  // On a tab behind a PIN, only what this PIN's own load put there is read.
+  const liveOk = step.open || !step.tab || tour.loaded[step.tab] || !['reports', 'history', 'settings'].includes(step.tab);
+  if (step.live && liveOk) {
+    const hit = step.live(tour.rank);
+    if (hit && tourVisible(hit.el)) return hit;
+  }
   const el = typeof step.at === 'function' ? step.at() : document.querySelector(step.at);
-  return el && el.getClientRects().length ? el : null;
+  return { el: tourVisible(el) ? el : null, text: tourVal(step.text) };
 }
 
 const tourVal = (v) => (typeof v === 'function' ? v(tour.rank) : v);
@@ -12997,10 +13185,15 @@ function startTour() {
     document.body.appendChild(layer);
   }
   layer.hidden = false;
+  const activeTab = document.querySelector('#posSubtabs button.active')?.dataset.tab || 'register';
   tour = {
     layer, spot: layer.querySelector('.tour-spot'), card: layer.querySelector('.tour-card'),
-    undo: [], steps: [], i: -1, rank: 0, el: null, playing: false, timer: null, raf: 0,
+    undo: [], steps: [], i: -1, rank: 0, el: null, text: '', playing: false, timer: null, raf: 0, seq: 0,
+    creds: null, who: null, loaded: {}, loading: {},
     scrollY: window.scrollY,
+    // Whoever had a tab open before the tour, to hand it back to afterwards.
+    before: { tab: activeTab, txAccess, txCreds, settingsAccess, settingsCreds, personalCreds,
+              rptStart: document.getElementById('rptStart').value, rptEnd: document.getElementById('rptEnd').value },
   };
   document.addEventListener('keydown', tourKeys, true);
   tourSignInCard();
@@ -13014,7 +13207,7 @@ function tourSignInCard() {
     <div class="tour-body tour-signin">
       <div class="tour-count">Guided tour</div>
       <h4>Who’s taking the tour?</h4>
-      <p>Enter your name and PIN and the tour shows everything your PIN opens. Without one, it shows only what needs no PIN.</p>
+      <p>Enter your name and PIN and the tour shows everything your PIN opens, with your shop’s real figures. Without one, it shows only what needs no PIN.</p>
       <input id="tourName" placeholder="Your name" autocomplete="off">
       <input id="tourPin" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off">
       <div class="tour-err" id="tourErr"></div>
@@ -13043,7 +13236,10 @@ async function tourSignIn() {
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(data.error || 'Verification failed');
     if (!tour) return; // cancelled while it was checking
-    // Only the role is kept. The PIN is not stored anywhere.
+    // Held only for as long as the tour runs, to open each tab the way typing
+    // it there would. endTour drops it.
+    tour.creds = { name, pin };
+    tour.who = { id: data.employee.id, name: data.employee.name, role: data.role };
     tourBegin(data.role === 'admin' ? 3 : canManageRole(data.role) ? 2 : 1);
   } catch (e) {
     if (!tour) return;
@@ -13055,18 +13251,26 @@ async function tourSignIn() {
 function tourBegin(rank) {
   tour.rank = rank;
   tour.steps = TOUR_STEPS.filter(s => TOUR_WHO[s.who || 'any'](rank));
-  tourGo(0);
+  return tourGo(0);
 }
 
-function tourGo(i) {
+async function tourGo(i) {
   if (!tour) return;
   if (i >= tour.steps.length) return endTour();
   if (i < 0) i = 0;
   clearTimeout(tour.timer);
+  const seq = ++tour.seq;
   tour.i = i;
   const step = tour.steps[i];
+  if (step.tab && !(step.tab in tour.loaded)) {
+    tourLoadingCard(step);
+    await tourLoad(step.tab);
+    if (!tour || seq !== tour.seq) return; // moved on while it was loading
+  }
   tourStage(step);
-  tour.el = tourTarget(step);
+  const hit = tourResolve(step);
+  tour.el = hit.el;
+  tour.text = hit.text;
   if (tour.el) {
     const b = tour.el.getBoundingClientRect();
     if (b.top < 70 || b.bottom > window.innerHeight - 20) {
@@ -13078,20 +13282,37 @@ function tourGo(i) {
   if (tour.playing) tourSchedule();
 }
 
+function tourChips(step) {
+  const tabs = [...document.querySelectorAll('#posSubtabs button')].map(b => [b.dataset.tab, b.textContent.trim()]);
+  const here = step.tab ? tabs.findIndex(t => t[0] === step.tab) : tabs.length;
+  return tabs.map(([key, label], n) =>
+    `<button class="${n === here ? 'on' : n < here ? 'done' : ''}" onclick="tourJumpTab('${key}')">${escapeHtml(label)}</button>`).join('');
+}
+
+function tourLoadingCard(step) {
+  tour.el = null;
+  const label = document.querySelector(`#posSubtabs [data-tab="${step.tab}"]`)?.textContent.trim() || '';
+  tour.card.innerHTML = `
+    <div class="tour-chips">${tourChips(step)}</div>
+    <div class="tour-body">
+      <div class="tour-count">Step ${tour.i + 1} of ${tour.steps.length}</div>
+      <h4>Opening ${escapeHtml(label)}…</h4>
+      <p>Loading ${tour.rank ? 'what your PIN opens here' : 'this tab'}.</p>
+    </div>
+    <div class="tour-actions" style="margin-top:12px">
+      <button class="tour-skip" onclick="endTour()">End tour</button>
+    </div>`;
+}
+
 function tourRenderCard() {
   const step = tour.steps[tour.i];
   const last = tour.i === tour.steps.length - 1;
-  const tabs = [...document.querySelectorAll('#posSubtabs button')].map(b => [b.dataset.tab, b.textContent.trim()]);
-  const order = tabs.map(t => t[0]);
-  const here = step.tab ? order.indexOf(step.tab) : order.length;
-  const chips = tabs.map(([key, label], n) =>
-    `<button class="${n === here ? 'on' : n < here ? 'done' : ''}" onclick="tourJumpTab('${key}')">${escapeHtml(label)}</button>`).join('');
   tour.card.innerHTML = `
-    <div class="tour-chips">${chips}</div>
+    <div class="tour-chips">${tourChips(step)}</div>
     <div class="tour-body">
       <div class="tour-count">Step ${tour.i + 1} of ${tour.steps.length}</div>
       <h4>${escapeHtml(tourVal(step.title))}</h4>
-      <p>${escapeHtml(tourVal(step.text))}</p>
+      <p>${escapeHtml(tour.text)}</p>
     </div>
     <div class="tour-progress"><i id="tourBar"></i></div>
     <div class="tour-actions">
@@ -13111,8 +13332,7 @@ function tourJumpTab(key) {
 // Play reads each step for about as long as it takes to read it.
 function tourSchedule() {
   clearTimeout(tour.timer);
-  const step = tour.steps[tour.i];
-  const ms = Math.min(12000, 3500 + 45 * String(tourVal(step.text)).length);
+  const ms = Math.min(12000, 3500 + 45 * String(tour.text).length);
   const bar = document.getElementById('tourBar');
   if (bar) {
     bar.style.transition = 'none'; bar.style.width = '0';
@@ -13142,7 +13362,7 @@ function tourPlace() {
   if (!tour) return;
   const vw = window.innerWidth, vh = window.innerHeight, pad = 8, edge = 16, gap = 14;
   let r = null;
-  if (tour.el && tour.el.isConnected && tour.el.getClientRects().length) {
+  if (tourVisible(tour.el)) {
     const b = tour.el.getBoundingClientRect();
     const top = Math.max(b.top - pad, 6), bottom = Math.min(b.bottom + pad, vh - 6);
     const left = Math.max(b.left - pad, 6), right = Math.min(b.right + pad, vw - 6);
@@ -13177,16 +13397,54 @@ function tourKeys(e) {
   if (e.key in keys) { e.preventDefault(); e.stopPropagation(); tourGo(tour.i + keys[e.key]); }
 }
 
+// Lock what the tour opened and empty what it loaded.
+function tourLock(t) {
+  const b = t.before;
+  if ('reports' in t.loading && t.rank) {
+    lockPersonalReport();
+    document.getElementById('rptStart').value = b.rptStart;
+    document.getElementById('rptEnd').value = b.rptEnd;
+  }
+  if ('history' in t.loading && t.rank) {
+    txAccess = null; txCreds = null; selectedTxIds.clear();
+    histTransactions = []; filteredTransactions = [];
+    for (const id of ['txHistoryBody', 'txSummary', 'custReportBody', 'custFilterSummary']) {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '';
+    }
+  }
+  if ('settings' in t.loading && t.rank) {
+    settingsAccess = null; settingsCreds = null;
+    applySettingsAccessUI();
+  }
+  if ('calendar' in t.loading && b.tab !== 'calendar') stopCalendarPolling();
+}
+
+// Hand back anything that was open before the tour to whoever had it.
+function tourRestore(t) {
+  const b = t.before;
+  if (b.personalCreds) { personalCreds = b.personalCreds; unlockPersonalReport(true); }
+  if (b.txCreds) { txCreds = b.txCreds; txAccess = b.txAccess; loadTabData('history'); }
+  if (b.settingsAccess) { settingsAccess = b.settingsAccess; settingsCreds = b.settingsCreds; applySettingsAccessUI(); }
+}
+
 function endTour() {
   if (!tour) return;
-  cancelAnimationFrame(tour.raf);
-  clearTimeout(tour.timer);
+  const t = tour;
+  cancelAnimationFrame(t.raf);
+  clearTimeout(t.timer);
   document.removeEventListener('keydown', tourKeys, true);
-  for (let k = tour.undo.length - 1; k >= 0; k--) tour.undo[k]();
-  tour.layer.hidden = true;
-  tour.card.innerHTML = '';
-  window.scrollTo(0, tour.scrollY);
+  for (let k = t.undo.length - 1; k >= 0; k--) t.undo[k]();
+  t.layer.hidden = true;
+  t.card.innerHTML = '';
   tour = null;
+  t.creds = null;
+  // Locked now, so nothing is left open even for a moment — and again once
+  // any load still in flight has landed, since a reply arriving after the
+  // first lock would otherwise open its tab back up.
+  tourLock(t);
+  Promise.allSettled(Object.values(t.loading)).then(() => { tourLock(t); tourRestore(t); });
+  window.scrollTo(0, t.scrollY);
   document.getElementById('helpBtn')?.focus();
 }
 </script>
