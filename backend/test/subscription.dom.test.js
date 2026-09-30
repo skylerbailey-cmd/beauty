@@ -106,8 +106,14 @@ setTimeout(() => {
   v = show({ ...BASE, status: 'comped', may_sell: true, comped: true });
   check('it says it is not being charged', /not being charged/.test(v.text), v.text);
   check('and promises no renewal', /Nothing renews/.test(v.text), v.text);
-  check('with nothing to cancel', v.buttons.length === 0, v.buttons.join(','));
   check('and no renewal date invented', !/undefined|Invalid|NaN/.test(v.text), v.text);
+  // A shop being carried is exactly the one that later needs to start
+  // paying. With no button here that is a dead end.
+  check('there is still a way onto a paid plan',
+    v.buttons.some((b) => /Start paying/.test(b)), v.buttons.join(','));
+  check('priced in the button', /\$115 a month/.test(v.buttons.join(' ')), v.buttons.join(','));
+  check('and nothing to cancel, since nothing is being charged',
+    !v.buttons.some((b) => /Cancel/.test(b)), v.buttons.join(','));
 
   console.log('\n── Card failed ──');
   v = show({ ...BASE, status: 'past_due', may_sell: false, has_customer: true });

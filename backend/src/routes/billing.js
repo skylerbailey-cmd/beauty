@@ -110,8 +110,12 @@ router.post('/checkout',
   async (req, res) => {
     const userId = req.session.userId;
     try {
+      // Already paying is a reason to refuse; being comped is not. A shop
+      // carried on the house is exactly the one that needs a way to start
+      // paying — an existing shop moving onto a plan, which is otherwise a
+      // dead end with no button on it.
       const sub = await pgDb.getSubscription(userId);
-      if (sub && pgDb.LIVE_SUB_STATUSES.has(sub.status)) {
+      if (sub?.stripe_subscription_id && ['trialing', 'active'].includes(sub.status)) {
         return res.status(400).json({ error: 'This shop is already subscribed.' });
       }
 

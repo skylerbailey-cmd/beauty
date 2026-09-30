@@ -128,6 +128,13 @@ const check = (l, ok, detail) => {
   check('and none reads a company from the body',
     !/req\.body[^\n]*(user_id|company_id|companyId)/.test(billingSrc));
 
+  console.log('\n── A comped shop can start paying ──');
+  // Being carried on the house is not "already subscribed". Refusing
+  // checkout for it would leave an existing shop with no route onto a plan.
+  check('checkout refuses only a real live Stripe subscription',
+    /sub\?\.stripe_subscription_id && \['trialing', 'active'\]\.includes\(sub\.status\)/.test(billingSrc),
+    'checkout still refuses on LIVE_SUB_STATUSES, which now includes comped');
+
   console.log('\n── Coming back from Stripe ──');
   // A Host header is set by whoever is calling. Used unchecked to build a
   // success_url, it turns Stripe's redirect into an open redirect — and the

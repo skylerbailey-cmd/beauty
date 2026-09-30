@@ -3230,8 +3230,12 @@ function renderSubscription() {
   // has no subscription behind it would be a bill they never get.
   if (st.comped) {
     box.innerHTML = `<b style="color:var(--success)">On the house.</b> This location is not `
-      + `being charged. Nothing renews and no card is needed.`;
-    actions.innerHTML = '';
+      + `being charged. Nothing renews and no card is needed — the register, reports and `
+      + `payroll all work as normal.`;
+    // Still offer the way onto a plan. A shop being carried is precisely the
+    // one that later needs to start paying, and with no button here that is
+    // a dead end.
+    actions.innerHTML = btn(`Start paying ${subMoney(st.monthly_cents)} a month`, 'startCheckout()');
     return;
   }
 
