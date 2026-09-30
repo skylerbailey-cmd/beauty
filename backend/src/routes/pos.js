@@ -437,16 +437,27 @@ function withinReturnWindow(daysSince, windowDays) {
   return daysSince <= windowDays;
 }
 
-async function mayRingUpSales(userId) {
-  if (!billing.configured()) return true;
+// A shop that is asleep is paid up, but on the plan that keeps its records
+// and takes no sales — so it is asked about separately, and told so.
+async function sellingState(userId) {
+  if (!billing.configured()) return 'selling';
   const sub = await pgDb.getSubscription(userId).catch(() => null);
-  return pgDb.LIVE_SUB_STATUSES.has(sub?.status || '');
+  if (!pgDb.LIVE_SUB_STATUSES.has(sub?.status || '')) return 'lapsed';
+  return sub?.plan === 'sleep' ? 'asleep' : 'selling';
 }
 
 router.post('/transactions', async (req, res) => {
   const userId = req.session.userId;
 
-  if (!(await mayRingUpSales(userId))) {
+  const selling = await sellingState(userId);
+  if (selling === 'asleep') {
+    return res.status(402).json({
+      error: 'This shop is asleep, so sales, returns and exchanges are paused. '
+        + 'Everything already recorded is still here — a manager can wake it in Settings → Account.',
+      subscription_required: true, asleep: true,
+    });
+  }
+  if (selling !== 'selling') {
     return res.status(402).json({
       error: 'This shop\'s subscription is not active, so new sales are paused. '
         + 'Everything already recorded is still here — open Settings → Account to start it again.',

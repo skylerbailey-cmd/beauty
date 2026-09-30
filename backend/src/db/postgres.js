@@ -657,6 +657,8 @@ Exchanges are only allowed within **7 days** of purchase.'`);
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
   )`);
+  // 'full' or 'sleep' — read off the subscription's price by billing.planOf.
+  await migrate("ALTER TABLE pos_subscriptions ADD COLUMN IF NOT EXISTS plan TEXT DEFAULT 'full'");
   await migrate('CREATE INDEX IF NOT EXISTS idx_pg_subs_customer ON pos_subscriptions(stripe_customer_id)');
   await migrate('CREATE INDEX IF NOT EXISTS idx_pg_subs_sub ON pos_subscriptions(stripe_subscription_id)');
 
@@ -1675,7 +1677,7 @@ async function getSubscription(userId) {
 // here, and neither knows everything the other does.
 async function saveSubscription(userId, fields = {}) {
   const cols = ['stripe_customer_id', 'stripe_subscription_id', 'status',
-    'trial_end', 'current_period_end', 'cancel_at_period_end', 'canceled_at'];
+    'trial_end', 'current_period_end', 'cancel_at_period_end', 'canceled_at', 'plan'];
   const given = cols.filter((c) => fields[c] !== undefined);
   const sets = given.map((c, i) => `${c} = $${i + 2}`);
   await query(

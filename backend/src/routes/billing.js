@@ -65,10 +65,13 @@ function returnBase(req) {
 function describe(sub) {
   const status = sub?.status || '';
   const live = pgDb.LIVE_SUB_STATUSES.has(status);
+  const asleep = live && sub?.plan === 'sleep';
   return {
     configured: billing.configured(),
     status,
-    may_sell: live,
+    plan: sub?.plan || 'full',
+    asleep,
+    may_sell: live && !asleep,
     comped: status === 'comped',
     trialing: status === 'trialing',
     trial_end: sub?.trial_end || null,
@@ -77,6 +80,7 @@ function describe(sub) {
     canceled_at: sub?.canceled_at || null,
     has_customer: !!sub?.stripe_customer_id,
     monthly_cents: billing.MONTHLY_CENTS,
+    sleep_cents: billing.SLEEP_CENTS,
     trial_days: billing.TRIAL_DAYS,
   };
 }
@@ -241,6 +245,102 @@ router.post('/resume', requireSignedIn, requireBilling, async (req, res) => {
     res.status(500).json({ error: 'Could not resume. Try again in a moment.' });
   }
 });
+
+// ─── Sleep ──────────────────────────────────────────────────────────────────
+//
+// Putting a shop to sleep swaps its subscription onto the $15 price. It keeps
+// everything and sells nothing until it wakes. Both directions take a
+// manager's name and code: one stops the till, the other charges the card.
+
+async function managerOf(userId, name, pin) {
+  if (!pin) return null;
+  const emp = await pgDb.verifyEmployeePin(String(pin), userId, name);
+  if (!emp || !['manager', 'admin'].includes(emp.role)) return null;
+  if (name && emp.name.trim().toLowerCase() !== String(name).trim().toLowerCase()) return null;
+  return emp;
+}
+
+// The one item on the subscription, whose price is what changes. Named by id
+// in the update: a price given without the item's id is added alongside the
+// old one, and the shop would be billed for both.
+async function currentItem(subscriptionId) {
+  const sub = await billing.stripe().subscriptions.retrieve(subscriptionId);
+  return { sub, item: sub.items?.data?.[0] || null };
+}
+
+router.post('/sleep', requireSignedIn, requireBilling,
+  rateLimit({ limit: 10, windowMs: 60 * 1000, name: 'sleep' }),
+  async (req, res) => {
+    const userId = req.session.userId;
+    try {
+      if (!(await managerOf(userId, req.body?.manager_name, req.body?.manager_pin))) {
+        return res.status(403).json({ error: 'Only a manager can put the shop to sleep. Enter a manager name and code.' });
+      }
+      const row = await pgDb.getSubscription(userId);
+      if (!row?.stripe_subscription_id || !['trialing', 'active'].includes(row.status)) {
+        return res.status(400).json({ error: 'Only a shop with a running subscription can be put to sleep.' });
+      }
+      const { sub, item } = await currentItem(row.stripe_subscription_id);
+      if (billing.planOf(sub) === 'sleep') {
+        await pgDb.saveSubscription(userId, billing.summarise(sub));
+        return res.json(describe(await pgDb.getSubscription(userId)));
+      }
+      const updated = await billing.stripe().subscriptions.update(row.stripe_subscription_id, {
+        items: [{ id: item.id, price: await billing.priceIdFor('sleep') }],
+        // What is left of the month already paid at the full price comes back
+        // as credit against the next bills, rather than being lost.
+        proration_behavior: 'create_prorations',
+        // Sleeping instead of leaving: a cancellation that was waiting to
+        // happen is called off, or the shop would sleep for a fortnight and
+        // then lose the subscription anyway.
+        cancel_at_period_end: false,
+      });
+      await pgDb.saveSubscription(userId, billing.summarise(updated));
+      res.json(describe(await pgDb.getSubscription(userId)));
+    } catch (err) {
+      console.error('[billing] sleep failed:', err.message);
+      res.status(500).json({ error: 'Could not put the shop to sleep. Try again in a moment.' });
+    }
+  });
+
+router.post('/wake', requireSignedIn, requireBilling,
+  rateLimit({ limit: 10, windowMs: 60 * 1000, name: 'wake' }),
+  async (req, res) => {
+    const userId = req.session.userId;
+    try {
+      if (!(await managerOf(userId, req.body?.manager_name, req.body?.manager_pin))) {
+        return res.status(403).json({ error: 'Only a manager can wake the shop. Enter a manager name and code.' });
+      }
+      const row = await pgDb.getSubscription(userId);
+      if (!row?.stripe_subscription_id) {
+        return res.status(400).json({ error: 'There is no subscription to wake.' });
+      }
+      const { sub, item } = await currentItem(row.stripe_subscription_id);
+      if (billing.planOf(sub) !== 'sleep') {
+        await pgDb.saveSubscription(userId, billing.summarise(sub));
+        return res.json(describe(await pgDb.getSubscription(userId)));
+      }
+      const updated = await billing.stripe().subscriptions.update(row.stripe_subscription_id, {
+        items: [{ id: item.id, price: await billing.priceIdFor('full') }],
+        // The rest of this month at the full price, charged now...
+        proration_behavior: 'always_invoice',
+        // ...and the switch only happens if that charge goes through. A card
+        // that is refused leaves the shop asleep, not selling on credit.
+        payment_behavior: 'pending_if_incomplete',
+      });
+      await pgDb.saveSubscription(userId, billing.summarise(updated));
+      if (updated.pending_update) {
+        return res.status(402).json({
+          ...describe(await pgDb.getSubscription(userId)),
+          error: 'The card was not charged, so the shop is still asleep. Update the card and try again.',
+        });
+      }
+      res.json(describe(await pgDb.getSubscription(userId)));
+    } catch (err) {
+      console.error('[billing] wake failed:', err.message);
+      res.status(500).json({ error: 'Could not wake the shop. Try again in a moment.' });
+    }
+  });
 
 // Stripe's own billing pages: change the card, read past invoices. Hosted by
 // them, so none of it is built — or held — here.

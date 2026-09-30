@@ -72,13 +72,13 @@ setTimeout(async () => {
   check('their own PIN is not a manager’s code', prompting() && downloads === 0 && /do not match/.test(id('managerAuthError').textContent));
   await approve('Mia', '9999');
   check('a manager’s code writes the file', !prompting() && downloads === 1);
-  check('and it is not kept for the next one', w.eval('csvManager') === null && w.eval('managerCreds') === null);
+  check('and it is not kept for the next one', w.eval('approvedManager') === null && w.eval('managerCreds') === null);
 
   downloads = 0;
   w.exportCustomersCSV();
   check('customers ask too', prompting() && id('managerAuthTitle').textContent === 'Export Customers' && downloads === 0);
   w.closeManagerAuth();
-  check('cancelling writes nothing', !prompting() && downloads === 0 && w.eval('pendingCsvRun') === null);
+  check('cancelling writes nothing', !prompting() && downloads === 0 && w.eval('pendingManagerRun') === null);
   await approve('Mia', '9999');
   check('and a code typed after cancelling does not write it either', downloads === 0);
 
@@ -107,13 +107,13 @@ setTimeout(async () => {
   check('the rows went to the server', sent.length === 1 && sent[0].body.rows.length === 1);
   check('carrying the manager’s name and code, for the server to check',
     sent.every(c => c.body.manager_name === 'Mia' && c.body.manager_pin === '9999'));
-  check('and the code is dropped once it is done', w.eval('csvManager') === null);
+  check('and the code is dropped once it is done', w.eval('approvedManager') === null);
 
   await w.handleImportFile(csvFile('Name,Email\nSam,sam@example.com\n'), 'customers');
   await settle();
   await approve('Mia', '9999');
-  w.eval("closeImportMapping(); csvManager = null;"); // the mapping dialog's Cancel
-  check('cancelling at the columns drops the code too', w.eval('csvManager') === null);
+  w.eval("closeImportMapping(); approvedManager = null;"); // the mapping dialog's Cancel
+  check('cancelling at the columns drops the code too', w.eval('approvedManager') === null);
 
   check('the import button is no longer hidden from a sales employee, so they can start one', !/importCsvBtn'\)\.style\.display = canManage/.test(html));
 

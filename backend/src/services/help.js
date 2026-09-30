@@ -170,7 +170,18 @@ Employees, Account. A sales employee sees only a form to change their own PIN.
   the ? beside each explains where to find the details.
 - Employees: add staff with a name, PIN, commission and role; copy a roster
   from another of your stores; deactivate someone who has left.
-- Account: the SkySale subscription and billing, and closing the account.
+- Account: the SkySale subscription ($115 a month per location, first 14
+  days free), updating the card, cancelling, and closing the account.
+  - Sleep: a shop that is closed for a while can be put to sleep for $15 a
+    month instead of $115. Everything recorded stays and stays readable —
+    sales, customers, reports, payroll — but the register takes no sales,
+    returns or exchanges until it wakes. A banner on the Register says it is
+    asleep. What is left of the month already paid at $115 comes off the next
+    bills. Waking it goes back to $115 a month and charges the rest of this
+    month to the card straight away; the register sells again once that
+    payment goes through. Both need a manager's name and code, and are in
+    Settings → Account ("Put to sleep", "Wake the shop"). A shop that has
+    cancelled can choose "Sleep instead" to keep its records at $15 a month.
 `;
 
 function systemPrompt() {

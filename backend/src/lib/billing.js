@@ -19,6 +19,25 @@ const TRIAL_DAYS = 14;
 const PRICE_LOOKUP_KEY = 'skysale_location_monthly';
 const PRODUCT_NAME = 'SkySale — store location';
 
+// Sleep: a shop that is closed for a season, or winding down, keeps its books
+// — every sale, customer, report and payroll figure stays and stays readable —
+// for a fraction of the price, and takes no sales, returns or exchanges until
+// it wakes. It is the same subscription on a different price, so waking is a
+// switch back, not a signup, and nothing about the shop has to be set up again.
+const SLEEP_CENTS = 1500;             // $15.00 per store location, per month
+const SLEEP_LOOKUP_KEY = 'skysale_location_sleep_monthly';
+
+const PLANS = {
+  full: {
+    lookupKey: PRICE_LOOKUP_KEY, cents: MONTHLY_CENTS, name: PRODUCT_NAME,
+    description: 'One SkySale store location — register, reports, payroll and reconciliation.',
+  },
+  sleep: {
+    lookupKey: SLEEP_LOOKUP_KEY, cents: SLEEP_CENTS, name: 'SkySale — store location, asleep',
+    description: 'One SkySale store location, asleep — its records kept and readable; no new sales.',
+  },
+};
+
 // Stripe's own tax code for software as a service. Never invent one of these
 // or recall it from memory: a wrong code does not error, it quietly taxes
 // nothing, and tax that was not collected cannot be collected afterwards.
@@ -30,7 +49,7 @@ const SAAS_TAX_CODE = 'txcd_10103001';
 const API_VERSION = '2026-08-26.dahlia';
 
 let client = null;
-let cachedPriceId = null;
+const cachedPriceIds = {};
 
 // The key lives in the environment, never in the repository. A restricted key
 // (rk_…) with write access to Customers, Checkout Sessions, Subscriptions and
@@ -65,20 +84,22 @@ function integrationIdentifier(kind) {
   return `skysale_${kind}_${tail}`;
 }
 
-// The monthly price, found by its lookup key or created the first time.
+// A plan's monthly price, found by its lookup key or created the first time.
 //
 // Looked up rather than pasted into an environment variable: a price id typed
 // into config by hand is a thing that can point at the wrong amount in the
 // wrong mode, and nobody notices until a shop is charged the wrong money. The
 // lookup key is stable across test and live, and each mode provisions its own.
-async function monthlyPriceId() {
-  if (cachedPriceId) return cachedPriceId;
+async function priceIdFor(plan) {
+  const p = PLANS[plan];
+  if (!p) throw new Error(`No such plan: ${plan}`);
+  if (cachedPriceIds[plan]) return cachedPriceIds[plan];
   const s = stripe();
 
-  const found = await s.prices.list({ lookup_keys: [PRICE_LOOKUP_KEY], active: true, limit: 1 });
+  const found = await s.prices.list({ lookup_keys: [p.lookupKey], active: true, limit: 1 });
   if (found.data.length) {
-    cachedPriceId = found.data[0].id;
-    return cachedPriceId;
+    cachedPriceIds[plan] = found.data[0].id;
+    return cachedPriceIds[plan];
   }
 
   // One Product per plan, one Price on it. Everything shows the product name
@@ -90,23 +111,33 @@ async function monthlyPriceId() {
   // as a service; a shop whose advisor says otherwise changes it on the
   // Product in the Dashboard, and every later invoice follows.
   const product = await s.products.create({
-    name: PRODUCT_NAME,
-    description: 'One SkySale store location — register, reports, payroll and reconciliation.',
+    name: p.name,
+    description: p.description,
     tax_code: SAAS_TAX_CODE,
   });
   const price = await s.prices.create({
     product: product.id,
     currency: 'usd',
-    unit_amount: MONTHLY_CENTS,
+    unit_amount: p.cents,
     recurring: { interval: 'month' },
-    lookup_key: PRICE_LOOKUP_KEY,
+    lookup_key: p.lookupKey,
     // $115 is the price; tax is added on top rather than carved out of it.
     // This cannot be changed on a price once it exists — a different answer
     // means a new price, not an edit.
     tax_behavior: 'exclusive',
   });
-  cachedPriceId = price.id;
-  return cachedPriceId;
+  cachedPriceIds[plan] = price.id;
+  return cachedPriceIds[plan];
+}
+
+const monthlyPriceId = () => priceIdFor('full');
+
+// Which plan a subscription is on, read off its price. Anything that is not
+// the sleep price is the full plan: a price changed by hand in the Dashboard
+// must never quietly stop a shop from selling.
+function planOf(subscription) {
+  const price = subscription?.items?.data?.[0]?.price;
+  return price?.lookup_key === SLEEP_LOOKUP_KEY ? 'sleep' : 'full';
 }
 
 // When this subscription's paid-up period runs out.
@@ -138,11 +169,14 @@ function summarise(subscription) {
     current_period_end: periodEnd(subscription),
     cancel_at_period_end: !!subscription.cancel_at_period_end,
     canceled_at: subscription.canceled_at ? new Date(subscription.canceled_at * 1000) : null,
+    plan: planOf(subscription),
   };
 }
 
 module.exports = {
   MONTHLY_CENTS,
+  SLEEP_CENTS,
+  SLEEP_LOOKUP_KEY,
   SAAS_TAX_CODE,
   TRIAL_DAYS,
   PRICE_LOOKUP_KEY,
@@ -150,6 +184,8 @@ module.exports = {
   configured,
   stripe,
   monthlyPriceId,
+  priceIdFor,
+  planOf,
   integrationIdentifier,
   periodEnd,
   trialEnd,
