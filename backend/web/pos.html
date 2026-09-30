@@ -759,6 +759,115 @@
     /* A reader who has asked for less motion still needs to know it is
        working, so the ring stays and simply stops turning. */
     @media (prefers-reduced-motion: reduce) { .busy .spin { animation: none; } }
+    /* ── Help menu and the guided tour ─── */
+    .help-menu-wrap { position: relative; }
+    .help-btn {
+      width: 34px; height: 34px; border-radius: 50%; border: 1.5px solid var(--border);
+      background: var(--white); color: var(--accent-deep); cursor: pointer;
+      font: 700 .95rem system-ui, sans-serif; display: inline-flex; align-items: center; justify-content: center;
+      transition: border-color .2s, background .2s;
+    }
+    .help-btn:hover, .help-btn[aria-expanded="true"] { border-color: var(--accent); background: var(--cream); }
+    .help-menu {
+      display: none; position: absolute; top: calc(100% + 4px); right: 0; width: 270px;
+      background: var(--white); border: 1.5px solid var(--border); border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.12); z-index: 200; padding: 6px 0; font-family: system-ui, sans-serif;
+    }
+    .help-menu.show { display: block; }
+    .help-menu button, .help-menu a {
+      display: block; width: 100%; text-align: left; padding: 10px 14px; border: none; background: none;
+      cursor: pointer; color: var(--dark); text-decoration: none; font: inherit;
+    }
+    .help-menu button:hover, .help-menu a:hover { background: var(--cream); }
+    .help-menu .hm-title { display: block; font-weight: 600; font-size: .86rem; }
+    .help-menu .hm-sub { display: block; font-size: .74rem; color: var(--mid); margin-top: 2px; }
+
+    .tour-offer {
+      position: absolute; top: calc(100% + 10px); right: 0; width: 300px; z-index: 210;
+      background: var(--white); border: 1.5px solid var(--accent); border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,.18); padding: 14px 16px; font-family: system-ui, sans-serif;
+      text-align: left; animation: tour-in .35s ease-out;
+    }
+    .tour-offer[hidden] { display: none; }
+    .tour-offer::before {
+      content: ''; position: absolute; top: -7px; right: 12px; width: 12px; height: 12px;
+      background: var(--white); border-left: 1.5px solid var(--accent); border-top: 1.5px solid var(--accent);
+      transform: rotate(45deg);
+    }
+    .tour-offer .to-title { font-weight: 700; color: var(--accent-deep); font-size: .95rem; }
+    .tour-offer p { font-size: .82rem; line-height: 1.45; color: var(--dark); margin: 6px 0 12px; }
+    .tour-offer .to-actions { display: flex; gap: 6px; justify-content: flex-end; }
+    .tour-offer .btn { padding: 7px 14px; font-size: .82rem; }
+    .tour-offer .tour-ghost { background: var(--cream); color: var(--dark); border: 1px solid var(--border); }
+    @media (prefers-reduced-motion: reduce) { .tour-offer { animation: none; } }
+
+    /* The tour sits above everything, modals included. The blocker takes every
+       click, so nothing on the page can be pressed while it is being explained;
+       the spotlight is only a picture of a hole. */
+    .tour-layer { position: fixed; inset: 0; z-index: 6000; }
+    .tour-layer[hidden] { display: none; }
+    .tour-blocker { position: absolute; inset: 0; }
+    .tour-spot {
+      position: fixed; pointer-events: none; border-radius: 12px;
+      box-shadow: 0 0 0 3px var(--accent), 0 0 0 200vmax rgba(14, 26, 38, .58);
+      transition: top .5s cubic-bezier(.3,.8,.3,1), left .5s cubic-bezier(.3,.8,.3,1),
+                  width .5s cubic-bezier(.3,.8,.3,1), height .5s cubic-bezier(.3,.8,.3,1);
+    }
+    .tour-spot::after {
+      content: ''; position: absolute; inset: -3px; border-radius: 14px;
+      border: 3px solid var(--accent); animation: tour-pulse 1.6s ease-out infinite;
+    }
+    .tour-spot.none::after { display: none; }
+    @keyframes tour-pulse {
+      0%   { opacity: .9; transform: scale(1); }
+      100% { opacity: 0;  transform: scale(1.06); }
+    }
+    .tour-card {
+      position: fixed; width: 360px; max-width: calc(100vw - 32px);
+      background: var(--white); color: var(--dark); border-radius: var(--radius);
+      box-shadow: 0 12px 40px rgba(0,0,0,.28); padding: 16px 18px 14px;
+      font-family: system-ui, sans-serif;
+      transition: top .5s cubic-bezier(.3,.8,.3,1), left .5s cubic-bezier(.3,.8,.3,1);
+    }
+    .tour-card .tour-body { animation: tour-in .35s ease-out; }
+    @keyframes tour-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .tour-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+    .tour-chips button {
+      border: 1px solid var(--border); background: var(--white); color: var(--mid);
+      border-radius: 999px; padding: 2px 9px; font: 600 .7rem system-ui, sans-serif; cursor: pointer;
+    }
+    .tour-chips button.done { background: var(--accent-soft); color: var(--accent-deep); border-color: var(--accent-soft); }
+    .tour-chips button.on { background: var(--accent-deep); color: #fff; border-color: var(--accent-deep); }
+    .tour-count { font-size: .72rem; color: var(--mid); letter-spacing: .3px; }
+    .tour-card h4 { font-size: 1.02rem; color: var(--accent-deep); margin: 2px 0 6px; }
+    .tour-card p { font-size: .86rem; line-height: 1.45; margin: 0; }
+    .tour-card .tour-lock { margin-top: 8px; font-size: .76rem; color: var(--mid); }
+    .tour-progress { height: 3px; background: var(--border); border-radius: 2px; margin: 12px 0 10px; overflow: hidden; }
+    .tour-progress i { display: block; height: 100%; width: 0; background: var(--accent); }
+    .tour-actions { display: flex; gap: 6px; align-items: center; }
+    .tour-actions .tour-skip { margin-right: auto; background: none; border: none; color: var(--mid); cursor: pointer; font: .8rem system-ui, sans-serif; padding: 6px 2px; }
+    .tour-actions .btn { padding: 7px 14px; font-size: .82rem; }
+    .tour-actions .tour-ghost { background: var(--cream); color: var(--dark); border: 1px solid var(--border); }
+    .tour-signin input {
+      width: 100%; padding: 9px 12px; margin-top: 8px; border: 1.5px solid var(--border);
+      border-radius: 8px; font: .88rem system-ui, sans-serif;
+    }
+    .tour-signin .tour-err { color: var(--danger); font-size: .8rem; min-height: 1.1em; margin-top: 6px; }
+    /* Tables and lists on a tab the tour is only showing the layout of. What is
+       in them was put there by whoever last unlocked the tab, and may not be
+       for the person taking the tour. */
+    .tour-mask tbody, .tour-mask #txSummary, .tour-mask #custFilterSummary,
+    .tour-mask #savedAuditsList, .tour-mask #autoAuditRuns, .tour-mask #autoAuditStatus,
+    .tour-mask #batchResult, .tour-mask #empList, .tour-mask #linkedStoresList,
+    .tour-mask #alertRecipients, .tour-mask #subStatus { visibility: hidden; }
+    .tour-mask input, .tour-mask textarea, .tour-mask select { color: transparent !important; }
+    @media (max-width: 640px) {
+      .tour-card { left: 16px !important; right: 16px; width: auto; top: auto !important; bottom: 16px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .tour-spot, .tour-card { transition: none; }
+      .tour-spot::after, .tour-card .tour-body { animation: none; }
+    }
   </style>
 </head>
 <body>
@@ -785,6 +894,29 @@
           <span class="cs-arrow">&#9660;</span>
         </button>
         <div class="company-switcher-menu" id="companySwitcherMenu"></div>
+      </div>
+      <div class="help-menu-wrap" id="helpMenuWrap">
+        <button type="button" class="help-btn" id="helpBtn" onclick="toggleHelpMenu()"
+                aria-haspopup="true" aria-expanded="false" aria-label="Help" title="Help">?</button>
+        <div class="help-menu" id="helpMenu" role="menu">
+          <button type="button" role="menuitem" onclick="startTour()">
+            <span class="hm-title">Take the guided tour</span>
+            <span class="hm-sub">Every tab, left to right, with each part shown as it's explained</span>
+          </button>
+          <a role="menuitem" href="mailto:support@sky-sale.com?subject=SkySale%20help">
+            <span class="hm-title">Email support</span>
+            <span class="hm-sub">support@sky-sale.com</span>
+          </a>
+        </div>
+        <!-- Offered once, the first time this account opens the register here. -->
+        <div class="tour-offer" id="tourOffer" role="dialog" aria-labelledby="tourOfferTitle" hidden>
+          <div class="to-title" id="tourOfferTitle">New to SkySale?</div>
+          <p>A short tour walks through every tab and points out what each part does. It's always here under <b>?</b> if you'd rather take it later.</p>
+          <div class="to-actions">
+            <button type="button" class="btn tour-ghost" onclick="answerTourOffer(false)">No thanks</button>
+            <button type="button" class="btn btn-confirm" onclick="answerTourOffer(true)">Take the tour</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -2770,6 +2902,7 @@ async function init() {
     // Only once the register is actually on screen: a redirect that names a
     // tab has to land on it, or the link reads as broken.
     openTabFromHash();
+    offerTourOnce();
   } catch (err) {
     console.error('[pos] Auth check failed:', err);
     document.getElementById('loginGate').style.display = 'block';
@@ -12547,6 +12680,515 @@ function commissionSummary(e) {
   return parts.join(' ');
 }
 
+// ─── Help menu ──────────────────────────────────────────────────────────────
+function toggleHelpMenu(force) {
+  const menu = document.getElementById('helpMenu');
+  const open = typeof force === 'boolean' ? force : !menu.classList.contains('show');
+  menu.classList.toggle('show', open);
+  document.getElementById('helpBtn').setAttribute('aria-expanded', String(open));
+  if (open) {
+    document.getElementById('companySwitcherMenu').classList.remove('show');
+    document.getElementById('tourOffer').hidden = true; // back next visit; it was not answered
+  }
+}
+
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('helpMenuWrap');
+  if (wrap && !wrap.contains(e.target)) toggleHelpMenu(false);
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.getElementById('helpMenu')?.classList.contains('show')) toggleHelpMenu(false);
+});
+
+// ─── First visit: offer the tour ────────────────────────────────────────────
+// Once per account on this device, the first time the register opens. Only an
+// answer counts as having been offered: a reload before choosing asks again.
+// Remembered in this browser only, so a new device offers it once more — which
+// for a new till is when it is wanted anyway. If storage is unavailable it is
+// never offered, rather than offered on every load.
+const tourOfferKey = () => `skysale.tourOffered:${String(currentUser?.email || '').toLowerCase()}`;
+
+function offerTourOnce() {
+  try {
+    if (!currentUser?.email || localStorage.getItem(tourOfferKey())) return;
+  } catch (_) { return; }
+  // Not on top of something that is already asking for their attention — a
+  // link that opened a PIN prompt, say.
+  if (document.querySelector('.modal-overlay.show')) return;
+  document.getElementById('tourOffer').hidden = false;
+}
+
+function answerTourOffer(take) {
+  try { localStorage.setItem(tourOfferKey(), take ? 'taken' : 'declined'); } catch (_) {}
+  document.getElementById('tourOffer').hidden = true;
+  if (take) startTour();
+}
+
+// ─── Guided tour ────────────────────────────────────────────────────────────
+// Walks the tabs left to right and lights up each thing as it is described.
+//
+// It asks who is taking it first, and shows each person only what their own
+// PIN opens: a sales employee is not walked through payroll they will never
+// see, and someone who gives no PIN sees only what needs none. Being verified
+// here unlocks nothing — the tour never calls switchTab, so every PIN gate is
+// where it was, and it fetches no tab's data. It changes only what is
+// showing, records each change as it makes it, and undoes all of them when it
+// ends, so the page comes back exactly as it was left.
+//
+// Tables on the locked tabs are hidden while it shows them (.tour-mask): what
+// is in them was put there by whoever last unlocked the tab, and that need
+// not be the person taking the tour.
+
+// Who a step is for. Rank: 0 no PIN, 1 any employee, 2 manager, 3 admin —
+// the same lines the tabs draw (canManageRole for Transactions and Settings,
+// role 'admin' for the shop-wide Reports).
+const TOUR_WHO = {
+  any: (r) => true,
+  nopin: (r) => r === 0,
+  staff: (r) => r >= 1,
+  sales: (r) => r === 1,
+  manager: (r) => r >= 2,
+  admin: (r) => r === 3,
+};
+
+const cardOf = (sel) => () => document.querySelector(sel)?.closest('.report-card');
+const parentOf = (sel) => () => document.querySelector(sel)?.parentElement;
+
+const TOUR_STEPS = [
+  // Register
+  { tab: 'register', at: '#posSubtabs', title: 'Six tabs, left to right',
+    text: 'SkySale is laid out in these tabs. The tour goes through them in order, starting with the Register.' },
+  { tab: 'register', at: '#posSubtabs [data-tab="register"]', title: 'Register',
+    text: 'Where every sale is rung up, and where old receipts are found for returns and exchanges.' },
+  { tab: 'register', at: '#searchInput', title: 'Search products',
+    text: 'Type part of a product name to narrow the list below.' },
+  { tab: 'register', at: '#brandFilters', title: 'Filter by brand',
+    text: 'Show one brand at a time. Which brands appear here is set in Settings → Brands & products.' },
+  { tab: 'register', at: '#productGrid', title: 'Tap to add',
+    text: 'Tap a product to put it in the sale on the right.' },
+  { tab: 'register', at: '#tab-register .mode-toggle', title: 'Sale or Look Up',
+    text: 'Look Up finds an earlier receipt by its number — to reprint it, email it again, or take a return or exchange against it. Your return window and policy decide what can come back.' },
+  { tab: 'register', at: '#printDayBtn', title: 'End of day report',
+    text: 'Prints a summary of the day’s sales for closing up.' },
+  { tab: 'register', at: '#printCardBtn', title: 'Business cards',
+    text: 'Prints business cards for your staff with the store’s details on them.' },
+  { tab: 'register', at: '#posCart .customer-section', title: 'Who is buying',
+    text: 'A name, and an email or phone number — either one is enough. A returning customer is recognised from their email or phone.' },
+  { tab: 'register', at: '#posCart .employee-assign', title: 'Who made the sale',
+    text: 'Add the employees who worked the sale. Their commission is worked out from this.' },
+  { tab: 'register', at: '#posCart .cart-totals', title: 'Totals',
+    text: 'Subtotal, tax at the store’s rate, and the total, kept up to date as items go in.' },
+  { tab: 'register', at: '#saleTenders', title: 'Payment',
+    text: 'How the customer paid. + Split takes more than one payment on the same sale.' },
+  { tab: 'register', at: '#checkoutBtn', title: 'Complete Sale',
+    text: 'Finishes the sale once it has items, a customer and payment. If something is missing, pressing it tells you what.' },
+
+  // Reports
+  { tab: 'reports', at: '#posSubtabs [data-tab="reports"]', title: 'Reports',
+    text: 'Sales, commission and payroll. What opens here depends on whose PIN is entered.' },
+  { tab: 'reports', at: cardOf('#todayLeaderboard'), title: 'Today’s leaderboard',
+    text: 'Today’s sales by employee. Anyone can see this — no PIN needed.' },
+  { tab: 'reports', at: cardOf('#empPersonalLocked'), title: 'Open your figures',
+    text: 'Your name and PIN here open your own sales and commission. A manager’s PIN opens the whole shop’s reports.' },
+  { who: 'staff', tab: 'reports', view: 'commissions', at: '#reportsDateFilter', title: 'Choose a period',
+    text: 'The dates the figures below cover. 1st–15th and 16th–End jump straight to either half of the month.' },
+  { who: 'staff', tab: 'reports', view: 'commissions', at: cardOf('#empPersonalReport'), title: 'Your sales & commission',
+    text: 'Every sale you were on in the period and the commission it earned you. Open a row to see the receipts behind it.' },
+  { who: 'admin', tab: 'reports', view: 'commissions', at: '#rptEveryoneCard', title: 'Everyone’s commission',
+    text: 'Each employee’s sales and commission for the period, side by side.' },
+  { who: 'staff', tab: 'reports', view: 'commissions', at: '#rptReturnsCard', title: 'Returns',
+    text: 'Refunds in the period — what takes the net figure below the gross.' },
+  { who: 'staff', tab: 'reports', view: 'commissions', at: cardOf('#rptChargebacksBody'), title: 'Chargebacks',
+    text: 'Sales a customer has disputed with their bank, and where each one stands.' },
+  { who: 'admin', tab: 'reports', view: 'payroll', at: cardOf('#payrollBody'), title: 'Payroll',
+    text: 'What each person is owed on a payday, once disputes are taken into account. The arrows step between paychecks; the schedule is set in Settings.' },
+  { who: 'admin', tab: 'reports', view: 'products', at: cardOf('#prodReportBody'), title: 'Top products',
+    text: 'Sales totals for the period and the products that sold best.' },
+  { who: 'admin', tab: 'reports', view: 'products', at: '#flaggedReturnsCard', title: 'Returns with changed employees',
+    text: 'Returns where the employees on the refund are not the ones on the original sale. Worth a look, because it moves commission.' },
+
+  // Calendar
+  { tab: 'calendar', at: '#posSubtabs [data-tab="calendar"]', title: 'Calendar',
+    text: 'The book for treatment sessions.' },
+  { tab: 'calendar', at: cardOf('#calWeekBody'), title: 'The week',
+    text: 'Every session booked this week. Previous and Next move between weeks.' },
+  { tab: 'calendar', at: '#tab-calendar [onclick="openApptModal()"]', title: 'New session',
+    text: 'Book a treatment session for a customer.' },
+  { tab: 'calendar', at: cardOf('#calAvailBody'), title: 'Available hours',
+    text: 'The hours sessions can be booked into, how long each slot is, and how much notice a booking needs.' },
+  { tab: 'calendar', at: cardOf('#calTreatmentBody'), title: 'Treatments',
+    text: 'The treatments you offer and how long each one takes.' },
+  { tab: 'calendar', at: cardOf('#calClosedBody'), title: 'Closed dates',
+    text: 'Holidays and other days nothing can be booked.' },
+
+  // Emails
+  { tab: 'emails', at: '#posSubtabs [data-tab="emails"]', title: 'Emails',
+    text: 'Everything you send your customers.' },
+  { tab: 'emails', at: '#emailsNav [data-emailview="sent"]', title: 'Sent emails',
+    text: 'Every email that has gone to a customer.' },
+  { tab: 'emails', at: '#emailsNav [data-emailview="welcome"]', title: 'Welcome emails',
+    text: 'The email a customer gets after buying, built from the usage notes on the products they bought.' },
+  { tab: 'emails', view: 'mass', at: cardOf('#massPresets'), title: 'Mass email: who it goes to',
+    text: 'Pick who gets it — by product bought, employee, dates, amount spent or birth month — and see how many people that is.' },
+  { tab: 'emails', view: 'mass', at: cardOf('#massSubject'), title: 'Mass email: the message',
+    text: 'Write the subject and the message, check the sample, and press Send.' },
+
+  // Transactions
+  { who: 'nopin', tab: 'history', at: '#posSubtabs [data-tab="history"]', title: 'Transactions',
+    text: 'Every sale, return and customer. It opens with your name and PIN, so there is nothing more to show here without one. Take the tour with your PIN to see what it holds for you.' },
+  { who: 'staff', tab: 'history', at: '#posSubtabs [data-tab="history"]', title: 'Transactions',
+    text: (r) => r >= 2
+      ? 'Every sale, return and customer. It asks for your name and PIN each time, and locks again when you leave.'
+      : 'The sales you rang up or were on. It asks for your name and PIN each time, and locks again when you leave.' },
+  { who: 'staff', tab: 'history', view: 'sales', at: '#tab-history .tx-views', title: 'Views',
+    text: (r) => r >= 2
+      ? 'Sales is one row per sale. Audit checks the register against your card processor. Customers is one row per person.'
+      : 'Sales is one row per sale. Customers is one row per person.' },
+  { who: 'staff', tab: 'history', view: 'sales', at: '#txViewSales .date-range', title: 'Find a sale',
+    text: 'Choose the dates, or search anything — receipt, customer, employee, card, amount. The dropdown shows only disputed sales.' },
+  { who: 'staff', tab: 'history', view: 'sales', at: cardOf('#txHistoryBody'), title: 'Transaction history',
+    text: (r) => r >= 2
+      ? 'Open any sale to see its receipt. Tick sales to mark a chargeback on them or delete them.'
+      : 'Open a sale to see its receipt. This view is read-only.' },
+  { who: 'staff', tab: 'history', view: 'sales', at: parentOf('#importCsvBtn'), title: (r) => r >= 2 ? 'Import & export' : 'Export',
+    text: (r) => r >= 2
+      ? 'Bring in past sales from a spreadsheet, or export what is on screen as a CSV.'
+      : 'Export what is on screen as a CSV.' },
+  { who: 'manager', tab: 'history', view: 'audit', at: '#autoAuditCard', title: 'Nightly reconciliation',
+    text: 'Each night the register is checked against your card processor’s records and anything that does not match is flagged. It is switched on in Settings → Alerts & connections.' },
+  { who: 'manager', tab: 'history', view: 'audit', at: cardOf('#auditFrom'), title: 'Run an audit',
+    text: 'Check any range of dates against the processor, whenever you like.' },
+  { who: 'manager', tab: 'history', view: 'audit', at: '#savedAuditsCard', title: 'Saved audits',
+    text: 'Audits you kept, to come back to or run again against today’s figures.' },
+  { who: 'staff', tab: 'history', view: 'customers', at: cardOf('#custReportBody'), title: 'Customers',
+    text: 'One row per customer with what they have spent. Search, sort, filter by product or employee, and import or export as CSV.' },
+
+  // Settings
+  { who: 'nopin', tab: 'settings', at: '#posSubtabs [data-tab="settings"]', title: 'Settings',
+    text: 'Opens with your name and PIN. Managers set the store up here; everyone else can change their own PIN.' },
+  { who: 'sales', tab: 'settings', at: '#posSubtabs [data-tab="settings"]', title: 'Settings',
+    text: 'With your PIN you can change your own PIN here. The rest of Settings is for managers.' },
+  { who: 'sales', tab: 'settings', view: 'staff', at: cardOf('#empSelfView'), title: 'Change your PIN',
+    text: 'Type your new PIN twice and press Change PIN.' },
+  { who: 'manager', tab: 'settings', at: '#posSubtabs [data-tab="settings"]', title: 'Settings',
+    text: 'How the store runs. It asks for your name and PIN each time.' },
+  { who: 'manager', tab: 'settings', view: 'store', at: '#settingsSubtabs', title: 'Five sections',
+    text: 'Store, Brands & products, Alerts & connections, Employees, and Account.' },
+  { who: 'manager', tab: 'settings', view: 'store', at: cardOf('#settingsStoreName'), title: 'Store details',
+    text: 'Name, address, contact details, receipt footer, time zone and tax rate — what goes on every receipt.' },
+  { who: 'manager', tab: 'settings', view: 'store', at: cardOf('#settingsPaydays'), title: 'Pay schedule',
+    text: 'When payday falls and which period it covers. Reports → Payroll is dated from this.' },
+  { who: 'manager', tab: 'settings', view: 'store', at: '#returnWindowCard', title: 'Return window',
+    text: 'How long a customer has to return something, and separately to exchange it.' },
+  { who: 'manager', tab: 'settings', view: 'store', at: cardOf('#setReturnPolicyTitle'), title: 'Return policy reminder',
+    text: 'The reminder staff see before taking a return, in your own words, with a preview.' },
+  { who: 'manager', tab: 'settings', view: 'store', at: cardOf('#linkedStoresList'), title: 'Stores that share your staff',
+    text: 'Link your other shops, so people who work across them see their pay from both.' },
+  { who: 'manager', tab: 'settings', view: 'brands', at: cardOf('#brandCheckboxes'), title: 'Brands',
+    text: 'Every range the register can show. Untick one to hide it from the register without deleting anything.' },
+  { who: 'manager', tab: 'settings', view: 'brands', at: cardOf('#impUrl'), title: 'Add products from a supplier',
+    text: 'Paste a supplier’s product page and SkySale reads the names, prices and usage notes off it. Nothing is saved until you have checked it.' },
+  { who: 'manager', tab: 'settings', view: 'merchant', at: '#alertsCard', title: 'Alerts',
+    text: 'A text on every sale, and a warning when the nightly audit finds a mismatch, sent to the numbers you list.' },
+  { who: 'manager', tab: 'settings', view: 'merchant', at: '#maverickConfigCard', title: 'Maverick Payments',
+    text: 'Connect your Maverick account so audits can check your sales against it. The ? explains where to find each detail.' },
+  { who: 'manager', tab: 'settings', view: 'merchant', at: '#payarcConfigCard', title: 'Payarc',
+    text: 'The same, for shops that process with Payarc.' },
+  { who: 'manager', tab: 'settings', view: 'staff', at: cardOf('#empManagerView'), title: 'Employees',
+    text: 'Add staff with their PIN, commission and role, copy a roster from another of your stores, and switch off anyone who has left.' },
+  { who: 'manager', tab: 'settings', view: 'danger', at: '#subscriptionCard', title: 'Subscription',
+    text: 'Your SkySale plan and billing.' },
+  { who: 'manager', tab: 'settings', view: 'danger', at: cardOf('#closeAccountBtn'), title: 'Close this account',
+    text: 'Kept in its own section, away from everything else.' },
+
+  // Done
+  { at: '#helpBtn', title: 'That’s the tour',
+    text: 'Take it again any time from this ? button.' },
+];
+
+let tour = null;
+
+// Every change the tour makes goes through these two, which remember what was
+// there first. endTour replays them backwards.
+function tourStyle(el, prop, val) {
+  if (!el) return;
+  const before = el.style[prop];
+  tour.undo.push(() => { el.style[prop] = before; });
+  el.style[prop] = val;
+}
+function tourClass(el, cls, on) {
+  if (!el) return;
+  const before = el.classList.contains(cls);
+  tour.undo.push(() => el.classList.toggle(cls, before));
+  el.classList.toggle(cls, on);
+}
+
+function tourShowTab(name) {
+  document.querySelectorAll('.tab-content').forEach(t => tourClass(t, 'show', t.id === `tab-${name}`));
+  document.querySelectorAll('#posSubtabs button').forEach(b => tourClass(b, 'active', b.dataset.tab === name));
+  const tab = document.getElementById(`tab-${name}`);
+  if (name === 'history' || name === 'settings') tourClass(tab, 'tour-mask', true);
+  if (name === 'settings') {
+    const r = tour.rank;
+    tourStyle(document.getElementById('settingsManagerOnly'), 'display', r >= 2 ? '' : 'none');
+    tourStyle(document.getElementById('empManagerView'), 'display', r >= 2 ? '' : 'none');
+    tourStyle(document.getElementById('empSelfView'), 'display', r === 1 ? '' : 'none');
+  }
+}
+
+function tourStage(step) {
+  if (!step.tab) return;
+  tourShowTab(step.tab);
+  const $ = (x) => document.getElementById(x);
+  if (step.tab === 'history') {
+    const v = step.view || 'sales';
+    tourStyle($('txViewSales'), 'display', v === 'sales' ? '' : 'none');
+    tourStyle($('txViewAudit'), 'display', v === 'audit' ? '' : 'none');
+    tourStyle($('txViewCustomers'), 'display', v === 'customers' ? '' : 'none');
+    document.querySelectorAll('.tx-view-btn').forEach(b => tourClass(b, 'active', b.dataset.view === v));
+  }
+  if (step.tab === 'settings') {
+    const g = step.view || 'store';
+    document.querySelectorAll('#settingsSubtabs .sub-btn').forEach(b => tourClass(b, 'active', b.dataset.sgo === g));
+    document.querySelectorAll('#tab-settings [data-sgroup]').forEach(c => tourStyle(c, 'display', c.dataset.sgroup === g ? '' : 'none'));
+  }
+  if (step.tab === 'emails') {
+    const mass = step.view === 'mass';
+    tourStyle($('emailViewWelcome'), 'display', mass ? 'none' : '');
+    tourStyle($('emailViewMass'), 'display', mass ? '' : 'none');
+    document.querySelectorAll('#emailsNav [data-emailview]').forEach(b =>
+      tourClass(b, 'active', b.dataset.emailview === (mass ? 'mass' : 'welcome')));
+  }
+  if (step.tab === 'reports' && step.view) {
+    tourStyle($('reportsDateFilter'), 'display', 'flex');
+    tourStyle($('rptLayout'), 'display', 'flex');
+    tourClass($('rptLayout'), 'tour-mask', true);
+    tourStyle($('rptNav'), 'display', 'none'); // drawn for whoever last signed in
+    document.querySelectorAll('.rpt-section').forEach(s =>
+      tourStyle(s, 'display', s.dataset.section === step.view ? '' : 'none'));
+    if (step.view === 'commissions') {
+      tourStyle($('empPersonalReport'), 'display', 'block');
+      tourStyle($('empPersonalTableWrap'), 'display', '');
+      tourStyle($('rptEveryoneCard'), 'display', tour.rank === 3 ? '' : 'none');
+      tourStyle($('rptReturnsCard'), 'display', '');
+    }
+  }
+}
+
+function tourTarget(step) {
+  const el = typeof step.at === 'function' ? step.at() : document.querySelector(step.at);
+  return el && el.getClientRects().length ? el : null;
+}
+
+const tourVal = (v) => (typeof v === 'function' ? v(tour.rank) : v);
+
+function startTour() {
+  toggleHelpMenu(false);
+  document.getElementById('tourOffer').hidden = true;
+  if (tour) return;
+  document.getElementById('companySwitcherMenu').classList.remove('show');
+  let layer = document.getElementById('tourLayer');
+  if (!layer) {
+    layer = document.createElement('div');
+    layer.id = 'tourLayer';
+    layer.className = 'tour-layer';
+    layer.innerHTML = `<div class="tour-blocker"></div><div class="tour-spot none"></div>
+      <div class="tour-card" role="dialog" aria-modal="true" aria-live="polite" aria-label="Guided tour"></div>`;
+    document.body.appendChild(layer);
+  }
+  layer.hidden = false;
+  tour = {
+    layer, spot: layer.querySelector('.tour-spot'), card: layer.querySelector('.tour-card'),
+    undo: [], steps: [], i: -1, rank: 0, el: null, playing: false, timer: null, raf: 0,
+    scrollY: window.scrollY,
+  };
+  document.addEventListener('keydown', tourKeys, true);
+  tourSignInCard();
+  const loop = () => { tourPlace(); if (tour) tour.raf = requestAnimationFrame(loop); };
+  tour.raf = requestAnimationFrame(loop);
+}
+
+function tourSignInCard() {
+  tour.el = null;
+  tour.card.innerHTML = `
+    <div class="tour-body tour-signin">
+      <div class="tour-count">Guided tour</div>
+      <h4>Who’s taking the tour?</h4>
+      <p>Enter your name and PIN and the tour shows everything your PIN opens. Without one, it shows only what needs no PIN.</p>
+      <input id="tourName" placeholder="Your name" autocomplete="off">
+      <input id="tourPin" type="password" inputmode="numeric" placeholder="PIN" autocomplete="off">
+      <div class="tour-err" id="tourErr"></div>
+      <div class="tour-actions">
+        <button class="tour-skip" onclick="endTour()">Cancel</button>
+        <button class="btn tour-ghost" onclick="tourBegin(0)">Without a PIN</button>
+        <button class="btn btn-confirm" id="tourSignInBtn" onclick="tourSignIn()">Start</button>
+      </div>
+    </div>`;
+  setTimeout(() => document.getElementById('tourName')?.focus(), 30);
+}
+
+async function tourSignIn() {
+  const name = document.getElementById('tourName').value.trim();
+  const pin = document.getElementById('tourPin').value.trim();
+  const err = document.getElementById('tourErr');
+  err.textContent = '';
+  if (!name || !pin) { err.textContent = 'Enter your name and PIN.'; return; }
+  const btn = document.getElementById('tourSignInBtn');
+  btn.disabled = true;
+  try {
+    const resp = await fetch(`${API}/api/pos/employees/verify`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ name, pin }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || 'Verification failed');
+    if (!tour) return; // cancelled while it was checking
+    // Only the role is kept. The PIN is not stored anywhere.
+    tourBegin(data.role === 'admin' ? 3 : canManageRole(data.role) ? 2 : 1);
+  } catch (e) {
+    if (!tour) return;
+    err.textContent = e.message;
+    btn.disabled = false;
+  }
+}
+
+function tourBegin(rank) {
+  tour.rank = rank;
+  tour.steps = TOUR_STEPS.filter(s => TOUR_WHO[s.who || 'any'](rank));
+  tourGo(0);
+}
+
+function tourGo(i) {
+  if (!tour) return;
+  if (i >= tour.steps.length) return endTour();
+  if (i < 0) i = 0;
+  clearTimeout(tour.timer);
+  tour.i = i;
+  const step = tour.steps[i];
+  tourStage(step);
+  tour.el = tourTarget(step);
+  if (tour.el) {
+    const b = tour.el.getBoundingClientRect();
+    if (b.top < 70 || b.bottom > window.innerHeight - 20) {
+      const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      tour.el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: b.height > window.innerHeight * 0.6 ? 'start' : 'center' });
+    }
+  }
+  tourRenderCard();
+  if (tour.playing) tourSchedule();
+}
+
+function tourRenderCard() {
+  const step = tour.steps[tour.i];
+  const last = tour.i === tour.steps.length - 1;
+  const tabs = [...document.querySelectorAll('#posSubtabs button')].map(b => [b.dataset.tab, b.textContent.trim()]);
+  const order = tabs.map(t => t[0]);
+  const here = step.tab ? order.indexOf(step.tab) : order.length;
+  const chips = tabs.map(([key, label], n) =>
+    `<button class="${n === here ? 'on' : n < here ? 'done' : ''}" onclick="tourJumpTab('${key}')">${escapeHtml(label)}</button>`).join('');
+  tour.card.innerHTML = `
+    <div class="tour-chips">${chips}</div>
+    <div class="tour-body">
+      <div class="tour-count">Step ${tour.i + 1} of ${tour.steps.length}</div>
+      <h4>${escapeHtml(tourVal(step.title))}</h4>
+      <p>${escapeHtml(tourVal(step.text))}</p>
+    </div>
+    <div class="tour-progress"><i id="tourBar"></i></div>
+    <div class="tour-actions">
+      <button class="tour-skip" onclick="endTour()">${last ? 'Close' : 'End tour'}</button>
+      <button class="btn tour-ghost" onclick="tourGo(tour.i - 1)" ${tour.i === 0 ? 'disabled' : ''}>Back</button>
+      <button class="btn tour-ghost" id="tourPlayBtn" onclick="tourTogglePlay()" title="Play the tour by itself">${tour.playing ? 'Pause' : 'Play'}</button>
+      <button class="btn btn-confirm" id="tourNextBtn" onclick="tourGo(tour.i + 1)">${last ? 'Finish' : 'Next'}</button>
+    </div>`;
+  document.getElementById('tourNextBtn').focus({ preventScroll: true });
+}
+
+function tourJumpTab(key) {
+  const i = tour.steps.findIndex(s => s.tab === key);
+  if (i >= 0) tourGo(i);
+}
+
+// Play reads each step for about as long as it takes to read it.
+function tourSchedule() {
+  clearTimeout(tour.timer);
+  const step = tour.steps[tour.i];
+  const ms = Math.min(12000, 3500 + 45 * String(tourVal(step.text)).length);
+  const bar = document.getElementById('tourBar');
+  if (bar) {
+    bar.style.transition = 'none'; bar.style.width = '0';
+    void bar.offsetWidth;
+    bar.style.transition = `width ${ms}ms linear`; bar.style.width = '100%';
+  }
+  tour.timer = setTimeout(() => {
+    if (tour.i === tour.steps.length - 1) { tour.playing = false; tourRenderCard(); return; }
+    tourGo(tour.i + 1);
+  }, ms);
+}
+
+function tourTogglePlay() {
+  tour.playing = !tour.playing;
+  document.getElementById('tourPlayBtn').textContent = tour.playing ? 'Pause' : 'Play';
+  if (tour.playing) tourSchedule();
+  else {
+    clearTimeout(tour.timer);
+    const bar = document.getElementById('tourBar');
+    if (bar) { bar.style.transition = 'none'; bar.style.width = '0'; }
+  }
+}
+
+// Every frame: the spotlight follows its target through scrolling, resizing
+// and anything moving under it, and the card sits beside it where it fits.
+function tourPlace() {
+  if (!tour) return;
+  const vw = window.innerWidth, vh = window.innerHeight, pad = 8, edge = 16, gap = 14;
+  let r = null;
+  if (tour.el && tour.el.isConnected && tour.el.getClientRects().length) {
+    const b = tour.el.getBoundingClientRect();
+    const top = Math.max(b.top - pad, 6), bottom = Math.min(b.bottom + pad, vh - 6);
+    const left = Math.max(b.left - pad, 6), right = Math.min(b.right + pad, vw - 6);
+    if (bottom > top && right > left) r = { top, left, width: right - left, height: bottom - top };
+  }
+  const s = tour.spot.style;
+  tour.spot.classList.toggle('none', !r);
+  const sr = r || { top: vh / 2, left: vw / 2, width: 0, height: 0 };
+  s.top = sr.top + 'px'; s.left = sr.left + 'px'; s.width = sr.width + 'px'; s.height = sr.height + 'px';
+
+  const card = tour.card, cw = card.offsetWidth, ch = card.offsetHeight;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
+  let top, left;
+  if (!r) { top = (vh - ch) / 2; left = (vw - cw) / 2; }
+  else if (r.top + r.height + gap + ch <= vh - edge) { top = r.top + r.height + gap; left = r.left + r.width / 2 - cw / 2; }
+  else if (r.top - gap - ch >= edge) { top = r.top - gap - ch; left = r.left + r.width / 2 - cw / 2; }
+  else if (r.left + r.width + gap + cw <= vw - edge) { left = r.left + r.width + gap; top = r.top; }
+  else if (r.left - gap - cw >= edge) { left = r.left - gap - cw; top = r.top; }
+  else { top = vh - ch - edge; left = vw - cw - edge; }
+  card.style.top = clamp(top, edge, Math.max(edge, vh - ch - edge)) + 'px';
+  card.style.left = clamp(left, edge, Math.max(edge, vw - cw - edge)) + 'px';
+}
+
+function tourKeys(e) {
+  if (!tour) return;
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); endTour(); return; }
+  if (tour.i < 0) {
+    if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); tourSignIn(); }
+    return;
+  }
+  const keys = { ArrowRight: 1, ArrowLeft: -1 };
+  if (e.key in keys) { e.preventDefault(); e.stopPropagation(); tourGo(tour.i + keys[e.key]); }
+}
+
+function endTour() {
+  if (!tour) return;
+  cancelAnimationFrame(tour.raf);
+  clearTimeout(tour.timer);
+  document.removeEventListener('keydown', tourKeys, true);
+  for (let k = tour.undo.length - 1; k >= 0; k--) tour.undo[k]();
+  tour.layer.hidden = true;
+  tour.card.innerHTML = '';
+  window.scrollTo(0, tour.scrollY);
+  tour = null;
+  document.getElementById('helpBtn')?.focus();
+}
 </script>
 </body>
 </html>
