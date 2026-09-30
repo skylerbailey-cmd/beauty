@@ -315,13 +315,24 @@ router.get('/companies', async (req, res) => {
   const ids = Array.isArray(req.session?.authedCompanies) ? req.session.authedCompanies : [];
   const out = [];
   for (const id of ids) {
-    let name = null, slug = null;
+    let name = null, slug = null, email = null;
     try {
       const st = await pgDb.getSettings(id);
       name = st?.store_name || null;
       slug = st?.slug || null;
     } catch (_) {}
-    out.push({ id, companyName: name, slug, current: id === req.session?.userId });
+    // The address, not just the id. Switching acts on an address, and without
+    // one here the browser had to guess by matching company names against
+    // localStorage — which is per ORIGIN, and every shop is its own
+    // subdomain. So a second location proved on this session was dropped from
+    // the menu entirely unless this particular subdomain happened to have
+    // been the one that wrote it down. On a phone, signing in to the second
+    // shop and finding one shop in the list is exactly that.
+    //
+    // This session has already proved it can open each of these companies,
+    // so naming them to it discloses nothing it did not just demonstrate.
+    try { email = await pgDb.emailForCompany(id); } catch (_) {}
+    out.push({ id, companyName: name, slug, email, current: id === req.session?.userId });
   }
   res.json({ companies: out });
 });

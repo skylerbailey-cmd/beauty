@@ -557,6 +557,27 @@
     header h1 { font-size: 1.05rem; }
     header p { display: none; }
 
+    /* ── The company switcher ──
+       min-width: 260px on a 390px screen, hanging off a button near the
+       right edge, put part of the menu past the viewport — and the page has
+       overflow-x: hidden, so what hung off was not scrollable to, it was
+       simply gone. The second location was in the list and unreachable. */
+    .company-switcher-menu {
+      min-width: 0;
+      width: max-content;
+      max-width: calc(100vw - 28px);
+      /* Long enough to run off the bottom on a short screen, so it scrolls
+         on its own rather than pushing the page. */
+      max-height: calc(100vh - 120px);
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    /* These cap at 180px on a desktop, which on a phone truncates a shop
+       name that would otherwise fit. */
+    .cs-account-info .cs-name, .cs-account-info .cs-addr { max-width: none; }
+    /* Finger-sized rows, not mouse-sized. */
+    .cs-account, .cs-action { padding-top: 13px; padding-bottom: 13px; }
+
     /* ── Register ── */
     .pos-products { padding: 14px 12px; }
     .product-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -10864,13 +10885,18 @@ async function renderCompanySwitcherMenu() {
   let accounts = getLinkedAccounts();
   if (server) {
     const byName = new Map(accounts.map(a => [a.email, a.companyName]));
-    // The session lists company ids, not addresses; the address is what the
-    // switcher acts on, so anything without one falls back to the local note.
     const known = new Map(accounts.map(a => [a.email, a]));
     accounts = server
       .map(c => {
+        // The server names the address now. It used to send only an id and a
+        // company name, and this had to guess the address by matching that
+        // name against localStorage — which is per ORIGIN, and every shop has
+        // its own subdomain, so a second location the session had genuinely
+        // proved was dropped from the list unless this exact subdomain had
+        // been the one to write it down. Signing in to a second shop on a
+        // phone and still seeing one shop was that.
         const local = [...known.values()].find(a => a.companyName && a.companyName === c.companyName);
-        const email = (c.current ? currentEmail : local?.email) || local?.email;
+        const email = c.email || (c.current ? currentEmail : null) || local?.email;
         return email ? { email, companyName: c.companyName || byName.get(email) || '' } : null;
       })
       .filter(Boolean);

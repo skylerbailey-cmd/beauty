@@ -1617,6 +1617,16 @@ async function rememberCompanyEmail(userId, email) {
     [canon, userId, String(email).trim().toLowerCase()]);
 }
 
+// The address that opens this shop, for a session that has already proved it
+// can open it. The company switcher needs it: it acts on an address, and the
+// session only knows ids.
+async function emailForCompany(userId) {
+  if (!userId) return null;
+  const r = await query(
+    'SELECT email FROM pos_company_emails WHERE user_id = $1 ORDER BY created_at LIMIT 1', [userId]);
+  return r.rows[0]?.email || null;
+}
+
 // The address whose id should actually be used for this sign-in.
 //
 //   1. the address as typed, if a shop exists there — never move somebody
@@ -4381,6 +4391,7 @@ module.exports = {
   companyIsReal,
   rememberCompanyEmail,
   resolveCompanyEmail,
+  emailForCompany,
   getSubscription,
   saveSubscription,
   companyForStripeCustomer,
