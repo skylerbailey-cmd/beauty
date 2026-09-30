@@ -641,11 +641,11 @@ async function stepDone() {
         Just looking? Sign in as <button type="button" class="btn-link" onclick="useDemo()">test@demo.com</button> (or demo@test.com)
         to walk around a shop that has been trading for months — real-looking sales, staff, customers and reports, none of it ours or anyone else's.
       </p>
-      <p class="hint" style="margin:20px 0 10px">or</p>
-      <div class="actions">
-        <a class="btn" style="text-decoration:none"
-           href="/auth/google?from=web&return=%2Fsignup.html">Continue with Google</a>
-      </div>`;
+      <!-- Continue with Google was here. The OAuth app behind it is not set
+           up, so the button went to a Google error page and the account was
+           never created — a dead end offered beside the one route that
+           works. The /auth/google route is untouched; put the link back when
+           the OAuth credentials exist. -->`;
 
     // Fills the box rather than signing in, so it is still their decision.
     window.useDemo = () => {

@@ -48,7 +48,10 @@ function slugProblem(slug) {
 
 function requireSignedIn(req, res, next) {
   if (!req.session?.userId) {
-    return res.status(401).json({ error: 'Sign in with Google to continue.', useGoogle: true });
+    // Not "sign in with Google": that button is gone from the signup page
+    // until the OAuth app exists, so naming it sends people looking for
+    // something that is not on screen.
+    return res.status(401).json({ error: 'Open the link we emailed you to continue.' });
   }
   next();
 }

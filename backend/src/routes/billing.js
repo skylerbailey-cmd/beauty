@@ -22,7 +22,7 @@ const { appDomain } = require('../lib/tenancy');
 
 function requireSignedIn(req, res, next) {
   if (!req.session?.userId) {
-    return res.status(401).json({ error: 'Sign in to continue.', useGoogle: true });
+    return res.status(401).json({ error: 'Sign in to continue.' });
   }
   next();
 }

@@ -143,7 +143,7 @@ router.post('/link',
       // much. The shop is owed the difference between "check your inbox" and
       // "our mail is broken", because only one of those is worth waiting on.
       return res.status(err.status === 503 ? 503 : 502).json({
-        error: 'We could not send the email just now. Try again in a moment, or sign in with Google.',
+        error: 'We could not send the email just now. Try again in a moment.',
       });
     }
 
