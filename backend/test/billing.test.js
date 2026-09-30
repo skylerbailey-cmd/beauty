@@ -150,8 +150,13 @@ const check = (l, ok, detail) => {
   // whatever address is saved against them — none, for a new customer — and
   // quietly charges zero.
   check('the address typed at checkout is the one taxed',
-    /customer_update: \{ address: 'auto' \}/.test(billingSrc));
+    /customer_update: \{ address: 'auto'/.test(billingSrc));
   check('a business can give its tax ID', /tax_id_collection/.test(billingSrc));
+  // Asking an EXISTING customer for a tax ID is refused outright unless
+  // Checkout may also write back the business name. Found by running the
+  // real call before a customer did: the first signup would have failed.
+  check('and Checkout may write the business name back, or that is refused',
+    /customer_update: \{ address: 'auto', name: 'auto' \}/.test(billingSrc));
   // A tax code is not something to remember or invent: a wrong one does not
   // error, it taxes nothing, and that cannot be put right afterwards.
   check('the product carries a real Stripe tax code',

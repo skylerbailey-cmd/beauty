@@ -151,7 +151,13 @@ router.post('/checkout',
         // this Checkout would tax whatever address is saved against them —
         // which for a brand new customer is none at all, and tax silently
         // comes out at zero. This takes the address they type in.
-        customer_update: { address: 'auto' },
+        //
+        // `name` is not optional decoration: asking an existing customer for
+        // a tax ID is refused outright unless Checkout is also allowed to
+        // write back the business name it collects. Without it the very
+        // first signup fails with "Tax ID collection requires updating
+        // business name on the customer".
+        customer_update: { address: 'auto', name: 'auto' },
         // A shop with a tax ID gets the reverse-charge treatment it is due
         // rather than being charged as if it were a consumer.
         tax_id_collection: { enabled: true },
