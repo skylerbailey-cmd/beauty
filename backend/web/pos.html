@@ -1786,7 +1786,18 @@
         <div id="linkStoreStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:8px"></div>
       </div>
 
-      <!-- Closing the account. Last card, its own group, and visibly not the
+            <!-- What this shop pays, and how to stop paying it. Above closing the
+           account on purpose: cancelling is the thing most people actually
+           want, and burying it under a delete button is how you get somebody
+           deleting their books to stop a charge. -->
+      <div class="report-card" data-sgroup="danger" id="subscriptionCard" style="margin-top:16px">
+        <h3>Subscription</h3>
+        <div id="subStatus" style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--mid);line-height:1.55;margin-bottom:12px">Checking…</div>
+        <div id="subActions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
+        <div id="subNote" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:8px"></div>
+      </div>
+
+<!-- Closing the account. Last card, its own group, and visibly not the
            same kind of thing as everything above it. -->
       <div class="report-card" data-sgroup="danger" style="margin-top:16px;border-color:#E4C4C8">
         <h3 style="color:#A8323C">Close this account</h3>
@@ -3117,6 +3128,188 @@ function returnPolicyPoints() {
   const list = (raw === undefined || raw === null ? RETURN_POLICY_FALLBACK.join('\n') : String(raw))
     .split('\n').map(l => l.trim()).filter(Boolean);
   return list.map(l => l.replace(/\*\*(.+?)\*\*/g, '$1'));
+}
+
+// ─── Subscription ───────────────────────────────────────────────────────────
+//
+// $115 a month per store location. What the screen has to be clear about is
+// which of four states a shop is in, because they look similar and mean very
+// different things: on trial, paying, cancelled but still running to the end
+// of the month it paid for, and stopped.
+
+let subState = null;
+
+function subMoney(cents) {
+  return '$' + (Number(cents || 0) / 100).toFixed(2).replace(/\.00$/, '');
+}
+
+function subDay(value) {
+  const t = Date.parse(value);
+  return isFinite(t)
+    ? new Date(t).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })
+    : '';
+}
+
+async function loadSubscription() {
+  const box = document.getElementById('subStatus');
+  const actions = document.getElementById('subActions');
+  if (!box) return;
+  try {
+    const resp = await fetch(`${API}/api/billing/status`, { credentials: 'include' });
+    if (!resp.ok) throw new Error('Could not read the subscription');
+    subState = await resp.json();
+  } catch (err) {
+    box.textContent = 'Could not check the subscription just now.';
+    actions.innerHTML = '';
+    return;
+  }
+  renderSubscription();
+}
+
+function renderSubscription() {
+  const box = document.getElementById('subStatus');
+  const actions = document.getElementById('subActions');
+  const st = subState || {};
+  const price = `${subMoney(st.monthly_cents)} a month for this location`;
+  const btn = (label, fn, kind) => `<button class="btn ${kind || ''}" onclick="${fn}"
+    style="${kind ? '' : 'background:var(--cream);color:var(--dark);border:1px solid var(--border);'}font-size:.84rem;padding:8px 14px">${label}</button>`;
+
+  // Billing switched off on this server entirely — say so rather than
+  // showing a shop a Subscribe button that cannot work.
+  if (!st.configured) {
+    box.textContent = 'Billing is not switched on for this server.';
+    actions.innerHTML = '';
+    return;
+  }
+
+  if (!st.status) {
+    box.innerHTML = `<b>No subscription yet.</b><br>${price}, with the first `
+      + `${st.trial_days} days free.`;
+    actions.innerHTML = btn('Start the subscription', 'startCheckout()', 'btn-confirm');
+    return;
+  }
+
+  if (st.cancel_at_period_end && st.may_sell) {
+    box.innerHTML = `<b style="color:#A8323C">Cancelled.</b> This shop keeps working until `
+      + `<b>${escapeHtml(subDay(st.current_period_end))}</b>, which is the end of the period `
+      + `already paid for. After that the register stops taking new sales — everything `
+      + `recorded stays here and stays readable.`;
+    actions.innerHTML = btn('Keep the subscription', 'resumeSubscription()', 'btn-confirm')
+      + btn('Update card', 'openBillingPortal()');
+    return;
+  }
+
+  if (st.trialing) {
+    box.innerHTML = `<b>Free trial.</b> ${price}. The first charge is on `
+      + `<b>${escapeHtml(subDay(st.trial_end || st.current_period_end))}</b>. `
+      + `Cancel before then and nothing is charged.`;
+    actions.innerHTML = btn('Cancel subscription', 'cancelSubscription()')
+      + btn('Update card', 'openBillingPortal()');
+    return;
+  }
+
+  if (st.may_sell) {
+    box.innerHTML = `<b style="color:var(--success)">Active.</b> ${price}. `
+      + `Renews on <b>${escapeHtml(subDay(st.current_period_end))}</b>.`;
+    actions.innerHTML = btn('Cancel subscription', 'cancelSubscription()')
+      + btn('Update card', 'openBillingPortal()');
+    return;
+  }
+
+  // Not live: lapsed, cancelled and run out, or a card that kept failing.
+  const why = st.status === 'past_due' || st.status === 'unpaid'
+    ? 'The last payment did not go through, so new sales are paused.'
+    : 'This subscription has ended, so new sales are paused.';
+  box.innerHTML = `<b style="color:#A8323C">Not active.</b> ${why} Everything already `
+    + `recorded is still here — reports, payroll and history all still open.`;
+  actions.innerHTML = btn('Start it again', 'startCheckout()', 'btn-confirm')
+    + (st.has_customer ? btn('Update card', 'openBillingPortal()') : '');
+}
+
+async function startCheckout() {
+  const note = document.getElementById('subNote');
+  note.style.color = 'var(--mid)';
+  note.textContent = 'Opening Stripe…';
+  try {
+    const resp = await fetch(`${API}/api/billing/checkout`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      credentials: 'include', body: JSON.stringify({ return_to: '/pos.html' }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.url) throw new Error(data.error || 'Could not start checkout');
+    window.location.href = data.url;
+  } catch (err) {
+    note.style.color = 'var(--danger)';
+    note.textContent = err.message;
+  }
+}
+
+async function openBillingPortal() {
+  const note = document.getElementById('subNote');
+  note.style.color = 'var(--mid)';
+  note.textContent = 'Opening your billing page…';
+  try {
+    const resp = await fetch(`${API}/api/billing/portal`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      credentials: 'include', body: JSON.stringify({ return_to: '/pos.html' }),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.url) throw new Error(data.error || 'Could not open the billing page');
+    window.location.href = data.url;
+  } catch (err) {
+    note.style.color = 'var(--danger)';
+    note.textContent = err.message;
+  }
+}
+
+async function cancelSubscription() {
+  const when = subState?.current_period_end ? subDay(subState.current_period_end) : 'the end of the period';
+  const trial = subState?.trialing;
+  if (!confirm(trial
+    ? 'Cancel the subscription?\n\nYou are still in the free trial, so nothing has been charged '
+      + 'and nothing will be.\n\nThe register stops taking new sales when the trial ends. '
+      + 'Everything already recorded stays here.'
+    : `Cancel the subscription?\n\nThis shop keeps working until ${when} — the period you have `
+      + `already paid for. After that the register stops taking new sales.\n\n`
+      + `Everything already recorded stays here, and you can restart before then.`)) return;
+
+  const note = document.getElementById('subNote');
+  note.style.color = 'var(--mid)';
+  note.textContent = 'Cancelling…';
+  try {
+    const resp = await fetch(`${API}/api/billing/cancel`, {
+      method: 'POST', credentials: 'include',
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Could not cancel');
+    subState = data;
+    renderSubscription();
+    note.style.color = 'var(--success)';
+    note.textContent = 'Cancelled. Nothing more will be charged.';
+  } catch (err) {
+    note.style.color = 'var(--danger)';
+    note.textContent = err.message;
+  }
+}
+
+async function resumeSubscription() {
+  const note = document.getElementById('subNote');
+  note.style.color = 'var(--mid)';
+  note.textContent = 'Restarting…';
+  try {
+    const resp = await fetch(`${API}/api/billing/resume`, {
+      method: 'POST', credentials: 'include',
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Could not resume');
+    subState = data;
+    renderSubscription();
+    note.style.color = 'var(--success)';
+    note.textContent = 'Kept. The subscription will renew as normal.';
+  } catch (err) {
+    note.style.color = 'var(--danger)';
+    note.textContent = err.message;
+  }
 }
 
 function renderReturnPolicyNote() {
@@ -11658,6 +11851,10 @@ function settingsGroup(which) {
   // The open explainer belongs to a connection; leaving the group should not
   // leave its help stranded beside an unrelated form.
   if (which !== 'merchant') closeSettingsHelp();
+  // Read fresh every time this is opened rather than once at load: a trial
+  // ends, a card fails and a cancellation from Stripe's own page all happen
+  // while nobody is looking at this screen.
+  if (which === 'danger') loadSubscription();
   // Not remembered when it is the closing screen — reopening Settings there
   // days later, with a Close account button under the cursor, is not a place
   // anyone meant to land.

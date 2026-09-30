@@ -599,6 +599,29 @@ Exchanges are only allowed within **7 days** of purchase.'`);
   await migrate('CREATE INDEX IF NOT EXISTS idx_pg_saved_audits_user ON pos_saved_audits(user_id)');
   await migrate('ALTER TABLE customers ADD COLUMN IF NOT EXISTS birthday DATE');
 
+  // What a shop is paying, and whether it is paid up.
+  //
+  // One row per company, because a company IS a store location — that is what
+  // the $115 buys, and an owner with two shops signs each of them up and pays
+  // for each. The Stripe ids are the join back to the real state: this table
+  // is a copy kept current by the webhook, never the authority, so anything
+  // that decides whether to let a sale through can ask Postgres instead of
+  // waiting on a network call to Stripe with a customer standing at the till.
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_subscriptions (
+    user_id TEXT PRIMARY KEY,
+    stripe_customer_id TEXT DEFAULT '',
+    stripe_subscription_id TEXT DEFAULT '',
+    status TEXT DEFAULT '',
+    trial_end TIMESTAMPTZ,
+    current_period_end TIMESTAMPTZ,
+    cancel_at_period_end BOOLEAN DEFAULT FALSE,
+    canceled_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  await migrate('CREATE INDEX IF NOT EXISTS idx_pg_subs_customer ON pos_subscriptions(stripe_customer_id)');
+  await migrate('CREATE INDEX IF NOT EXISTS idx_pg_subs_sub ON pos_subscriptions(stripe_subscription_id)');
+
   // Customers used to be unique on (user_id, email), which meant a company
   // could hold exactly ONE customer without an email address. Every
   // phone-only customer after the first collided with it, and any sale rung up
@@ -1515,6 +1538,47 @@ async function companyExists(userId) {
     `SELECT 1 FROM pos_settings WHERE user_id = $1
      UNION ALL SELECT 1 FROM pos_employees WHERE user_id = $1 LIMIT 1`, [userId]);
   return r.rowCount > 0;
+}
+
+// ─── What a shop is paying ──────────────────────────────────────────────────
+
+// Which Stripe states mean "this shop may trade". A trial is a paid plan that
+// has not been billed yet, so it counts; past_due does NOT — the card has
+// already been refused and Stripe is retrying, and a shop that can keep
+// ringing up sales through a fortnight of failed retries never fixes its card.
+const LIVE_SUB_STATUSES = new Set(['trialing', 'active']);
+
+async function getSubscription(userId) {
+  if (!userId) return null;
+  return (await query('SELECT * FROM pos_subscriptions WHERE user_id = $1', [userId])).rows[0] || null;
+}
+
+// Every field is optional: the webhook and the checkout return both write
+// here, and neither knows everything the other does.
+async function saveSubscription(userId, fields = {}) {
+  const cols = ['stripe_customer_id', 'stripe_subscription_id', 'status',
+    'trial_end', 'current_period_end', 'cancel_at_period_end', 'canceled_at'];
+  const given = cols.filter((c) => fields[c] !== undefined);
+  const sets = given.map((c, i) => `${c} = $${i + 2}`);
+  await query(
+    `INSERT INTO pos_subscriptions (user_id${given.length ? ', ' + given.join(', ') : ''})
+     VALUES ($1${given.map((_, i) => `, $${i + 2}`).join('')})
+     ON CONFLICT (user_id) DO UPDATE SET ${[...sets, 'updated_at = NOW()'].join(', ')}`,
+    [userId, ...given.map((c) => fields[c])]);
+  return getSubscription(userId);
+}
+
+// The webhook knows the Stripe ids, not the company — this is the way back.
+async function companyForStripeCustomer(customerId) {
+  if (!customerId) return null;
+  return (await query(
+    'SELECT * FROM pos_subscriptions WHERE stripe_customer_id = $1 LIMIT 1', [customerId])).rows[0] || null;
+}
+
+async function companyForStripeSubscription(subscriptionId) {
+  if (!subscriptionId) return null;
+  return (await query(
+    'SELECT * FROM pos_subscriptions WHERE stripe_subscription_id = $1 LIMIT 1', [subscriptionId])).rows[0] || null;
 }
 
 async function linkedCompanyIds(userId) {
@@ -4210,6 +4274,11 @@ module.exports = {
   addCustomerProducts,
   companyIdForEmail,
   companyExists,
+  getSubscription,
+  saveSubscription,
+  companyForStripeCustomer,
+  companyForStripeSubscription,
+  LIVE_SUB_STATUSES,
   linkedCompanyIds,
   linkCompanies,
   unlinkCompanies,

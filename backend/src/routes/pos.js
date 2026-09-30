@@ -3,6 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const pgDb = require('../db/postgres');
+const billing = require('../lib/billing');
 const { PRODUCTS, BUNDLES, generateWelcomeEmailBody } = require('./welcome');
 
 // Tender methods the register can record. Adding one here is not enough on its
@@ -412,8 +413,31 @@ async function validateEmployeeAssignment(userId, employeeAssignments, employeeI
   return null;
 }
 
+// A shop that is not paid up keeps every record it ever made — reports,
+// payroll, history, all of it still opens. What it cannot do is ring up a new
+// sale, because that is the thing being sold.
+//
+// A trial counts as paid up. So does a subscription cancelled but not yet
+// lapsed: they paid for this month and this month is not over.
+//
+// If billing is not configured on this server at all, nothing is gated. A
+// missing STRIPE_SECRET_KEY must never be able to close every till.
+async function mayRingUpSales(userId) {
+  if (!billing.configured()) return true;
+  const sub = await pgDb.getSubscription(userId).catch(() => null);
+  return pgDb.LIVE_SUB_STATUSES.has(sub?.status || '');
+}
+
 router.post('/transactions', async (req, res) => {
   const userId = req.session.userId;
+
+  if (!(await mayRingUpSales(userId))) {
+    return res.status(402).json({
+      error: 'This shop\'s subscription is not active, so new sales are paused. '
+        + 'Everything already recorded is still here — open Settings → Account to start it again.',
+      subscription_required: true,
+    });
+  }
   const { type, employee_id, employees: employeeAssignments, customer_name, customer_email, customer_phone, items, payment_method, card_last4, payments, notes, tax_rate, discount_amount, original_receipt, manager_name, manager_pin } = req.body;
 
   if (!items || items.length === 0) {

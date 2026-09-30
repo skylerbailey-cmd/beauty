@@ -36,6 +36,11 @@ app.use(cors({
   credentials: true,
 }));
 
+// Stripe's webhook verifies its signature over the EXACT bytes Stripe sent,
+// so it has to be mounted before the JSON parser gets to them. Parsed and
+// re-stringified, the signature never matches and every event is rejected.
+app.use('/api/stripe/webhook', require('./routes/stripe-webhook'));
+
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -175,6 +180,9 @@ app.use('/api/booking', hardenRouter(bookingRoutes));
 // completed Google sign-in or a one-time link the shop clicked in its inbox.
 app.use('/api/signup', hardenRouter(signupRoutes));
 app.use('/webhook', hardenRouter(webhookRoutes));
+// Paying for a shop. Every route is scoped to the signed-in company; none of
+// them takes a company id from the caller.
+app.use('/api/billing', hardenRouter(require('./routes/billing')));
 
 // Health check
 app.get('/health', async (req, res) => {
