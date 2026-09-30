@@ -84,7 +84,7 @@ setTimeout(() => {
     id('batchStatus').textContent);
 
   console.log('\n── The nightly panel ──');
-  setTimeout(() => {
+  setTimeout(async () => {
     check('the switches are in Settings, not on the tab',
       !id('txViewAudit').contains(id('autoAuditOn')) && !!id('autoAuditOn'));
     check('they sit with the merchant connections',
@@ -106,6 +106,34 @@ setTimeout(() => {
     check('and that it was texted', /texted/.test(runs));
     check('a clean morning reads as reconciled', /✓ reconciled/.test(runs));
     check('a morning with no processor says why', /no processor connected/.test(runs), runs);
+
+    console.log('\n── A morning opens, like a day in the batch audit ──');
+    // It said a morning did not reconcile and stopped there: the difference
+    // was a number with no way to ask what made it up, and the only way to
+    // see was to run that day's audit again by hand.
+    const rows = [...id('autoAuditRuns').querySelectorAll('tbody tr')];
+    check('every morning is clickable', rows.length === 3
+      && rows.every((tr) => /openDayDrilldown/.test(tr.getAttribute('onclick') || '')),
+      rows.map((tr) => tr.getAttribute('onclick')).join(' | '));
+    check('each one opens its own day',
+      /openDayDrilldown\('2026-09-27'\)/.test(rows[0].getAttribute('onclick')),
+      rows[0].getAttribute('onclick'));
+    check('and says so on hover', /every individual transaction/.test(rows[0].getAttribute('title') || ''));
+    check('the morning that did not reconcile is tinted',
+      /background/.test(rows[0].getAttribute('style') || ''), rows[0].getAttribute('style'));
+    check('a clean one is not', !/background/.test(rows[1].getAttribute('style') || ''),
+      rows[1].getAttribute('style'));
+
+    calls.length = 0;
+    rows[0].dispatchEvent(new w.Event('click', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 60));
+    check('clicking one opens the drill-down',
+      id('dayDrilldownModal').classList.contains('show'));
+    check('for that day', id('drilldownDate').textContent === '2026-09-27',
+      id('drilldownDate').textContent);
+    check('and it asks the server for that day',
+      calls.some((c) => /reconciliation-day\?date=2026-09-27/.test(c.url)),
+      calls.map((c) => c.url).join(' | '));
 
     console.log('\n── Turning it on and off ──');
     calls.length = 0;

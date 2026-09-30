@@ -8346,8 +8346,15 @@ function renderAutoAuditRuns(runs) {
           : (off
             ? `<span style="color:var(--danger);font-weight:600">did not reconcile</span>`
             : '<span style="color:var(--success);font-weight:600">✓ reconciled</span>');
-        return `<tr>
-          <td>${escapeHtml(r.audited_day)}</td>
+        // The same drill-down the batch audit's rows open. A morning that did
+        // not reconcile said so and stopped there — the difference was a
+        // number with no way to ask what made it up, so the only way to see
+        // was to run that day's audit again by hand.
+        const day = String(r.audited_day || '').slice(0, 10);
+        return `<tr style="cursor:pointer;${off ? 'background:#fff6f8' : ''}"
+          onclick="openDayDrilldown('${escapeHtml(day)}')"
+          title="Click to see every individual transaction for this day">
+          <td style="font-weight:600">${escapeHtml(r.audited_day)}</td>
           <td>${result}</td>
           <td style="${off ? 'color:var(--danger);font-weight:600' : 'color:var(--mid)'}">${off ? (Number(r.difference) > 0 ? '+' : '') + '$' + money(r.difference) : '—'}</td>
           <td style="color:var(--mid)">${r.alerted ? 'texted' : '—'}</td>
