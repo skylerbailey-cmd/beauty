@@ -4185,5 +4185,64 @@ router.patch('/custom-products/:id', async (req, res) => {
   res.json({ ok: true, product: updated });
 });
 
+// ─── Help: ask how something works, or ask for something new ──────────────
+// Both are open to anyone signed in to the shop — no PIN; asking how to find
+// the return window is not a privilege — and both are capped per shop, since
+// each one costs a model call or lands in a person's inbox.
+const help = require('../services/help');
+const helpUse = new Map(); // key -> recent timestamps
+function helpOverLimit(key, max, windowMs) {
+  const now = Date.now();
+  const recent = (helpUse.get(key) || []).filter(t => now - t < windowMs);
+  if (recent.length >= max) { helpUse.set(key, recent); return true; }
+  recent.push(now);
+  helpUse.set(key, recent);
+  return false;
+}
+
+router.post('/help/ask', async (req, res) => {
+  const raw = Array.isArray(req.body?.messages) ? req.body.messages : [];
+  // The conversation so far, as the page holds it: the last few turns only,
+  // each kept short, and starting with a question.
+  let history = raw
+    .filter(m => (m?.role === 'user' || m?.role === 'assistant') && typeof m.text === 'string' && m.text.trim())
+    .map(m => ({ role: m.role, text: m.text.trim().slice(0, 2000) }))
+    .slice(-12);
+  while (history.length && history[0].role !== 'user') history.shift();
+  if (!history.length || history[history.length - 1].role !== 'user') {
+    return res.status(400).json({ error: 'Ask a question.' });
+  }
+  if (helpOverLimit(`ask:${req.session.userId}`, 60, 60 * 60 * 1000)) {
+    return res.status(429).json({ error: 'That is a lot of questions for one hour — try again shortly, or email support@sky-sale.com.' });
+  }
+  try {
+    res.json({ answer: await help.askHelp(history) });
+  } catch (err) {
+    console.error('[help] ask failed:', err.message);
+    res.status(502).json({ error: 'The help assistant is not answering right now. Try again in a moment, or email support@sky-sale.com.' });
+  }
+});
+
+router.post('/help/feature-request', async (req, res) => {
+  const request = String(req.body?.request || '').trim();
+  const from = String(req.body?.from || '').trim().slice(0, 100);
+  if (request.length < 5) return res.status(400).json({ error: 'Say a little about what you would like.' });
+  if (request.length > 5000) return res.status(400).json({ error: 'That is longer than we can send — keep it under 5,000 characters.' });
+  if (helpOverLimit(`feature:${req.session.userId}`, 10, 60 * 60 * 1000)) {
+    return res.status(429).json({ error: 'Thank you — that is plenty for one hour. Send the rest a little later.' });
+  }
+  const userId = req.session.userId;
+  const settings = await pgDb.getSettings(userId).catch(() => ({}));
+  let accountEmail = '';
+  try { accountEmail = require('../db').getUser(userId)?.email || ''; } catch (_) {}
+  try {
+    await help.sendFeatureRequest({ request, from, accountEmail, shopName: (settings.store_name || '').trim() });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[help] feature request not sent:', err.message);
+    res.status(err.status || 502).json({ error: 'It did not send. Please try again, or email support@sky-sale.com.' });
+  }
+});
+
 module.exports = router;
 module.exports.runNightlyAudits = runNightlyAudits;

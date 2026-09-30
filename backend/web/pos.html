@@ -801,6 +801,50 @@
     .tour-offer .tour-ghost { background: var(--cream); color: var(--dark); border: 1px solid var(--border); }
     @media (prefers-reduced-motion: reduce) { .tour-offer { animation: none; } }
 
+    .help-chat {
+      position: fixed; right: 20px; bottom: 20px; width: 390px; max-width: calc(100vw - 32px);
+      height: 560px; max-height: calc(100vh - 40px); z-index: 2500;
+      display: flex; flex-direction: column; background: var(--white);
+      border: 1.5px solid var(--border); border-radius: var(--radius);
+      box-shadow: 0 16px 48px rgba(0,0,0,.22); font-family: system-ui, sans-serif;
+      animation: tour-in .25s ease-out;
+    }
+    .help-chat[hidden] { display: none; }
+    .hc-head { display: flex; align-items: flex-start; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    .hc-head > div { flex: 1; }
+    .hc-title { font-weight: 700; color: var(--accent-deep); font-size: .98rem; }
+    .hc-sub { font-size: .76rem; color: var(--mid); margin-top: 2px; }
+    .hc-close { border: none; background: none; font-size: 1.4rem; line-height: 1; color: var(--mid); cursor: pointer; padding: 0 2px; }
+    .hc-log { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; background: var(--cream); }
+    .hc-msg { max-width: 88%; padding: 9px 12px; border-radius: 12px; font-size: .86rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .hc-msg.user { align-self: flex-end; background: var(--accent-deep); color: #fff; border-bottom-right-radius: 4px; }
+    .hc-msg.assistant { align-self: flex-start; background: var(--white); color: var(--dark); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+    .hc-msg.error { align-self: flex-start; background: #fdecea; color: var(--danger); border: 1px solid #f5c6c0; }
+    .hc-msg.thinking { color: var(--mid); font-style: italic; }
+    .hc-go {
+      display: inline-flex; align-items: center; gap: 4px; margin: 2px 0; padding: 3px 10px;
+      border: 1.5px solid var(--accent); border-radius: 999px; background: var(--accent-soft);
+      color: var(--accent-deep); font: 600 .8rem system-ui, sans-serif; cursor: pointer; white-space: normal; text-align: left;
+    }
+    .hc-go:hover { background: var(--accent); color: #fff; }
+    .hc-suggest { display: flex; flex-wrap: wrap; gap: 6px; }
+    .hc-suggest button {
+      border: 1px solid var(--border); background: var(--white); color: var(--accent-deep);
+      border-radius: 999px; padding: 5px 11px; font: .78rem system-ui, sans-serif; cursor: pointer;
+    }
+    .hc-suggest button:hover { border-color: var(--accent); }
+    .hc-form { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--border); }
+    .hc-form textarea {
+      flex: 1; resize: none; padding: 8px 10px; border: 1.5px solid var(--border); border-radius: 8px;
+      font: .86rem system-ui, sans-serif; outline: none;
+    }
+    .hc-form textarea:focus { border-color: var(--accent); }
+    .hc-form .btn { align-self: stretch; padding: 0 16px; }
+    @media (max-width: 640px) {
+      .help-chat { right: 8px; left: 8px; bottom: 8px; width: auto; height: 75vh; }
+    }
+    @media (prefers-reduced-motion: reduce) { .help-chat { animation: none; } }
+
     /* The tour sits above everything, modals included. The blocker takes every
        click, so nothing on the page can be pressed while it is being explained;
        the spotlight is only a picture of a hole. */
@@ -899,9 +943,17 @@
         <button type="button" class="help-btn" id="helpBtn" onclick="toggleHelpMenu()"
                 aria-haspopup="true" aria-expanded="false" aria-label="Help" title="Help">?</button>
         <div class="help-menu" id="helpMenu" role="menu">
+          <button type="button" role="menuitem" onclick="openHelpChat()">
+            <span class="hm-title">Ask a question</span>
+            <span class="hm-sub">How do I… — answered, with a link to the right screen</span>
+          </button>
           <button type="button" role="menuitem" onclick="startTour()">
             <span class="hm-title">Take the guided tour</span>
             <span class="hm-sub">Every tab, left to right, with each part shown as it's explained</span>
+          </button>
+          <button type="button" role="menuitem" onclick="openFeatureRequest()">
+            <span class="hm-title">Request a feature</span>
+            <span class="hm-sub">Tell us what would make SkySale better for your shop</span>
           </button>
           <a role="menuitem" href="mailto:support@sky-sale.com?subject=SkySale%20help">
             <span class="hm-title">Email support</span>
@@ -921,6 +973,54 @@
     </div>
   </div>
 </header>
+
+<!-- ── Help chat ─── -->
+<section class="help-chat" id="helpChat" role="dialog" aria-labelledby="helpChatTitle" hidden>
+  <div class="hc-head">
+    <div>
+      <div class="hc-title" id="helpChatTitle">Ask about SkySale</div>
+      <div class="hc-sub">How something works, or where to find it</div>
+    </div>
+    <button type="button" class="hc-close" onclick="closeHelpChat()" aria-label="Close">&times;</button>
+  </div>
+  <div class="hc-log" id="helpChatLog" aria-live="polite"></div>
+  <form class="hc-form" onsubmit="event.preventDefault(); sendHelpQuestion();">
+    <textarea id="helpChatInput" rows="2" maxlength="1000" placeholder="e.g. How do I add a product?"
+              onkeydown="if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendHelpQuestion(); }"></textarea>
+    <button type="submit" class="btn btn-confirm" id="helpChatSend">Ask</button>
+  </form>
+</section>
+
+<!-- ── Request a feature ─── -->
+<div class="modal-overlay" id="featureModal">
+  <div class="modal" style="max-width:480px">
+    <h2>Request a feature</h2>
+    <div id="featureForm">
+      <p class="sub" style="font-family:system-ui,sans-serif;font-size:.84rem;color:var(--mid);margin-bottom:10px">
+        What would make SkySale better for your shop? Say what you'd like it to do, and what it would save you.
+        It goes straight to the people who build it.
+      </p>
+      <div class="field">
+        <label for="featureText">Your request</label>
+        <textarea id="featureText" rows="7" maxlength="5000" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font:.9rem system-ui,sans-serif;resize:vertical"
+                  placeholder="e.g. I'd like to schedule a mass email to go out on a set day, so I can write it on Monday and have it arrive on Friday."></textarea>
+      </div>
+      <div class="field">
+        <label for="featureFrom">Your name <span style="font-weight:400;color:var(--mid)">(optional)</span></label>
+        <input type="text" id="featureFrom" maxlength="100" autocomplete="name">
+      </div>
+      <div id="featureError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger);min-height:1em"></div>
+      <div class="modal-actions">
+        <button class="btn btn-cancel" onclick="closeFeatureRequest()">Cancel</button>
+        <button class="btn btn-confirm" id="featureSend" onclick="submitFeatureRequest()">Submit</button>
+      </div>
+    </div>
+    <div id="featureDone" hidden style="font-family:system-ui,sans-serif">
+      <p style="font-size:.95rem;margin:6px 0 16px">Thank you — it's been sent. If we need to know more, we'll reply to this account's email address.</p>
+      <div class="modal-actions"><button class="btn btn-confirm" onclick="closeFeatureRequest()">Done</button></div>
+    </div>
+  </div>
+</div>
 
 <!-- ── Login gate ─── -->
 <div id="loginGate" style="display:none;max-width:400px;margin:80px auto;padding:0 20px">
@@ -1741,6 +1841,13 @@
              markup naming the brands this server carries, which for a shop
              that imported its own range is a list of other people's
              suppliers with nothing of theirs in it. -->
+        <!-- Where a product is added by hand. It used to be a row of the list
+             ("All your products"); when the list became one list it went with
+             it, and a shop with nothing of its own had nowhere to add a thing. -->
+        <div class="brand-config-row" data-brand-key="custom" style="margin-bottom:12px">
+          <button type="button" class="btn btn-confirm" id="addProductBtn" onclick="toggleBrandProducts('custom')" style="padding:8px 16px;font-size:.85rem">+ Add a product</button>
+          <div class="brand-products-panel" id="brandPanel-custom" style="display:none;margin-top:8px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--white);max-height:500px;overflow-y:auto"></div>
+        </div>
         <div id="brandCheckboxes" style="display:flex;flex-direction:column;gap:10px"></div>
       </div>
 
@@ -5246,6 +5353,7 @@ function openTxAuth() {
 function closeTxAuth() {
   document.getElementById('txAuthModal').classList.remove('show');
   pendingTabSwitch = null;
+  helpNavAfter = null;
 }
 async function submitTxAuth() {
   const name = document.getElementById('txAuthName').value.trim();
@@ -5265,7 +5373,9 @@ async function submitTxAuth() {
     txAccess = { id: data.employee.id, name: data.employee.name, role: data.role };
     txCreds = { name, pin };
     const targetTab = pendingTabSwitch;
+    const nav = helpNavAfter; // closing forgets it, as a cancel should; this is not one
     closeTxAuth();
+    helpNavAfter = nav;
     if (targetTab) switchTab(targetTab);
   } catch (err) {
     errEl.textContent = err.message;
@@ -5285,6 +5395,7 @@ function openSettingsAuth() {
 function closeSettingsAuth() {
   document.getElementById('settingsAuthModal').classList.remove('show');
   pendingTabSwitch = null;
+  helpNavAfter = null;
 }
 async function submitSettingsAuth() {
   const name = document.getElementById('settingsAuthName').value.trim();
@@ -5304,7 +5415,9 @@ async function submitSettingsAuth() {
     settingsAccess = { id: data.employee.id, name: data.employee.name, role: data.role };
     settingsCreds = { name, pin };
     const targetTab = pendingTabSwitch;
+    const nav = helpNavAfter; // closing forgets it, as a cancel should; this is not one
     closeSettingsAuth();
+    helpNavAfter = nav;
     if (targetTab) switchTab(targetTab);
   } catch (err) {
     errEl.textContent = err.message;
@@ -8827,6 +8940,7 @@ async function openDayDrilldown(date) {
 let settingsAccess = null; // {id, name, role} once verified
 let settingsCreds = null;  // {name, pin} captured after verification, reused for the self-service PIN change
 let pendingTabSwitch = null; // tab name held while an employee verifies for Settings or Transactions
+let helpNavAfter = null;     // { tab, then } — where a help link was going, once its tab is open
 
 function switchTab(tabName) {
   if (tabName === 'settings' && !settingsAccess) {
@@ -8857,6 +8971,12 @@ function switchTab(tabName) {
   if (navBtn) navBtn.classList.add('active');
 
   loadTabData(tabName);
+  // A help link waits for the tab it named — past its PIN, if it has one.
+  if (helpNavAfter && helpNavAfter.tab === tabName) {
+    const then = helpNavAfter.then;
+    helpNavAfter = null;
+    setTimeout(then, 0);
+  }
 }
 
 // What each tab needs to fetch when it becomes visible. Shared by switchTab and
@@ -9189,6 +9309,7 @@ function previewCustomImage(input) {
 }
 
 async function addCustomProduct() {
+  const addFrom = document.getElementById('customProdName')?.closest('.brand-products-panel');
   const name = document.getElementById('customProdName').value.trim();
   const price = parseFloat(document.getElementById('customProdPrice').value) || 0;
   const min_price = parseFloat(document.getElementById('customProdMinPrice')?.value) || 0;
@@ -9206,8 +9327,12 @@ async function addCustomProduct() {
   document.getElementById('customProdFile').value = '';
   document.getElementById('customProdPreview').style.display = 'none';
   customProdImageData = '';
+  // Whichever panel the form was in: the whole list is redrawn when the
+  // products come back, which closes a range's panel, so open it again.
+  const openKey = addFrom?.id.replace(/^brandPanel-/, '');
   await loadProducts();
-  renderBrandProductPanel('custom');
+  if (openKey === 'custom') renderBrandProductPanel('custom');
+  else if (openKey && document.getElementById(`brandPanel-${openKey}`)) toggleBrandProducts(openKey);
 }
 
 async function deleteCustomProduct(customId) {
@@ -12750,8 +12875,193 @@ document.addEventListener('click', e => {
   if (wrap && !wrap.contains(e.target)) toggleHelpMenu(false);
 });
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && document.getElementById('helpMenu')?.classList.contains('show')) toggleHelpMenu(false);
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('helpMenu')?.classList.contains('show')) toggleHelpMenu(false);
+  else if (!document.getElementById('helpChat')?.hidden) closeHelpChat();
 });
+
+// ─── Ask a question ─────────────────────────────────────────────────────────
+// Answered on the server from a written guide to SkySale (services/help.js).
+// An answer is text, plus links written [label](go:target); the server keeps
+// only targets it knows, and this page draws only those, as buttons — the
+// rest of the answer is escaped text, never markup.
+const helpChat = { messages: [], busy: false };
+const HELP_SUGGESTIONS = [
+  'How do I add a product?',
+  'How do I do a return?',
+  'Where do I see my commission?',
+  'How do I add an employee?',
+];
+
+function openHelpChat() {
+  toggleHelpMenu(false);
+  document.getElementById('tourOffer').hidden = true;
+  document.getElementById('helpChat').hidden = false;
+  renderHelpChat();
+  setTimeout(() => document.getElementById('helpChatInput').focus(), 30);
+}
+function closeHelpChat() {
+  document.getElementById('helpChat').hidden = true;
+}
+
+// Escaped text with **bold**, and go: links as buttons.
+function helpAnswerHtml(text) {
+  const parts = String(text).split(/(\[[^\]]{1,120}\]\(go:[a-z/-]{1,40}\))/g);
+  return parts.map(part => {
+    const m = /^\[([^\]]+)\]\(go:([a-z/-]+)\)$/.exec(part);
+    if (m && HELP_GO[m[2]]) {
+      return `<button type="button" class="hc-go" data-go="${m[2]}">${escapeHtml(m[1].replace(/^"|"$/g, ''))} &rarr;</button>`;
+    }
+    return escapeHtml(m ? m[1] : part).replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  }).join('');
+}
+
+function renderHelpChat() {
+  const log = document.getElementById('helpChatLog');
+  const msgs = helpChat.messages.map(m => m.role === 'user'
+    ? `<div class="hc-msg user">${escapeHtml(m.text)}</div>`
+    : m.role === 'error'
+      ? `<div class="hc-msg error">${escapeHtml(m.text)}</div>`
+      : `<div class="hc-msg assistant">${helpAnswerHtml(m.text)}</div>`).join('');
+  const intro = helpChat.messages.length ? '' : `
+    <div class="hc-msg assistant">Ask how anything in SkySale works, and I'll tell you — with a link to the right screen.</div>
+    <div class="hc-suggest">${HELP_SUGGESTIONS.map(q => `<button type="button" data-ask="${escapeHtml(q)}">${escapeHtml(q)}</button>`).join('')}</div>`;
+  log.innerHTML = intro + msgs + (helpChat.busy ? '<div class="hc-msg assistant thinking">Looking that up…</div>' : '');
+  log.scrollTop = log.scrollHeight;
+  document.getElementById('helpChatSend').disabled = helpChat.busy;
+}
+
+document.addEventListener('click', (e) => {
+  const go = e.target.closest('#helpChatLog .hc-go');
+  if (go) { helpGo(go.dataset.go); return; }
+  const ask = e.target.closest('#helpChatLog [data-ask]');
+  if (ask) { document.getElementById('helpChatInput').value = ask.dataset.ask; sendHelpQuestion(); }
+});
+
+async function sendHelpQuestion() {
+  const input = document.getElementById('helpChatInput');
+  const text = input.value.trim();
+  if (!text || helpChat.busy) return;
+  input.value = '';
+  helpChat.messages.push({ role: 'user', text });
+  helpChat.busy = true;
+  renderHelpChat();
+  try {
+    const resp = await fetch(`${API}/api/pos/help/ask`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      // Only the conversation itself — an error shown here is not something
+      // either side said.
+      body: JSON.stringify({ messages: helpChat.messages.filter(m => m.role !== 'error').slice(-12) }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || 'The help assistant is not answering right now.');
+    helpChat.messages.push({ role: 'assistant', text: data.answer });
+  } catch (err) {
+    helpChat.messages.push({ role: 'error', text: err.message });
+  } finally {
+    helpChat.busy = false;
+    renderHelpChat();
+    input.focus();
+  }
+}
+
+// ─── Links from an answer into the app ──────────────────────────────────────
+// Each opens its tab the ordinary way, so a tab behind a PIN asks for it, and
+// only once it is open goes on to the section named.
+function helpOpen(tab, then) {
+  const here = document.querySelector('#posSubtabs button.active')?.dataset.tab;
+  const open = here === tab && !(tab === 'settings' && !settingsAccess) && !(tab === 'history' && !txAccess);
+  if (open) { if (then) then(); return; }
+  helpNavAfter = then ? { tab, then } : null;
+  switchTab(tab);
+}
+function helpReveal(id, focus) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (focus) setTimeout(() => el.focus({ preventScroll: true }), 350);
+}
+const HELP_GO = {
+  'register': () => helpOpen('register'),
+  'register/lookup': () => helpOpen('register', () => {
+    // Look Up starts a clean slate, which would drop a sale half rung up.
+    if (currentMode === 'sale' && cart.length && !confirm('Switching to Look Up clears the sale in progress. Switch anyway?')) return;
+    if (currentMode !== 'return') setMode('return');
+    helpReveal('returnReceiptInput', true);
+  }),
+  'reports': () => helpOpen('reports'),
+  'calendar': () => helpOpen('calendar'),
+  'calendar/new': () => helpOpen('calendar', () => openApptModal()),
+  'emails/welcome': () => helpOpen('emails', () => switchEmailView('welcome')),
+  'emails/sent': () => helpOpen('emails', () => switchEmailView('sent')),
+  'emails/mass': () => helpOpen('emails', () => switchEmailView('mass')),
+  'history': () => helpOpen('history', () => switchTxView('sales')),
+  'history/customers': () => helpOpen('history', () => switchTxView('customers')),
+  'history/audit': () => helpOpen('history', () => switchTxView('audit')),
+  'settings/store': () => helpOpen('settings', () => settingsGroup('store')),
+  'settings/brands': () => helpOpen('settings', () => settingsGroup('brands')),
+  'settings/add-product': () => helpOpen('settings', () => {
+    settingsGroup('brands');
+    if (document.getElementById('brandPanel-custom').style.display === 'none') toggleBrandProducts('custom');
+    helpReveal('customProdName', true);
+  }),
+  'settings/supplier-import': () => helpOpen('settings', () => { settingsGroup('brands'); helpReveal('impUrl', true); }),
+  'settings/alerts': () => helpOpen('settings', () => settingsGroup('merchant')),
+  'settings/staff': () => helpOpen('settings', () => settingsGroup('staff')),
+  'settings/account': () => helpOpen('settings', () => settingsGroup('danger')),
+  'tour': () => startTour(),
+};
+
+function helpGo(target) {
+  const go = HELP_GO[target];
+  if (!go) return;
+  // Out of the way of the screen it is taking them to. The conversation is
+  // kept, so reopening it picks up where it left off.
+  closeHelpChat();
+  go();
+}
+
+// ─── Request a feature ──────────────────────────────────────────────────────
+function openFeatureRequest() {
+  toggleHelpMenu(false);
+  document.getElementById('tourOffer').hidden = true;
+  document.getElementById('featureForm').hidden = false;
+  document.getElementById('featureDone').hidden = true;
+  document.getElementById('featureError').textContent = '';
+  document.getElementById('featureSend').disabled = false;
+  document.getElementById('featureModal').classList.add('show');
+  setTimeout(() => document.getElementById('featureText').focus(), 50);
+}
+function closeFeatureRequest() {
+  document.getElementById('featureModal').classList.remove('show');
+}
+async function submitFeatureRequest() {
+  const text = document.getElementById('featureText').value.trim();
+  const from = document.getElementById('featureFrom').value.trim();
+  const err = document.getElementById('featureError');
+  err.textContent = '';
+  if (text.length < 5) { err.textContent = 'Say a little about what you would like.'; return; }
+  const btn = document.getElementById('featureSend');
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    const resp = await fetch(`${API}/api/pos/help/feature-request`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ request: text, from }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || 'It did not send. Please try again.');
+    // Cleared only once it has gone: a failed send keeps what they wrote.
+    document.getElementById('featureText').value = '';
+    document.getElementById('featureForm').hidden = true;
+    document.getElementById('featureDone').hidden = false;
+  } catch (e) {
+    err.textContent = e.message;
+    btn.disabled = false;
+  } finally {
+    btn.textContent = 'Submit';
+  }
+}
 
 // ─── First visit: offer the tour ────────────────────────────────────────────
 // Once per account on this device, the first time the register opens. Only an
@@ -13073,8 +13383,8 @@ const TOUR_STEPS = [
   // Done
   { at: '#helpBtn', title: 'That’s the tour',
     text: (r) => r
-      ? 'Everything the tour opened with your PIN locks again when you close it. Take it again any time from this ? button.'
-      : 'Take it again any time from this ? button.' },
+      ? 'Everything the tour opened with your PIN locks again when you close it. This ? button has the tour again, answers to any question about SkySale, and a way to request a feature.'
+      : 'This ? button has the tour again, answers to any question about SkySale, and a way to request a feature.' },
 ];
 
 let tour = null;

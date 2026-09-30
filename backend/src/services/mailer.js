@@ -36,7 +36,7 @@ const nodemailer = require('nodemailer');
 const resendKey = () => (process.env.RESEND_API_KEY || '').trim();
 const hasResend = () => Boolean(resendKey() && process.env.PLATFORM_EMAIL);
 
-async function sendViaResend({ to, subject, text, html }) {
+async function sendViaResend({ to, subject, text, html, replyTo }) {
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
@@ -49,7 +49,7 @@ async function sendViaResend({ to, subject, text, html }) {
       subject,
       text,
       html,
-      reply_to: process.env.SUPPORT_EMAIL || undefined,
+      reply_to: replyTo || process.env.SUPPORT_EMAIL || undefined,
     }),
   });
   if (!res.ok) {
@@ -98,7 +98,7 @@ async function senderAddress() {
 const b64url = (s) => Buffer.from(s).toString('base64')
   .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 
-async function sendViaOAuth({ to, subject, text, html }) {
+async function sendViaOAuth({ to, subject, text, html, replyTo }) {
   const address = await senderAddress();
   // multipart/alternative: plenty of shop inboxes strip HTML, and a sign-in
   // mail whose only content is a styled button arrives empty.
@@ -107,7 +107,7 @@ async function sendViaOAuth({ to, subject, text, html }) {
     `From: "SkySale" <${address}>`,
     `To: ${to}`,
     `Subject: ${subject}`,
-    `Reply-To: ${process.env.SUPPORT_EMAIL || address}`,
+    `Reply-To: ${replyTo || process.env.SUPPORT_EMAIL || address}`,
     'MIME-Version: 1.0',
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
     '',
@@ -195,11 +195,15 @@ async function verifyMailer() {
   }
 }
 
-async function send({ to, subject, text, html }) {
-  if (hasResend()) return sendViaResend({ to, subject, text, html });
+// replyTo: where an answer should go, when that is not us — a feature request
+// is answered by writing back to the shop that sent it. One line, always: it
+// becomes a header.
+async function send({ to, subject, text, html, replyTo }) {
+  replyTo = replyTo ? String(replyTo).replace(/[\r\n]/g, '').trim() : '';
+  if (hasResend()) return sendViaResend({ to, subject, text, html, replyTo });
   if (hasOAuth()) {
     try {
-      return await sendViaOAuth({ to, subject, text, html });
+      return await sendViaOAuth({ to, subject, text, html, replyTo });
     } catch (e) {
       console.warn('[mail] OAuth send failed, trying SMTP:', e.message);
       if (!(from() && appPassword())) throw e;
@@ -213,7 +217,7 @@ async function send({ to, subject, text, html }) {
     html,
     // Replies to an automated sign-in message are almost always someone asking
     // for help, and they should reach a person rather than bounce.
-    replyTo: process.env.SUPPORT_EMAIL || from(),
+    replyTo: replyTo || process.env.SUPPORT_EMAIL || from(),
   });
 }
 
