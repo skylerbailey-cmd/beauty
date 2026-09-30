@@ -102,6 +102,13 @@ setTimeout(() => {
   check('undoing it is the main button', v.buttons[0] === 'Keep the subscription', v.buttons.join(','));
   check('and cancelling is not offered twice', !v.buttons.includes('Cancel subscription'));
 
+  console.log('\n── On the house ──');
+  v = show({ ...BASE, status: 'comped', may_sell: true, comped: true });
+  check('it says it is not being charged', /not being charged/.test(v.text), v.text);
+  check('and promises no renewal', /Nothing renews/.test(v.text), v.text);
+  check('with nothing to cancel', v.buttons.length === 0, v.buttons.join(','));
+  check('and no renewal date invented', !/undefined|Invalid|NaN/.test(v.text), v.text);
+
   console.log('\n── Card failed ──');
   v = show({ ...BASE, status: 'past_due', may_sell: false, has_customer: true });
   check('it says sales are paused', /new sales are paused/.test(v.text), v.text);

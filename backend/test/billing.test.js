@@ -55,6 +55,10 @@ const check = (l, ok, detail) => {
   check('nor a cancelled one', !live('canceled'));
   check('nor one that never finished signing up', !live('incomplete'));
   check('nor one with no subscription at all', !live(''));
+  // Ours, not Stripe's: a location that is not being charged at all. Without
+  // it, switching billing on would have stopped the owner's own two shops
+  // trading the moment the key was set.
+  check('a comped location can sell', live('comped'));
 
   console.log('\n── A missing Stripe key never closes a till ──');
   // The gate asks billing.configured() first. Nothing about a key being
@@ -138,6 +142,27 @@ const check = (l, ok, detail) => {
     /returnBase\(req\)/.test(billingSrc) && !/`https:\/\/\$\{appDomain\(\)\}`/.test(billingSrc));
   check('and only to a path, never to a URL somebody sent',
     /startsWith\('\/'\)/.test(billingSrc));
+
+  console.log('\n── Tax ──');
+  const libSrcT = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'billing.js'), 'utf8');
+  check('tax is worked out automatically', /automatic_tax: \{ enabled: true \}/.test(billingSrc));
+  // The customer exists before Checkout opens, so without this Stripe taxes
+  // whatever address is saved against them — none, for a new customer — and
+  // quietly charges zero.
+  check('the address typed at checkout is the one taxed',
+    /customer_update: \{ address: 'auto' \}/.test(billingSrc));
+  check('a business can give its tax ID', /tax_id_collection/.test(billingSrc));
+  // A tax code is not something to remember or invent: a wrong one does not
+  // error, it taxes nothing, and that cannot be put right afterwards.
+  check('the product carries a real Stripe tax code',
+    /txcd_[0-9]{8}/.test(libSrcT) && /tax_code: SAAS_TAX_CODE/.test(libSrcT));
+  check('and it is not the Nontaxable one', !/txcd_00000000/.test(libSrcT));
+  check('tax is added on top of $115, not carved out of it',
+    /tax_behavior: 'exclusive'/.test(libSrcT));
+  check('billing addresses are not forced on new customers',
+    !/billing_address_collection: 'required'/.test(billingSrc));
+  check('and the code says plainly that this collects nothing without a registration',
+    /active tax registration/.test(billingSrc));
 
   console.log('\n── The webhook ──');
   const hookSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'stripe-webhook.js'), 'utf8');

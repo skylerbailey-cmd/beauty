@@ -69,6 +69,7 @@ function describe(sub) {
     configured: billing.configured(),
     status,
     may_sell: live,
+    comped: status === 'comped',
     trialing: status === 'trialing',
     trial_end: sub?.trial_end || null,
     current_period_end: sub?.current_period_end || null,
@@ -139,6 +140,21 @@ router.post('/checkout',
         // stays needs to do nothing.
         payment_method_collection: 'always',
         allow_promotion_codes: true,
+        // Sales tax, VAT or GST worked out from where the shop actually is.
+        //
+        // This collects NOTHING, and reports no error, until there is an
+        // active tax registration for that jurisdiction in the Stripe
+        // Dashboard — and tax that was not collected at the time cannot be
+        // collected afterwards. Switching this on is half the job.
+        automatic_tax: { enabled: true },
+        // The customer already exists by the time we get here, so without
+        // this Checkout would tax whatever address is saved against them —
+        // which for a brand new customer is none at all, and tax silently
+        // comes out at zero. This takes the address they type in.
+        customer_update: { address: 'auto' },
+        // A shop with a tax ID gets the reverse-charge treatment it is due
+        // rather than being charged as if it were a consumer.
+        tax_id_collection: { enabled: true },
         client_reference_id: userId,
         integration_identifier: billing.integrationIdentifier('signup'),
         success_url: `${returnBase(req)}${back}?billing=done&session_id={CHECKOUT_SESSION_ID}`,

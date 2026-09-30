@@ -1546,7 +1546,12 @@ async function companyExists(userId) {
 // has not been billed yet, so it counts; past_due does NOT — the card has
 // already been refused and Stripe is retrying, and a shop that can keep
 // ringing up sales through a fortnight of failed retries never fixes its card.
-const LIVE_SUB_STATUSES = new Set(['trialing', 'active']);
+//
+// 'comped' is ours, not Stripe's: a shop that is not being charged at all —
+// the owner's own locations, somebody mid-migration, an account carried while
+// something is sorted out. It has no Stripe subscription behind it, so no
+// webhook can move it and no invoice will ever arrive for it.
+const LIVE_SUB_STATUSES = new Set(['trialing', 'active', 'comped']);
 
 async function getSubscription(userId) {
   if (!userId) return null;

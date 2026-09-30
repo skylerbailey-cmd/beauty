@@ -19,6 +19,12 @@ const TRIAL_DAYS = 14;
 const PRICE_LOOKUP_KEY = 'skysale_location_monthly';
 const PRODUCT_NAME = 'SkySale — store location';
 
+// Stripe's own tax code for software as a service. Never invent one of these
+// or recall it from memory: a wrong code does not error, it quietly taxes
+// nothing, and tax that was not collected cannot be collected afterwards.
+// https://docs.stripe.com/tax/tax-codes
+const SAAS_TAX_CODE = 'txcd_10103001';
+
 // Pinned, so a change Stripe makes to their default cannot quietly change the
 // shape of what comes back and break a paycheck-shaped decision.
 const API_VERSION = '2026-08-26.dahlia';
@@ -77,9 +83,16 @@ async function monthlyPriceId() {
 
   // One Product per plan, one Price on it. Everything shows the product name
   // on the invoice line, so the shop sees what they are paying for.
+  //
+  // The tax code is what tells Stripe how this is taxed, and it has to be one
+  // of Stripe's own — an invented or misremembered txcd_ either fails or,
+  // worse, silently taxes nothing. SAAS_TAX_CODE is their code for software
+  // as a service; a shop whose advisor says otherwise changes it on the
+  // Product in the Dashboard, and every later invoice follows.
   const product = await s.products.create({
     name: PRODUCT_NAME,
     description: 'One SkySale store location — register, reports, payroll and reconciliation.',
+    tax_code: SAAS_TAX_CODE,
   });
   const price = await s.prices.create({
     product: product.id,
@@ -87,6 +100,10 @@ async function monthlyPriceId() {
     unit_amount: MONTHLY_CENTS,
     recurring: { interval: 'month' },
     lookup_key: PRICE_LOOKUP_KEY,
+    // $115 is the price; tax is added on top rather than carved out of it.
+    // This cannot be changed on a price once it exists — a different answer
+    // means a new price, not an edit.
+    tax_behavior: 'exclusive',
   });
   cachedPriceId = price.id;
   return cachedPriceId;
@@ -126,6 +143,7 @@ function summarise(subscription) {
 
 module.exports = {
   MONTHLY_CENTS,
+  SAAS_TAX_CODE,
   TRIAL_DAYS,
   PRICE_LOOKUP_KEY,
   API_VERSION,
