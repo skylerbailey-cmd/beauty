@@ -150,7 +150,20 @@ Exchanges have their own window, also set in Settings → Store.
 Five sections along the top: Store, Brands & products, Alerts & connections,
 Employees, Account. A sales employee sees only a form to change their own PIN.
 - Store: store name, company name, address, email, phone, receipt footer,
-  time zone and tax rate ("Save Settings"). Pay schedule (paydays and the
+  time zone and tax rate ("Save Settings").
+  - Automatic emails after a sale: off by default, when every email after a
+    sale waits for someone to press Send. Switched on ("Send emails
+    automatically after a sale", then Save), the welcome email and/or the
+    receipt go out by themselves from the connected Gmail within a minute of
+    the sale. Optional rules: only for sales of at least a dollar amount;
+    welcome emails only on a customer's first purchase; don't email the same
+    person more than once every N days; wait N minutes before sending (a sale
+    returned in that time isn't emailed). Never sent with no email address on
+    the sale, while the shop is asleep, or if someone already sent it by hand.
+    At the till, unticking "Email them automatically after this sale" skips it
+    for that one customer. The receipt screen after a sale says what will go
+    out, and the card lists recent automatic emails — sent, waiting, or not
+    sent and why. Pay schedule (paydays and the
   period each covers). Return window and exchange window. Return policy
   reminder (what staff see before a return). Stores that share your staff
   (link another of your shops so staff see pay from both).

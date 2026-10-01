@@ -792,7 +792,14 @@ router.post('/transactions', async (req, res) => {
   // Text alert, if this company has one set up. Deliberately not awaited: the
   // sale is already recorded and must not wait on, or fail with, an email.
   sendSaleAlert(userId, tx);
-  res.json({ transaction: tx });
+  // Automatic emails, if the shop has them on: decided now, sent by the
+  // queue (runAutoEmails) — so the till never waits on Gmail.
+  let autoEmails = [];
+  if (tx?.type === 'sale') {
+    try { autoEmails = await planAutoEmails(userId, tx, !!req.body.skip_auto_email); }
+    catch (err) { console.error('[auto-email] could not plan:', err.message); }
+  }
+  res.json({ transaction: tx, auto_emails: autoEmails });
 });
 
 router.get('/transactions', async (req, res) => {
@@ -1300,20 +1307,12 @@ router.post('/settings/test-sale-alert', async (req, res) => {
 
 // ─── Email Receipt ─────────────────────────────────────────────────────────
 
-router.post('/transactions/:id/email', refuseWhileAsleep('emails'), async (req, res) => {
-  const found = await txInScope(req);
-  if (!found) return res.status(404).json({ error: 'Transaction not found' });
-  const tx = found.tx;
+// The receipt email for a transaction, as the Email Receipt button and an
+// automatic send both build it.
+async function buildReceiptEmail(ownerId, tx) {
+  const user = await getSendingUser(ownerId);
 
-  const email = req.body.email || tx.customer_email;
-  if (!email) return res.status(400).json({ error: 'Email address required' });
-
-  // The receipt belongs to the store that made the sale, so it carries that
-  // store's name, address and footer, and goes out from that store's mailbox —
-  // not from whichever company happens to be signed in on this browser.
-  const user = await getSendingUser(found.owner);
-
-  const settings = await pgDb.getSettings(found.owner);
+  const settings = await pgDb.getSettings(ownerId);
   const storeName = settings.store_name || user?.company_name || 'Glow SF';
   const storeAddress = formatStoreAddress(settings);
   const storeContact = formatStoreContact(settings);
@@ -1381,7 +1380,24 @@ router.post('/transactions/:id/email', refuseWhileAsleep('emails'), async (req, 
     </div>
   `;
 
-  const subject = req.body.subject || `${tx.type === 'return' ? 'Return' : 'Sales'} Receipt #${tx.receipt_number} | ${storeName}`;
+  const subject = `${tx.type === 'return' ? 'Return' : 'Sales'} Receipt #${tx.receipt_number} | ${storeName}`;
+  return { user, subject, html };
+}
+
+router.post('/transactions/:id/email', refuseWhileAsleep('emails'), async (req, res) => {
+  const found = await txInScope(req);
+  if (!found) return res.status(404).json({ error: 'Transaction not found' });
+  const tx = found.tx;
+
+  const email = req.body.email || tx.customer_email;
+  if (!email) return res.status(400).json({ error: 'Email address required' });
+
+  // The receipt belongs to the store that made the sale, so it carries that
+  // store's name, address and footer, and goes out from that store's mailbox —
+  // not from whichever company happens to be signed in on this browser.
+  const { user, subject: builtSubject, html } = await buildReceiptEmail(found.owner, tx);
+
+  const subject = req.body.subject || builtSubject;
   // A previewed-then-edited body comes back as `html`; otherwise use what we just built.
   const finalHtml = req.body.html || html;
 
@@ -1408,6 +1424,165 @@ router.post('/transactions/:id/email', refuseWhileAsleep('emails'), async (req, 
 // Generates the SAME personalized welcome email as the Welcome Emails tool,
 // straight from the transaction's products, and sends it via Gmail.
 
+// ─── Automatic emails after a sale ──────────────────────────────────────────
+//
+// Off unless a shop switches it on (Settings → Store → Automatic emails).
+// When it is on, each sale is checked against the shop's rules the moment it
+// is rung up, and every email it asks for gets a row in pos_auto_emails:
+// waiting to send, or not sent and why. runAutoEmails, every minute, sends
+// what is due — checking again first, because a minute or an hour later the
+// sale may have been returned, the shop put to sleep, the feature switched
+// off, or the same email sent by hand.
+//
+// The rules, all optional:
+//   which emails — the welcome email, the receipt, or both;
+//   a minimum sale total;
+//   welcome emails only on a customer's first purchase;
+//   no more than one email to the same person every N days;
+//   a wait before sending, in which a returned sale cancels it.
+// And at the till, for one sale, "don't email this customer".
+
+const AUTO_EMAIL_KINDS = ['welcome', 'receipt'];
+const AUTO_EMAIL_RETRIES = 3;
+
+function autoEmailRules(settings) {
+  return {
+    enabled: !!Number(settings?.auto_email_enabled),
+    welcome: !!Number(settings?.auto_email_welcome),
+    receipt: !!Number(settings?.auto_email_receipt),
+    minTotal: Math.max(0, Number(settings?.auto_email_min_total) || 0),
+    firstOnly: !!Number(settings?.auto_email_first_only),
+    cooldownDays: Math.max(0, parseInt(settings?.auto_email_cooldown_days, 10) || 0),
+    delayMin: Math.min(1440, Math.max(0, parseInt(settings?.auto_email_delay_min, 10) || 0)),
+  };
+}
+
+// Why this sale should not get this email — or '' if it should.
+async function autoEmailSkipReason(userId, tx, kind, rules, skippedAtTill) {
+  const email = String(tx.customer_email || '').trim();
+  if (skippedAtTill) return 'not sent — the till was asked not to email this customer';
+  if (!email) return 'not sent — no email address on the sale';
+  if (rules.minTotal > 0 && Number(tx.total) < rules.minTotal) {
+    return `not sent — the sale was under $${money(rules.minTotal)}`;
+  }
+  if (kind === 'welcome' && rules.firstOnly && (await pgDb.priorSalesTo(userId, email, tx.id)) > 0) {
+    return 'not sent — not their first purchase';
+  }
+  if (rules.cooldownDays > 0) {
+    const last = await pgDb.lastEmailedAt(userId, email, null);
+    if (last && Date.now() - new Date(last).getTime() < rules.cooldownDays * 86400000) {
+      return `not sent — they were emailed in the last ${rules.cooldownDays} day${rules.cooldownDays === 1 ? '' : 's'}`;
+    }
+  }
+  return '';
+}
+
+async function planAutoEmails(userId, tx, skippedAtTill) {
+  const settings = await pgDb.getSettings(userId);
+  const rules = autoEmailRules(settings);
+  if (!rules.enabled) return [];
+  const planned = [];
+  for (const kind of AUTO_EMAIL_KINDS) {
+    if (!rules[kind]) continue;
+    const reason = await autoEmailSkipReason(userId, tx, kind, rules, skippedAtTill);
+    const row = await pgDb.queueAutoEmail({
+      userId, transactionId: tx.id, kind, toEmail: tx.customer_email,
+      sendAfter: new Date(Date.now() + rules.delayMin * 60000),
+      status: reason ? 'skipped' : 'pending', reason,
+    });
+    planned.push({ kind, status: row.status, reason: row.reason, send_after: row.send_after });
+  }
+  return planned;
+}
+
+// Send one queued email, or say why not. Returns [status, reason].
+async function deliverAutoEmail(row) {
+  const tx = await pgDb.getTransaction(row.transaction_id, row.user_id);
+  if (!tx) return ['skipped', 'not sent — the sale was deleted'];
+  if (await pgDb.wasReturned(tx.id)) return ['skipped', 'not sent — the sale was returned before it went'];
+  const rules = autoEmailRules(await pgDb.getSettings(row.user_id));
+  if (!rules.enabled || !rules[row.kind]) return ['skipped', 'not sent — automatic emails were switched off'];
+  if (await require('../lib/sleep').isAsleep(row.user_id)) return ['skipped', 'not sent — the shop is asleep'];
+  const email = String(tx.customer_email || '').trim();
+  if (!email) return ['skipped', 'not sent — no email address on the sale'];
+  const byHand = await pgDb.lastEmailedAt(row.user_id, email, row.kind);
+  if (byHand && new Date(byHand) >= new Date(tx.created_at)) return ['skipped', 'not sent — someone already sent it by hand'];
+
+  const built = row.kind === 'welcome'
+    ? await buildWelcomeEmail(row.user_id, tx).catch((err) => ({ error: err.message }))
+    : await buildReceiptEmail(row.user_id, tx);
+  if (built.error) return ['skipped', `not sent — ${built.error}`];
+  if (!built.user?.refresh_token) throw new Error('Gmail is not connected for this shop');
+
+  await sendGmail(built.user, email, built.subject, built.html);
+  await pgDb.logSentEmail({ user_id: row.user_id, to_email: email, to_name: tx.customer_name || '', subject: built.subject, body: built.html, kind: row.kind });
+  if (row.kind === 'welcome') await recordWelcomeSent(row.user_id, email, tx.customer_name || '', built.selectedProducts || []);
+  return ['sent', ''];
+}
+
+async function runAutoEmails() {
+  let due = [];
+  try { due = await pgDb.claimDueAutoEmails(20); } catch (_) { return; }
+  for (const row of due) {
+    try {
+      const [status, reason] = await deliverAutoEmail(row);
+      await pgDb.finishAutoEmail(row.id, status, reason);
+    } catch (err) {
+      // Gmail refusing, a network blip: try again a little later, a few
+      // times, then say plainly that it failed.
+      if (row.attempts < AUTO_EMAIL_RETRIES) {
+        await pgDb.retryAutoEmail(row.id, 10 * row.attempts, `retrying — ${err.message}`).catch(() => {});
+      } else {
+        await pgDb.finishAutoEmail(row.id, 'failed', `not sent — ${err.message}`).catch(() => {});
+      }
+      console.error(`[auto-email] ${row.kind} for transaction ${row.transaction_id}:`, err.message);
+    }
+  }
+}
+
+router.get('/auto-emails', async (req, res) => {
+  res.json({ emails: await pgDb.recentAutoEmails(req.session.userId, 15) });
+});
+
+// The welcome email for a sale, as the Welcome email button and an automatic
+// send both build it — from the transaction's line items, catalogue and
+// own-range alike, signed by the store that made the sale. Throws when there
+// is nothing to say about what was bought.
+async function buildWelcomeEmail(ownerId, tx, { email, customerName } = {}) {
+  const user = await getSendingUser(ownerId);
+  const settings = await pgDb.getSettings(ownerId);
+  const customProducts = await pgDb.getCustomProducts(ownerId).catch(() => []);
+  const emailOverrides = await pgDb.getProductEmailOverrides(ownerId).catch(() => ({}));
+  const { emailBody, selectedProducts } = generateWelcomeEmailBody({
+    customerEmail: email || tx.customer_email,
+    customerName: customerName || tx.customer_name,
+    selectedProductIds: tx.items.map(i => i.product_id),
+    userId: ownerId,
+    storeName: settings?.store_name,
+    storeCity: settings?.store_city,
+    brands: settings?.brands,
+    customProducts,
+    emailOverrides,
+  });
+  const subject = user?.company_name ? `Welcome to ${user.company_name}!` : 'Welcome!';
+  return { user, subject, html: emailBody, selectedProducts };
+}
+
+// What sending a welcome email leaves behind, matching the Welcome Emails
+// tool: the welcome record, and the customer with what they bought.
+async function recordWelcomeSent(ownerId, email, customerName, selectedProducts) {
+  try {
+    await pgDb.saveWelcomeEmail({
+      customer_name: customerName,
+      customer_email: email,
+      products: selectedProducts.map(p => p.name),
+      user_id: ownerId,
+    });
+    const customer = await pgDb.findOrCreateCustomer(customerName, email, ownerId);
+    await pgDb.addCustomerProducts(customer.id, selectedProducts.map(p => ({ id: p.id, name: p.name })));
+  } catch (_) { /* non-critical */ }
+}
+
 router.post('/transactions/:id/welcome', refuseWhileAsleep('emails'), async (req, res) => {
   const found = await txInScope(req);
   if (!found) return res.status(404).json({ error: 'Transaction not found' });
@@ -1422,39 +1597,16 @@ router.post('/transactions/:id/welcome', refuseWhileAsleep('emails'), async (req
   const customerName = (req.body.customer_name || tx.customer_name || '').trim();
   if (!customerName) return res.status(400).json({ error: 'Customer name is required to send a welcome email.' });
 
-  const user = await getSendingUser(userId);
-
-  // The transaction's line items, catalogue and own-range alike. A shop's own
-  // products carry usage notes and a frequency now, set on the Settings page,
-  // so they drive the routine exactly as catalogue products do — and for a
-  // shop that imported its range they are the only products there are.
-  const selectedProductIds = tx.items.map(i => i.product_id);
-
-  const settings = await pgDb.getSettings(userId);
-  const customProducts = await pgDb.getCustomProducts(userId).catch(() => []);
-  const emailOverrides = await pgDb.getProductEmailOverrides(userId).catch(() => ({}));
-  let emailBody, selectedProducts;
+  let built;
   try {
-    ({ emailBody, selectedProducts } = generateWelcomeEmailBody({
-      customerEmail: email,
-      customerName,
-      selectedProductIds,
-      userId,
-      // Sign the email with the store the customer actually bought from, and
-      // use the brands that store's Settings page actually shows.
-      storeName: settings?.store_name,
-      storeCity: settings?.store_city,
-      brands: settings?.brands,
-      customProducts,
-      emailOverrides,
-    }));
+    built = await buildWelcomeEmail(userId, tx, { email, customerName });
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
-
-  const subject = req.body.subject || (user?.company_name ? `Welcome to ${user.company_name}!` : 'Welcome!');
+  const { user, selectedProducts } = built;
+  const subject = req.body.subject || built.subject;
   // A previewed-then-edited body comes back as `html`; otherwise use the generated one.
-  const finalHtml = req.body.html || emailBody;
+  const finalHtml = req.body.html || built.html;
 
   // Preview: return the generated (or client-edited) email without sending it.
   if (req.body.preview) {
@@ -1468,17 +1620,7 @@ router.post('/transactions/:id/welcome', refuseWhileAsleep('emails'), async (req
   try {
     await sendGmail(user, email, subject, finalHtml);
     await pgDb.logSentEmail({ user_id: userId, to_email: email, to_name: customerName, subject, body: finalHtml, kind: 'welcome' });
-    // Record in history + CRM, matching the Welcome Emails tool behavior
-    try {
-      await pgDb.saveWelcomeEmail({
-        customer_name: customerName,
-        customer_email: email,
-        products: selectedProducts.map(p => p.name),
-        user_id: userId,
-      });
-      const customer = await pgDb.findOrCreateCustomer(customerName, email, userId);
-      await pgDb.addCustomerProducts(customer.id, selectedProducts.map(p => ({ id: p.id, name: p.name })));
-    } catch (_) { /* non-critical */ }
+    await recordWelcomeSent(userId, email, customerName, selectedProducts);
     res.json({ ok: true, sent_to: email });
   } catch (err) {
     console.error('[pos] Welcome email error:', err.message);
@@ -4315,3 +4457,4 @@ router.post('/help/feature-request', async (req, res) => {
 
 module.exports = router;
 module.exports.runNightlyAudits = runNightlyAudits;
+module.exports.runAutoEmails = runAutoEmails;

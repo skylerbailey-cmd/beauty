@@ -275,6 +275,18 @@ app.listen(PORT, async () => {
     console.error('[audit] could not start the nightly reconciliation:', err.message);
   }
 
+  // Automatic emails after a sale (routes/pos.js): what is due goes out
+  // within the minute. Claimed in the database, so an overlap across a deploy
+  // cannot send one twice.
+  try {
+    const { runAutoEmails } = require('./routes/pos');
+    const tick = () => runAutoEmails().catch((e) => console.error('[auto-email] tick failed:', e.message));
+    setInterval(tick, 60 * 1000);
+    setTimeout(tick, 20 * 1000);
+  } catch (err) {
+    console.error('[auto-email] could not start:', err.message);
+  }
+
   // Cancelled shops' books, 30 days after their subscription stopped. Hourly,
   // for the same reasons as the audits: restarts, and nothing depends on the
   // minute it runs.

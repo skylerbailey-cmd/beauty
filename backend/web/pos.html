@@ -801,6 +801,12 @@
     .tour-offer .tour-ghost { background: var(--cream); color: var(--dark); border: 1px solid var(--border); }
     @media (prefers-reduced-motion: reduce) { .tour-offer { animation: none; } }
 
+    /* Automatic emails settings */
+    .ae-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0; font-family: system-ui, sans-serif; font-size: .85rem; cursor: pointer; }
+    .ae-row input[type=number] { padding: 5px 8px; border: 1.5px solid var(--border); border-radius: 6px; font-size: .85rem; }
+    .ae-row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent-deep); }
+    #aeOptions.off { opacity: .45; pointer-events: none; }
+
     /* Payroll: a person collapsed to one line — name, what they are owed. */
     .pr-toggle {
       margin-left: 8px; padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px;
@@ -1199,6 +1205,12 @@
             <input type="email" id="custEmail" placeholder="Customer email" oninput="updateCheckoutEnabled()" onchange="lookupCustomerFromContact()" onblur="lookupCustomerFromContact()">
             <input type="tel" id="custPhone" placeholder="Customer phone" oninput="updateCheckoutEnabled()" onchange="lookupCustomerFromContact()" onblur="lookupCustomerFromContact()">
             <div style="font-family:system-ui,sans-serif;font-size:.72rem;color:var(--mid);margin-top:-4px">Email or phone required — either one is fine.</div>
+            <!-- Shown only when the shop sends emails automatically: the way to
+                 honour a customer who says "please don't email me". -->
+            <label id="autoEmailTill" style="display:none;align-items:center;gap:6px;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--dark);cursor:pointer">
+              <input type="checkbox" id="autoEmailThisSale" checked style="width:15px;height:15px;accent-color:var(--accent-deep)">
+              Email them automatically after this sale
+            </label>
             <div id="custLookupNote" style="font-family:system-ui,sans-serif;font-size:.72rem;color:var(--success);margin-top:-2px"></div>
           </div>
           <!-- Employee assignment -->
@@ -2072,6 +2084,43 @@
            words. Shown on the return screen and again in the confirmation. -->
       <!-- How long a return may be taken in. Sits above the reminder, because
            it is the rule; the reminder is only what staff are told about it. -->
+      <!-- Emails that go out after a sale without anyone pressing Send. Off
+           until a shop switches it on; every rule below is optional. -->
+      <div class="report-card" data-sgroup="store" id="autoEmailCard" style="margin-top:16px">
+        <h3>Automatic emails after a sale</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
+          Off, every email after a sale waits for someone to press Send — as it always has. On, they go out
+          by themselves, from your connected Gmail, within a minute of the sale (or after the wait you set).
+        </p>
+        <label class="ae-row" style="font-weight:600">
+          <input type="checkbox" id="aeEnabled" onchange="renderAutoEmailForm()"> Send emails automatically after a sale
+        </label>
+        <div id="aeOptions" style="margin:10px 0 0 26px;font-family:system-ui,sans-serif;font-size:.85rem">
+          <div style="font-size:.74rem;font-weight:700;color:var(--mid);text-transform:uppercase;letter-spacing:.5px;margin:4px 0 6px">Which emails</div>
+          <label class="ae-row"><input type="checkbox" id="aeWelcome"> The welcome email — built from what they bought</label>
+          <label class="ae-row"><input type="checkbox" id="aeReceipt"> The receipt</label>
+
+          <div style="font-size:.74rem;font-weight:700;color:var(--mid);text-transform:uppercase;letter-spacing:.5px;margin:14px 0 6px">Only when — all optional</div>
+          <label class="ae-row">Only for sales of at least $
+            <input type="number" id="aeMinTotal" min="0" step="1" placeholder="any amount" style="width:110px"></label>
+          <label class="ae-row"><input type="checkbox" id="aeFirstOnly"> Welcome emails only on a customer's first purchase</label>
+          <label class="ae-row">Don't email the same person more than once every
+            <input type="number" id="aeCooldown" min="0" max="365" step="1" placeholder="—" style="width:70px"> days</label>
+          <label class="ae-row">Wait
+            <input type="number" id="aeDelay" min="0" max="1440" step="1" placeholder="0" style="width:70px">
+            minutes before sending <span style="color:var(--mid)">— a sale returned in that time isn't emailed</span></label>
+          <p style="font-size:.78rem;color:var(--mid);margin:10px 0 0">
+            Never sent: to a sale with no email address, while the shop is asleep, or if someone has already sent
+            that email by hand. Staff can also untick “Email automatically” at the till for a customer who asks not to be emailed.
+          </p>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:14px">
+          <button class="btn btn-confirm" onclick="saveAutoEmail()">Save</button>
+          <span id="aeStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)"></span>
+        </div>
+        <div id="aeLog" style="margin-top:16px"></div>
+      </div>
+
       <div class="report-card" data-sgroup="store" id="returnWindowCard" style="margin-top:16px">
         <h3>Return window</h3>
         <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
@@ -2547,6 +2596,7 @@
   <div class="modal">
     <h2 style="text-align:center" id="receiptModalTitle">Sale Complete!</h2>
     <div class="receipt" id="receiptContent"></div>
+    <div id="autoEmailNote" style="display:none;font-family:system-ui,sans-serif;font-size:.8rem;margin:-4px 0 10px;padding:8px 10px;border-radius:8px;background:var(--accent-soft);color:var(--accent-deep)"></div>
     <div class="receipt-actions">
       <button class="btn" style="background:var(--accent);color:white" onclick="printReceipt()">Print</button>
       <button class="btn" style="background:var(--accent2);color:white" onclick="emailReceipt()">Email Receipt</button>
@@ -3686,6 +3736,117 @@ function renderSubscription() {
     + (st.has_customer ? btn('Update card', 'openBillingPortal()') : '');
 }
 
+// ─── Automatic emails after a sale ──────────────────────────────────────────
+// The settings live on the shop (routes/pos.js does the sending); this page
+// shows them, saves them, and lists what the last few sales sent or didn't.
+function fillAutoEmailSettings() {
+  const st = storeSettings || {};
+  const $ = (x) => document.getElementById(x);
+  if (!$('aeEnabled')) return;
+  $('aeEnabled').checked = !!Number(st.auto_email_enabled);
+  $('aeWelcome').checked = st.auto_email_welcome == null ? true : !!Number(st.auto_email_welcome);
+  $('aeReceipt').checked = !!Number(st.auto_email_receipt);
+  $('aeMinTotal').value = Number(st.auto_email_min_total) > 0 ? Number(st.auto_email_min_total) : '';
+  $('aeFirstOnly').checked = st.auto_email_first_only == null ? true : !!Number(st.auto_email_first_only);
+  $('aeCooldown').value = Number(st.auto_email_cooldown_days) > 0 ? Number(st.auto_email_cooldown_days) : '';
+  $('aeDelay').value = Number(st.auto_email_delay_min) > 0 ? Number(st.auto_email_delay_min) : '';
+  renderAutoEmailForm();
+  loadAutoEmailLog();
+}
+
+function renderAutoEmailForm() {
+  const on = document.getElementById('aeEnabled').checked;
+  document.getElementById('aeOptions').classList.toggle('off', !on);
+}
+
+// The till's opt-out appears only when there is something to opt out of.
+function showAutoEmailTill() {
+  const box = document.getElementById('autoEmailTill');
+  if (box) box.style.display = Number(storeSettings?.auto_email_enabled) ? 'flex' : 'none';
+}
+
+async function saveAutoEmail() {
+  const $ = (x) => document.getElementById(x);
+  const status = $('aeStatus');
+  const whole = (v, max) => Math.min(max, Math.max(0, parseInt(v, 10) || 0));
+  const body = {
+    auto_email_enabled: $('aeEnabled').checked ? 1 : 0,
+    auto_email_welcome: $('aeWelcome').checked ? 1 : 0,
+    auto_email_receipt: $('aeReceipt').checked ? 1 : 0,
+    auto_email_min_total: Math.max(0, Number($('aeMinTotal').value) || 0),
+    auto_email_first_only: $('aeFirstOnly').checked ? 1 : 0,
+    auto_email_cooldown_days: whole($('aeCooldown').value, 365),
+    auto_email_delay_min: whole($('aeDelay').value, 1440),
+  };
+  if (body.auto_email_enabled && !body.auto_email_welcome && !body.auto_email_receipt) {
+    status.style.color = 'var(--danger)';
+    status.textContent = 'Pick at least one email to send, or switch automatic emails off.';
+    return;
+  }
+  status.style.color = 'var(--mid)';
+  status.textContent = 'Saving…';
+  try {
+    const resp = await fetch(`${API}/api/pos/settings`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || 'Could not save.');
+    storeSettings = { ...storeSettings, ...(data.settings || body) };
+    showAutoEmailTill();
+    status.style.color = 'var(--success)';
+    status.textContent = body.auto_email_enabled
+      ? 'Saved. Emails will go out by themselves after each sale.'
+      : 'Saved. Emails wait for someone to press Send.';
+  } catch (err) {
+    status.style.color = 'var(--danger)';
+    status.textContent = err.message;
+  }
+}
+
+async function loadAutoEmailLog() {
+  const box = document.getElementById('aeLog');
+  if (!box) return;
+  let rows = [];
+  try {
+    const resp = await fetch(`${API}/api/pos/auto-emails`, { credentials: 'include' });
+    if (resp.ok) rows = (await resp.json()).emails || [];
+  } catch (_) { /* the settings still work without the log */ }
+  if (!rows.length) { box.innerHTML = ''; return; }
+  const label = { sent: '✓ sent', pending: 'waiting', sending: 'sending', skipped: 'not sent', failed: 'failed' };
+  const colour = { sent: 'var(--success)', failed: 'var(--danger)', skipped: 'var(--mid)' };
+  box.innerHTML = `
+    <div style="font-family:system-ui,sans-serif;font-size:.74rem;font-weight:700;color:var(--mid);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Recent automatic emails</div>
+    <table class="report-table" style="font-size:.8rem">
+      <thead><tr><th>When</th><th>Receipt</th><th>Customer</th><th>Email</th><th>What happened</th></tr></thead>
+      <tbody>${rows.map(r => `
+        <tr>
+          <td style="white-space:nowrap">${escapeHtml(new Date(r.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))}</td>
+          <td style="font-family:monospace">${escapeHtml(String(r.receipt_number || '—'))}</td>
+          <td>${escapeHtml(r.customer_name || r.to_email || '—')}</td>
+          <td>${r.kind === 'welcome' ? 'Welcome' : 'Receipt'}</td>
+          <td style="color:${colour[r.status] || 'var(--dark)'}">${escapeHtml(label[r.status] || r.status)}${
+            r.status === 'pending' ? ` — at ${escapeHtml(new Date(r.send_after).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))}` : ''}${
+            r.reason && r.status !== 'sent' ? `<div style="font-size:.74rem;color:var(--mid)">${escapeHtml(r.reason.replace(/^not sent — /, ''))}</div>` : ''}</td>
+        </tr>`).join('')}</tbody>
+    </table>`;
+}
+
+// Under the receipt: what is about to go out by itself, so nobody sends it
+// again by hand — and what won't, and why.
+function showAutoEmailNote(planned) {
+  const note = document.getElementById('autoEmailNote');
+  if (!note) return;
+  if (!planned.length) { note.style.display = 'none'; note.innerHTML = ''; return; }
+  const name = (k) => (k === 'welcome' ? 'Welcome email' : 'Receipt');
+  note.innerHTML = planned.map(p => {
+    if (p.status !== 'pending') return `${name(p.kind)}: ${escapeHtml(String(p.reason || 'not sent'))}.`;
+    const mins = Math.round((new Date(p.send_after) - Date.now()) / 60000);
+    return `${name(p.kind)} will send automatically ${mins > 1 ? `in about ${mins} minutes` : 'in a moment'}.`;
+  }).join('<br>');
+  note.style.display = '';
+}
+
 // ─── Payroll: hiding a person ───────────────────────────────────────────────
 // Collapses someone to one line — their name and what they are owed — so a
 // long payroll can be worked through a person at a time. Remembered in this
@@ -4644,6 +4805,9 @@ async function processTransaction() {
       discount: round2((i.discount_per_unit || 0) * i.quantity),
     })),
     original_receipt: returnOriginalTx?.receipt_number || null,
+    // Unticked at the till: no automatic email for this one sale.
+    skip_auto_email: currentMode === 'sale' && !!storeSettings.auto_email_enabled
+      && !document.getElementById('autoEmailThisSale').checked,
   };
 
   // Payment (sale) / refund (return): one or more tenders that must add up to
@@ -4764,6 +4928,8 @@ async function submitTransaction(body) {
     lastTransaction = data.transaction;
     showSuccessToast(`${data.transaction.type === 'return' ? 'Return' : 'Transaction'} #${data.transaction.receipt_number} completed successfully!`);
     showReceipt(data.transaction);
+    showAutoEmailNote(data.auto_emails || []);
+    document.getElementById('autoEmailThisSale').checked = true; // the next customer starts fresh
     // Reset cart, employees, and return state
     cart = [];
     saleEmployees = defaultSaleEmployees();
@@ -4803,6 +4969,9 @@ async function submitTransaction(body) {
 // Saying "Sale Complete!" over a six-month-old receipt reads as though
 // something was just charged again.
 function showReceipt(tx, reprint) {
+  // The automatic-email note belongs to a sale just rung up, not a reprint.
+  const autoNote = document.getElementById('autoEmailNote');
+  if (autoNote) autoNote.style.display = 'none';
   const title = reprint
     ? `Receipt ${tx.receipt_number}`
     : (tx.type === 'return' ? 'Return Processed!' : 'Sale Complete!');
@@ -11251,6 +11420,8 @@ async function loadStoreSettings() {
     document.getElementById('settingsReceiptFooter').value = storeSettings.receipt_footer || '';
     document.getElementById('settingsTimezone').value = storeSettings.timezone || 'America/Los_Angeles';
     document.getElementById('settingsTaxRate').value = storeSettings.tax_rate != null ? taxPctStr(storeSettings.tax_rate) : '8.1875';
+    fillAutoEmailSettings();
+    showAutoEmailTill();
     // Restore brands from Postgres (survives redeploys)
     if (storeSettings.brands) {
       const b = typeof storeSettings.brands === 'string' ? JSON.parse(storeSettings.brands) : storeSettings.brands;
@@ -13705,6 +13876,8 @@ const TOUR_STEPS = [
     } },
   { who: 'manager', tab: 'settings', view: 'store', at: cardOf('#settingsPaydays'), title: 'Pay schedule',
     text: 'When payday falls and which period it covers. Reports → Payroll is dated from this.' },
+  { who: 'manager', tab: 'settings', view: 'store', at: '#autoEmailCard', title: 'Automatic emails',
+    text: 'Off, emails after a sale wait for someone to press Send. On, the welcome email and receipt go out by themselves — only above an amount you choose, only on a first purchase, no more than once every few days, after a wait — whichever of those you want.' },
   { who: 'manager', tab: 'settings', view: 'store', at: '#returnWindowCard', title: 'Return window',
     text: 'How long a customer has to return something, and separately to exchange it.' },
   { who: 'manager', tab: 'settings', view: 'store', at: cardOf('#setReturnPolicyTitle'), title: 'Return policy reminder',

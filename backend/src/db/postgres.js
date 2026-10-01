@@ -339,6 +339,32 @@ async function initSchema() {
   // The nightly reconciliation: whether to run it, and whether to say
   // something when the day does not reconcile. Off until a shop turns them on.
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS audit_auto_enabled INTEGER DEFAULT 0');
+  // Emails sent after a sale without anyone pressing Send (routes/pos.js,
+  // "Automatic emails"). Off unless a shop switches it on.
+  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS auto_email_enabled INTEGER DEFAULT 0');
+  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS auto_email_welcome INTEGER DEFAULT 1');
+  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS auto_email_receipt INTEGER DEFAULT 0');
+  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS auto_email_min_total REAL DEFAULT 0');
+  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS auto_email_first_only INTEGER DEFAULT 1');
+  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS auto_email_cooldown_days INTEGER DEFAULT 0');
+  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS auto_email_delay_min INTEGER DEFAULT 0');
+  // One row per automatic email a sale asked for: waiting, sent, or not sent
+  // and why — the record a shop reads when it asks "did that go out?".
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_auto_emails (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    transaction_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    to_email TEXT DEFAULT '',
+    send_after TIMESTAMPTZ DEFAULT NOW(),
+    status TEXT NOT NULL DEFAULT 'pending',
+    reason TEXT DEFAULT '',
+    attempts INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    finished_at TIMESTAMPTZ
+  )`);
+  await migrate('CREATE INDEX IF NOT EXISTS idx_pg_auto_emails_due ON pos_auto_emails(status, send_after)');
+  await migrate('CREATE INDEX IF NOT EXISTS idx_pg_auto_emails_user ON pos_auto_emails(user_id, created_at DESC)');
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS audit_alert_enabled INTEGER DEFAULT 0');
   // When to run it, on the shop's own clock. 24-hour HH:MM.
   await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS audit_auto_time TEXT DEFAULT '09:00'");
@@ -1730,6 +1756,73 @@ async function endedSubscriptions() {
        FROM pos_subscriptions
       WHERE status = 'canceled'
         AND COALESCE(ended_at, current_period_end, canceled_at) IS NOT NULL`)).rows;
+}
+
+// ─── Automatic emails after a sale ──────────────────────────────────────────
+
+async function queueAutoEmail({ userId, transactionId, kind, toEmail, sendAfter, status, reason }) {
+  const r = await query(
+    `INSERT INTO pos_auto_emails (user_id, transaction_id, kind, to_email, send_after, status, reason, finished_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $6 = 'pending' THEN NULL ELSE NOW() END) RETURNING *`,
+    [userId, transactionId, kind, toEmail || '', sendAfter || new Date(), status || 'pending', reason || '']);
+  return r.rows[0];
+}
+
+// Takes the due ones for this run, so two processes overlapping across a
+// deploy cannot both send the same email.
+async function claimDueAutoEmails(limit = 20) {
+  return (await query(
+    `UPDATE pos_auto_emails SET status = 'sending', attempts = attempts + 1
+      WHERE id IN (SELECT id FROM pos_auto_emails
+                    WHERE status = 'pending' AND send_after <= NOW()
+                    ORDER BY send_after LIMIT $1 FOR UPDATE SKIP LOCKED)
+      RETURNING *`, [limit])).rows;
+}
+
+async function finishAutoEmail(id, status, reason) {
+  await query(`UPDATE pos_auto_emails SET status = $2, reason = $3, finished_at = NOW() WHERE id = $1`,
+    [id, status, String(reason || '').slice(0, 300)]);
+}
+
+async function retryAutoEmail(id, minutes, reason) {
+  await query(
+    `UPDATE pos_auto_emails SET status = 'pending', reason = $3,
+            send_after = NOW() + ($2 || ' minutes')::interval WHERE id = $1`,
+    [id, String(minutes), String(reason || '').slice(0, 300)]);
+}
+
+async function recentAutoEmails(userId, limit = 15) {
+  return (await query(
+    `SELECT a.id, a.kind, a.to_email, a.status, a.reason, a.send_after, a.created_at, a.finished_at,
+            t.receipt_number, t.customer_name, t.total
+       FROM pos_auto_emails a LEFT JOIN pos_transactions t ON t.id = a.transaction_id
+      WHERE a.user_id = $1 ORDER BY a.created_at DESC, a.id DESC LIMIT $2`, [userId, limit])).rows;
+}
+
+// Sales this shop has rung up to this address, other than the one given.
+async function priorSalesTo(userId, email, exceptTransactionId) {
+  if (!email) return 0;
+  const r = await query(
+    `SELECT COUNT(*)::int AS n FROM pos_transactions
+      WHERE user_id = $1 AND type = 'sale' AND LOWER(TRIM(customer_email)) = LOWER(TRIM($2)) AND id <> $3`,
+    [userId, email, exceptTransactionId || 0]);
+  return r.rows[0]?.n || 0;
+}
+
+// When this shop last emailed this address — of one kind, or any.
+async function lastEmailedAt(userId, email, kind) {
+  if (!email) return null;
+  const r = await query(
+    `SELECT MAX(sent_at) AS at FROM sent_emails
+      WHERE user_id = $1 AND LOWER(TRIM(to_email)) = LOWER(TRIM($2)) AND ($3::text IS NULL OR kind = $3)`,
+    [userId, email, kind || null]);
+  return r.rows[0]?.at || null;
+}
+
+async function wasReturned(transactionId) {
+  const r = await query(
+    `SELECT 1 FROM pos_transactions WHERE original_transaction_id = $1 AND type = 'return' LIMIT 1`, [transactionId]);
+  return r.rowCount > 0;
 }
 
 async function recordTermsAcceptance({ userId, email, version, acceptedBy, ip, userAgent }) {
@@ -3571,6 +3664,8 @@ async function updateSettings(userId, fields) {
     'booking_slot_step', 'booking_lead_hours',
     'return_policy_title', 'return_policy_points', 'return_window_days', 'exchange_window_days',
     'audit_auto_enabled', 'audit_alert_enabled', 'audit_auto_time',
+    'auto_email_enabled', 'auto_email_welcome', 'auto_email_receipt', 'auto_email_min_total',
+    'auto_email_first_only', 'auto_email_cooldown_days', 'auto_email_delay_min',
     // The shop's own address on the app domain. Left off this list it is
     // silently dropped — the save reports success and the subdomain never
     // exists, which is exactly what happened.
@@ -4277,6 +4372,7 @@ const OWNED_BY_USER = [
   'pos_known_users',
   // The shop's own agreement goes with the shop, like everything else it held.
   'pos_terms_acceptances',
+  'pos_auto_emails',
   // Last: while this row exists the subdomain still resolves to a company.
   'pos_settings',
 ];
@@ -4498,6 +4594,14 @@ module.exports = {
   deleteSubscriptionRow,
   recordTermsAcceptance,
   latestTermsAcceptance,
+  queueAutoEmail,
+  claimDueAutoEmails,
+  finishAutoEmail,
+  retryAutoEmail,
+  recentAutoEmails,
+  priorSalesTo,
+  lastEmailedAt,
+  wasReturned,
   linkedCompanyIds,
   linkCompanies,
   unlinkCompanies,
