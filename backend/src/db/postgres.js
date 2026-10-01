@@ -2289,6 +2289,24 @@ async function payrollForPayday(userId, payday, settings) {
     }
     return round2(total);
   };
+  // How much of their sales went at each rate, so the paycheck can say
+  // "35% of this and 40% of that" — a single rate times the total doesn't
+  // come to the figure being paid, and reads as a mistake.
+  const planSplit = (empId) => {
+    const plan = plans.get(empId);
+    const byDay = dailyNet.get(empId);
+    if (!plan || plan.plan_type !== 'daily_threshold' || !byDay) return null;
+    const cap = Number(plan.tier_threshold) || 0;
+    let atBase = 0, atTier = 0;
+    for (const net of byDay.values()) {
+      if (net <= cap) atBase += net;
+      else { atBase += cap; atTier += net - cap; }
+    }
+    return {
+      base_rate: Number(plan.base_rate) || 0, tier_rate: Number(plan.tier_rate) || 0,
+      threshold: cap, at_base: round2(atBase), at_tier: round2(atTier),
+    };
+  };
 
   for (const e of earned) {
     const r = row(e.employee_id, e.employee_name, e.commission_rate, e.company_id);
@@ -2297,6 +2315,7 @@ async function payrollForPayday(userId, payday, settings) {
     r.own_commission = planCommission(e.employee_id)
       ?? round2(r.sales_total * r.commission_rate / 100);
     r.commission_earned = r.own_commission;
+    r.plan_split = planSplit(e.employee_id);
   }
 
   // A manager paid a share of the floor is owed it whether or not they rang
@@ -2352,6 +2371,7 @@ async function payrollForPayday(userId, payday, settings) {
       r.own_commission = planCommission(rt.employee_id)
         ?? round2(r.sales_total * r.commission_rate / 100);
       r.commission_earned = r.own_commission;
+      r.plan_split = planSplit(rt.employee_id);
       continue;
     }
 

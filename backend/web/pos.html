@@ -10969,6 +10969,16 @@ async function loadPayroll() {
          title="See the sales, returns and disputes behind this"
          style="border:none;background:none;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-decoration:underline">${escapeHtml(label)}</button>`;
 
+    // On a tiered plan one rate times the total doesn't come to what's paid,
+    // so say how much went at each rate and where the line is.
+    const rateText = e => {
+      const t = e.plan_split;
+      if (!t) return `${e.commission_rate}% of $${money(e.sales_total)}`;
+      const rule = `${t.tier_rate}% on each day's sales above $${money(t.threshold).replace(/\.00$/, '')}`;
+      return Number(t.at_tier) > 0
+        ? `${t.base_rate}% of $${money(t.at_base)} + ${t.tier_rate}% of $${money(t.at_tier)} (${rule})`
+        : `${t.base_rate}% of $${money(t.at_base)} (no day above $${money(t.threshold).replace(/\.00$/, '')} for ${t.tier_rate}%)`;
+    };
     const storeLine = e => `
       <div style="display:flex;justify-content:space-between;font-weight:600;margin-top:4px">
         <span>${e.store_name ? detailLink(e.store_name, e.employee_name, e.store_name) + ' ' : ''}<span style="font-weight:400;color:var(--mid)">· ${
@@ -10976,7 +10986,7 @@ async function loadPayroll() {
           // the paycheck because money is being held from them, so say that.
           (!e.sale_count && !Number(e.sales_total))
             ? 'no sales this period'
-            : `${e.commission_rate}% of $${money(e.sales_total)}${e.sale_count ? ` over ${e.sale_count} sale${e.sale_count === 1 ? '' : 's'}` : ''}${
+            : `${rateText(e)}${e.sale_count ? ` over ${e.sale_count} sale${e.sale_count === 1 ? '' : 's'}` : ''}${
               // Said quietly rather than as a deduction: the sale came back, so
               // it is out of what they sold, not taken off what they are owed.
               Number(e.returns_netted) ? `, after $${money(e.returns_netted)} returned` : ''}`}</span></span>
