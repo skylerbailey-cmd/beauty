@@ -192,7 +192,7 @@ Employees, Account. A sales employee sees only a form to change their own PIN.
     month instead of $115. Everything recorded stays and stays readable —
     sales, customers, reports, payroll — but while it sleeps it takes no
     sales, returns or exchanges, books or moves no Calendar sessions, and
-    sends no emails (welcome, mass, receipts, replies). Sessions already
+    sends no emails (welcome, mass, receipts). Sessions already
     booked can still be cancelled. A banner on the Register, Calendar and
     Emails tabs says it is asleep. What is left of the month already paid at $115 comes off the next
     bills. Waking it goes back to $115 a month and charges the rest of this

@@ -2,8 +2,8 @@
 
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
-const { createOAuthClient, setupGmailWatch } = require('../services/gmail');
-const { db, saveUser, getUser, updateUserPushToken } = require('../db');
+const { createOAuthClient } = require('../services/gmail');
+const { db, saveUser, getUser } = require('../db');
 
 const router = express.Router();
 
@@ -25,9 +25,12 @@ const SIGN_IN_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
 ];
 
+// Sending only. Reading and organising the mailbox (gmail.modify,
+// gmail.compose) were for the Smart Inbox, which is gone; SkySale sends
+// receipts, welcome emails, mass email and alerts, and reads nothing.
+// gmail.send is a sensitive scope, not a restricted one, so it needs Google's
+// verification but not a third-party security assessment.
 const GMAIL_SCOPES = [
-  'https://www.googleapis.com/auth/gmail.modify',
-  'https://www.googleapis.com/auth/gmail.compose',
   'https://www.googleapis.com/auth/gmail.send',
   ...SIGN_IN_SCOPES,
 ];
@@ -232,9 +235,9 @@ router.get('/google/callback', async (req, res) => {
           .run(tokens.access_token || null, tokens.refresh_token || null, userId);
       }
     } else {
-      // The mobile flow, which exists to hand a Gmail-linked user id back to
-      // the Expo app. Its ids have always been Google's, and rekeying them
-      // here would orphan exactly what the web change above is preventing.
+      // The old non-web flow (it served the mobile app, which is gone). Its ids
+      // have always been Google's, and rekeying them here would orphan exactly
+      // what the web change above is preventing.
       userId = profile.id || uuidv4();
       saveUser({
         id: userId,
@@ -257,15 +260,6 @@ router.get('/google/callback', async (req, res) => {
       }
     }
 
-    // Only worth doing when a mailbox was actually granted. On a plain sign-in
-    // there is nothing to watch, and asking anyway fails on every single login.
-    if (req.session?.oauthWants !== 'identity') {
-      try {
-        await setupGmailWatch(userId);
-      } catch (watchErr) {
-        console.error('[auth] Gmail watch setup failed (non-fatal):', watchErr.message);
-      }
-    }
     delete req.session.oauthWants;
 
     // Store userId in session
@@ -322,17 +316,11 @@ router.get('/google/callback', async (req, res) => {
       return res.redirect(dest);
     }
 
-    res.send(`
-      <html><body style="font-family:sans-serif;text-align:center;padding:60px;background:#FDF6F0;">
-        <h2 style="color:#D4A0A0;">✓ Gmail Connected!</h2>
-        <p style="color:#2D2D2D;">Your User ID: <strong>${userId}</strong></p>
-        <p style="color:#8A8A8A;">Copy this ID and add it to your mobile app .env as<br><code>EXPO_PUBLIC_USER_ID=${userId}</code></p>
-        <p style="color:#8A8A8A;margin-top:30px;">You can close this tab.</p>
-      </body></html>
-    `);
+    // There is no mobile app to hand an id to any more; everyone is on the web.
+    return res.redirect('/pos.html');
   } catch (err) {
     console.error('[auth] Callback error:', err);
-    res.redirect(`${process.env.FRONTEND_DEEP_LINK || 'skysale://'}auth-error?reason=${encodeURIComponent(err.message)}`);
+    res.redirect('/signup.html?problem=server');
   }
 });
 
@@ -384,28 +372,8 @@ router.get('/me', async (req, res) => {
     websites: JSON.parse(user.websites || '[]'),
     brands: JSON.parse(user.brands || '[]'),
     hasGmail: !!user.refresh_token,
-    push_token: user.push_token,
-    gmail_history_id: user.gmail_history_id,
     created_at: user.created_at,
   });
-});
-
-// ─── POST /auth/push-token ─────────────────────────────────────────────────────
-// Save/update Expo push notification token for the user
-
-router.post('/push-token', (req, res) => {
-  const userId = req.session?.userId || req.headers['x-user-id'];
-  if (!userId) {
-    return res.status(401).json({ error: 'Not authenticated' });
-  }
-
-  const { push_token } = req.body;
-  if (!push_token || typeof push_token !== 'string') {
-    return res.status(400).json({ error: 'push_token is required' });
-  }
-
-  updateUserPushToken(userId, push_token);
-  res.json({ success: true });
 });
 
 // ─── POST /auth/theme ──────────────────────────────────────────────────────────

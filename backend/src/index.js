@@ -9,8 +9,6 @@ const session = require('express-session');
 const path = require('path');
 
 const authRoutes = require('./routes/auth');
-const emailRoutes = require('./routes/emails');
-const webhookRoutes = require('./routes/webhook');
 const { router: welcomeRoutes } = require('./routes/welcome');
 const posRoutes = require('./routes/pos');
 const bookingRoutes = require('./routes/booking');
@@ -18,8 +16,6 @@ const signupRoutes = require('./routes/signup');
 const { initSchema: initPostgres } = require('./db/postgres');
 const { hardenRouter } = require('./lib/safe-async');
 const { tenantMiddleware, cookieDomainFor } = require('./lib/tenancy');
-const { getAllUsers } = require('./db');
-const { setupGmailWatch } = require('./services/gmail');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -168,7 +164,6 @@ app.use(express.static(fs.existsSync(webDir) ? webDir : webDirAlt, {
 // Google routes so /auth/link is reached whether or not Google is configured.
 app.use('/auth', hardenRouter(require('./routes/login')));
 app.use('/auth', hardenRouter(authRoutes));
-app.use('/api/emails', hardenRouter(emailRoutes));
 app.use('/api/welcome', hardenRouter(welcomeRoutes));
 app.use('/api/pos', hardenRouter(posRoutes));
 // Public — the customer's reschedule/cancel page, reached from a link in their
@@ -179,7 +174,6 @@ app.use('/api/booking', hardenRouter(bookingRoutes));
 // limited and every account is created from a proven email address — either a
 // completed Google sign-in or a one-time link the shop clicked in its inbox.
 app.use('/api/signup', hardenRouter(signupRoutes));
-app.use('/webhook', hardenRouter(webhookRoutes));
 // Paying for a shop. Every route is scoped to the signed-in company; none of
 // them takes a company id from the caller.
 app.use('/api/billing', hardenRouter(require('./routes/billing')));
@@ -242,23 +236,6 @@ process.on('unhandledRejection', (reason) => {
   console.error('[server] Unhandled rejection (kept running):', reason?.stack || reason);
 });
 
-// ─── Startup: restore Gmail watches ───────────────────────────────────────────
-
-async function restoreGmailWatches() {
-  const users = getAllUsers();
-  console.log(`[startup] Restoring Gmail watches for ${users.length} user(s)...`);
-
-  for (const user of users) {
-    try {
-      await setupGmailWatch(user.id);
-      console.log(`[startup] Gmail watch restored for ${user.email}`);
-    } catch (err) {
-      // Don't crash on startup — token may need re-auth
-      console.error(`[startup] Failed to restore watch for ${user.email}:`, err.message);
-    }
-  }
-}
-
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 app.listen(PORT, async () => {
@@ -279,13 +256,6 @@ app.listen(PORT, async () => {
     console.warn('[server] Email-only sign-in is OPEN: an email address alone signs a company in. Set LEGACY_EMAIL_LOGIN=0 once Google sign-in is confirmed.');
   } else {
     console.log('[server] Email-only sign-in is closed; Google sign-in only.');
-  }
-
-  // Restore watches after server is ready
-  try {
-    await restoreGmailWatches();
-  } catch (err) {
-    console.error('[startup] Error during watch restoration:', err.message);
   }
 
   // The nightly reconciliation. Checked every ten minutes rather than

@@ -10,9 +10,11 @@
 // email, who accepted, which version, when, and from where. That record is
 // the point — a notice beside a button is evidence of nothing.
 //
-// Bump TERMS_VERSION, to the date at the top of the published pages, only for
-// a change that matters; the terms promise 30 days' email notice before such a
-// change takes effect, and every shop will be asked to accept it again.
+// TERMS_VERSION is the date of the last change shops must accept. Bump it, to
+// the date then at the top of the published pages, only for a change that
+// matters: the terms promise 30 days' email notice first, and every shop is
+// asked to accept again. A change that takes nothing new from anyone — the
+// 1 October 2026 edit, removing the Smart Inbox from both pages — leaves it.
 
 const pgDb = require('../db/postgres');
 

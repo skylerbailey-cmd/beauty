@@ -213,8 +213,8 @@ const call = async (router, p, body = {}, { method = 'post', userId = 'u1', req:
   const r = { code: 200, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; } };
   await refuse({ appt: { user_id: 'u1' } }, r, () => {});
   check('— is refused for the shop the booking belongs to', r.code === 402);
-  check('the Smart Inbox’s send is behind the same check',
-    /router\.post\('\/:id\/send', refuseWhileAsleep\('emails'\)/.test(fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'emails.js'), 'utf8')));
+  check('and there is no Smart Inbox left to send from',
+    !fs.existsSync(path.join(__dirname, '..', 'src', 'routes', 'emails.js')));
   check('cancelling a booking is still allowed', route(posRoutes, 'post', '/appointments/:id/cancel').stack.length === 1
     && route(bookingRoutes, 'post', '/:token/cancel').stack.length === 2);
   rows.u1 = { user_id: 'u1', status: 'active', plan: 'full' };
