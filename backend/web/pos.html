@@ -1710,14 +1710,14 @@
          mode now, and this drives it by message instead. -->
     <div class="emails-layout">
       <nav class="emails-nav" id="emailsNav">
-        <button class="em-nav-btn" data-emailview="sent" onclick="switchEmailView('sent')">
-          <span class="em-ico">&#128233;</span> Sent emails
-        </button>
         <button class="em-nav-btn active" data-emailview="welcome" onclick="switchEmailView('welcome')">
           <span class="em-ico">&#9993;</span> Welcome emails
         </button>
         <button class="em-nav-btn" data-emailview="mass" onclick="switchEmailView('mass')">
           <span class="em-ico">&#128227;</span> Mass email
+        </button>
+        <button class="em-nav-btn" data-emailview="sent" onclick="switchEmailView('sent')">
+          <span class="em-ico">&#128233;</span> Sent emails
         </button>
       </nav>
 
@@ -9225,8 +9225,11 @@ function loadTabData(tabName) {
   if (tabName === 'history' && txView === 'customers') loadCustomers();
   if (tabName === 'calendar') loadCalendar();
   if (tabName === 'emails') {
-    const f = document.getElementById('emailsFrame');
-    if (f && !f.src) f.src = f.dataset.src; // load once, on first open
+    // Open on whichever view the list says is selected — Welcome emails
+    // unless someone has picked another — so the frame and the list beside it
+    // cannot disagree. switchEmailView loads the frame the first time.
+    const on = document.querySelector('#emailsNav .em-nav-btn.active')?.dataset.emailview || 'welcome';
+    switchEmailView(on);
   }
   if (tabName === 'settings') { applySettingsAccessUI(); loadLinkedStores(); fillReturnPolicySettings(); fillReturnWindowSettings(); loadAutoAudit(); }
 }
@@ -13579,8 +13582,6 @@ const TOUR_STEPS = [
   // Emails
   { tab: 'emails', at: '#posSubtabs [data-tab="emails"]', title: 'Emails',
     text: 'Everything you send your customers.' },
-  { tab: 'emails', at: '#emailsNav [data-emailview="sent"]', title: 'Sent emails',
-    text: 'Every email that has gone to a customer.' },
   { tab: 'emails', at: '#emailsNav [data-emailview="welcome"]', title: 'Welcome emails',
     text: 'The email a customer gets after buying, built from the usage notes on the products they bought.' },
   { tab: 'emails', view: 'mass', at: cardOf('#massPresets'), title: 'Mass email: who it goes to',
@@ -13592,6 +13593,9 @@ const TOUR_STEPS = [
     } },
   { tab: 'emails', view: 'mass', at: cardOf('#massSubject'), title: 'Mass email: the message',
     text: 'Write the subject and the message, check the sample, and press Send.' },
+
+  { tab: 'emails', at: '#emailsNav [data-emailview="sent"]', title: 'Sent emails',
+    text: 'Every email that has gone to a customer.' },
 
   // Transactions
   { who: 'nopin', tab: 'history', at: '#posSubtabs [data-tab="history"]', title: 'Transactions',

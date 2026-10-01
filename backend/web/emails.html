@@ -1227,11 +1227,11 @@
   <!-- Sidebar -->
   <nav class="sidebar" id="sidebarNav">
     <ul class="sidebar-nav">
-      <li><a data-tab="sent" onclick="switchTab('sent')">
-        <span class="nav-icon">&#128233;</span> Sent Emails
-      </a></li>
       <li><a class="active" data-tab="welcome" onclick="switchTab('welcome')">
         <span class="nav-icon">&#9993;</span> Welcome Emails
+      </a></li>
+      <li><a data-tab="sent" onclick="switchTab('sent')">
+        <span class="nav-icon">&#128233;</span> Sent Emails
       </a></li>
       <li><a data-tab="customers" onclick="switchTab('customers')">
         <span class="nav-icon">&#128101;</span> Customers
@@ -1246,11 +1246,11 @@
   <!-- Mobile nav bar -->
   <div class="mobile-nav" id="mobileNav">
     <div class="mobile-nav-inner">
-      <a data-tab="sent" onclick="switchTab('sent')">
-        <span>&#128233;</span> Sent
-      </a>
       <a class="active" data-tab="welcome" onclick="switchTab('welcome')">
         <span>&#9993;</span> Welcome Emails
+      </a>
+      <a data-tab="sent" onclick="switchTab('sent')">
+        <span>&#128233;</span> Sent
       </a>
       <a data-tab="customers" onclick="switchTab('customers')">
         <span>&#128101;</span> Customers
@@ -1678,11 +1678,10 @@
       // Grids must exist before their checkboxes can be ticked.
       applyPrefillFromUrl();
     });
-    // Inside the POS Emails tab, default to the Sent Emails view — unless we
-    // were opened to compose for a specific customer.
-    if (typeof IS_EMBEDDED !== 'undefined' && IS_EMBEDDED && !hasPrefill()) {
-      switchTab('sent');
-    }
+    // Inside the POS Emails tab the list beside us decides the view, and it
+    // opens on Welcome emails — which is this page's own default, so there is
+    // nothing to switch to here. (This used to jump to Sent Emails, leaving
+    // the POS list showing Welcome emails selected over a page of sent ones.)
   }
 
   // ── Prefill from the POS Customers tab ──────────────────────────────────────
