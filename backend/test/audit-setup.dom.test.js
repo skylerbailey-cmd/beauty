@@ -67,19 +67,17 @@ const get = async () => {
   check('the nightly batch says which box to tick and when to run it', /Run the audit automatically every day/.test(text()) && /after your processor has settled/.test(text()));
   check('texting is marked optional', /Get a text when a day is off \(optional\)/.test(text()));
   check('and there is a way straight to the settings', /Open Settings → Alerts & connections/.test(text()));
-  check('not marked all set', !card.classList.contains('setup-done'));
+  check('and it shows while there is something to do', w.getComputedStyle(card).display !== 'none');
 
   AUTO = { ...AUTO, merchant: 'Maverick' };
   await w.loadAutoAudit();
   check('connected: the first step is ticked and names the processor', ticked()[0] && !ticked()[1] && /Connected to Maverick/.test(text()));
-  check('still not all set without the nightly batch', !card.classList.contains('setup-done'));
+  check('still shown without the nightly batch', w.getComputedStyle(card).display !== 'none');
 
   AUTO = { ...AUTO, enabled: true, at: '07:30' };
   await w.loadAutoAudit();
   check('switched on: the second step is ticked with its time', ticked()[1] && /Runs every day at 7:30am/.test(text()));
-  check('and the card says it is all set', card.classList.contains('setup-done'));
-  check('the explainer and button tuck away once set up',
-    [...card.querySelectorAll(':scope > p, :scope > button')].every(el => w.getComputedStyle(el).display === 'none'));
+  check('once set up, the card is hidden', card.classList.contains('setup-done') && w.getComputedStyle(card).display === 'none');
 
   AUTO = { ...AUTO, alert_enabled: true, alerts_possible: false };
   await w.loadAutoAudit();
@@ -87,6 +85,9 @@ const get = async () => {
   AUTO = { ...AUTO, alerts_possible: true };
   await w.loadAutoAudit();
   check('with a number it is', ticked()[2]);
+  AUTO = { ...AUTO, merchant: null };
+  await w.loadAutoAudit();
+  check('if the connection is removed, it comes back', w.getComputedStyle(card).display !== 'none' && !ticked()[0]);
 
   console.log(`\n${pass} passed, ${fail} failed\n`);
   process.exit(fail ? 1 : 0);
