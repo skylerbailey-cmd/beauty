@@ -465,7 +465,24 @@ router.post('/transactions', async (req, res) => {
       subscription_required: true,
     });
   }
-  const { type, employee_id, employees: employeeAssignments, customer_name, customer_email, customer_phone, items, payment_method, card_last4, payments, notes, tax_rate, discount_amount, original_receipt, manager_name, manager_pin } = req.body;
+  const { type, employee_id, employees: employeeAssignments, customer_name, customer_email, customer_phone, items, payment_method, card_last4, payments, notes, tax_rate, discount_amount, original_receipt, manager_name, manager_pin, processor_name, processor_pin } = req.body;
+
+  // Whoever puts a return through says so, with their own name and PIN — the
+  // register is open to anyone at the counter, and money going back out of it
+  // should have a person against it. Checked before anything else about the
+  // return, so a refused PIN costs nothing.
+  let processedBy = null;
+  if (type === 'return') {
+    const emp = processor_pin ? await pgDb.verifyEmployeePin(String(processor_pin), userId, processor_name) : null;
+    if (!emp || String(processor_name || '').trim().toLowerCase() !== emp.name.trim().toLowerCase()) {
+      return res.status(403).json({
+        error: processor_pin ? 'That name and PIN do not match anyone here.' : 'Enter your name and PIN to process this return.',
+        needsProcessor: true,
+      });
+    }
+    processedBy = emp;
+  }
+  let approvedBy = null; // the manager whose code let a return through, if one was needed
 
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'At least one item required' });
@@ -620,6 +637,7 @@ router.post('/transactions', async (req, res) => {
     const windowDays = returnWindowDays(await pgDb.getSettings(userId));
     if (!withinReturnWindow(daysSince, windowDays)) {
       const manager = await verifyManager(userId, manager_name, manager_pin);
+      if (manager) approvedBy = manager;
       if (!manager) {
         return res.status(403).json({
           error: windowDays === 0
@@ -648,6 +666,7 @@ router.post('/transactions', async (req, res) => {
     const mismatched = origCards.size ? refundCards.filter(c => !origCards.has(c)) : [];
     if (mismatched.length) {
       const manager = await verifyManager(userId, manager_name, manager_pin);
+      if (manager) approvedBy = manager;
       if (!manager) {
         const list = [...new Set(mismatched)].map(c => `****${c}`).join(', ');
         const origList = [...origCards].map(c => `****${c}`).join(', ');
@@ -716,6 +735,10 @@ router.post('/transactions', async (req, res) => {
     receipt_number: receiptOverride,
     employees_changed: employeesChanged,
     user_id: userId,
+    processed_by_id: processedBy?.id || null,
+    processed_by_name: processedBy?.name || '',
+    approved_by_id: approvedBy?.id || null,
+    approved_by_name: approvedBy?.name || '',
   });
 
   const txItems = items.map(i => ({

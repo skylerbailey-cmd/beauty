@@ -91,8 +91,13 @@ On the Register, switch from Sale to "Look Up". Type the receipt number and
 press Look Up. From the receipt you can reprint it, email it again, choose
 items to return ("Select All for Return", or pick items), or "Refund an
 Amount" for a partial refund or price adjustment without an item coming back.
+Pressing "Process Return" asks for the name and PIN of whoever is putting the
+return through, and records them on it as "Processed by" — on the receipt, in
+the Transactions list, in Reports → Returns and in the CSV export. The
+employees on the return are separate: they are whose commission it comes off.
 The shop's return window and return policy (Settings → Store) decide what can
-be returned; past the window a manager can approve it with their code.
+be returned; past the window, or to a card the sale wasn't paid on, a manager
+approves it with their code, and they are recorded as "approved by".
 Exchanges have their own window, also set in Settings → Store.
 
 ## Reports tab
