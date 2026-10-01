@@ -160,8 +160,17 @@ Employees, Account. A sales employee sees only a form to change their own PIN.
     person more than once every N days; wait N minutes before sending (a sale
     returned in that time isn't emailed). Never sent with no email address on
     the sale, while the shop is asleep, or if someone already sent it by hand.
+    "Products that don't send": a sale made up only of the products ticked
+    there (gift cards, a service, one-off Build-your-own items) isn't emailed
+    automatically; bought with anything else, the email still goes.
     At the till, unticking "Email them automatically after this sale" skips it
-    for that one customer. The receipt screen after a sale says what will go
+    for that one customer, and "Don't email them again" then remembers it on
+    their record.
+  - Never email a customer: tick "Never email this customer" on their details
+    (Transactions → Customers → open the customer), or "Don't email them
+    again" at the till. They then get no automatic emails and are left out of
+    mass emails; a returning customer looked up at the till shows it. The Send
+    buttons still work if someone sends them one by hand. The receipt screen after a sale says what will go
     out, and the card lists recent automatic emails — sent, waiting, or not
     sent and why. Pay schedule (paydays and the
   period each covers). Return window and exchange window. Return policy

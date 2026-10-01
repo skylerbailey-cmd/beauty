@@ -1436,11 +1436,14 @@ router.post('/transactions/:id/email', refuseWhileAsleep('emails'), async (req, 
 //
 // The rules, all optional:
 //   which emails — the welcome email, the receipt, or both;
+//   products that don't count — a sale of only those sends nothing;
 //   a minimum sale total;
 //   welcome emails only on a customer's first purchase;
 //   no more than one email to the same person every N days;
 //   a wait before sending, in which a returned sale cancels it.
-// And at the till, for one sale, "don't email this customer".
+// And at the till, for one sale, "don't email this customer" — or, saved on
+// the customer, never: a customer marked "never email" gets no automatic
+// email and no mass email.
 
 const AUTO_EMAIL_KINDS = ['welcome', 'receipt'];
 const AUTO_EMAIL_RETRIES = 3;
@@ -1454,14 +1457,29 @@ function autoEmailRules(settings) {
     firstOnly: !!Number(settings?.auto_email_first_only),
     cooldownDays: Math.max(0, parseInt(settings?.auto_email_cooldown_days, 10) || 0),
     delayMin: Math.min(1440, Math.max(0, parseInt(settings?.auto_email_delay_min, 10) || 0)),
+    excluded: excludedProducts(settings),
   };
 }
+
+function excludedProducts(settings) {
+  try {
+    const v = JSON.parse(settings?.auto_email_excluded || '[]');
+    return new Set(Array.isArray(v) ? v.map(String) : []);
+  } catch (_) { return new Set(); }
+}
+const isExcludedItem = (item, excluded) =>
+  excluded.has(String(item.product_id)) || (String(item.product_id).startsWith('one-off:') && excluded.has('one-off:*'));
 
 // Why this sale should not get this email — or '' if it should.
 async function autoEmailSkipReason(userId, tx, kind, rules, skippedAtTill) {
   const email = String(tx.customer_email || '').trim();
   if (skippedAtTill) return 'not sent — the till was asked not to email this customer';
   if (!email) return 'not sent — no email address on the sale';
+  if ((await pgDb.noEmailAddresses(userId, [email])).size) return 'not sent — the customer asked never to be emailed';
+  const items = tx.items || [];
+  if (rules.excluded.size && items.length && items.every((i) => isExcludedItem(i, rules.excluded))) {
+    return 'not sent — the sale was only products set not to send';
+  }
   if (rules.minTotal > 0 && Number(tx.total) < rules.minTotal) {
     return `not sent — the sale was under $${money(rules.minTotal)}`;
   }
@@ -1505,6 +1523,7 @@ async function deliverAutoEmail(row) {
   if (await require('../lib/sleep').isAsleep(row.user_id)) return ['skipped', 'not sent — the shop is asleep'];
   const email = String(tx.customer_email || '').trim();
   if (!email) return ['skipped', 'not sent — no email address on the sale'];
+  if ((await pgDb.noEmailAddresses(row.user_id, [email])).size) return ['skipped', 'not sent — the customer asked never to be emailed'];
   const byHand = await pgDb.lastEmailedAt(row.user_id, email, row.kind);
   if (byHand && new Date(byHand) >= new Date(tx.created_at)) return ['skipped', 'not sent — someone already sent it by hand'];
 
@@ -1647,9 +1666,11 @@ router.post('/mass-email', refuseWhileAsleep('emails'), async (req, res) => {
 
   // De-dupe by email
   const seen = new Set();
+  // A customer who asked never to be emailed is left out, whatever the page sent.
+  const refused = await pgDb.noEmailAddresses(userId, recipients.map(r => r.email));
   const list = recipients.filter(r => {
     const e = (r.email || '').trim().toLowerCase();
-    if (!e || seen.has(e)) return false;
+    if (!e || seen.has(e) || refused.has(e)) return false;
     seen.add(e);
     return true;
   });
@@ -1670,7 +1691,7 @@ router.post('/mass-email', refuseWhileAsleep('emails'), async (req, res) => {
       errors.push(`${to}: ${e.message}`);
     }
   }
-  res.json({ ok: true, sent, total: list.length, errors: errors.slice(0, 5) });
+  res.json({ ok: true, sent, total: list.length, left_out: refused.size, errors: errors.slice(0, 5) });
 });
 
 // ─── Reports ───────────────────────────────────────────────────────────────
@@ -2428,7 +2449,7 @@ router.get('/customers/search', async (req, res) => {
 // key transactions use). Lets the Customers detail view save phone/address/
 // notes even for a customer who doesn't have a `customers` row yet.
 router.post('/customers/upsert', async (req, res) => {
-  const { name, email, phone, birthday, address, notes } = req.body;
+  const { name, email, phone, birthday, address, notes, no_email } = req.body;
   // A phone number is enough to identify a customer now that they no longer
   // have to be keyed by email, so don't refuse to save one who has only that.
   const hasEmail = !!String(email || '').trim();
@@ -2441,8 +2462,23 @@ router.post('/customers/upsert', async (req, res) => {
   }
   const customer = await pgDb.findOrCreateCustomer(name, email, req.session.userId, phone);
   if (!customer) return res.status(400).json({ error: 'Could not save this customer.' });
-  await pgDb.updateCustomer(customer.id, { birthday: birthday || null, address: address || '', notes: notes || '' });
+  await pgDb.updateCustomer(customer.id, {
+    birthday: birthday || null, address: address || '', notes: notes || '',
+    ...(no_email !== undefined ? { no_email: !!no_email } : {}),
+  });
   res.json({ customer: await pgDb.getCustomer(customer.id) });
+});
+
+// "Don't email them again", from the till: sets only the flag, leaving
+// everything else on the customer's record as it is.
+router.post('/customers/email-preference', async (req, res) => {
+  const email = String(req.body?.email || '').trim();
+  const name = String(req.body?.name || '').trim() || email;
+  if (!email) return res.status(400).json({ error: 'Which customer? An email address is needed.' });
+  const customer = await pgDb.findOrCreateCustomer(name, email, req.session.userId);
+  if (!customer) return res.status(400).json({ error: 'Could not save this customer.' });
+  await pgDb.updateCustomer(customer.id, { no_email: !!req.body.no_email });
+  res.json({ ok: true, no_email: !!req.body.no_email });
 });
 
 // ─── Import transactions from a prior-POS CSV export ────────────────────────

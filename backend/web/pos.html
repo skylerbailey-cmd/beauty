@@ -806,6 +806,9 @@
     .ae-row input[type=number] { padding: 5px 8px; border: 1.5px solid var(--border); border-radius: 6px; font-size: .85rem; }
     .ae-row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent-deep); }
     #aeOptions.off { opacity: .45; pointer-events: none; }
+    .ae-exclude { max-height: 190px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; background: var(--white); max-width: 520px; }
+    .ae-exclude .ae-row { margin: 4px 0; }
+    .ae-exclude .ae-brand { color: var(--mid); font-size: .76rem; }
 
     /* Payroll: a person collapsed to one line — name, what they are owed. */
     .pr-toggle {
@@ -1208,8 +1211,12 @@
             <!-- Shown only when the shop sends emails automatically: the way to
                  honour a customer who says "please don't email me". -->
             <label id="autoEmailTill" style="display:none;align-items:center;gap:6px;font-family:system-ui,sans-serif;font-size:.78rem;color:var(--dark);cursor:pointer">
-              <input type="checkbox" id="autoEmailThisSale" checked style="width:15px;height:15px;accent-color:var(--accent-deep)">
+              <input type="checkbox" id="autoEmailThisSale" checked onchange="renderAutoEmailTill()" style="width:15px;height:15px;accent-color:var(--accent-deep)">
               Email them automatically after this sale
+            </label>
+            <label id="autoEmailNeverRow" style="display:none;align-items:center;gap:6px;font-family:system-ui,sans-serif;font-size:.76rem;color:var(--mid);cursor:pointer;margin-left:21px">
+              <input type="checkbox" id="autoEmailNever" style="width:14px;height:14px;accent-color:var(--accent-deep)">
+              Don't email them again — remember it on their record
             </label>
             <div id="custLookupNote" style="font-family:system-ui,sans-serif;font-size:.72rem;color:var(--success);margin-top:-2px"></div>
           </div>
@@ -2109,6 +2116,15 @@
           <label class="ae-row">Wait
             <input type="number" id="aeDelay" min="0" max="1440" step="1" placeholder="0" style="width:70px">
             minutes before sending <span style="color:var(--mid)">— a sale returned in that time isn't emailed</span></label>
+
+          <div style="font-size:.74rem;font-weight:700;color:var(--mid);text-transform:uppercase;letter-spacing:.5px;margin:14px 0 4px">Products that don't send</div>
+          <p style="font-size:.78rem;color:var(--mid);margin:0 0 6px">
+            A sale made up only of these products isn't emailed automatically — gift cards, a service, a sample.
+            Bought alongside anything else, the email still goes.
+          </p>
+          <input type="search" id="aeExcludeSearch" placeholder="Find a product" oninput="renderAutoEmailExclusions()"
+                 style="width:100%;max-width:320px;padding:6px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:.84rem;margin-bottom:6px">
+          <div id="aeExcludeList" class="ae-exclude"></div>
           <p style="font-size:.78rem;color:var(--mid);margin:10px 0 0">
             Never sent: to a sale with no email address, while the shop is asleep, or if someone has already sent
             that email by hand. Staff can also untick “Email automatically” at the till for a customer who asks not to be emailed.
@@ -2876,6 +2892,10 @@
       <label>Notes</label>
       <textarea id="custDetailNotes" rows="3" style="width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;resize:vertical"></textarea>
     </div>
+    <label style="display:flex;align-items:center;gap:8px;font-family:system-ui,sans-serif;font-size:.86rem;margin:4px 0 10px;cursor:pointer">
+      <input type="checkbox" id="custDetailNoEmail" style="width:16px;height:16px;accent-color:var(--accent-deep)">
+      Never email this customer <span style="color:var(--mid);font-size:.78rem">— no automatic or mass emails</span>
+    </label>
     <div id="custDetailProducts" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:6px"></div>
     <div id="custDetailEmployees" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:8px"></div>
     <div id="custDetailError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger);min-height:1em"></div>
@@ -3171,8 +3191,10 @@ async function loadProducts() {
   renderBrandFilters();
   renderProducts();
   // The Settings panel is built from these too — it lists the shop's own
-  // suppliers, which are only knowable once the products are in.
+  // suppliers, which are only knowable once the products are in — and so is
+  // the automatic-email list of products that don't send.
   renderBrandCheckboxes();
+  renderAutoEmailExclusions();
 }
 
 const BRAND_KEY_MAP = { 'Avologi': 'avologi', 'Avinichi': 'avinichi', 'HydraSphere Plus': 'hydrasphere', 'SpaceTouch': 'spacetouch', 'Lumières': 'lumieres' };
@@ -3750,6 +3772,11 @@ function fillAutoEmailSettings() {
   $('aeFirstOnly').checked = st.auto_email_first_only == null ? true : !!Number(st.auto_email_first_only);
   $('aeCooldown').value = Number(st.auto_email_cooldown_days) > 0 ? Number(st.auto_email_cooldown_days) : '';
   $('aeDelay').value = Number(st.auto_email_delay_min) > 0 ? Number(st.auto_email_delay_min) : '';
+  try {
+    const ex = JSON.parse(st.auto_email_excluded || '[]');
+    autoEmailExcluded = new Set(Array.isArray(ex) ? ex.map(String) : []);
+  } catch (_) { autoEmailExcluded = new Set(); }
+  renderAutoEmailExclusions();
   renderAutoEmailForm();
   loadAutoEmailLog();
 }
@@ -3763,6 +3790,43 @@ function renderAutoEmailForm() {
 function showAutoEmailTill() {
   const box = document.getElementById('autoEmailTill');
   if (box) box.style.display = Number(storeSettings?.auto_email_enabled) ? 'flex' : 'none';
+  renderAutoEmailTill();
+}
+// "Don't email them again" is offered once this sale's email is switched off.
+function renderAutoEmailTill() {
+  const row = document.getElementById('autoEmailNeverRow');
+  const on = document.getElementById('autoEmailThisSale');
+  if (!row || !on) return;
+  const offered = Number(storeSettings?.auto_email_enabled) && !on.checked;
+  row.style.display = offered ? 'flex' : 'none';
+  if (!offered) document.getElementById('autoEmailNever').checked = false;
+}
+function resetAutoEmailTill() {
+  document.getElementById('autoEmailThisSale').checked = true;
+  document.getElementById('autoEmailNever').checked = false;
+  renderAutoEmailTill();
+}
+
+// The products a sale can be made up of without sending anything.
+let autoEmailExcluded = new Set();
+const ONE_OFF_ALL = 'one-off:*';
+function renderAutoEmailExclusions() {
+  const box = document.getElementById('aeExcludeList');
+  if (!box) return;
+  const q = (document.getElementById('aeExcludeSearch')?.value || '').trim().toLowerCase();
+  const list = [{ id: ONE_OFF_ALL, name: 'One-off items rung up with Build your own', brand: '' }]
+    .concat((products || []).filter(p => p.visible !== false)
+      .map(p => ({ id: String(p.id), name: p.name, brand: p.brand || '' }))
+      .sort((a, b) => a.name.localeCompare(b.name)));
+  const shown = list.filter(p => !q || p.name.toLowerCase().includes(q) || p.brand.toLowerCase().includes(q));
+  box.innerHTML = shown.map(p => `
+    <label class="ae-row"><input type="checkbox" data-exclude="${escapeHtml(p.id)}" ${autoEmailExcluded.has(p.id) ? 'checked' : ''}
+      onchange="toggleAutoEmailExclusion(this)"> ${escapeHtml(p.name)} ${p.brand ? `<span class="ae-brand">${escapeHtml(p.brand)}</span>` : ''}</label>`).join('')
+    || '<div style="font-size:.8rem;color:var(--mid);padding:6px 0">No product matches.</div>';
+}
+function toggleAutoEmailExclusion(box) {
+  const id = box.dataset.exclude;
+  if (box.checked) autoEmailExcluded.add(id); else autoEmailExcluded.delete(id);
 }
 
 async function saveAutoEmail() {
@@ -3777,6 +3841,7 @@ async function saveAutoEmail() {
     auto_email_first_only: $('aeFirstOnly').checked ? 1 : 0,
     auto_email_cooldown_days: whole($('aeCooldown').value, 365),
     auto_email_delay_min: whole($('aeDelay').value, 1440),
+    auto_email_excluded: JSON.stringify([...autoEmailExcluded]),
   };
   if (body.auto_email_enabled && !body.auto_email_welcome && !body.auto_email_receipt) {
     status.style.color = 'var(--danger)';
@@ -4713,9 +4778,13 @@ async function lookupCustomerFromContact() {
     if (!email && c.email) { emailEl.value = c.email; filled.push('email'); }
     if (!phone && c.phone) { phoneEl.value = c.phone; filled.push('phone'); }
 
-    noteEl.textContent = filled.length
+    noteEl.textContent = (filled.length
       ? `Returning customer — filled in their ${filled.join(' and ')}.`
-      : `Returning customer: ${c.name || 'on file'}.`;
+      : `Returning customer: ${c.name || 'on file'}.`) + (c.no_email ? ' They asked not to be emailed.' : '');
+    if (c.no_email && Number(storeSettings?.auto_email_enabled)) {
+      document.getElementById('autoEmailThisSale').checked = false;
+      renderAutoEmailTill();
+    }
     // Re-key the cache on the fields as they now stand. Filling in the missing
     // contact detail changes them, which would otherwise look like new input
     // and fire a second identical lookup on the next blur.
@@ -4929,7 +4998,15 @@ async function submitTransaction(body) {
     showSuccessToast(`${data.transaction.type === 'return' ? 'Return' : 'Transaction'} #${data.transaction.receipt_number} completed successfully!`);
     showReceipt(data.transaction);
     showAutoEmailNote(data.auto_emails || []);
-    document.getElementById('autoEmailThisSale').checked = true; // the next customer starts fresh
+    // "Don't email them again": kept on the customer, so it holds next time
+    // and for mass email too.
+    if (body.type === 'sale' && body.customer_email && document.getElementById('autoEmailNever').checked) {
+      fetch(`${API}/api/pos/customers/email-preference`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ email: body.customer_email, name: body.customer_name, no_email: true }),
+      }).catch(() => {});
+    }
+    resetAutoEmailTill(); // the next customer starts fresh
     // Reset cart, employees, and return state
     cart = [];
     saleEmployees = defaultSaleEmployees();
@@ -8310,6 +8387,7 @@ function openCustomerDetail(i) {
   document.getElementById('custDetailBirthday').value = c.birthday ? String(c.birthday).slice(0, 10) : '';
   document.getElementById('custDetailAddress').value = c.address || '';
   document.getElementById('custDetailNotes').value = c.notes || '';
+  document.getElementById('custDetailNoEmail').checked = !!c.no_email;
   document.getElementById('custDetailStats').textContent =
     `${c.purchases} purchase${c.purchases !== 1 ? 's' : ''} · ${c.returns} return${c.returns !== 1 ? 's' : ''} · $${money(Number(c.total_spent))} total spent`;
   document.getElementById('custDetailProducts').innerHTML =
@@ -8324,6 +8402,7 @@ function openCustomerDetail(i) {
   document.getElementById('custDetailBirthday').disabled = !canEdit;
   document.getElementById('custDetailAddress').disabled = !canEdit;
   document.getElementById('custDetailNotes').disabled = !canEdit;
+  document.getElementById('custDetailNoEmail').disabled = !canEdit;
   document.getElementById('custDetailSaveBtn').style.display = canEdit ? '' : 'none';
   // No email means nowhere to send a welcome email either.
   document.getElementById('custDetailWelcomeBtn').style.display = canEdit ? '' : 'none';
@@ -8400,7 +8479,8 @@ async function saveCustomerDetail() {
   try {
     const resp = await fetch(`${API}/api/pos/customers/upsert`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ name, email: custDetailTarget.customer_email, phone, birthday, address, notes }),
+      body: JSON.stringify({ name, email: custDetailTarget.customer_email, phone, birthday, address, notes,
+        no_email: document.getElementById('custDetailNoEmail').checked }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Failed to save');
@@ -8412,6 +8492,7 @@ async function saveCustomerDetail() {
     custDetailTarget.birthday = data.customer.birthday;
     custDetailTarget.address = data.customer.address;
     custDetailTarget.notes = data.customer.notes;
+    custDetailTarget.no_email = !!data.customer.no_email;
     custDetailTarget.customer_id = data.customer.id;
     renderCustomers(custFiltered);
     closeCustomerDetail();
@@ -12137,13 +12218,15 @@ function massMatches() {
 function applyMassFilters() {
   if (!massCustomers) return;
   const all = massMatches();
-  const withEmail = all.filter(c => String(c.customer_email || '').trim());
+  const refused = all.filter(c => c.no_email && String(c.customer_email || '').trim());
+  const withEmail = all.filter(c => String(c.customer_email || '').trim() && !c.no_email);
   const countEl = document.getElementById('massCount');
 
   countEl.innerHTML = withEmail.length === 0
     ? `<span style="color:var(--danger)">Nobody matches${all.length ? ` — ${all.length} customer${all.length === 1 ? '' : 's'} fit, but none has an email address` : ''}.</span>`
     : `<strong>${withEmail.length}</strong> customer${withEmail.length === 1 ? '' : 's'} will get this email` +
-      (all.length > withEmail.length ? ` <span style="color:var(--mid)">· ${all.length - withEmail.length} match but have no email address</span>` : '') +
+      (all.length - refused.length > withEmail.length ? ` <span style="color:var(--mid)">· ${all.length - refused.length - withEmail.length} match but have no email address</span>` : '') +
+      (refused.length ? ` <span style="color:var(--mid)">· ${refused.length} asked never to be emailed</span>` : '') +
       ` <span style="color:var(--mid)">· out of ${massCustomers.length} on file</span>`;
 
   const shown = withEmail.slice(0, 12);
@@ -12162,7 +12245,7 @@ function renderMassSample() {
   const el = document.getElementById('massSample');
   const subject = document.getElementById('massSubject').value;
   const body = document.getElementById('massBody').value;
-  const who = massMatches().filter(c => String(c.customer_email || '').trim())[0];
+  const who = massMatches().filter(c => String(c.customer_email || '').trim() && !c.no_email)[0];
   if (!who || (!subject.trim() && !body.trim())) { el.style.display = 'none'; return; }
   const fill = (t) => String(t).replace(/\{name\}/g, (who.customer_name || '').split(' ')[0] || 'there');
   el.style.display = 'block';
@@ -12185,7 +12268,7 @@ async function sendMassEmailNow() {
     return;
   }
   const recipients = massMatches()
-    .filter(c => String(c.customer_email || '').trim())
+    .filter(c => String(c.customer_email || '').trim() && !c.no_email)
     .map(c => ({ name: c.customer_name || '', email: c.customer_email }));
   if (!recipients.length) {
     statusEl.style.color = 'var(--danger)';
@@ -13877,7 +13960,7 @@ const TOUR_STEPS = [
   { who: 'manager', tab: 'settings', view: 'store', at: cardOf('#settingsPaydays'), title: 'Pay schedule',
     text: 'When payday falls and which period it covers. Reports → Payroll is dated from this.' },
   { who: 'manager', tab: 'settings', view: 'store', at: '#autoEmailCard', title: 'Automatic emails',
-    text: 'Off, emails after a sale wait for someone to press Send. On, the welcome email and receipt go out by themselves — only above an amount you choose, only on a first purchase, no more than once every few days, after a wait — whichever of those you want.' },
+    text: 'Off, emails after a sale wait for someone to press Send. On, the welcome email and receipt go out by themselves — only above an amount you choose, only on a first purchase, no more than once every few days, after a wait, and not for products you mark — whichever of those you want. A customer marked “never email” is always left out.' },
   { who: 'manager', tab: 'settings', view: 'store', at: '#returnWindowCard', title: 'Return window',
     text: 'How long a customer has to return something, and separately to exchange it.' },
   { who: 'manager', tab: 'settings', view: 'store', at: cardOf('#setReturnPolicyTitle'), title: 'Return policy reminder',

@@ -348,6 +348,9 @@ async function initSchema() {
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS auto_email_first_only INTEGER DEFAULT 1');
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS auto_email_cooldown_days INTEGER DEFAULT 0');
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS auto_email_delay_min INTEGER DEFAULT 0');
+  // Product ids (JSON) whose sale alone never sends an automatic email;
+  // 'one-off:*' stands for every Build-your-own line.
+  await migrate("ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS auto_email_excluded TEXT DEFAULT '[]'");
   // One row per automatic email a sale asked for: waiting, sent, or not sent
   // and why — the record a shop reads when it asks "did that go out?".
   await migrate(`CREATE TABLE IF NOT EXISTS pos_auto_emails (
@@ -672,6 +675,8 @@ Exchanges are only allowed within **7 days** of purchase.'`);
   )`);
   await migrate('CREATE INDEX IF NOT EXISTS idx_pg_saved_audits_user ON pos_saved_audits(user_id)');
   await migrate('ALTER TABLE customers ADD COLUMN IF NOT EXISTS birthday DATE');
+  // The customer asked not to be emailed: no automatic email, no mass email.
+  await migrate('ALTER TABLE customers ADD COLUMN IF NOT EXISTS no_email BOOLEAN DEFAULT FALSE');
 
   // What a shop is paying, and whether it is paid up.
   //
@@ -959,7 +964,7 @@ async function getCustomerByEmail(email, userId) {
 }
 
 async function updateCustomer(id, fields, opts = {}) {
-  const allowed = ['name', 'email', 'phone', 'birthday', 'address', 'notes'];
+  const allowed = ['name', 'email', 'phone', 'birthday', 'address', 'notes', 'no_email'];
   const sets = [];
   const params = [];
   let idx = 1;
@@ -1548,7 +1553,7 @@ async function findCustomerByContact(userId, { email, phone }) {
   if (!e && !p) return null;
 
   const crm = (await query(
-    `SELECT name, email, phone, birthday, address, notes
+    `SELECT name, email, phone, birthday, address, notes, COALESCE(no_email, FALSE) AS no_email
      FROM customers
      WHERE user_id = $1
        AND ( ($2 <> '' AND LOWER(TRIM(email)) = $2)
@@ -1817,6 +1822,16 @@ async function lastEmailedAt(userId, email, kind) {
       WHERE user_id = $1 AND LOWER(TRIM(to_email)) = LOWER(TRIM($2)) AND ($3::text IS NULL OR kind = $3)`,
     [userId, email, kind || null]);
   return r.rows[0]?.at || null;
+}
+
+// The addresses, of those given, whose customer asked not to be emailed.
+async function noEmailAddresses(userId, emails) {
+  const list = [...new Set((emails || []).map((e) => String(e || '').trim().toLowerCase()).filter(Boolean))];
+  if (!list.length) return new Set();
+  const r = await query(
+    `SELECT LOWER(TRIM(email)) AS email FROM customers
+      WHERE user_id = $1 AND no_email = TRUE AND LOWER(TRIM(email)) = ANY($2::text[])`, [userId, list]);
+  return new Set(r.rows.map((x) => x.email));
 }
 
 async function wasReturned(transactionId) {
@@ -3343,7 +3358,7 @@ async function getCustomerReport(userId, startDate, endDate) {
       -- doesn't make someone look like they came in more recently than they did.
       MAX(COALESCE(t.original_sale_date, t.created_at))::date::text as last_purchase,
       MIN(COALESCE(t.original_sale_date, t.created_at))::date::text as first_purchase,
-      cust.id as customer_id, cust.birthday, cust.address, cust.notes,
+      cust.id as customer_id, cust.birthday, cust.address, cust.notes, COALESCE(cust.no_email, FALSE) AS no_email,
       -- Prefer the CRM record's phone (a manager may have corrected it in the
       -- Customers detail view), but fall back to whatever the sale itself
       -- captured — phone-only customers have no CRM row to join to, since
@@ -3355,7 +3370,7 @@ async function getCustomerReport(userId, startDate, endDate) {
       AND COALESCE(t.original_sale_date, t.created_at) >= $2
       AND COALESCE(t.original_sale_date, t.created_at) <= $3
       AND t.customer_name != ''
-    GROUP BY t.customer_name, t.customer_email, cust.id, cust.name, cust.phone, cust.birthday, cust.address, cust.notes
+    GROUP BY t.customer_name, t.customer_email, cust.id, cust.name, cust.phone, cust.birthday, cust.address, cust.notes, cust.no_email
     ORDER BY total_spent DESC
   `, [userId, startDate, endDate])).rows;
 
@@ -3665,7 +3680,7 @@ async function updateSettings(userId, fields) {
     'return_policy_title', 'return_policy_points', 'return_window_days', 'exchange_window_days',
     'audit_auto_enabled', 'audit_alert_enabled', 'audit_auto_time',
     'auto_email_enabled', 'auto_email_welcome', 'auto_email_receipt', 'auto_email_min_total',
-    'auto_email_first_only', 'auto_email_cooldown_days', 'auto_email_delay_min',
+    'auto_email_first_only', 'auto_email_cooldown_days', 'auto_email_delay_min', 'auto_email_excluded',
     // The shop's own address on the app domain. Left off this list it is
     // silently dropped — the save reports success and the subdomain never
     // exists, which is exactly what happened.
@@ -4602,6 +4617,7 @@ module.exports = {
   priorSalesTo,
   lastEmailedAt,
   wasReturned,
+  noEmailAddresses,
   linkedCompanyIds,
   linkCompanies,
   unlinkCompanies,

@@ -53,6 +53,7 @@ let priorSales = 0;
 let lastEmailed = null;           // any kind
 let lastEmailedByKind = {};
 let returned = false;
+let refusedEmails = new Set();
 let gmail = { refresh_token: 'rt', email: 'hello@glowsf.com' };
 const logged = [];
 const welcomesSaved = [];
@@ -70,7 +71,7 @@ pgDb.getEmployee = async () => ({ id: 2, name: 'Bo', role: 'sales', active: 1 })
 pgDb.createTransaction = async (t) => { tx = { ...t, id: 50, receipt_number: '1042', created_at: new Date(Date.now() - 1000).toISOString(),
   items: [{ product_id: PRODUCT.id, product_name: PRODUCT.name, quantity: 1, unit_price: 100, line_total: 100 }], employees: [{ employee_name: 'Bo' }], payments: [] };
   return { id: 50, receipt_number: '1042' }; };
-pgDb.addTransactionItems = async () => {};
+pgDb.addTransactionItems = async (id, items) => { if (tx) tx.items = items; };
 pgDb.addTransactionEmployees = async () => {};
 pgDb.findOrCreateCustomer = async () => ({ id: 1 });
 pgDb.addCustomerProducts = async () => {};
@@ -80,6 +81,7 @@ pgDb.queueAutoEmail = async (r) => { const row = { id: queued.length + 1, ...r, 
 pgDb.priorSalesTo = async () => priorSales;
 pgDb.lastEmailedAt = async (u, e, kind) => (kind ? lastEmailedByKind[kind] || null : lastEmailed);
 pgDb.wasReturned = async () => returned;
+pgDb.noEmailAddresses = async (u, list) => new Set(list.map(e => String(e).toLowerCase()).filter(e => refusedEmails.has(e)));
 pgDb.getGmailAccount = async () => gmail;
 pgDb.logSentEmail = async (e) => { logged.push(e); };
 pgDb.saveWelcomeEmail = async (w) => { welcomesSaved.push(w); };
@@ -164,6 +166,27 @@ const ON = { auto_email_enabled: 1, auto_email_welcome: 1, auto_email_receipt: 1
   const ret = await sell({ type: 'return' });
   check('a return is never emailed automatically', queued.length === 0);
 
+  console.log('\n── Never email, and products that don’t send ──');
+  settings = { ...ON };
+  refusedEmails = new Set(['dana@example.com']);
+  queued = [];
+  await sell();
+  check('a customer marked never-email gets nothing automatic', queued.every(q => q.status === 'skipped' && /asked never to be emailed/.test(q.reason)));
+  refusedEmails = new Set();
+  settings = { ...ON, auto_email_excluded: JSON.stringify([PRODUCT.id]) };
+  queued = [];
+  await sell();
+  check('a sale of only excluded products sends nothing', queued.every(q => q.status === 'skipped' && /only products set not to send/.test(q.reason)));
+  queued = [];
+  await sell({ items: [{ product_id: PRODUCT.id, product_name: PRODUCT.name, quantity: 1, unit_price: 100 },
+                       { product_id: 'serum-2', product_name: 'Serum', quantity: 1, unit_price: 40 }] });
+  check('bought alongside something else, it still sends', queued.every(q => q.status === 'pending'));
+  settings = { ...ON, auto_email_excluded: JSON.stringify(['one-off:*']) };
+  queued = [];
+  await sell({ items: [{ product_id: 'one-off:touch-up', product_name: 'Touch-up', quantity: 1, unit_price: 100 }] });
+  check('“one-off items” covers every Build-your-own line', queued.every(q => q.status === 'skipped'));
+  settings = { ...ON };
+
   console.log('\n── Sending ──');
   settings = { ...ON };
   await sell();
@@ -191,6 +214,10 @@ const ON = { auto_email_enabled: 1, auto_email_welcome: 1, auto_email_receipt: 1
   f = await runOne();
   check('already sent by hand: not sent again', f.status === 'skipped' && /by hand/.test(f.reason));
   lastEmailedByKind = {};
+  refusedEmails = new Set(['dana@example.com']);
+  f = await runOne();
+  check('marked never-email after the sale: not sent', f.status === 'skipped' && /never to be emailed/.test(f.reason));
+  refusedEmails = new Set();
   process.env.STRIPE_SECRET_KEY = 'rk_test_fake';
   pgDb.getSubscription = async () => ({ status: 'active', plan: 'sleep' });
   f = await runOne();
@@ -228,6 +255,7 @@ const ON = { auto_email_enabled: 1, auto_email_welcome: 1, auto_email_receipt: 1
         if (opts.body) posts.push({ url: String(url), body: JSON.parse(opts.body) });
         if (/api\/pos\/transactions$/.test(url)) return Promise.resolve({ ok: true, status: 200, json: async () => saleReply });
         if (/auto-emails/.test(url)) return Promise.resolve({ ok: true, json: async () => ({ emails: log }) });
+        if (/customers\/upsert/.test(url)) return Promise.resolve({ ok: true, json: async () => ({ customer: { id: 1, name: 'Dana Lee', no_email: JSON.parse(opts.body).no_email } }) });
         if (/api\/pos\/settings/.test(url) && opts.method === 'POST') return Promise.resolve({ ok: true, json: async () => ({ settings: JSON.parse(opts.body) }) });
         return Promise.resolve({ ok: true, json: async () => ({ accepted: true }) });
       };
@@ -279,6 +307,52 @@ const ON = { auto_email_enabled: 1, auto_email_welcome: 1, auto_email_receipt: 1
   check('a queued email says when it will go', /Welcome email will send automatically in about 10 minutes/.test(id('autoEmailNote').textContent));
   w.showReceipt({ type: 'sale', receipt_number: '1043', items: [], employees: [], payments: [], created_at: new Date().toISOString(), subtotal: 0, tax_amount: 0, total: 0, tax_rate: 0.08 }, true);
   check('a reprint does not repeat the note', id('autoEmailNote').style.display === 'none');
+
+  console.log('\n── On the page: never email, products that don’t send ──');
+  w.eval(`products = [{ id: 'p1', name: 'Serum', brand: 'Avologi' }, { id: 'gift', name: 'Gift card', brand: '' }];
+    storeSettings = { store_name: 'Glow SF', auto_email_enabled: 1, auto_email_welcome: 1, auto_email_excluded: '["gift"]' };
+    fillAutoEmailSettings(); showAutoEmailTill();`);
+  const ex = [...id('aeExcludeList').querySelectorAll('[data-exclude]')];
+  check('the card lists the products, and one-off items', ex.some(b => b.dataset.exclude === 'one-off:*') && ex.some(b => b.dataset.exclude === 'p1'));
+  check('with the saved ones ticked', ex.find(b => b.dataset.exclude === 'gift').checked && !ex.find(b => b.dataset.exclude === 'p1').checked);
+  id('aeExcludeSearch').value = 'seru'; w.renderAutoEmailExclusions();
+  check('and a search narrows it', id('aeExcludeList').querySelectorAll('[data-exclude]').length === 1);
+  id('aeExcludeSearch').value = ''; w.renderAutoEmailExclusions();
+  const one = [...id('aeExcludeList').querySelectorAll('[data-exclude]')].find(b => b.dataset.exclude === 'one-off:*');
+  one.checked = true; w.toggleAutoEmailExclusion(one);
+  posts.length = 0;
+  await w.saveAutoEmail(); await settle();
+  const savedEx = JSON.parse(posts.find(p => /api\/pos\/settings/.test(p.url)).body.auto_email_excluded);
+  check('saving keeps the ticked products', savedEx.includes('gift') && savedEx.includes('one-off:*'));
+
+  check('“don’t email them again” waits until this sale’s box is unticked', id('autoEmailNeverRow').style.display === 'none');
+  id('autoEmailThisSale').checked = false; w.renderAutoEmailTill();
+  check('then it is offered', id('autoEmailNeverRow').style.display === 'flex');
+  id('autoEmailNever').checked = true;
+  saleReply = { transaction: { type: 'sale', receipt_number: '1044', items: [], employees: [], payments: [] }, auto_emails: [] };
+  w.eval(`setMode('sale'); cart = [{ product_id: 'p1', product_name: 'Serum', quantity: 1, unit_price: 100 }];
+    saleEmployees = [{ employee_id: 2, commission_value: 100 }];
+    document.getElementById('custFirstName').value = 'Dana'; document.getElementById('custEmail').value = 'dana@example.com';
+    tenders = [{ method: 'cash', amount: saleTotal(), last4: '' }];`);
+  posts.length = 0;
+  await w.processTransaction(); await settle();
+  const pref = posts.find(p => /email-preference/.test(p.url));
+  check('the sale saves it on their record', pref && pref.body.email === 'dana@example.com' && pref.body.no_email === true);
+  check('and the till starts fresh for the next customer', id('autoEmailThisSale').checked && !id('autoEmailNever').checked && id('autoEmailNeverRow').style.display === 'none');
+
+  w.eval(`custFiltered = [{ customer_name: 'Dana Lee', customer_email: 'dana@example.com', no_email: true, purchases: 1, returns: 0, total_spent: 100, products: [], employees: [] }];
+    openCustomerDetail(0);`);
+  check('the customer’s details show the flag', id('custDetailNoEmail').checked);
+  id('custDetailNoEmail').checked = false;
+  posts.length = 0;
+  await w.saveCustomerDetail(); await settle();
+  check('and saving sends it', posts.find(p => /customers\/upsert/.test(p.url))?.body.no_email === false);
+
+  w.eval(`massCustomers = [
+      { customer_name: 'Dana', customer_email: 'dana@example.com', no_email: false, total_spent: 10, products: [], employees: [] },
+      { customer_name: 'Sam', customer_email: 'sam@example.com', no_email: true, total_spent: 10, products: [], employees: [] }];
+    applyMassFilters();`);
+  check('mass email leaves them out, and says so', /<strong>1<\/strong> customer will get/.test(id('massCount').innerHTML) && /1 asked never to be emailed/.test(id('massCount').textContent));
 
   console.log(`\n${pass} passed, ${fail} failed\n`);
   process.exit(fail ? 1 : 0);
