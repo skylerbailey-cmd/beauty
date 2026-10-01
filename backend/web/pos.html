@@ -9320,7 +9320,7 @@ function renderAutoAuditRuns(runs) {
   box.innerHTML = `
     <div style="font-family:system-ui,sans-serif;font-size:.78rem;font-weight:700;color:var(--mid);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Recent mornings</div>
     <table class="report-table" style="font-size:.82rem">
-      <thead><tr><th>Day audited</th><th>Result</th><th>Difference</th><th>Alerted</th></tr></thead>
+      <thead><tr><th>Day audited</th><th>Result</th><th>Difference</th><th>Alerted</th><th></th></tr></thead>
       <tbody>${runs.map(r => {
         const off = Number(r.days_off) || 0;
         const note = String(r.note || '');
@@ -9341,9 +9341,43 @@ function renderAutoAuditRuns(runs) {
           <td>${result}</td>
           <td style="${off ? 'color:var(--danger);font-weight:600' : 'color:var(--mid)'}">${off ? (Number(r.difference) > 0 ? '+' : '') + '$' + money(r.difference) : '—'}</td>
           <td style="color:var(--mid)">${r.alerted ? 'texted' : '—'}</td>
+          <td style="text-align:right;white-space:nowrap">
+            <button class="btn" data-rerun="${escapeHtml(day)}" onclick="event.stopPropagation(); rerunAutoAudit('${escapeHtml(day)}', this)"
+              title="Check ${escapeHtml(day)} against the processor again${r.ran_at ? ' — last checked ' + escapeHtml(new Date(r.ran_at).toLocaleString()) : ''}"
+              style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:4px 10px;font-size:.75rem">Rerun</button>
+          </td>
         </tr>`;
       }).join('')}</tbody>
-    </table>`;
+    </table>
+    <div id="autoAuditRerunNote" style="font-family:system-ui,sans-serif;font-size:.8rem;margin-top:6px;min-height:1em"></div>`;
+}
+
+// Check one morning's day again — the processor has caught up with a late
+// settlement, a connection was fixed, a refund was rung up — and redraw the
+// table with the new answer. Nobody is texted for a rerun.
+async function rerunAutoAudit(day, btn) {
+  const note = () => document.getElementById('autoAuditRerunNote');
+  document.querySelectorAll('[data-rerun]').forEach(b => { b.disabled = true; });
+  if (btn) btn.textContent = 'Checking…';
+  try {
+    const resp = await fetch(`${API}/api/pos/audit-auto/rerun`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ day }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || 'Could not check that day again.');
+    await loadAutoAudit();
+    const r = data.run || {};
+    const off = Number(r.days_off) || 0;
+    const text = off
+      ? `Checked ${day} again: still does not reconcile — off by $${money(Math.abs(Number(r.difference) || 0))}. Click the row to see why.`
+      : (r.note && r.note !== 'reconciled' ? `Checked ${day} again: ${r.note}.` : `Checked ${day} again: ✓ reconciles now.`);
+    if (note()) { note().style.color = off ? 'var(--danger)' : 'var(--mid)'; note().textContent = text; }
+  } catch (err) {
+    document.querySelectorAll('[data-rerun]').forEach(b => { b.disabled = false; });
+    if (btn) btn.textContent = 'Rerun';
+    if (note()) { note().style.color = 'var(--danger)'; note().textContent = err.message; }
+  }
 }
 
 async function saveAutoAudit() {

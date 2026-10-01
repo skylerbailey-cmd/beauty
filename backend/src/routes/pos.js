@@ -3404,6 +3404,17 @@ async function sendAuditAlert(userId, settings, text) {
   }
 }
 
+// One day checked against the processor, in the words the runs table uses.
+// Shared by the nightly run and by Rerun, so the two can never disagree about
+// what a day's result is.
+async function auditOneDay(userId, day) {
+  const result = await reconciliationAudit(userId, { from: day, to: day });
+  if (!result || result.configured === false) return { note: 'no processor connected' };
+  if (result.error) return { note: `could not read the processor: ${result.error}` };
+  const off = (result.days || []).filter((d) => !d.matched).length;
+  return { days_off: off, difference: Number(result.totals?.difference || 0), note: off ? '' : 'reconciled' };
+}
+
 async function runNightlyAuditFor(company) {
   const tz = company.timezone || 'America/Los_Angeles';
   const { minutes } = localNow(tz);
@@ -3414,18 +3425,13 @@ async function runNightlyAuditFor(company) {
   if (!(await pgDb.claimAutoAudit(company.user_id, day))) return;
 
   try {
-    const result = await reconciliationAudit(company.user_id, { from: day, to: day });
-    if (!result || result.configured === false) {
-      await pgDb.recordAutoAudit(company.user_id, day, { note: 'no processor connected' });
+    const checked = await auditOneDay(company.user_id, day);
+    if (checked.days_off === undefined) {
+      await pgDb.recordAutoAudit(company.user_id, day, checked);
       return;
     }
-    if (result.error) {
-      await pgDb.recordAutoAudit(company.user_id, day, { note: `could not read the processor: ${result.error}` });
-      return;
-    }
-    const days = result.days || [];
-    const off = days.filter((d) => !d.matched).length;
-    const difference = Number(result.totals?.difference || 0);
+    const off = checked.days_off;
+    const difference = checked.difference;
     let alerted = false;
     if (off && Number(company.audit_alert_enabled)) {
       const settings = await pgDb.getSettings(company.user_id);
@@ -3456,6 +3462,33 @@ async function runNightlyAudits() {
 
 // What the Audit tab shows at the top: is it on, and how have the last two
 // weeks gone.
+// Check one of the nightly table's days again — after the processor has
+// caught up with a late settlement, a connection has been fixed, or a refund
+// has been rung up — and put the new answer in that day's row. Nobody is
+// texted: a person pressed the button and is looking at the result. A row that
+// was texted the first time still says so.
+router.post('/audit-auto/rerun', async (req, res) => {
+  const userId = req.session.userId;
+  const day = String(req.body?.day || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !isFinite(Date.parse(day + 'T12:00:00Z'))) {
+    return res.status(400).json({ error: 'Which day? Give it as YYYY-MM-DD.' });
+  }
+  const settings = await pgDb.getSettings(userId);
+  const today = localNow(settings?.timezone || 'America/Los_Angeles').day;
+  if (day >= today) return res.status(400).json({ error: 'A day can only be audited once it is over.' });
+
+  const before = (await pgDb.recentAutoAudits(userId, 400)).find((r) => r.audited_day === day);
+  let checked;
+  try {
+    checked = await auditOneDay(userId, day);
+  } catch (err) {
+    checked = { note: `failed: ${err.message}` };
+  }
+  await pgDb.claimAutoAudit(userId, day); // the row, if this day never had one
+  await pgDb.recordAutoAudit(userId, day, { ...checked, alerted: !!before?.alerted });
+  res.json({ run: (await pgDb.recentAutoAudits(userId, 400)).find((r) => r.audited_day === day) || null });
+});
+
 router.get('/audit-auto', async (req, res) => {
   const userId = req.session.userId;
   const settings = await pgDb.getSettings(userId);
