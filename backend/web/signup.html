@@ -560,6 +560,11 @@ async function stepBilling() {
         Add a card and start the ${sub.trial_days} free days
       </button>
     </div>
+    <p class="hint" style="margin:10px 0 0;font-size:.8rem;text-align:right">
+      After the free days it renews automatically at ${esc(dollars(sub.monthly_cents))} a month, plus tax,
+      until you cancel in Settings &rarr; Account. By starting the subscription you agree to the
+      <a href="https://sky-sale.com/terms.html" target="_blank" rel="noopener">Terms of Service &amp; EULA</a> and the <a href="https://sky-sale.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.
+    </p>
     <p id="payNote" style="font-family:system-ui,sans-serif;font-size:.85rem;color:#b00020;margin-top:10px"></p>`;
 }
 
@@ -636,6 +641,9 @@ async function stepDone() {
         <div class="actions">
           <button class="btn btn-primary" type="submit" id="linkGo">Email me a link</button>
         </div>
+        <p class="hint" style="margin:10px 0 0;font-size:.8rem">
+          By continuing you agree to the <a href="https://sky-sale.com/terms.html" target="_blank" rel="noopener">Terms of Service &amp; EULA</a> and the <a href="https://sky-sale.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.
+        </p>
       </form>
       <p class="hint" style="margin:18px 0 10px">
         Just looking? Sign in as <button type="button" class="btn-link" onclick="useDemo()">test@demo.com</button> (or demo@test.com)
