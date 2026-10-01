@@ -998,6 +998,40 @@
   </form>
 </section>
 
+<!-- ── Updated terms ─── -->
+<!-- Shown once per version of the terms to a shop that has not accepted it.
+     It sits over everything and has no Cancel: a manager accepts for the
+     shop, or someone signs out. -->
+<div class="modal-overlay" id="termsModal" style="z-index:7000">
+  <div class="modal" style="max-width:500px" role="dialog" aria-labelledby="termsTitle" aria-modal="true">
+    <h2 id="termsTitle">Our terms have been updated</h2>
+    <p class="sub" style="font-family:system-ui,sans-serif;font-size:.86rem;color:var(--mid);line-height:1.5;margin-bottom:10px">
+      Before this shop carries on using SkySale, a manager or admin needs to read and accept the
+      <a id="termsLink" href="https://sky-sale.com/terms.html" target="_blank" rel="noopener">Terms of Service &amp; EULA</a>
+      and the <a id="privacyLink" href="https://sky-sale.com/privacy.html" target="_blank" rel="noopener">Privacy Policy</a>.
+      They cover the subscription and how it renews, the $15 sleep plan, and that a cancelled shop's records are
+      deleted 30 days after its subscription ends.
+    </p>
+    <label style="display:flex;gap:10px;align-items:flex-start;font-family:system-ui,sans-serif;font-size:.88rem;margin:12px 0;cursor:pointer">
+      <input type="checkbox" id="termsAgree" style="margin-top:2px;width:18px;height:18px;flex-shrink:0" onchange="document.getElementById('termsAccept').disabled = !this.checked">
+      <span>I have read them and agree on behalf of this shop.</span>
+    </label>
+    <div class="field">
+      <label for="termsName">Manager or admin name</label>
+      <input type="text" id="termsName" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="termsPin">PIN</label>
+      <input type="password" id="termsPin" maxlength="6" autocomplete="off" onkeydown="if (event.key === 'Enter') acceptTerms()">
+    </div>
+    <div id="termsError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger);min-height:1em"></div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="logout()">Sign out</button>
+      <button class="btn btn-confirm" id="termsAccept" onclick="acceptTerms()" disabled>Accept</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Request a feature ─── -->
 <div class="modal-overlay" id="featureModal">
   <div class="modal" style="max-width:480px">
@@ -3032,7 +3066,9 @@ async function init() {
     // Only once the register is actually on screen: a redirect that names a
     // tab has to land on it, or the link reads as broken.
     openTabFromHash();
-    offerTourOnce();
+    // The terms first: nothing else should be offered over a screen that has
+    // to be answered before the shop carries on.
+    checkTerms().then((ok) => { if (ok) offerTourOnce(); });
     checkSleeping();
   } catch (err) {
     console.error('[pos] Auth check failed:', err);
@@ -13194,6 +13230,50 @@ async function submitFeatureRequest() {
     btn.disabled = false;
   } finally {
     btn.textContent = 'Submit';
+  }
+}
+
+// ─── The terms ──────────────────────────────────────────────────────────────
+// A shop that has not accepted the current Terms of Service & EULA is asked
+// to, once, by a manager or admin with their name and PIN (routes/login.js).
+// Resolves true when there is nothing to accept.
+let termsState = null;
+async function checkTerms() {
+  try {
+    const resp = await fetch(`${API}/auth/terms`, { credentials: 'include' });
+    if (!resp.ok) return true; // never lock a till over a check that failed
+    termsState = await resp.json();
+  } catch (_) { return true; }
+  if (termsState.accepted || termsState.exempt) return true;
+  document.getElementById('termsLink').href = termsState.terms_url;
+  document.getElementById('privacyLink').href = termsState.privacy_url;
+  document.getElementById('termsModal').classList.add('show');
+  return false;
+}
+
+async function acceptTerms() {
+  const err = document.getElementById('termsError');
+  err.textContent = '';
+  if (!document.getElementById('termsAgree').checked) { err.textContent = 'Tick the box to agree.'; return; }
+  const name = document.getElementById('termsName').value.trim();
+  const pin = document.getElementById('termsPin').value.trim();
+  if (!name || !pin) { err.textContent = 'Enter a manager or admin name and PIN.'; return; }
+  const btn = document.getElementById('termsAccept');
+  btn.disabled = true;
+  try {
+    const resp = await fetch(`${API}/auth/terms/accept`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ version: termsState?.version, name, pin }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || 'That did not go through.');
+    termsState = data;
+    document.getElementById('termsPin').value = '';
+    document.getElementById('termsModal').classList.remove('show');
+    offerTourOnce();
+  } catch (e) {
+    err.textContent = e.message;
+    btn.disabled = false;
   }
 }
 

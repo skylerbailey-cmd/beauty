@@ -88,9 +88,11 @@ router.get('/state', requireSignedIn, async (req, res) => {
 
   const { getUser } = require('../db');
   const user = getUser(userId) || {};
+  const terms = require('../lib/terms');
 
   res.json({
     email: user.email || '',
+    terms: terms.describeTerms(await terms.hasAccepted(userId)),
     shop: {
       store_name: settings?.store_name || '',
       slug: settings?.slug || '',
@@ -136,6 +138,18 @@ router.post('/shop',
       return res.status(409).json({ error: 'Somebody claimed that address a moment ago. Pick another.', field: 'slug' });
     }
 
+    // The account does not exist until this step, so nor does a shop that has
+    // not agreed: the box on the page is ticked or this refuses, and the
+    // agreement is recorded against the verified email that is creating it.
+    const terms = require('../lib/terms');
+    const agreed = await terms.hasAccepted(userId);
+    if (!agreed && b.accept_terms !== terms.TERMS_VERSION) {
+      return res.status(400).json({
+        error: 'Tick the box to agree to the Terms of Service & EULA and the Privacy Policy.',
+        field: 'terms',
+      });
+    }
+
     const tax = Number(b.tax_rate);
     if (!Number.isFinite(tax) || tax < 0 || tax > 0.3) {
       return res.status(400).json({ error: 'Sales tax should be a rate like 8.25, between 0 and 30.', field: 'tax_rate' });
@@ -165,6 +179,7 @@ router.post('/shop',
       // heard of, and they would have to work out which of it was theirs.
       brands: '[]',
     });
+    if (!agreed) await terms.recordAcceptance(req, userId, 'account owner, at signup');
 
     res.json({ ok: true, slug, url: companyUrl(slug, '/pos.html') });
   });

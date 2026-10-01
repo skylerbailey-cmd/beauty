@@ -222,6 +222,40 @@ router.get('/link/:token',
 // company per browser session, then move freely. Adding a new one needs a
 // fresh link, because that is what proving an address means.
 
+// ─── The terms, for a shop already trading ─────────────────────────────────
+// A shop agrees at signup (routes/signup.js). One that signed up before there
+// were terms to agree to, or before the current version, is asked on the
+// register — and a manager or admin accepts for the shop with their name and
+// PIN, so the record says which person agreed, not just that the till did.
+// The demonstration shop is never asked: the people in it are looking around.
+router.get('/terms', async (req, res) => {
+  const userId = req.session?.userId;
+  if (!userId) return res.status(401).json({ error: 'Sign in to continue.' });
+  const terms = require('../lib/terms');
+  let demo = false;
+  try { demo = isDemoAddress(String(require('../db').getUser(userId)?.email || '').toLowerCase()); } catch (_) {}
+  res.json({ ...terms.describeTerms(demo || await terms.hasAccepted(userId)), exempt: demo });
+});
+
+router.post('/terms/accept',
+  rateLimit({ limit: 20, windowMs: 15 * 60 * 1000, name: 'terms-accept' }),
+  async (req, res) => {
+    const userId = req.session?.userId;
+    if (!userId) return res.status(401).json({ error: 'Sign in to continue.' });
+    const terms = require('../lib/terms');
+    const { version, name, pin } = req.body || {};
+    if (version !== terms.TERMS_VERSION) {
+      return res.status(409).json({ error: 'The terms have changed since this page opened. Reload to read the current version.' });
+    }
+    const emp = pin ? await pgDb.verifyEmployeePin(String(pin), userId, name) : null;
+    const nameMatches = emp && String(name || '').trim().toLowerCase() === emp.name.trim().toLowerCase();
+    if (!nameMatches || !['manager', 'admin'].includes(emp.role)) {
+      return res.status(403).json({ error: 'A manager or admin needs to accept for the shop. Enter their name and PIN.' });
+    }
+    await terms.recordAcceptance(req, userId, `${emp.name} (${emp.role})`);
+    res.json(terms.describeTerms(true));
+  });
+
 function rememberAuthenticated(req, userId) {
   if (!req.session || !userId) return;
   const list = Array.isArray(req.session.authedCompanies) ? req.session.authedCompanies : [];

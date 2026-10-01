@@ -192,11 +192,27 @@ function stepShop() {
       <div class="hint">Your day ends when you close, not at midnight somewhere else.</div>
     </div>
 
+    ${state.terms && !state.terms.accepted ? `
+    <label class="agree" style="display:flex;gap:10px;align-items:flex-start;margin-top:18px;font-size:.9rem;line-height:1.45;cursor:pointer">
+      <input type="checkbox" id="agreeTerms" style="margin-top:3px;width:18px;height:18px;flex-shrink:0">
+      <span>I agree to the
+        <a href="${esc(state.terms.terms_url)}" target="_blank" rel="noopener">Terms of Service &amp; EULA</a>
+        and the <a href="${esc(state.terms.privacy_url)}" target="_blank" rel="noopener">Privacy Policy</a>,
+        on behalf of this shop.</span>
+    </label>` : ''}
+
     <div id="err" class="err"></div>
     <div class="actions">
       <div class="spacer"></div>
       <button class="btn btn-primary" id="go">Continue</button>
     </div>`;
+
+  // Continue waits for the box, when there is one to tick.
+  const agree = $('agreeTerms');
+  if (agree) {
+    $('go').disabled = true;
+    agree.addEventListener('change', () => { $('go').disabled = !agree.checked; });
+  }
 
   const zones = (Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : []).filter((z) => /^(America|Europe|Pacific|Asia|Australia|Africa|Atlantic|Indian)\//.test(z));
   const list = zones.length ? zones : ['America/Denver', 'America/New_York', 'America/Chicago', 'America/Los_Angeles'];
@@ -243,13 +259,14 @@ async function saveShop() {
       store_phone: $('phone').value, store_email: state.email,
       timezone: $('tz').value,
       tax_rate: (Number($('tax').value) || 0) / 100,
+      accept_terms: $('agreeTerms')?.checked ? state.terms.version : undefined,
     }) });
     state = await api('/state');
     step = 2; render();
   } catch (e) {
     $('err').textContent = e.message;
     if (e.data?.field === 'slug') $('slug').focus();
-  } finally { btn.disabled = false; }
+  } finally { btn.disabled = !!$('agreeTerms') && !$('agreeTerms').checked; }
 }
 
 // ─── 2 · The administrator ─────────────────────────────────────────────────

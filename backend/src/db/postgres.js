@@ -664,6 +664,20 @@ Exchanges are only allowed within **7 days** of purchase.'`);
   await migrate('ALTER TABLE pos_subscriptions ADD COLUMN IF NOT EXISTS ended_at TIMESTAMPTZ');
   await migrate('ALTER TABLE pos_subscriptions ADD COLUMN IF NOT EXISTS deletion_warned_at TIMESTAMPTZ');
   await migrate('CREATE INDEX IF NOT EXISTS idx_pg_subs_customer ON pos_subscriptions(stripe_customer_id)');
+
+  // Every time a shop agreed to the Terms of Service & EULA (lib/terms.js):
+  // which version, who, when and from where. Appended to, never updated.
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_terms_acceptances (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    email TEXT DEFAULT '',
+    version TEXT NOT NULL,
+    accepted_by TEXT DEFAULT '',
+    ip TEXT DEFAULT '',
+    user_agent TEXT DEFAULT '',
+    accepted_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  await migrate('CREATE INDEX IF NOT EXISTS idx_pg_terms_user ON pos_terms_acceptances(user_id, accepted_at DESC)');
   await migrate('CREATE INDEX IF NOT EXISTS idx_pg_subs_sub ON pos_subscriptions(stripe_subscription_id)');
 
   // Customers used to be unique on (user_id, email), which meant a company
@@ -1703,6 +1717,20 @@ async function endedSubscriptions() {
        FROM pos_subscriptions
       WHERE status = 'canceled'
         AND COALESCE(ended_at, current_period_end, canceled_at) IS NOT NULL`)).rows;
+}
+
+async function recordTermsAcceptance({ userId, email, version, acceptedBy, ip, userAgent }) {
+  await query(
+    `INSERT INTO pos_terms_acceptances (user_id, email, version, accepted_by, ip, user_agent)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [userId, email || '', version, acceptedBy || '', ip || '', userAgent || '']);
+}
+
+async function latestTermsAcceptance(userId) {
+  if (!userId) return null;
+  return (await query(
+    'SELECT * FROM pos_terms_acceptances WHERE user_id = $1 ORDER BY accepted_at DESC, id DESC LIMIT 1',
+    [userId])).rows[0] || null;
 }
 
 async function deleteSubscriptionRow(userId) {
@@ -4233,6 +4261,8 @@ const OWNED_BY_USER = [
   'customers',
   'pos_gmail_tokens', 'pos_employees',
   'pos_known_users',
+  // The shop's own agreement goes with the shop, like everything else it held.
+  'pos_terms_acceptances',
   // Last: while this row exists the subdomain still resolves to a company.
   'pos_settings',
 ];
@@ -4452,6 +4482,8 @@ module.exports = {
   LIVE_SUB_STATUSES,
   endedSubscriptions,
   deleteSubscriptionRow,
+  recordTermsAcceptance,
+  latestTermsAcceptance,
   linkedCompanyIds,
   linkCompanies,
   unlinkCompanies,

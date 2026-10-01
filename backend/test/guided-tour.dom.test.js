@@ -44,6 +44,7 @@ const routes = [
   [/treatments/, () => [200, { treatments: [{ id: 1, name: 'LED Facial', duration_min: 45 }] }]],
   [/availability/, () => [200, { days: [], closed_dates: [], capacity: 2, slot_step: 30, lead_hours: 2 }]],
   [/appointments/, () => [200, { appointments: [] }]],
+  [/auth\/terms/, () => [200, { accepted: true }]],
   [/api\/pos\/products/, () => [200, { products: [{ id: 'p1', name: 'Hydra Serum', brand: 'Avologi', price: 89, isCustom: true }] }]],
 ];
 
