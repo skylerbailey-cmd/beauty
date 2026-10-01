@@ -20,6 +20,19 @@ const TERMS_VERSION = '2026-09-30';
 const TERMS_URL = 'https://sky-sale.com/terms.html';
 const PRIVACY_URL = 'https://sky-sale.com/privacy.html';
 
+// Shops that are never asked: the owner's own, which are not customers of
+// the service they run on. Named by address in TERMS_EXEMPT_SLUGS, so it holds
+// across every future version without a fake acceptance on record.
+const exemptSlugs = () => String(process.env.TERMS_EXEMPT_SLUGS || '')
+  .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
+
+async function isExempt(userId) {
+  const list = exemptSlugs();
+  if (!userId || !list.length) return false;
+  const settings = await pgDb.getSettings(userId).catch(() => null);
+  return list.includes(String(settings?.slug || '').toLowerCase());
+}
+
 async function hasAccepted(userId) {
   if (!userId) return false;
   const last = await pgDb.latestTermsAcceptance(userId);
@@ -50,4 +63,4 @@ const describeTerms = (accepted) => ({
   version: TERMS_VERSION, accepted: !!accepted, terms_url: TERMS_URL, privacy_url: PRIVACY_URL,
 });
 
-module.exports = { TERMS_VERSION, TERMS_URL, PRIVACY_URL, hasAccepted, recordAcceptance, describeTerms, clientIp };
+module.exports = { TERMS_VERSION, TERMS_URL, PRIVACY_URL, hasAccepted, isExempt, recordAcceptance, describeTerms, clientIp };

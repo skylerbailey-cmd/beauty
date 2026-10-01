@@ -228,13 +228,15 @@ router.get('/link/:token',
 // register — and a manager or admin accepts for the shop with their name and
 // PIN, so the record says which person agreed, not just that the till did.
 // The demonstration shop is never asked: the people in it are looking around.
+// Nor are the owner's own shops (TERMS_EXEMPT_SLUGS, lib/terms.js).
 router.get('/terms', async (req, res) => {
   const userId = req.session?.userId;
   if (!userId) return res.status(401).json({ error: 'Sign in to continue.' });
   const terms = require('../lib/terms');
   let demo = false;
   try { demo = isDemoAddress(String(require('../db').getUser(userId)?.email || '').toLowerCase()); } catch (_) {}
-  res.json({ ...terms.describeTerms(demo || await terms.hasAccepted(userId)), exempt: demo });
+  const exempt = demo || await terms.isExempt(userId);
+  res.json({ ...terms.describeTerms(exempt || await terms.hasAccepted(userId)), exempt });
 });
 
 router.post('/terms/accept',

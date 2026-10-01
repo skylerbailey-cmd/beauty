@@ -103,6 +103,16 @@ const SHOP = { store_name: 'Glow SF', slug: 'glowsf', tax_rate: 0.08, timezone: 
   check('and from then on it is accepted', (await call(loginRoutes, '/terms', {}, { method: 'get' })).body.accepted === true);
   r = await call(loginRoutes, '/terms', {}, { method: 'get', userId: 'demo' });
   check('the demonstration shop is never asked', r.body.exempt === true && r.body.accepted === true);
+  process.env.TERMS_EXEMPT_SLUGS = 'glowsf, DesertWellness';
+  acceptances = [];
+  pgDb.getSettings = async (u) => ({ u1: { slug: 'desertwellness' }, u3: { slug: 'someshop' } })[u] || {};
+  r = await call(loginRoutes, '/terms', {}, { method: 'get' });
+  check('a shop named in TERMS_EXEMPT_SLUGS is not asked', r.body.exempt === true && r.body.accepted === true);
+  check('and nothing is recorded as if it had agreed', acceptances.length === 0);
+  r = await call(loginRoutes, '/terms', {}, { method: 'get', userId: 'u3' });
+  check('any other shop still is', r.body.exempt === false && r.body.accepted === false);
+  delete process.env.TERMS_EXEMPT_SLUGS;
+  pgDb.getSettings = async () => ({});
   check('when a shop is deleted, its agreements go with it',
     /'pos_terms_acceptances'/.test(fs.readFileSync(path.join(__dirname, '..', 'src', 'db', 'postgres.js'), 'utf8').split('const OWNED_BY_USER')[1].split('];')[0]));
 
