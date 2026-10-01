@@ -801,6 +801,15 @@
     .tour-offer .tour-ghost { background: var(--cream); color: var(--dark); border: 1px solid var(--border); }
     @media (prefers-reduced-motion: reduce) { .tour-offer { animation: none; } }
 
+    /* Payroll: a person collapsed to one line — name, what they are owed. */
+    .pr-toggle {
+      margin-left: 8px; padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px;
+      background: var(--white); color: var(--mid); font: 600 .7rem system-ui, sans-serif; cursor: pointer;
+      vertical-align: 1px;
+    }
+    .pr-toggle:hover { border-color: var(--accent); color: var(--accent-deep); }
+    .pr-person.collapsed .pr-detail { display: none; }
+    .pr-person:not(.collapsed) .pr-summary { display: none; }
     .sleep-banner {
       margin-bottom: 12px; padding: 12px 14px; border-radius: 10px;
       background: #EEF1F6; border: 1.5px solid #B9C4D6; color: var(--dark);
@@ -3675,6 +3684,30 @@ function renderSubscription() {
   actions.innerHTML = btn('Start it again', 'startCheckout()', 'btn-confirm')
     + (st.status === 'canceled' ? btn(`Keep it asleep — ${sleep} a month`, "startCheckout('sleep')") : '')
     + (st.has_customer ? btn('Update card', 'openBillingPortal()') : '');
+}
+
+// ─── Payroll: hiding a person ───────────────────────────────────────────────
+// Collapses someone to one line — their name and what they are owed — so a
+// long payroll can be worked through a person at a time. Remembered in this
+// browser by name, so the same people stay tucked away on the next payday;
+// it changes nothing about the payroll itself.
+const PAYROLL_HIDDEN_KEY = 'skysale.payrollHidden';
+function payrollHiddenPeople() {
+  try { return new Set(JSON.parse(localStorage.getItem(PAYROLL_HIDDEN_KEY) || '[]')); }
+  catch (_) { return new Set(); }
+}
+function togglePayrollPerson(btn) {
+  const row = btn.closest('.pr-person');
+  if (!row) return;
+  const name = row.dataset.person;
+  const collapse = !row.classList.contains('collapsed');
+  row.classList.toggle('collapsed', collapse);
+  btn.textContent = collapse ? 'Show' : 'Hide';
+  btn.title = `${collapse ? 'Show' : 'Hide'} ${name}’s details`;
+  btn.setAttribute('aria-expanded', String(!collapse));
+  const hidden = payrollHiddenPeople();
+  if (collapse) hidden.add(name); else hidden.delete(name);
+  try { localStorage.setItem(PAYROLL_HIDDEN_KEY, JSON.stringify([...hidden])); } catch (_) {}
 }
 
 // ─── Sleep ──────────────────────────────────────────────────────────────────
@@ -10754,11 +10787,19 @@ async function loadPayroll() {
         onclick="setEmployeePaid('${ids}', true)" title="Settle just this person — the payday stays open for everyone else">Mark paid</button>`;
     };
 
+    const hidden = payrollHiddenPeople();
     body.innerHTML = byPerson.map(p => {
       const subtotal = p.rows.reduce((s, e) => s + e.total, 0);
+      const allPaid = p.rows.every(r => r.paid) || data.paid;
       return `
-      <div style="border-bottom:1px solid var(--border);padding:10px 0;font-family:system-ui,sans-serif;font-size:.85rem">
-        <div style="font-weight:700;font-size:.9rem">${detailLink(p.name, p.name, '')}</div>
+      <div class="pr-person${hidden.has(p.name) ? ' collapsed' : ''}" data-person="${escapeHtml(p.name)}" style="border-bottom:1px solid var(--border);padding:10px 0;font-family:system-ui,sans-serif;font-size:.85rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+          <span style="font-weight:700;font-size:.9rem">${detailLink(p.name, p.name, '')}
+            <button class="pr-toggle" onclick="togglePayrollPerson(this)" aria-expanded="${hidden.has(p.name) ? 'false' : 'true'}"
+              title="${hidden.has(p.name) ? 'Show' : 'Hide'} ${escapeHtml(p.name)}’s details">${hidden.has(p.name) ? 'Show' : 'Hide'}</button></span>
+          <span class="pr-summary" style="font-weight:700">${allPaid ? '<span style="font-weight:400;font-size:.78rem;color:var(--success);margin-right:8px">✓ Paid</span>' : ''}$${money(subtotal)}</span>
+        </div>
+        <div class="pr-detail">
         ${p.rows.map(storeLine).join('')}
         ${(() => {
           // What is being kept back from this person but not taken off this
@@ -10777,6 +10818,7 @@ async function loadPayroll() {
             ${paidControl(p, data)}
             <span>$${money(subtotal)}</span>
           </span>
+        </div>
         </div>
       </div>`;
     }).join('')
