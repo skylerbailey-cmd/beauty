@@ -1458,25 +1458,9 @@ router.post('/send', refuseWhileAsleep('emails'), async (req, res) => {
     return res.status(401).json({ error: 'Not logged in. Please sign in first.' });
   }
 
-  const { getUser, updateUserTokens } = require('../db');
-  const user = getUser(userId);
-  if (!user) {
-    return res.status(401).json({ error: 'User not found. Please sign in again.' });
-  }
-  if (!user.refresh_token) {
-    // Restore this company's own token from Postgres if SQLite lost it
-    try {
-      const rt = await pgDb.getGmailToken(userId);
-      if (rt) { updateUserTokens(userId, null, rt); user.refresh_token = rt; }
-    } catch (_) {}
-  } else {
-    // Back-fill an already-connected token so it survives future redeploys
-    try {
-      const rt = await pgDb.getGmailToken(userId);
-      if (!rt) await pgDb.saveGmailToken(userId, user.refresh_token, user.email);
-    } catch (_) {}
-  }
-  if (!user.refresh_token) {
+  // From Postgres when SQLite has lost the account (lib/sending-user.js).
+  const user = await require('../lib/sending-user').sendingUser(userId);
+  if (!user?.refresh_token) {
     return res.status(403).json({ error: 'Gmail is not connected for this company. Please connect this company\'s Gmail first.', needsGmailConnect: true });
   }
 
@@ -1614,18 +1598,8 @@ router.post('/campaign', refuseWhileAsleep('emails'), async (req, res) => {
     return res.status(401).json({ error: 'Not logged in. Please sign in first.' });
   }
 
-  const { getUser, updateUserTokens } = require('../db');
-  const user = getUser(userId);
-  if (!user) {
-    return res.status(401).json({ error: 'User not found. Please sign in again.' });
-  }
-  if (!user.refresh_token) {
-    try {
-      const rt = await pgDb.getGmailToken(userId);
-      if (rt) { updateUserTokens(userId, null, rt); user.refresh_token = rt; }
-    } catch (_) {}
-  }
-  if (!user.refresh_token) {
+  const user = await require('../lib/sending-user').sendingUser(userId);
+  if (!user?.refresh_token) {
     return res.status(403).json({ error: 'Gmail is not connected for this company. Please connect this company\'s Gmail first.', needsGmailConnect: true });
   }
 

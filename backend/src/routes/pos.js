@@ -1058,25 +1058,9 @@ router.get('/transactions/receipt/:number', async (req, res) => {
 // Load the current company's user record and ensure its own Gmail refresh
 // token is populated (from Postgres if SQLite lost it after a redeploy).
 // Never falls back to another company's token.
-async function getSendingUser(userId) {
-  const { getUser, updateUserTokens } = require('../db');
-  const user = getUser(userId);
-  if (user && !user.refresh_token) {
-    // SQLite lost the token (redeploy) — restore this company's own token
-    try {
-      const rt = await pgDb.getGmailToken(userId);
-      if (rt) { updateUserTokens(userId, null, rt); user.refresh_token = rt; }
-    } catch (_) {}
-  } else if (user && user.refresh_token) {
-    // Back-fill: persist an already-connected token to Postgres so the
-    // connection survives future redeploys without a reconnect.
-    try {
-      const rt = await pgDb.getGmailToken(userId);
-      if (!rt) await pgDb.saveGmailToken(userId, user.refresh_token, user.email);
-    } catch (_) {}
-  }
-  return user;
-}
+// The Gmail account this shop sends from — see lib/sending-user.js for why
+// it no longer depends on SQLite having survived the last redeploy.
+const getSendingUser = (userId) => require('../lib/sending-user').sendingUser(userId);
 
 // contentType is 'text/plain' for the SMS gateway alerts — a carrier gateway
 // strips or mangles HTML, so a text alert must not be sent as one.
