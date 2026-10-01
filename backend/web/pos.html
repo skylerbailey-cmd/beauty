@@ -818,6 +818,9 @@
     }
     .pr-toggle:hover { border-color: var(--accent); color: var(--accent-deep); }
     .pr-person.collapsed .pr-detail { display: none; }
+    .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    #auditSetupCard.setup-done > p, #auditSetupCard.setup-done > button { display: none; }
+    #auditSetupCard.setup-done h3::after { content: ' — all set'; color: var(--success); font-weight: 600; font-size: .85em; }
     .pr-person:not(.collapsed) .pr-summary { display: none; }
     .sleep-banner {
       margin-bottom: 12px; padding: 12px 14px; border-radius: 10px;
@@ -1329,6 +1332,20 @@
     <div class="busy" id="auditBusy" role="status" aria-live="polite">
       <span class="spin"></span>
       <span id="auditBusyText">Reading your processor's batches…</span>
+    </div>
+
+    <!-- What has to be in place for the audit to run by itself, ticked off as
+         each is done. Filled in by loadAutoAudit. -->
+    <div class="report-card" id="auditSetupCard">
+      <h3 style="margin:0 0 4px">Setting up the audit</h3>
+      <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:10px;line-height:1.5">
+        Every morning the audit checks the day before: each card sale rung up here against the batch
+        your processor actually settled. A sale that never funded, a batch that came up short, or a
+        payment taken outside the register turns up the next day instead of at month end. It needs:
+      </p>
+      <ol id="auditSetupSteps" style="font-family:system-ui,sans-serif;font-size:.85rem;line-height:1.5;margin:0 0 10px;padding-left:0;list-style:none;display:grid;gap:10px"></ol>
+      <button class="btn" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);font-size:.82rem;padding:7px 14px"
+        onclick="helpOpen('settings', () => settingsGroup('merchant'))">Open Settings → Alerts &amp; connections</button>
     </div>
 
     <div class="report-card" id="autoAuditCard">
@@ -9582,8 +9599,49 @@ async function loadAutoAudit() {
           + ' <span style="color:var(--mid)">Change this under Settings → Alerts &amp; connections.</span>'
         : 'Not running automatically. Switch it on under <b>Settings → Alerts &amp; connections</b> to check each day without having to remember.';
     }
+    renderAuditSetup(data, at);
     renderAutoAuditRuns(data.runs || []);
   } catch (_) { /* the rest of the tab still works */ }
+}
+
+// The setup checklist on the Audit tab: what the nightly audit needs, each
+// ticked as it is done. Once the two required steps are, it shrinks to a
+// single line so it doesn't push the results down every morning.
+function renderAuditSetup(data, at) {
+  const list = document.getElementById('auditSetupSteps');
+  const card = document.getElementById('auditSetupCard');
+  if (!list || !card) return;
+  const step = (done, title, body, optional) => `
+    <li style="display:flex;gap:10px;align-items:flex-start">
+      <span aria-hidden="true" style="flex:none;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;
+        ${done ? 'background:var(--success);color:#fff' : 'border:1.5px solid var(--border);color:var(--mid)'}">${done ? '✓' : ''}</span>
+      <span><b>${title}</b>${optional ? ' <span style="color:var(--mid);font-weight:400">(optional)</span>' : ''}
+        <span class="sr-only">${done ? '— done' : '— not done yet'}</span><br>
+        <span style="color:var(--mid)">${body}</span></span>
+    </li>`;
+  const merchant = data.merchant;
+  const texting = !!data.alert_enabled && !!data.alerts_possible;
+  list.innerHTML = [
+    step(!!merchant, 'Connect your merchant account',
+      merchant
+        ? `Connected to <b>${escapeHtml(merchant)}</b>. The audit reads your settled batches from there.`
+        : 'The audit compares your sales with what your processor settled, so it has to be able to read your batches. '
+          + '<b>Maverick:</b> your DBA ID and API token. <b>Payarc:</b> your API bearer token. '
+          + 'The <b>?</b> beside each connection in Settings shows where to find them. '
+          + 'Another processor? Email <a href="mailto:support@sky-sale.com" style="color:var(--accent)">support@sky-sale.com</a>.'),
+    step(!!data.enabled, 'Turn on the nightly batch',
+      data.enabled
+        ? `Runs every day at <b>${escapeHtml(prettyTime(at))}</b>, checking the day before.`
+        : 'Tick <b>Run the audit automatically every day</b> under Nightly reconciliation, and pick a time. '
+          + 'Choose one after your processor has settled the previous day\'s batch; most settle overnight, so the morning is safe.'),
+    step(texting, 'Get a text when a day is off',
+      texting
+        ? 'On. You\'re texted the morning a day doesn\'t reconcile.'
+        : 'Tick <b>Text me when a day doesn\'t reconcile</b>, and add a number under <b>Who gets them</b>.', true),
+  ].join('');
+  // Required steps done: say so in a line and get out of the way.
+  const ready = !!merchant && !!data.enabled;
+  card.classList.toggle('setup-done', ready);
 }
 
 // 09:00 -> 9:00am, for reading rather than for the input.

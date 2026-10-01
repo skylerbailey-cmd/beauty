@@ -3660,6 +3660,11 @@ router.get('/audit-auto', async (req, res) => {
     alerts_possible: !!Number(settings?.sale_alert_enabled) || smsAddressesFor(settings).length > 0,
     timezone: settings?.timezone || 'America/Los_Angeles',
     at: (settings?.audit_auto_time || '').trim() || '09:00',
+    // Which processor the audit can read — the setup checklist on the Audit
+    // tab ticks this off. Never the token itself.
+    merchant: (settings?.maverick_token && String(settings.maverick_token).trim() && settings?.maverick_dba_id)
+      ? 'Maverick'
+      : (settings?.payarc_token && String(settings.payarc_token).trim()) ? 'Payarc' : null,
     runs: await pgDb.recentAutoAudits(userId, 14),
   });
 });
