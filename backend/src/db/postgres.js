@@ -443,6 +443,26 @@ Exchanges are only allowed within **7 days** of purchase.'`);
   await migrate('CREATE INDEX IF NOT EXISTS idx_time_entries_shop ON pos_time_entries(user_id, clock_in)');
   await migrate('CREATE UNIQUE INDEX IF NOT EXISTS idx_time_entries_open ON pos_time_entries(employee_id) WHERE clock_out IS NULL');
 
+  // Pay on top of commission: an hourly wage (times their hours on the time
+  // clock) or a yearly salary (split evenly across paychecks). Kept as a
+  // history, each row from the day it starts, rather than as a single figure
+  // on the employee: a paycheck is recalculated whenever it is opened, so a
+  // raise written over the old rate would rewrite every paycheck before it.
+  // Nobody has a row until a manager sets one, which is pay of nothing — so
+  // every existing employee starts at zero.
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_employee_pay (
+    id SERIAL PRIMARY KEY,
+    employee_id INTEGER NOT NULL REFERENCES pos_employees(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    pay_type TEXT NOT NULL DEFAULT 'none',
+    hourly_rate NUMERIC NOT NULL DEFAULT 0,
+    annual_salary NUMERIC NOT NULL DEFAULT 0,
+    effective_from DATE NOT NULL,
+    created_by TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  await migrate('CREATE INDEX IF NOT EXISTS idx_employee_pay ON pos_employee_pay(employee_id, effective_from)');
+
   // Which address opens which shop.
   //
   // A company id is a hash of the sign-in address, which makes it stable
@@ -1192,6 +1212,40 @@ async function saveTimeEntry({ id, userId, employeeId, clockIn: inAt, clockOut: 
 
 async function deleteTimeEntry(id) {
   await query('DELETE FROM pos_time_entries WHERE id = $1', [id]);
+}
+
+// ─── Hourly wage / salary ───────────────────────────────────────────────────
+const PAY_TYPES = ['none', 'hourly', 'salary'];
+
+// What each of these employees is paid as of today: the latest row that has
+// started. A row dated in the future is reported as upcoming.
+async function currentPay(userId) {
+  const rows = (await query(
+    `SELECT p.employee_id, p.pay_type, p.hourly_rate::float AS hourly_rate,
+            p.annual_salary::float AS annual_salary, p.effective_from::text AS effective_from
+       FROM pos_employee_pay p
+       LEFT JOIN pos_settings s ON s.user_id = p.user_id
+      WHERE p.user_id = $1
+      ORDER BY p.employee_id, p.effective_from, p.id`, [userId])).rows;
+  const today = (await query(`SELECT (NOW() AT TIME ZONE ${SHOP_TZ})::date::text AS d
+    FROM (SELECT $1::text AS user_id) x LEFT JOIN pos_settings s ON s.user_id = x.user_id`, [userId])).rows[0].d;
+  const out = {};
+  for (const r of rows) {
+    const o = out[r.employee_id] || (out[r.employee_id] = { current: null, upcoming: null });
+    if (r.effective_from <= today) o.current = r; else o.upcoming = r;
+  }
+  return { today, pay: out };
+}
+
+// A change of pay, from a given day. A second change dated the same day
+// replaces the first rather than stacking on it.
+async function setPay({ employeeId, userId, payType, hourlyRate, annualSalary, effectiveFrom, createdBy }) {
+  await query('DELETE FROM pos_employee_pay WHERE employee_id = $1 AND effective_from = $2::date', [employeeId, effectiveFrom]);
+  await query(
+    `INSERT INTO pos_employee_pay (employee_id, user_id, pay_type, hourly_rate, annual_salary, effective_from, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6::date, $7)`,
+    [employeeId, userId, payType, payType === 'hourly' ? hourlyRate : 0, payType === 'salary' ? annualSalary : 0,
+      effectiveFrom, createdBy || '']);
 }
 
 // ─── Product Prices ─────────────────────────────────────────────────────────
@@ -2647,6 +2701,94 @@ async function payrollForPayday(userId, payday, settings) {
       kind: 'carry', receipt: null, amount: round2(Number(c.net_total)),
       note: `negative amount carried from the ${c.payday} paycheck — it came to −$${short} and paid nothing`,
     });
+  }
+
+  // Hourly wages and salary, on top of commission. Each day of the period is
+  // paid at whatever was in effect THAT day — so a raise in the middle of a
+  // fortnight pays the old rate before it and the new one after, and setting
+  // someone's pay today changes no paycheck before today.
+  //   hourly: the hours of their shifts that started that day, times the rate
+  //   salary: the yearly figure ÷ paychecks a year ÷ days in this period
+  // A shift still clocked in has no end, so it isn't paid until it does.
+  const payRows = (await query(
+    `SELECT p.employee_id, p.pay_type, p.hourly_rate::float AS hourly_rate,
+            p.annual_salary::float AS annual_salary, p.effective_from::text AS effective_from,
+            e.name AS employee_name, e.commission_rate, e.user_id AS company_id
+       FROM pos_employee_pay p JOIN pos_employees e ON e.id = p.employee_id
+      WHERE p.user_id = ANY($1::text[]) AND e.user_id = ANY($1::text[])
+      ORDER BY p.employee_id, p.effective_from, p.id`, [ids])).rows;
+  if (payRows.length) {
+    const history = new Map();
+    for (const p of payRows) {
+      if (!history.has(p.employee_id)) history.set(p.employee_id, []);
+      history.get(p.employee_id).push(p);
+    }
+    const shiftDays = (await query(
+      `SELECT employee_id, ${localDate('clock_in')}::text AS day,
+              SUM(EXTRACT(EPOCH FROM (clock_out - clock_in)) / 3600)::float AS hours
+         FROM pos_time_entries
+        WHERE user_id = ANY($1::text[]) AND clock_out IS NOT NULL
+          AND ${localDate('clock_in')} BETWEEN $2::date AND $3::date
+        GROUP BY employee_id, 2`, [ids, period.start, period.end])).rows;
+    const hoursOn = new Map();   // employee_id -> Map(day -> hours)
+    for (const d of shiftDays) {
+      if (!hoursOn.has(d.employee_id)) hoursOn.set(d.employee_id, new Map());
+      hoursOn.get(d.employee_id).set(d.day, Number(d.hours) || 0);
+    }
+    const stillOpen = new Map((await query(
+      `SELECT employee_id, COUNT(*)::int AS n FROM pos_time_entries
+        WHERE user_id = ANY($1::text[]) AND clock_out IS NULL
+          AND ${localDate('clock_in')} BETWEEN $2::date AND $3::date
+        GROUP BY employee_id`, [ids, period.start, period.end])).rows.map(r => [r.employee_id, r.n]));
+
+    const days = [];
+    for (let d = new Date(`${period.start}T12:00:00Z`); d.toISOString().slice(0, 10) <= period.end; d.setUTCDate(d.getUTCDate() + 1)) {
+      days.push(d.toISOString().slice(0, 10));
+    }
+    const perYear = sched.semiMonthly ? 24 : 12;
+    const fmt = (n) => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const hrs = (h) => (Math.round(h * 100) / 100).toString();
+
+    for (const [empId, hist] of history) {
+      const on = (day) => { let cur = null; for (const p of hist) { if (p.effective_from <= day) cur = p; else break; } return cur; };
+      let wage = 0, hours = 0, salary = 0, salaryDays = 0;
+      const rates = new Set(), salaries = new Set();
+      for (const day of days) {
+        const p = on(day);
+        if (!p) continue;
+        if (p.pay_type === 'hourly' && p.hourly_rate > 0) {
+          const h = hoursOn.get(empId)?.get(day) || 0;
+          if (h > 0) { wage += h * p.hourly_rate; hours += h; rates.add(p.hourly_rate); }
+        } else if (p.pay_type === 'salary' && p.annual_salary > 0) {
+          salary += p.annual_salary / perYear / days.length;
+          salaryDays++; salaries.add(p.annual_salary);
+        }
+      }
+      const open = stillOpen.get(empId) || 0;
+      const paidHourly = hist.some(p => p.pay_type === 'hourly');
+      const first = hist[0];
+      if (wage > 0 || (open && paidHourly)) {
+        const r = row(empId, first.employee_name, first.commission_rate, first.company_id);
+        const rate = rates.size === 1 ? ` at $${fmt([...rates][0])}/h` : '';
+        r.wages = round2(wage);
+        r.adjustments.push({
+          kind: 'wages', receipt: null, amount: round2(wage), hours: round2(hours),
+          note: `${hrs(hours)} h on the time clock${rate}`
+            + (open ? ` — ${open} shift${open === 1 ? '' : 's'} still clocked in, not counted until clocked out` : ''),
+        });
+      }
+      if (salary > 0) {
+        const r = row(empId, first.employee_name, first.commission_rate, first.company_id);
+        const yearly = salaries.size === 1 ? `$${fmt([...salaries][0])} a year` : 'yearly salary';
+        r.salary = round2(salary);
+        r.adjustments.push({
+          kind: 'salary', receipt: null, amount: round2(salary),
+          note: salaryDays === days.length
+            ? `salary — ${yearly} over ${perYear} paychecks`
+            : `salary for ${salaryDays} of the ${days.length} days — ${yearly} over ${perYear} paychecks`,
+        });
+      }
+    }
   }
 
   // Manual lines added by hand — bonuses, corrections, advances.
@@ -4745,6 +4887,7 @@ async function ensureCompanySlugs() {
 module.exports = {
   pool,
   initSchema,
+  PAY_TYPES, currentPay, setPay,
   openShift, clockIn, clockOut, onTheClock, timeEntries, getTimeEntry, saveTimeEntry, deleteTimeEntry,
   saveGmailToken,
   saveCompanyName,

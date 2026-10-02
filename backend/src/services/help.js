@@ -128,6 +128,19 @@ Exchanges have their own window, also set in Settings → Store.
 - Time clock (when the shop has it on): shifts for the chosen dates — your
   own, or everyone's for a manager or admin, who can correct them.
 
+## Hourly wage or salary
+On top of commission, a manager can pay someone an hourly wage or a salary:
+Settings → Employees → Edit → "Wage or salary". Hourly pays their hours on
+the time clock (so the time clock must be on) times the rate. Salary is a
+yearly amount split evenly across paychecks (24 a year when paid on the 1st
+and 15th, 12 when monthly). Each change has a "Starting" date — today by
+default; backdate it to cover hours already worked. Every day of a pay period
+is paid at the rate in effect that day, so a raise never changes an earlier
+paycheck. Payroll shows the wage or salary as its own line under the person's
+commission ("hourly · 12.5 h on the time clock at $20.00/h"); a shift still
+clocked in isn't paid until it's clocked out. Everyone starts with no wage
+or salary. Only an admin can set an admin's pay.
+
 ## Calendar tab — treatment sessions
 - The week's book: every session booked this week; Previous / Next / This
   week move around. Tap a session to see, move or cancel it.

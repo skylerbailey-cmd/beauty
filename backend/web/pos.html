@@ -2899,6 +2899,36 @@
       </div>
     </div>
 
+    <!-- Pay on top of commission: a wage for their hours on the time clock,
+         or a yearly salary split across paychecks. -->
+    <div style="border-top:1px solid var(--border);margin:6px 0 14px;padding-top:14px">
+      <div class="field">
+        <label for="empEditPayType">Wage or salary <span style="font-weight:400;color:var(--mid)">— on top of commission</span></label>
+        <select id="empEditPayType" onchange="updateEmpPayUI()" style="width:100%;padding:10px 14px;border:1.5px solid var(--border);border-radius:8px;font-size:.95rem;font-family:system-ui,sans-serif;outline:none">
+          <option value="none">None — commission only</option>
+          <option value="hourly">Hourly wage — paid for their hours on the time clock</option>
+          <option value="salary">Salary — a yearly amount, split across paychecks</option>
+        </select>
+      </div>
+      <div id="empEditPayFields" style="display:none">
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <div class="field" style="flex:1;min-width:140px" id="empEditHourlyField">
+            <label for="empEditHourly">Dollars an hour</label>
+            <input type="number" id="empEditHourly" step="0.25" min="0" placeholder="18.00" oninput="updateEmpPayUI()">
+          </div>
+          <div class="field" style="flex:1;min-width:140px" id="empEditSalaryField">
+            <label for="empEditSalary">Dollars a year</label>
+            <input type="number" id="empEditSalary" step="100" min="0" placeholder="45000" oninput="updateEmpPayUI()">
+          </div>
+          <div class="field" style="flex:1;min-width:140px">
+            <label for="empEditPayFrom">Starting</label>
+            <input type="date" id="empEditPayFrom">
+          </div>
+        </div>
+      </div>
+      <div id="empEditPayNote" style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);line-height:1.45"></div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeEmpEdit()">Cancel</button>
       <button class="btn btn-confirm" onclick="saveEmpEdit()">Save</button>
@@ -5867,6 +5897,8 @@ async function loadEmployees() {
   const resp = await fetch(`${API}/api/pos/employees`, { credentials: 'include' });
   const data = await resp.json();
   allEmployees = data.employees || [];
+  // Pay is only fetched for a manager who has unlocked Settings.
+  await loadEmployeePay();
   renderEmpImportOptions();
   const list = document.getElementById('empList');
   const showInactive = document.getElementById('showInactiveEmps')?.checked;
@@ -5989,8 +6021,91 @@ async function editEmployee(id) {
     }
   } catch (_) { /* default to flat if the lookup fails */ }
   updateEmpPlanTypeUI();
+  if (!Object.keys(employeePay).length) await loadEmployeePay();
+  fillEmpPay(id);
 
   document.getElementById('empEditModal').classList.add('show');
+}
+
+// ─── Wage / salary on the edit dialog ───────────────────────────────────────
+let employeePay = {};     // employee_id -> { current, upcoming } once a manager has unlocked Settings
+let payToday = '';
+let editingPay = null;    // what the dialog opened with, to tell whether it changed
+
+async function loadEmployeePay() {
+  if (!settingsCreds || !canManageRole(settingsAccess?.role)) { employeePay = {}; return; }
+  try {
+    const resp = await fetch(`${API}/api/pos/employees/pay`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify(rosterManager()),
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    employeePay = data.pay || {};
+    payToday = data.today || '';
+  } catch (_) { /* the roster still works without it */ }
+}
+
+const paychecksPerYear = () => String(storeSettings?.payroll_paydays || '1,15').includes('15') ? 24 : 12;
+
+function payText(p) {
+  if (!p || p.pay_type === 'none') return '';
+  return p.pay_type === 'hourly' ? `$${money(p.hourly_rate)}/h` : `$${money(p.annual_salary)}/yr salary`;
+}
+
+function updateEmpPayUI() {
+  const type = document.getElementById('empEditPayType').value;
+  document.getElementById('empEditPayFields').style.display = type === 'none' ? 'none' : '';
+  document.getElementById('empEditHourlyField').style.display = type === 'hourly' ? '' : 'none';
+  document.getElementById('empEditSalaryField').style.display = type === 'salary' ? '' : 'none';
+  const note = document.getElementById('empEditPayNote');
+  const per = paychecksPerYear();
+  if (type === 'hourly') {
+    const rate = Number(document.getElementById('empEditHourly').value) || 0;
+    note.innerHTML = `Each paycheck adds their hours from the <b>time clock</b> times this rate${rate ? ` — 40 hours would be $${money(rate * 40)}` : ''}.`
+      + (timeClockOn() ? '' : ' <b style="color:var(--danger)">The time clock is off for this shop</b> — turn it on in Settings → Store, or no hours will be recorded.');
+  } else if (type === 'salary') {
+    const yr = Number(document.getElementById('empEditSalary').value) || 0;
+    note.innerHTML = `Split evenly across ${per} paychecks a year${yr ? ` — <b>$${money(yr / per)}</b> each` : ''}.`;
+  } else {
+    note.textContent = '';
+  }
+  if (type !== 'none' && editingPay?.upcoming) {
+    note.innerHTML += ` Already set to change to ${escapeHtml(payText(editingPay.upcoming) || 'commission only')} on ${escapeHtml(editingPay.upcoming.effective_from)}.`;
+  }
+}
+
+function fillEmpPay(id) {
+  const p = employeePay[id] || {};
+  editingPay = p;
+  const cur = p.current || { pay_type: 'none', hourly_rate: 0, annual_salary: 0 };
+  document.getElementById('empEditPayType').value = cur.pay_type || 'none';
+  document.getElementById('empEditHourly').value = cur.pay_type === 'hourly' ? cur.hourly_rate : '';
+  document.getElementById('empEditSalary').value = cur.pay_type === 'salary' ? cur.annual_salary : '';
+  // A change starts today unless they say otherwise; backdate to the start
+  // of a pay period to cover hours already worked.
+  document.getElementById('empEditPayFrom').value = payToday || new Date().toLocaleDateString('en-CA');
+  updateEmpPayUI();
+}
+
+// Saves pay only if it changed. Returns an error message, or ''.
+async function saveEmpPay(id) {
+  const type = document.getElementById('empEditPayType').value;
+  const hourly = Number(document.getElementById('empEditHourly').value) || 0;
+  const salary = Number(document.getElementById('empEditSalary').value) || 0;
+  const cur = (editingPay && editingPay.current) || { pay_type: 'none', hourly_rate: 0, annual_salary: 0 };
+  const same = type === (cur.pay_type || 'none')
+    && (type !== 'hourly' || hourly === Number(cur.hourly_rate))
+    && (type !== 'salary' || salary === Number(cur.annual_salary));
+  if (same) return '';
+  const resp = await fetch(`${API}/api/pos/employees/${id}/pay`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+    body: JSON.stringify({ pay_type: type, hourly_rate: hourly, annual_salary: salary,
+      effective_from: document.getElementById('empEditPayFrom').value || undefined, ...rosterManager() }),
+  });
+  if (resp.ok) return '';
+  const err = await resp.json().catch(() => ({}));
+  return err.error || 'the wage or salary could not be saved';
 }
 
 function closeEmpEdit() {
@@ -6066,6 +6181,9 @@ async function saveEmpEdit() {
     // The name, PIN and rate did save; only the plan didn't, so say which.
     alert(`Saved, but the commission plan did not: ${err.error || 'unknown error'}`);
   }
+  const payErr = await saveEmpPay(id);
+  if (payErr) alert(`Saved, but ${payErr}.`);
+  await loadEmployeePay();
 
   closeEmpEdit();
   loadEmployees();
@@ -9749,7 +9867,7 @@ function switchTab(tabName) {
   if (tabName !== 'calendar') stopCalendarPolling();
   if (tabName !== 'history') { txAccess = null; txCreds = null; selectedTxIds.clear(); }
   // Settings is re-locked the same way, for the same reason.
-  if (tabName !== 'settings') { settingsAccess = null; settingsCreds = null; }
+  if (tabName !== 'settings') { settingsAccess = null; settingsCreds = null; employeePay = {}; }
   // So is Reports: leaving it clears whoever's commissions were on screen, so
   // the next person at this browser has to enter their own name and PIN.
   if (tabName !== 'reports' && personalCreds) lockPersonalReport();
@@ -10455,6 +10573,8 @@ function renderPaySummary(paycheck) {
     // anything this person sold — so it is its own line, with the shop it
     // came from named on it.
     if (a.kind === 'store') return a.note || 'Share of the shop';
+    if (a.kind === 'wages') return 'Hourly wage — ' + (a.note || '');
+    if (a.kind === 'salary') return a.note ? a.note.charAt(0).toUpperCase() + a.note.slice(1) : 'Salary';
     if (a.kind === 'manual') return a.note || 'Adjustment';
     if (a.kind === 'won') return 'Released — dispute won, held back earlier';
     if (a.kind === 'lost') return 'Dispute lost — taken back';
@@ -11310,7 +11430,8 @@ async function loadPayroll() {
         const informational = a.kind === 'held';
         const byHand = a.kind === 'manual';
         const carried = a.kind === 'carry';
-        const colour = informational ? 'var(--mid)' : (a.amount < 0 ? 'var(--danger)' : 'var(--success)');
+        const wage = a.kind === 'wages' || a.kind === 'salary';
+        const colour = informational ? 'var(--mid)' : wage ? 'var(--dark)' : (a.amount < 0 ? 'var(--danger)' : 'var(--success)');
         const figure = informational
           ? `($${money(Math.abs(Number(a.held_amount) || 0))} held)`
           : `${a.amount < 0 ? '−' : '+'}$${money(Math.abs(a.amount))}`;
@@ -11331,7 +11452,7 @@ async function loadPayroll() {
         <div style="display:flex;justify-content:space-between;padding-left:${byHand || carried ? '10' : '14'}px;color:${colour};font-size:.8rem;margin-top:3px;${
           byHand ? 'border-left:3px solid ' + (a.amount < 0 ? 'var(--danger)' : 'var(--success)') + ';font-weight:600;'
           : carried ? 'border-left:3px solid var(--accent-deep);font-weight:600;' : ''}">
-          <span>${byHand ? '<span style="color:var(--mid);font-weight:400">added by hand · </span>' : ''}${
+          <span>${a.kind === 'wages' ? '<span style="color:var(--mid)">hourly · </span>' : ''}${byHand ? '<span style="color:var(--mid);font-weight:400">added by hand · </span>' : ''}${
             carried ? '<span style="color:var(--mid);font-weight:400">brought forward · </span>' : ''}${a.receipt ? '#' + escapeHtml(String(a.receipt)) + ' — ' : ''}${escapeHtml(a.note)}${holdBtn}${
             a.kind === 'manual' && !data.paid
               ? ` <button title="Added by hand to this paycheck only — remove it" onclick="removePayrollAdjustment(${a.id})" style="border:none;background:none;color:var(--danger);cursor:pointer;font-size:.9rem;line-height:1;padding:0 2px">&times;</button>`
@@ -13878,6 +13999,8 @@ function commissionSummary(e) {
   if (plan && Number(plan.store_rate) > 0) {
     parts.push(`+ ${Number(plan.store_rate)}% of the store`);
   }
+  const pay = payText(employeePay[e.id]?.current);
+  if (pay) parts.push(`+ ${pay}`);
   return parts.join(' ');
 }
 

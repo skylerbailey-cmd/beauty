@@ -400,6 +400,40 @@ router.delete('/employees/:id/commission-plan', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── Hourly wage / salary ────────────────────────────────────────────────────
+// Pay on top of commission. Read and changed with a manager's name and PIN —
+// it's never in the roster the register loads.
+router.post('/employees/pay', async (req, res) => {
+  const manager = await managerFor(req);
+  if (!manager) return res.status(403).json({ error: 'Seeing pay needs a manager or admin name and PIN.' });
+  res.json(await pgDb.currentPay(req.session.userId));
+});
+
+router.put('/employees/:id/pay', async (req, res) => {
+  const target = await ownEmployee(req);
+  if (!target) return res.status(404).json({ error: 'That employee was not found.' });
+  const manager = await managerFor(req);
+  if (!manager) return res.status(403).json({ error: 'Changing how someone is paid needs a manager or admin name and PIN.' });
+  if (isAdmin(target) && !isAdmin(manager)) return res.status(403).json({ error: 'Only an admin can change an admin\'s pay.' });
+
+  const { pay_type, hourly_rate, annual_salary, effective_from } = req.body || {};
+  if (!pgDb.PAY_TYPES.includes(pay_type)) return res.status(400).json({ error: 'Choose commission only, hourly, or salary.' });
+  const hourly = Number(hourly_rate) || 0;
+  const salary = Number(annual_salary) || 0;
+  if (pay_type === 'hourly' && !(hourly > 0 && hourly < 1000)) return res.status(400).json({ error: 'Give an hourly wage, in dollars an hour.' });
+  if (pay_type === 'salary' && !(salary > 0 && salary < 10000000)) return res.status(400).json({ error: 'Give a yearly salary, in dollars a year.' });
+  const { today } = await pgDb.currentPay(req.session.userId);
+  const from = effective_from || today;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(from))) return res.status(400).json({ error: 'Pick the day this pay starts.' });
+
+  await pgDb.setPay({
+    employeeId: target.id, userId: req.session.userId, payType: pay_type,
+    hourlyRate: Math.round(hourly * 100) / 100, annualSalary: Math.round(salary * 100) / 100,
+    effectiveFrom: from, createdBy: manager.name,
+  });
+  res.json({ ok: true, effective_from: from });
+});
+
 // Verify any employee's own name + PIN (not manager-restricted) — used to gate
 // the Settings tab so an employee can get in far enough to see their own name
 // and change their own PIN, without exposing the rest of Settings to them.
