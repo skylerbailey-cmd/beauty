@@ -2685,7 +2685,7 @@
       <div style="display:flex;align-items:center;gap:6px">
         <span style="font-size:1.05rem;font-weight:600">$</span>
         <input type="number" id="cbAmount" step="0.01" min="0" oninput="updateChargebackForm()" style="flex:1">
-        <button type="button" class="btn" onclick="chargebackFullAmount()" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:6px 10px;font-size:.78rem;white-space:nowrap">Full amount</button>
+        <button type="button" class="btn" id="cbFullBtn" onclick="chargebackFullAmount()" style="background:var(--cream);color:var(--dark);border:1px solid var(--border);padding:6px 10px;font-size:.78rem;white-space:nowrap">Full amount</button>
       </div>
       <div id="cbAmountNote" style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin-top:4px"></div>
     </div>
@@ -6732,6 +6732,9 @@ function openBulkChargeback() {
     .map(id => histTransactions.find(t => t.id === id))
     .filter(t => t && t.type === 'sale');
   if (!sales.length) return;
+  // One sale is not a batch: the single-sale dialog fills in its full amount,
+  // takes the card and shows any disputes it already has.
+  if (sales.length === 1) { openChargebackModal(sales[0]); return; }
   chargebackTargets = sales;
   chargebackTarget = null;
   document.getElementById('cbReceipt').textContent = `${sales.length} sales`;
@@ -6751,9 +6754,20 @@ function openBulkChargeback() {
   chargebackMaxAmount = 0;
   chargebackEditId = null;
   // The list and the card belong to one sale, so they're hidden for a batch.
-  document.getElementById('cbExisting').innerHTML =
-    '<div style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid)">Records one dispute against each selected sale, for its whole amount.</div>';
+  // Each sale's full amount, so what is about to be disputed is on screen.
+  const whole = sales.reduce((sum, t) => sum + (Number(t.total) || 0), 0);
+  document.getElementById('cbExisting').innerHTML = `
+    <div style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:6px">
+      Records one dispute against each selected sale, for its full amount:</div>
+    <div style="font-family:system-ui,sans-serif;font-size:.85rem;max-height:150px;overflow-y:auto;border:1px solid var(--border);border-radius:8px">
+      ${sales.map(t => `<div style="display:flex;justify-content:space-between;padding:6px 10px;border-bottom:1px solid var(--border)">
+        <span>#${escapeHtml(String(t.receipt_number))} · ${escapeHtml(t.customer_name || '')}</span><b>$${money(t.total)}</b></div>`).join('')}
+      <div style="display:flex;justify-content:space-between;padding:6px 10px;background:var(--cream);font-weight:700">
+        <span>${sales.length} sales</span><span>$${money(whole)}</span></div>
+    </div>`;
   document.getElementById('cbCardWrap').style.display = 'none';
+  document.getElementById('cbFullBtn').style.display = 'none';
+  document.getElementById('cbAmount').placeholder = 'Full amount of each sale';
   document.getElementById('cbSaveBtn').textContent = 'Save';
   document.getElementById('cbAmountLabel').textContent = 'Amount disputed';
   document.getElementById('cbAmount').value = '';
@@ -6775,6 +6789,8 @@ let cbRowEdits = {};           // status changes picked on a row, not yet saved
 function openChargebackModal(tx) {
   chargebackTarget = tx;
   chargebackTargets = null;   // single sale, not a batch
+  document.getElementById('cbFullBtn').style.display = '';
+  document.getElementById('cbAmount').placeholder = '';
   cbRowEdits = {};            // no half-made status changes carried in
   document.getElementById('cbReceipt').textContent = tx.receipt_number;
   document.getElementById('cbSummary').textContent =
@@ -6956,7 +6972,9 @@ function updateChargebackForm() {
   const noteEl = document.getElementById('cbAmountNote');
   const amt = parseFloat(document.getElementById('cbAmount').value);
   if (!chargebackMaxAmount) {
-    noteEl.textContent = 'Leave blank to dispute the whole of each sale.';
+    noteEl.textContent = chargebackTargets
+      ? `Leave blank to dispute the full amount of each sale — $${money(chargebackTargets.reduce((s2, t) => s2 + (Number(t.total) || 0), 0))} in all. A figure here applies to each sale.`
+      : 'Leave blank to dispute the whole of each sale.';
   } else if (!isFinite(amt) || amt <= 0) {
     noteEl.textContent = `Blank means whatever is left of the $${money(chargebackMaxAmount)} sale.`;
   } else if (amt >= chargebackMaxAmount) {

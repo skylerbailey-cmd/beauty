@@ -150,6 +150,29 @@ setTimeout(() => {
         check('which posts a new dispute, not an update', p3 && p3.body.id, null);
         check('for the balance', p3 && p3.body.amount, 5763.19);
 
+        console.log('\n── Disputing from the checkboxes shows the full amount ──');
+        w.eval(`
+          closeChargebackModal();
+          histTransactions = [
+            { id: 1017, receipt_number: '1017', total: 648.00, customer_name: 'TRACY', created_at: '2026-09-08T19:43:00Z', type: 'sale', chargebacks: [], payments: [{ method: 'card', card_last4: '4242', amount: 648 }] },
+            { id: 1018, receipt_number: '1018', total: 324.56, customer_name: 'JO', created_at: '2026-09-09T19:43:00Z', type: 'sale', chargebacks: [], payments: [] },
+          ];
+          selectedTxIds = new Set([1017]);
+          openBulkChargeback();
+        `);
+        check('one sale opens with its full amount filled in', id('cbAmount').value, '648.00');
+        check('as that sale, not "1 sales"', id('cbReceipt').textContent, '1017');
+        check('with the Full amount button and the card field', [id('cbFullBtn').style.display, id('cbCardWrap').style.display], ['', '']);
+        w.eval(`selectedTxIds = new Set([1017, 1018]); openBulkChargeback();`);
+        const list = id('cbExisting').textContent.replace(/\s+/g, ' ');
+        check('several: each sale\'s full amount is listed', /#1017.*\$648\.00/.test(list) && /#1018.*\$324\.56/.test(list), true);
+        check('with the total', /2 sales ?\$972\.56/.test(list), true);
+        check('the box says what blank means', id('cbAmount').placeholder, 'Full amount of each sale');
+        check('and the note gives the total', /full amount of each sale — \$972\.56 in all/.test(id('cbAmountNote').textContent), true);
+        check('the Full amount button, which can\'t apply to several, is hidden', id('cbFullBtn').style.display, 'none');
+        w.eval(`selectedTxIds = new Set([1017]); openBulkChargeback();`);
+        check('back to one sale, the button and the empty placeholder return', [id('cbFullBtn').style.display, id('cbAmount').placeholder], ['', '']);
+
         console.log(`\n${pass} passed, ${fail} failed\n`);
         process.exit(fail ? 1 : 0);
       }, 200);
