@@ -176,8 +176,8 @@ const money = (n) => Math.round(Number(n || 0) * 100) / 100;
   console.log('\n── Payroll asks for the linked shops, not a session flag ──');
   const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'pos.js'), 'utf8');
   check('payroll is scoped by the link', /const payrollScope = async \(req\) => linkedScope\(req\)/.test(src));
-  check('so are the commission figures an admin reads',
-    /isAdmin\(employee\) \? linkedScope\(req\)/.test(src));
+  check('so are the commission figures a manager or admin reads',
+    /seesBooks\(employee\) \? linkedScope\(req\)/.test(src));
   check('linkedScope reads the link out of Postgres',
     /linkedScope = async[\s\S]{0,400}pgDb\.linkedCompanyIds/.test(src));
   // The commission table asks for this by name. It is the report an owner

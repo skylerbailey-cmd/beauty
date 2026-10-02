@@ -467,6 +467,16 @@ router.post('/transactions', async (req, res) => {
   }
   const { type, employee_id, employees: employeeAssignments, customer_name, customer_email, customer_phone, items, payment_method, card_last4, payments, notes, tax_rate, discount_amount, original_receipt, manager_name, manager_pin, processor_name, processor_pin } = req.body;
 
+  // Build your own can be switched off in Settings. Hiding the tile is the
+  // register's side of that; this is the rule, so a page left open from
+  // before the change can't ring one up anyway.
+  if (type !== 'return' && (items || []).some((it) => String(it.product_id || '').startsWith('one-off:'))) {
+    const shop = await pgDb.getSettings(userId);
+    if (shop && Number(shop.build_your_own_enabled) === 0) {
+      return res.status(400).json({ error: 'Build your own is switched off for this shop. A manager can turn it back on in Settings → Store.' });
+    }
+  }
+
   // Whoever puts a return through says so, with their own name and PIN — the
   // register is open to anyone at the counter, and money going back out of it
   // should have a person against it. Checked before anything else about the
@@ -1713,6 +1723,10 @@ const canManage = (e) => !!e && (e.role === 'manager' || e.role === 'admin');
 // manager or an admin is plain sales, so an unknown value can never widen
 // access by accident.
 const roleOf = (e) => (isAdmin(e) ? 'admin' : (canManage(e) ? 'manager' : 'sales'));
+// Who reads the books in Reports: everyone's commissions, payroll, products,
+// chargebacks and the time clock. A manager sees everything an admin does
+// there. Linking stores and closing the account stay with the admin.
+const seesBooks = canManage;
 
 function scopeIds(req) {
   const scope = req.session.companyScope;
@@ -1929,7 +1943,7 @@ async function figuresScope(req, employee, pin) {
   // does — the commission figures are what the paycheck is built from, and a
   // person who works at both has one of each. Everyone else gets the shops
   // their own name and PIN open.
-  return isAdmin(employee) ? linkedScope(req) : personalIds(await personalScope(req, employee, pin));
+  return seesBooks(employee) ? linkedScope(req) : personalIds(await personalScope(req, employee, pin));
 }
 
 // ─── Linking two stores ─────────────────────────────────────────────────────
@@ -1985,8 +1999,8 @@ router.post('/company-links', async (req, res) => {
 router.post('/reports/payroll', async (req, res) => {
   const { name, pin, payday } = req.body;
   const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
-  if (!isAdmin(employee)) {
-    return res.status(403).json({ error: 'Payroll needs an admin name and PIN.' });
+  if (!seesBooks(employee)) {
+    return res.status(403).json({ error: 'Payroll needs a manager or admin name and PIN.' });
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) {
     return res.status(400).json({ error: 'Pick a payday.' });
@@ -2000,8 +2014,8 @@ router.post('/reports/payroll', async (req, res) => {
 router.post('/reports/payroll/paid', async (req, res) => {
   const { name, pin, payday, paid } = req.body;
   const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
-  if (!isAdmin(employee)) {
-    return res.status(403).json({ error: 'Only an admin can close off a payday.' });
+  if (!seesBooks(employee)) {
+    return res.status(403).json({ error: 'Only a manager or admin can close off a payday.' });
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.status(400).json({ error: 'Pick a payday.' });
   // Scoped to every company, not the signed-in one: a payday covers both
@@ -2066,7 +2080,7 @@ async function recordChequeEffects(scope, run, payday, by, onlyEmployeeId) {
 router.post('/reports/payroll/hold', async (req, res) => {
   const { name, pin, payday, chargeback_id, employee_id, held } = req.body;
   const me = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
-  if (!isAdmin(me)) return res.status(403).json({ error: 'Only an admin can change a chargeback hold.' });
+  if (!seesBooks(me)) return res.status(403).json({ error: 'Only a manager or admin can change a chargeback hold.' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.status(400).json({ error: 'Pick a payday.' });
   const cbId = parseInt(chargeback_id), empId = parseInt(employee_id);
   if (!cbId || !empId) return res.status(400).json({ error: 'Which dispute, and whose share?' });
@@ -2080,7 +2094,7 @@ router.post('/reports/payroll/hold', async (req, res) => {
 router.post('/reports/payroll/paid-employee', async (req, res) => {
   const { name, pin, payday, employee_id, paid } = req.body;
   const me = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
-  if (!isAdmin(me)) return res.status(403).json({ error: 'Only an admin can pay someone off a payday.' });
+  if (!seesBooks(me)) return res.status(403).json({ error: 'Only a manager or admin can pay someone off a payday.' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.status(400).json({ error: 'Pick a payday.' });
   const empId = parseInt(employee_id);
   if (!empId) return res.status(400).json({ error: 'Pick who is being paid.' });
@@ -2106,8 +2120,8 @@ router.post('/reports/payroll/paid-employee', async (req, res) => {
 router.post('/reports/payroll/adjustment', async (req, res) => {
   const { name, pin, payday, employee_id, amount, note } = req.body;
   const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
-  if (!isAdmin(employee)) {
-    return res.status(403).json({ error: 'Only an admin can adjust a paycheck.' });
+  if (!seesBooks(employee)) {
+    return res.status(403).json({ error: 'Only a manager or admin can adjust a paycheck.' });
   }
   const amt = Number(amount);
   if (!isFinite(amt) || amt === 0) return res.status(400).json({ error: 'Enter an amount — positive to add, negative to deduct.' });
@@ -2121,8 +2135,8 @@ router.post('/reports/payroll/adjustment', async (req, res) => {
 router.delete('/reports/payroll/adjustment/:id', async (req, res) => {
   const { name, pin } = req.body;
   const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
-  if (!isAdmin(employee)) {
-    return res.status(403).json({ error: 'Only an admin can adjust a paycheck.' });
+  if (!seesBooks(employee)) {
+    return res.status(403).json({ error: 'Only a manager or admin can adjust a paycheck.' });
   }
   const ok = await pgDb.deletePayrollAdjustment(req.session.userId, parseInt(req.params.id));
   if (!ok) return res.status(404).json({ error: 'Adjustment not found' });
@@ -2142,11 +2156,11 @@ router.post('/reports/my-paycheck', async (req, res) => {
   // sees their own rows, from every linked store their own PIN opens. Payroll
   // already returns one row per person PER STORE, each carrying its store
   // name, so a shared employee gets a line for each and the summary adds up.
-  const scope = isAdmin(me) ? await payrollScope(req) : personalIds(await personalScope(req, me, pin));
+  const scope = seesBooks(me) ? await payrollScope(req) : personalIds(await personalScope(req, me, pin));
   const settings = await pgDb.getSettings(req.session.userId);
   const run = await pgDb.payrollForPayday(scope, payday, settings);
   const mine = String(me.name).trim().toLowerCase();
-  const rows = isAdmin(me)
+  const rows = seesBooks(me)
     ? run.employees
     : run.employees.filter(e => String(e.employee_name).trim().toLowerCase() === mine);
   res.json({
@@ -2163,7 +2177,7 @@ router.post('/reports/my-adjustments', async (req, res) => {
   if (!me) return res.status(401).json({ error: 'Invalid name or PIN' });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payday || ''))) return res.json({ adjustments: [] });
   const scope = await figuresScope(req, me, pin);
-  const rows = await pgDb.adjustmentsForPayday(scope, payday, isAdmin(me) ? null : me.name);
+  const rows = await pgDb.adjustmentsForPayday(scope, payday, seesBooks(me) ? null : me.name);
   res.json({ adjustments: rows, payday, role: roleOf(me) });
 });
 
@@ -2179,7 +2193,7 @@ router.post('/reports/chargebacks', async (req, res) => {
   const scope = await figuresScope(req, employee, pin);
   let rows = await pgDb.chargebacksForRange(scope, startDate, endDate);
 
-  if (!isAdmin(employee)) {
+  if (!seesBooks(employee)) {
     // Match on name, not id: the same person has a different employee record
     // at each company, and this spans both.
     const mine = String(employee.name).trim().toLowerCase();
@@ -2197,7 +2211,7 @@ router.post('/reports/employee-detail', async (req, res) => {
   if (!me) return res.status(401).json({ error: 'Invalid name or PIN' });
 
   const who = String(employee || me.name).trim();
-  if (!isAdmin(me) && who.toLowerCase() !== String(me.name).trim().toLowerCase()) {
+  if (!seesBooks(me) && who.toLowerCase() !== String(me.name).trim().toLowerCase()) {
     return res.status(403).json({ error: 'You can only open your own figures.' });
   }
 
@@ -2234,8 +2248,8 @@ router.post('/reports/employee-detail', async (req, res) => {
 router.post('/reports/chargebacks/:id', async (req, res) => {
   const { name, pin, status, closed_at, withheld_payday } = req.body;
   const employee = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
-  if (!isAdmin(employee)) {
-    return res.status(403).json({ error: 'Only an admin can change a chargeback.' });
+  if (!seesBooks(employee)) {
+    return res.status(403).json({ error: 'Only a manager or admin can change a chargeback.' });
   }
   const id = parseInt(req.params.id);
   // The companies this session was granted — not every company on the server.
@@ -2312,6 +2326,130 @@ router.get('/reports/day-summary', async (req, res) => {
 
 // ─── Employee Personal Report (PIN-protected) ─────────────────────────────
 
+// ─── Time clock ──────────────────────────────────────────────────────────────
+//
+// On the register: a person clocks in and out with their own name and PIN.
+// In Reports: a manager or admin sees and corrects everyone's shifts; anyone
+// else sees their own.
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const LOCAL_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+
+async function timeClockOn(userId) {
+  const shop = await pgDb.getSettings(userId);
+  return !!shop && Number(shop.time_clock_enabled) === 1;
+}
+
+// Who is on the clock now — names only, for the register's clock-in box.
+router.get('/time-clock/now', async (req, res) => {
+  if (!(await timeClockOn(req.session.userId))) return res.json({ enabled: false, on: [] });
+  res.json({ enabled: true, on: await pgDb.onTheClock([req.session.userId]) });
+});
+
+router.post('/time-clock/punch', async (req, res) => {
+  const userId = req.session.userId;
+  const { name, pin, action } = req.body || {};
+  if (!(await timeClockOn(userId))) {
+    return res.status(403).json({ error: 'The time clock is switched off for this shop. A manager can turn it on in Settings → Store.' });
+  }
+  if (action !== 'in' && action !== 'out') return res.status(400).json({ error: 'Clock in or clock out?' });
+  const me = await pgDb.verifyEmployeePin(pin, userId, name);
+  if (!me) return res.status(401).json({ error: 'That name and PIN don\'t match.' });
+
+  const open = await pgDb.openShift(me.id);
+  if (action === 'in') {
+    // Clocking in twice would leave two shifts open and double their hours.
+    if (open) {
+      return res.status(409).json({
+        error: `${me.name} is already clocked in, since ${open.clock_in.replace('T', ' ')}. Clock out first — or, if that shift was never closed, ask a manager to fix it in Reports → Time clock.`,
+      });
+    }
+    try {
+      const shift = await pgDb.clockIn(userId, me.id);
+      return res.json({ action: 'in', employee: me.name, clock_in: shift.clock_in });
+    } catch (err) {
+      // Two taps at once: the unique index lets one through.
+      if (/idx_time_entries_open|duplicate key/.test(err.message)) {
+        return res.status(409).json({ error: `${me.name} is already clocked in.` });
+      }
+      return res.status(500).json({ error: 'Could not clock in — please try again.' });
+    }
+  }
+  if (!open) return res.status(409).json({ error: `${me.name} isn't clocked in.` });
+  const shift = await pgDb.clockOut(me.id);
+  res.json({ action: 'out', employee: me.name, clock_in: shift.clock_in, clock_out: shift.clock_out, hours: shift.hours });
+});
+
+// The shifts behind a date range. Everyone's for a manager or admin; their
+// own for anyone else.
+router.post('/reports/time', async (req, res) => {
+  const { name, pin, start, end } = req.body || {};
+  const me = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
+  if (!me) return res.status(401).json({ error: 'Invalid name or PIN' });
+  if (!DAY.test(String(start || '')) || !DAY.test(String(end || ''))) {
+    return res.status(400).json({ error: 'Pick the dates to show.' });
+  }
+  const books = seesBooks(me);
+  const scope = await figuresScope(req, me, pin);
+  const entries = await pgDb.timeEntries(scope, start, end, books ? null : me.name);
+  // Who a manager can add a shift for: the people at the shops in view.
+  const people = books
+    ? (await Promise.all(scope.map((id) => pgDb.getEmployees(id)))).flat()
+        .filter((e) => e.active)
+        .map((e) => ({ id: e.id, name: e.name, company_id: e.user_id }))
+    : [];
+  const stores = books ? Object.fromEntries((await pgDb.getAllCompanyIds())
+    .filter((c) => scope.includes(c.user_id)).map((c) => [c.user_id, c.store_name])) : {};
+  res.json({ can_edit: books, enabled: await timeClockOn(req.session.userId), entries, people, stores });
+});
+
+// Add or correct a shift. A manager or admin only, and only at a shop they
+// can see.
+router.post('/reports/time/save', async (req, res) => {
+  const { name, pin, id, employee_id, clock_in, clock_out, note } = req.body || {};
+  const me = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
+  if (!seesBooks(me)) return res.status(403).json({ error: 'Only a manager or admin can change a shift.' });
+  if (!LOCAL_TIME.test(String(clock_in || ''))) return res.status(400).json({ error: 'Give the time they clocked in.' });
+  if (clock_out && !LOCAL_TIME.test(String(clock_out))) return res.status(400).json({ error: 'That clock-out time isn\'t a time.' });
+  if (clock_out && clock_out <= clock_in) return res.status(400).json({ error: 'Clock out has to be after clock in.' });
+  const scope = await figuresScope(req, me, pin);
+
+  let shopId, employeeId;
+  if (id) {
+    const entry = await pgDb.getTimeEntry(Number(id));
+    if (!entry || !scope.includes(entry.user_id)) return res.status(404).json({ error: 'That shift was not found.' });
+    shopId = entry.user_id; employeeId = entry.employee_id;
+  } else {
+    const who = await pgDb.getEmployee(Number(employee_id));
+    if (!who || !scope.includes(who.user_id)) return res.status(404).json({ error: 'Pick who the shift is for.' });
+    shopId = who.user_id; employeeId = who.id;
+  }
+  try {
+    const saved = await pgDb.saveTimeEntry({
+      id: id ? Number(id) : null, userId: shopId, employeeId,
+      clockIn: clock_in, clockOut: clock_out || null,
+      note: String(note || '').slice(0, 300), editedBy: me.name,
+    });
+    res.json({ ok: true, id: saved });
+  } catch (err) {
+    if (/idx_time_entries_open|duplicate key/.test(err.message)) {
+      return res.status(409).json({ error: 'They already have a shift that is still open. Give this one a clock-out time, or close the other one first.' });
+    }
+    res.status(500).json({ error: 'Could not save that — please try again.' });
+  }
+});
+
+router.post('/reports/time/delete', async (req, res) => {
+  const { name, pin, id } = req.body || {};
+  const me = await pgDb.verifyEmployeePin(pin, req.session.userId, name);
+  if (!seesBooks(me)) return res.status(403).json({ error: 'Only a manager or admin can delete a shift.' });
+  const entry = await pgDb.getTimeEntry(Number(id));
+  const scope = await figuresScope(req, me, pin);
+  if (!entry || !scope.includes(entry.user_id)) return res.status(404).json({ error: 'That shift was not found.' });
+  await pgDb.deleteTimeEntry(entry.id);
+  res.json({ ok: true });
+});
+
 router.post('/reports/employee-personal', async (req, res) => {
   const { name, pin, start, end } = req.body;
   if (!pin) return res.status(400).json({ error: 'PIN required' });
@@ -2324,8 +2462,8 @@ router.post('/reports/employee-personal', async (req, res) => {
 
   const { startDate, endDate } = await rangeFor(req, start, end);
 
-  // An admin sees every employee; everyone else — managers included — sees
-  // only their own. Both cover every company: the Reports tab has no company
+  // A manager or admin sees every employee; everyone else sees only their
+  // own. Both cover every company: the Reports tab has no company
   // picker because everything on it is combined, so scoping this to the
   // signed-in account would hide half of it.
   // The returns behind the figures above. A return is netted into net sales
@@ -2336,7 +2474,7 @@ router.post('/reports/employee-personal', async (req, res) => {
     (await pgDb.employeeActivityForRange(scope, who, startDate, endDate, null))
       .filter(r => r.type === 'return');
 
-  if (isAdmin(employee)) {
+  if (seesBooks(employee)) {
     // The companies this session was granted. It used to be every company on
     // the server, which put every other shop's roster on this one's
     // commission report — harmless when the two companies were one owner's,
@@ -2347,7 +2485,7 @@ router.post('/reports/employee-personal', async (req, res) => {
     const names = [...new Set(report.map(r => r.employee_name).filter(Boolean))];
     const returns = (await Promise.all(names.map(n => returnsFor(all, n)))).flat()
       .sort((a, b) => (a.counts_on < b.counts_on ? 1 : a.counts_on > b.counts_on ? -1 : 0));
-    res.json({ employee, role: 'admin', report, returns });
+    res.json({ employee, role: roleOf(employee), report, returns });
   } else {
     // A sales employee only ever sees their OWN figures, but they may work at
     // more than one company. Their own name+PIN is re-verified against each

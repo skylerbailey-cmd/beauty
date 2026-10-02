@@ -1135,6 +1135,8 @@
             <button id="modereturn" onclick="setMode('return')" title="Find a receipt to reprint, email, or return against">Look Up</button>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <!-- Shown when the shop has the time clock on (Settings → Store). -->
+            <button class="btn" style="background:var(--dark);color:#fff;padding:7px 16px;font-family:system-ui,sans-serif;font-size:.82rem;border-radius:8px;display:none" onclick="openTimeClock()" id="timeClockBtn">Clock In / Out</button>
             <button class="btn" style="background:var(--accent2);color:#fff;padding:7px 16px;font-family:system-ui,sans-serif;font-size:.82rem;border-radius:8px" onclick="printDaySummary()" id="printDayBtn">Print End of Day Report</button>
             <button class="btn" style="background:var(--accent);color:#fff;padding:7px 16px;font-family:system-ui,sans-serif;font-size:.82rem;border-radius:8px" onclick="openBusinessCards()" id="printCardBtn">Print Business Card</button>
           </div>
@@ -1506,7 +1508,7 @@
            be reached — the tab would show nothing but the leaderboard. -->
       <div class="report-card">
         <h3>Employee Sales &amp; Commissions</h3>
-        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Enter your name and PIN. Everyone sees their own sales and commission; an admin also unlocks the KPIs, sales leaderboard, everyone's commissions, payroll, and top products below.</p>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">Enter your name and PIN. Everyone sees their own sales, commission and time clock; a manager or admin also unlocks the KPIs, sales leaderboard, everyone's commissions, payroll, time clock and top products below.</p>
         <div id="empPersonalLocked" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
           <input type="text" id="empPersonalName2" placeholder="Your name" style="width:150px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
           <input type="password" id="empPersonalPin" placeholder="Your PIN" maxlength="6" style="width:120px;padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.88rem;font-family:system-ui,sans-serif;outline:none;text-align:center" onkeydown="if(event.key==='Enter')unlockPersonalReport()">
@@ -1582,6 +1584,20 @@
               </p>
               <div id="rptChargebacksBody"></div>
             </div>
+          </section>
+
+          <section class="rpt-section" data-section="time" style="display:none">
+          <!-- Shifts from the register's time clock, for the dates above. A
+               manager or admin sees everyone's and can correct them; anyone
+               else sees their own. -->
+          <div class="report-card">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+              <h3 style="margin:0">Time clock</h3>
+              <button class="btn btn-confirm" id="timeAddBtn" style="display:none;padding:7px 14px;font-size:.82rem" onclick="openShiftEditor(null)">+ Add a shift</button>
+            </div>
+            <p id="timeNote" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin:6px 0 12px"></p>
+            <div id="timeBody"></div>
+          </div>
           </section>
 
           <section class="rpt-section rpt-admin" data-section="payroll" style="display:none">
@@ -2153,6 +2169,23 @@
         <div id="aeLog" style="margin-top:16px"></div>
       </div>
 
+      <div class="report-card" data-sgroup="store" id="registerOptionsCard" style="margin-top:16px">
+        <h3>On the register</h3>
+        <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
+          What the register offers the people on the floor.
+        </p>
+        <label style="display:flex;align-items:flex-start;gap:8px;font-family:system-ui,sans-serif;font-size:.88rem;cursor:pointer;margin-bottom:10px">
+          <input type="checkbox" id="setTimeClock" style="width:16px;height:16px;margin-top:2px;accent-color:var(--accent);cursor:pointer">
+          <span><b>Time clock</b><br><span style="color:var(--mid);font-size:.82rem">A Clock In / Out button on the register. Each person clocks in and out with their own name and PIN; shifts appear under Reports → Time clock, where a manager can correct them.</span></span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:8px;font-family:system-ui,sans-serif;font-size:.88rem;cursor:pointer;margin-bottom:12px">
+          <input type="checkbox" id="setBuildYourOwn" style="width:16px;height:16px;margin-top:2px;accent-color:var(--accent);cursor:pointer">
+          <span><b>Build your own</b><br><span style="color:var(--mid);font-size:.82rem">A tile for ringing up something that isn't in the catalogue — named and priced at the counter. Off, the register only sells what's in your products.</span></span>
+        </label>
+        <button class="btn btn-confirm" onclick="saveRegisterOptions()">Save</button>
+        <div id="registerOptionsStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
+      </div>
+
       <div class="report-card" data-sgroup="store" id="returnWindowCard" style="margin-top:16px">
         <h3>Return window</h3>
         <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
@@ -2528,6 +2561,60 @@
     <div class="modal-actions">
       <button class="btn btn-cancel" onclick="closeCustomItem()">Cancel</button>
       <button class="btn btn-confirm" onclick="confirmCustomItem()">Add to Cart</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Time clock: clock in and out with your own name and PIN ─── -->
+<div class="modal-overlay" id="timeClockModal">
+  <div class="modal" style="max-width:400px">
+    <h2>Clock In / Out</h2>
+    <p class="sub">Pick your name and enter your PIN.</p>
+    <div class="field">
+      <label for="tcName">Name</label>
+      <select id="tcName" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.95rem;background:var(--white)"></select>
+    </div>
+    <div class="field">
+      <label for="tcPin">PIN</label>
+      <input type="password" id="tcPin" maxlength="6" inputmode="numeric" autocomplete="off" style="text-align:center;letter-spacing:.3em"
+>
+    </div>
+    <div id="tcResult" role="status" aria-live="polite" style="font-family:system-ui,sans-serif;font-size:.88rem;min-height:1.2em;margin:4px 0 8px"></div>
+    <div id="tcOnClock" style="font-family:system-ui,sans-serif;font-size:.8rem;color:var(--mid);margin-bottom:10px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-cancel" onclick="closeTimeClock()">Close</button>
+      <button class="btn" id="tcOut" style="background:var(--accent2);color:#fff" onclick="punchClock('out')">Clock Out</button>
+      <button class="btn btn-confirm" id="tcIn" onclick="punchClock('in')">Clock In</button>
+    </div>
+  </div>
+</div>
+
+<!-- ─── Correct a shift (manager or admin, from Reports → Time clock) ─── -->
+<div class="modal-overlay" id="shiftModal">
+  <div class="modal" style="max-width:420px">
+    <h2 id="shiftTitle">Edit shift</h2>
+    <p class="sub">Times are on the shop's own clock.</p>
+    <div class="field" id="shiftWhoField">
+      <label for="shiftWho">Who</label>
+      <select id="shiftWho" style="width:100%;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.92rem;background:var(--white)"></select>
+    </div>
+    <div class="field">
+      <label for="shiftIn">Clocked in</label>
+      <input type="datetime-local" id="shiftIn">
+    </div>
+    <div class="field">
+      <label for="shiftOut">Clocked out <span style="font-weight:400;color:var(--mid)">(blank if still on the clock)</span></label>
+      <input type="datetime-local" id="shiftOut">
+    </div>
+    <div class="field">
+      <label for="shiftNote">Note <span style="font-weight:400;color:var(--mid)">(why it was changed)</span></label>
+      <input type="text" id="shiftNote" maxlength="300" placeholder="Forgot to clock out">
+    </div>
+    <div id="shiftError" style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--danger);min-height:1.1em"></div>
+    <div class="modal-actions">
+      <button class="btn" id="shiftDelete" style="background:var(--danger);color:#fff;margin-right:auto" onclick="deleteShift()">Delete</button>
+      <button class="btn btn-cancel" onclick="document.getElementById('shiftModal').classList.remove('show')">Cancel</button>
+      <button class="btn btn-confirm" onclick="saveShift()">Save</button>
     </div>
   </div>
 </div>
@@ -3290,7 +3377,9 @@ function renderProducts() {
       <div class="oo-sub">Name it, price it, discount it</div>
     </div>`;
 
-  grid.innerHTML = oneOff + filtered.map(p => `
+  // Settings → Store can switch it off; only an explicit 0 does.
+  const byoOn = Number(storeSettings?.build_your_own_enabled) !== 0;
+  grid.innerHTML = (byoOn ? oneOff : '') + filtered.map(p => `
     <div class="product-tile" onclick="addToCart('${p.id}')" title="${p.description || ''}">
       ${p.image ? `<img src="${p.image}" alt="${p.name}" onerror="this.style.display='none'">` : ''}
       <div class="p-brand">${p.brand}</div>
@@ -4183,6 +4272,126 @@ function fillReturnWindowSettings() {
   onReturnWindowModeChange();
 }
 
+// ─── On the register: time clock and build your own ─────────────────────────
+// Both default on for a settings object that doesn't mention them; only an
+// explicit 0 switches one off. (Shops that existed before the time clock
+// was added were given a 0 for it.)
+const timeClockOn = () => Number(storeSettings?.time_clock_enabled) === 1;
+const buildYourOwnOn = () => Number(storeSettings?.build_your_own_enabled) !== 0;
+
+function applyRegisterSettings() {
+  const btn = document.getElementById('timeClockBtn');
+  if (btn) btn.style.display = timeClockOn() ? '' : 'none';
+  const tc = document.getElementById('setTimeClock');
+  if (tc) tc.checked = timeClockOn();
+  const byo = document.getElementById('setBuildYourOwn');
+  if (byo) byo.checked = buildYourOwnOn();
+  if (document.getElementById('productGrid') && typeof renderProducts === 'function') {
+    try { renderProducts(); } catch (_) { /* products not loaded yet */ }
+  }
+  renderReportNav();
+}
+
+async function saveRegisterOptions() {
+  const status = document.getElementById('registerOptionsStatus');
+  const body = {
+    time_clock_enabled: document.getElementById('setTimeClock').checked ? 1 : 0,
+    build_your_own_enabled: document.getElementById('setBuildYourOwn').checked ? 1 : 0,
+  };
+  status.style.color = 'var(--mid)';
+  status.textContent = 'Saving…';
+  try {
+    const resp = await fetch(`${API}/api/pos/settings`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || 'Could not save.');
+    storeSettings = { ...storeSettings, ...(data.settings || body) };
+    applyRegisterSettings();
+    status.style.color = 'var(--success)';
+    status.textContent = 'Saved.';
+  } catch (err) {
+    status.style.color = 'var(--danger)';
+    status.textContent = err.message;
+  }
+}
+
+function openTimeClock() {
+  const sel = document.getElementById('tcName');
+  const people = (allEmployees || []).filter(e => e.active);
+  sel.innerHTML = '<option value="">Choose your name…</option>'
+    + people.map(e => `<option value="${escapeHtml(e.name)}">${escapeHtml(e.name)}</option>`).join('');
+  document.getElementById('tcPin').value = '';
+  document.getElementById('tcResult').textContent = '';
+  document.getElementById('timeClockModal').classList.add('show');
+  loadOnTheClock();
+  sel.focus();
+}
+
+function closeTimeClock() {
+  document.getElementById('timeClockModal').classList.remove('show');
+  document.getElementById('tcPin').value = '';
+}
+
+// 2026-10-01T09:05 -> 9:05am (or "Sep 30, 9:05am" when it isn't today).
+function clockTime(stamp) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(stamp || ''));
+  if (!m) return stamp || '';
+  const t = prettyTime(`${m[4]}:${m[5]}`);
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  return sameDay ? t : `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${t}`;
+}
+
+function hoursText(h) {
+  const mins = Math.round(Number(h || 0) * 60);
+  return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`;
+}
+
+async function loadOnTheClock() {
+  const box = document.getElementById('tcOnClock');
+  try {
+    const resp = await fetch(`${API}/api/pos/time-clock/now`, { credentials: 'include' });
+    const data = await resp.json();
+    const on = data.on || [];
+    box.innerHTML = on.length
+      ? '<b>On the clock now:</b> ' + on.map(o => `${escapeHtml(o.employee_name)} <span style="color:var(--mid)">(since ${escapeHtml(clockTime(o.clock_in))})</span>`).join(', ')
+      : 'Nobody is clocked in right now.';
+  } catch (_) { box.textContent = ''; }
+}
+
+async function punchClock(action) {
+  const name = document.getElementById('tcName').value;
+  const pin = document.getElementById('tcPin').value.trim();
+  const out = document.getElementById('tcResult');
+  out.style.color = 'var(--danger)';
+  if (!name) { out.textContent = 'Choose your name.'; return; }
+  if (!pin) { out.textContent = 'Enter your PIN.'; return; }
+  for (const id of ['tcIn', 'tcOut']) document.getElementById(id).disabled = true;
+  try {
+    const resp = await fetch(`${API}/api/pos/time-clock/punch`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ name, pin, action }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || 'Could not reach the time clock.');
+    out.style.color = 'var(--success)';
+    out.textContent = data.action === 'in'
+      ? `✓ ${data.employee} clocked in at ${clockTime(data.clock_in)}.`
+      : `✓ ${data.employee} clocked out at ${clockTime(data.clock_out)} — ${hoursText(data.hours)} on this shift.`;
+    // The next person shouldn't find this one's PIN still in the box.
+    document.getElementById('tcPin').value = '';
+    document.getElementById('tcName').value = '';
+    loadOnTheClock();
+  } catch (err) {
+    out.textContent = err.message;
+  } finally {
+    for (const id of ['tcIn', 'tcOut']) document.getElementById(id).disabled = false;
+  }
+}
+
 async function saveReturnWindow() {
   const status = document.getElementById('returnWindowStatus');
   const days = returnWindowFromForm();
@@ -4191,7 +4400,7 @@ async function saveReturnWindow() {
   status.textContent = 'Saving…';
   try {
     const resp = await fetch(`${API}/api/pos/settings`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({ return_window_days: days, exchange_window_days: exchange }),
     });
@@ -10172,7 +10381,7 @@ async function loadPendingChargebacks() {
       } catch (_) { /* the rest of the page still stands */ }
     }
     if (mine !== pendingCbRequest) return;
-    put(renderPendingChargebacks(pending, alreadyHeld, data.role === 'admin')
+    put(renderPendingChargebacks(pending, alreadyHeld, canManageRole(data.role))
       + renderReleased(released)
       + renderSettledChargebacks(settled));
     renderPaySummary(paycheck);
@@ -10604,7 +10813,7 @@ async function openChargebackDrilldown(employeeName) {
     cbDrilldownRows = (data.chargebacks || [])
       .sort((a, b) => (isHeld(b) ? 1 : 0) - (isHeld(a) ? 1 : 0)
         || String(b.sale_date).localeCompare(String(a.sale_date)));
-    cbDrilldownIsManager = data.role === 'admin';
+    cbDrilldownIsManager = canManageRole(data.role);
     renderChargebackDrilldown();
   } catch (err) {
     body.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:.85rem;color:var(--danger)">${escapeHtml(err.message)}</div>`;
@@ -11289,8 +11498,11 @@ function renderReportReturns(returns) {
 // figure right above it, so keeping them apart put the cause on a different
 // page from the effect. The nav only draws when there is more than one section
 // to choose between, which for an employee there isn't.
+// "admin" here means the books: a manager or admin. The time clock shows for
+// everyone once the shop has it on — their own shifts, or everyone's.
 const RPT_SECTIONS = [
   { key: 'commissions', label: 'Commissions' },
+  { key: 'time', label: 'Time clock', clock: true },
   { key: 'payroll', label: 'Payroll', admin: true },
   { key: 'products', label: 'Products', admin: true },
 ];
@@ -11299,7 +11511,7 @@ let rptSection = 'commissions';
 function renderReportNav() {
   const nav = document.getElementById('rptNav');
   if (!nav) return;
-  const visible = RPT_SECTIONS.filter(x => !x.admin || managerReportsUnlocked);
+  const visible = RPT_SECTIONS.filter(x => (!x.admin || managerReportsUnlocked) && (!x.clock || timeClockOn()));
   // An admin-only section can't stay selected after locking.
   if (!visible.some(x => x.key === rptSection)) rptSection = 'commissions';
   // One section is not a choice. An employee sees only their commissions, so
@@ -11323,6 +11535,131 @@ function renderReportNav() {
 function showReportSection(key) {
   rptSection = key;
   renderReportNav();
+  if (key === 'time') loadTimeReport();
+}
+
+// ─── Reports → Time clock ───────────────────────────────────────────────────
+let lastTimeReport = null;
+let editingShift = null;
+
+async function loadTimeReport() {
+  const body = document.getElementById('timeBody');
+  const note = document.getElementById('timeNote');
+  if (!body || !personalCreds) return;
+  const start = document.getElementById('rptStart').value;
+  const end = document.getElementById('rptEnd').value;
+  try {
+    const resp = await fetch(`${API}/api/pos/reports/time`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ ...personalCreds, start, end }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Could not load the time clock.');
+    lastTimeReport = data;
+    renderTimeReport(data, start, end);
+  } catch (err) {
+    note.textContent = '';
+    body.innerHTML = `<div style="color:var(--danger);font-family:system-ui,sans-serif;font-size:.85rem">${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderTimeReport(data, start, end) {
+  const body = document.getElementById('timeBody');
+  const fmt = d => new Date(d + 'T12:00:00').toLocaleDateString();
+  const entries = data.entries || [];
+  const multiStore = new Set(entries.map(e => e.company_id)).size > 1;
+  document.getElementById('timeAddBtn').style.display = data.can_edit ? '' : 'none';
+  document.getElementById('timeNote').innerHTML =
+    `Shifts that started ${start === end ? `on <b>${fmt(start)}</b>` : `<b>${fmt(start)} – ${fmt(end)}</b>`}. `
+    + (data.can_edit ? 'Click a shift to correct it.' : 'Ask a manager if one of these is wrong.');
+  if (!entries.length) {
+    body.innerHTML = '<div style="text-align:center;padding:16px;color:var(--mid);font-family:system-ui,sans-serif;font-size:.88rem">No shifts in these dates.</div>';
+    return;
+  }
+  // Hours per person first — usually the question — then every shift.
+  const totals = new Map();
+  for (const e of entries) totals.set(e.employee_name, (totals.get(e.employee_name) || 0) + Number(e.hours || 0));
+  const summary = [...totals].sort((a, b) => a[0].localeCompare(b[0])).map(([n, h]) =>
+    `<span style="display:inline-block;padding:6px 12px;border:1px solid var(--border);border-radius:999px;margin:0 6px 6px 0;background:var(--cream)"><b>${escapeHtml(n)}</b> · ${hoursText(h)}</span>`).join('');
+  const day = s => new Date(s.slice(0, 10) + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  const time = s => s ? prettyTime(s.slice(11, 16)) : '';
+  body.innerHTML = `<div style="font-family:system-ui,sans-serif;font-size:.85rem;margin-bottom:10px">${summary}</div>
+    <div class="table-scroll"><table class="report-table" id="timeTable">
+      <thead><tr><th>Employee</th>${multiStore ? '<th>Store</th>' : ''}<th>Day</th><th>In</th><th>Out</th><th>Hours</th><th>Note</th></tr></thead>
+      <tbody>${entries.map(e => `
+        <tr data-id="${e.id}" ${data.can_edit ? `onclick="openShiftEditor(${e.id})" style="cursor:pointer" title="Correct this shift"` : ''}>
+          <td>${escapeHtml(e.employee_name)}</td>
+          ${multiStore ? `<td>${escapeHtml(e.store_name)}</td>` : ''}
+          <td>${day(e.clock_in)}</td>
+          <td>${time(e.clock_in)}</td>
+          <td>${e.clock_out
+            ? (e.clock_out.slice(0, 10) === e.clock_in.slice(0, 10) ? time(e.clock_out) : `${day(e.clock_out)} ${time(e.clock_out)}`)
+            : '<b style="color:var(--success)">on the clock</b>'}</td>
+          <td>${hoursText(e.hours)}</td>
+          <td style="color:var(--mid);font-size:.82rem">${escapeHtml(e.note || '')}${e.edited_by ? `<div style="font-size:.75rem">edited by ${escapeHtml(e.edited_by)}</div>` : ''}</td>
+        </tr>`).join('')}</tbody>
+    </table></div>`;
+}
+
+function openShiftEditor(id) {
+  const data = lastTimeReport;
+  if (!data || !data.can_edit) return;
+  const entry = id ? (data.entries || []).find(e => e.id === id) : null;
+  editingShift = entry;
+  document.getElementById('shiftTitle').textContent = entry ? `Edit ${entry.employee_name}'s shift` : 'Add a shift';
+  const who = document.getElementById('shiftWho');
+  const stores = data.stores || {};
+  const many = Object.keys(stores).length > 1;
+  who.innerHTML = '<option value="">Choose…</option>' + (data.people || []).map(p =>
+    `<option value="${p.id}">${escapeHtml(p.name)}${many ? ' — ' + escapeHtml(stores[p.company_id] || '') : ''}</option>`).join('');
+  document.getElementById('shiftWhoField').style.display = entry ? 'none' : '';
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 11);
+  document.getElementById('shiftIn').value = entry ? entry.clock_in : local + '09:00';
+  document.getElementById('shiftOut').value = entry ? (entry.clock_out || '') : '';
+  document.getElementById('shiftNote').value = entry ? entry.note || '' : '';
+  document.getElementById('shiftDelete').style.display = entry ? '' : 'none';
+  document.getElementById('shiftError').textContent = '';
+  document.getElementById('shiftModal').classList.add('show');
+}
+
+async function saveShift() {
+  const err = document.getElementById('shiftError');
+  const body = {
+    ...personalCreds,
+    id: editingShift ? editingShift.id : undefined,
+    employee_id: editingShift ? undefined : Number(document.getElementById('shiftWho').value) || undefined,
+    clock_in: document.getElementById('shiftIn').value,
+    clock_out: document.getElementById('shiftOut').value || null,
+    note: document.getElementById('shiftNote').value.trim(),
+  };
+  if (!editingShift && !body.employee_id) { err.textContent = 'Choose who the shift is for.'; return; }
+  try {
+    const resp = await fetch(`${API}/api/pos/reports/time/save`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || 'Could not save the shift.');
+    document.getElementById('shiftModal').classList.remove('show');
+    loadTimeReport();
+  } catch (e) { err.textContent = e.message; }
+}
+
+async function deleteShift() {
+  if (!editingShift) return;
+  if (!confirm(`Delete ${editingShift.employee_name}'s shift? This can't be undone.`)) return;
+  const err = document.getElementById('shiftError');
+  try {
+    const resp = await fetch(`${API}/api/pos/reports/time/delete`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+      body: JSON.stringify({ ...personalCreds, id: editingShift.id }),
+    });
+    const data = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(data.error || 'Could not delete the shift.');
+    document.getElementById('shiftModal').classList.remove('show');
+    loadTimeReport();
+  } catch (e) { err.textContent = e.message; }
 }
 
 // ─── Employee Personal Report / Manager unlock ──────────────────────────────
@@ -11391,8 +11728,9 @@ async function unlockPersonalReport(silent) {
         : `Showing <b>${fmt(start)} – ${fmt(end)}</b>. Change the dates above and press <b>Update</b> to see another period.`;
     }
 
-    if (data.role === 'admin') {
-      // Managers unlock the KPIs, full leaderboard, commissions, and top products
+    if (canManageRole(data.role)) {
+      // Managers and admins unlock the KPIs, full leaderboard, commissions,
+      // payroll, products and everyone's time clock
       managerReportsUnlocked = true;
       renderCompanyPickers(); // a manager can now combine companies here
       loadPaydayOptions();    // payroll lives behind the same unlock
@@ -11408,7 +11746,7 @@ async function unlockPersonalReport(silent) {
       // loadReports finishes by calling this again silently, and by then the
       // cache is populated, so it does not come back here.
       if (!lastSalesSummaryHtml) loadReports();
-      document.getElementById('empPersonalName').textContent = `Signed in as ${data.employee.name} — admin`;
+      document.getElementById('empPersonalName').textContent = `Signed in as ${data.employee.name} — ${data.role}`;
       document.getElementById('empPersonalBody').innerHTML = '';
       // Everyone's figures are in the table below, so the one-person version
       // above it would only ever be an empty frame.
@@ -11463,6 +11801,7 @@ async function unlockPersonalReport(silent) {
     // just unlocked — an admin gets everyone's, anyone else only their own.
     renderReportReturns(data.returns);
     loadPendingChargebacks();
+    if (rptSection === 'time') loadTimeReport();
   } catch (err) {
     errorEl.textContent = err.message;
     document.getElementById('empPersonalReport').style.display = 'none';
@@ -11494,7 +11833,7 @@ function lockPersonalReport() {
                     'empReportBody', 'empPersonalPaySummary', 'empReportPaySummary',
                     'rptChargebacksBody', 'rptReturnsBody', 'rptReturnsFoot',
                     'leaderboard', 'flaggedReturnsBody',
-                    'payrollBody', 'payrollPeriodNote', 'payrollPayday',
+                    'payrollBody', 'payrollPeriodNote', 'payrollPayday', 'timeBody',
                     'rptRangeNote', 'empPersonalName']) {
     const el = document.getElementById(id);
     if (el) el.innerHTML = '';
@@ -11570,6 +11909,7 @@ async function loadStoreSettings() {
     document.getElementById('settingsTaxRate').value = storeSettings.tax_rate != null ? taxPctStr(storeSettings.tax_rate) : '8.1875';
     fillAutoEmailSettings();
     showAutoEmailTill();
+    applyRegisterSettings();
     // Restore brands from Postgres (survives redeploys)
     if (storeSettings.brands) {
       const b = typeof storeSettings.brands === 'string' ? JSON.parse(storeSettings.brands) : storeSettings.brands;
@@ -13886,7 +14226,7 @@ const TOUR_STEPS = [
       const r = tourRow('#empPersonalBody');
       return r && { el: r.el, text: `This is you: ${r.cell('Sales')} sales, ${r.cell('Net Sales $')} net, and ${r.cell('Commission')} commission for this period. Open the row to see every receipt behind it.` };
     } },
-  { who: 'admin', tab: 'reports', view: 'commissions', at: '#rptEveryoneCard', title: 'Everyone’s commission',
+  { who: 'manager', tab: 'reports', view: 'commissions', at: '#rptEveryoneCard', title: 'Everyone’s commission',
     text: 'Each employee’s sales and commission for the period, side by side.',
     live: () => {
       const r = tourRow('#empReportBody');
@@ -13904,20 +14244,20 @@ const TOUR_STEPS = [
       const r = tourRow('#rptChargebacksBody');
       return r && { el: r.el, text: 'A sale a customer has disputed with their bank. Each one shows where it stands, and what it does to commission.' };
     } },
-  { who: 'admin', tab: 'reports', view: 'payroll', at: cardOf('#payrollBody'), title: 'Payroll',
+  { who: 'manager', tab: 'reports', view: 'payroll', at: cardOf('#payrollBody'), title: 'Payroll',
     text: 'What each person is owed on a payday, once disputes are taken into account. The arrows step between paychecks; the schedule is set in Settings.',
     live: () => {
       const note = tourText(document.getElementById('payrollPeriodNote'));
       return note && { el: document.getElementById('payrollBody')?.closest('.report-card'),
         text: `${note.replace(/\s*(Mark|Set|Undo)\b.*$/, '')} Each person’s pay is listed below. The arrows step between paychecks.` };
     } },
-  { who: 'admin', tab: 'reports', view: 'products', at: cardOf('#prodReportBody'), title: 'Top products',
+  { who: 'manager', tab: 'reports', view: 'products', at: cardOf('#prodReportBody'), title: 'Top products',
     text: 'Sales totals for the period and the products that sold best.',
     live: () => {
       const r = tourRow('#prodReportBody');
       return r && { el: r.el, text: `${r.cell('Product')} is at the top: ${r.cell('Units Sold')} sold for ${r.cell('Revenue')} this period.` };
     } },
-  { who: 'admin', tab: 'reports', view: 'products', at: '#flaggedReturnsCard', title: 'Returns with changed employees',
+  { who: 'manager', tab: 'reports', view: 'products', at: '#flaggedReturnsCard', title: 'Returns with changed employees',
     text: 'Returns where the employees on the refund are not the ones on the original sale. Worth a look, because it moves commission.' },
 
   // Calendar

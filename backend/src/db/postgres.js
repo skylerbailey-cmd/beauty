@@ -406,6 +406,43 @@ Exchanges are only allowed within **7 days** of purchase.'`);
   // number rather than being derived from the other.
   await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS exchange_window_days INTEGER DEFAULT 7');
 
+  // The time clock: on for a shop that signs up from now on, off for every
+  // shop that already existed, so nobody's register grows a button they never
+  // asked for. Adding the column with DEFAULT 0 gives every existing row 0;
+  // the default then becomes 1 for rows created later. A shop with no settings
+  // row yet would otherwise read the new default, so the first time the
+  // column appears each of those gets a row saying 0.
+  const hadTimeClock = (await query(
+    `SELECT 1 FROM information_schema.columns
+      WHERE table_name = 'pos_settings' AND column_name = 'time_clock_enabled'`)).rows.length > 0;
+  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS time_clock_enabled INTEGER DEFAULT 0');
+  await migrate('ALTER TABLE pos_settings ALTER COLUMN time_clock_enabled SET DEFAULT 1');
+  if (!hadTimeClock) {
+    await migrate(`INSERT INTO pos_settings (user_id, time_clock_enabled)
+      SELECT DISTINCT e.user_id, 0 FROM pos_employees e
+       WHERE e.user_id IS NOT NULL AND e.user_id <> ''
+         AND NOT EXISTS (SELECT 1 FROM pos_settings s WHERE s.user_id = e.user_id)
+      ON CONFLICT DO NOTHING`);
+  }
+  // Build your own on the register. On everywhere, as it always has been.
+  await migrate('ALTER TABLE pos_settings ADD COLUMN IF NOT EXISTS build_your_own_enabled INTEGER DEFAULT 1');
+
+  // One row per shift. clock_out is empty while they are on the clock, and a
+  // person can only have one shift open at a time.
+  await migrate(`CREATE TABLE IF NOT EXISTS pos_time_entries (
+    id SERIAL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    employee_id INTEGER NOT NULL REFERENCES pos_employees(id) ON DELETE CASCADE,
+    clock_in TIMESTAMPTZ NOT NULL,
+    clock_out TIMESTAMPTZ,
+    note TEXT DEFAULT '',
+    edited_by TEXT DEFAULT '',
+    edited_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )`);
+  await migrate('CREATE INDEX IF NOT EXISTS idx_time_entries_shop ON pos_time_entries(user_id, clock_in)');
+  await migrate('CREATE UNIQUE INDEX IF NOT EXISTS idx_time_entries_open ON pos_time_entries(employee_id) WHERE clock_out IS NULL');
+
   // Which address opens which shop.
   //
   // A company id is a hash of the sign-in address, which makes it stable
@@ -1054,6 +1091,107 @@ async function verifyEmployeePin(pin, userId, name) {
     [pin, userId, wanted]
   )).rows;
   return rows[0];
+}
+
+// ─── Time clock ─────────────────────────────────────────────────────────────
+//
+// Times go in and come out on the shop's own clock as "YYYY-MM-DDTHH:MM", so
+// the browser never has to know what timezone the shop is in, and a manager in
+// another state editing a shift sees the shop's times, not their own.
+const SHOP_TZ = `COALESCE(NULLIF(s.timezone, ''), 'America/Los_Angeles')`;
+const LOCAL_STAMP = (col) => `to_char((${col}) AT TIME ZONE ${SHOP_TZ}, 'YYYY-MM-DD"T"HH24:MI')`;
+
+async function openShift(employeeId) {
+  return (await query(
+    `SELECT t.id, ${LOCAL_STAMP('t.clock_in')} AS clock_in
+       FROM pos_time_entries t LEFT JOIN pos_settings s ON s.user_id = t.user_id
+      WHERE t.employee_id = $1 AND t.clock_out IS NULL`, [employeeId])).rows[0] || null;
+}
+
+async function clockIn(userId, employeeId) {
+  const row = (await query(
+    `INSERT INTO pos_time_entries (user_id, employee_id, clock_in) VALUES ($1, $2, NOW())
+     RETURNING id`, [userId, employeeId])).rows[0];
+  return openShift(employeeId).then((o) => o || row);
+}
+
+// Closes their open shift and says how long it was.
+async function clockOut(employeeId) {
+  const row = (await query(
+    `UPDATE pos_time_entries SET clock_out = NOW()
+      WHERE employee_id = $1 AND clock_out IS NULL
+      RETURNING id, EXTRACT(EPOCH FROM (clock_out - clock_in)) / 3600 AS hours`,
+    [employeeId])).rows[0];
+  if (!row) return null;
+  const when = (await query(
+    `SELECT ${LOCAL_STAMP('t.clock_in')} AS clock_in, ${LOCAL_STAMP('t.clock_out')} AS clock_out
+       FROM pos_time_entries t LEFT JOIN pos_settings s ON s.user_id = t.user_id WHERE t.id = $1`,
+    [row.id])).rows[0];
+  return { id: row.id, hours: Math.round(Number(row.hours) * 100) / 100, ...when };
+}
+
+// Who is on the clock right now, at these shops.
+async function onTheClock(userIds) {
+  return (await query(
+    `SELECT e.name AS employee_name, ${LOCAL_STAMP('t.clock_in')} AS clock_in
+       FROM pos_time_entries t
+       JOIN pos_employees e ON e.id = t.employee_id
+       LEFT JOIN pos_settings s ON s.user_id = t.user_id
+      WHERE t.user_id = ANY($1::text[]) AND t.clock_out IS NULL
+      ORDER BY t.clock_in`, [userIds])).rows;
+}
+
+// Shifts that started between two days (inclusive, on each shop's clock).
+// `onlyName` limits it to one person, matched by name across shops — the same
+// way their sales are.
+async function timeEntries(userIds, start, end, onlyName) {
+  const params = [userIds, start, end];
+  let who = '';
+  if (onlyName) { params.push(String(onlyName).trim().toLowerCase()); who = 'AND LOWER(TRIM(e.name)) = $4'; }
+  return (await query(
+    `SELECT t.id, t.user_id AS company_id, COALESCE(s.store_name, '') AS store_name,
+            t.employee_id, e.name AS employee_name,
+            ${LOCAL_STAMP('t.clock_in')} AS clock_in,
+            CASE WHEN t.clock_out IS NULL THEN NULL ELSE ${LOCAL_STAMP('t.clock_out')} END AS clock_out,
+            ROUND((EXTRACT(EPOCH FROM (COALESCE(t.clock_out, NOW()) - t.clock_in)) / 3600)::numeric, 2)::float AS hours,
+            COALESCE(t.note, '') AS note, COALESCE(t.edited_by, '') AS edited_by,
+            ${LOCAL_STAMP('t.edited_at')} AS edited_at
+       FROM pos_time_entries t
+       JOIN pos_employees e ON e.id = t.employee_id
+       LEFT JOIN pos_settings s ON s.user_id = t.user_id
+      WHERE t.user_id = ANY($1::text[])
+        AND ((t.clock_in AT TIME ZONE ${SHOP_TZ})::date BETWEEN $2::date AND $3::date)
+        ${who}
+      ORDER BY t.clock_in DESC`, params)).rows;
+}
+
+async function getTimeEntry(id) {
+  return (await query('SELECT * FROM pos_time_entries WHERE id = $1', [id])).rows[0] || null;
+}
+
+// A manager's change. Times are the shop's local "YYYY-MM-DDTHH:MM"; an empty
+// clock_out leaves the shift open. With no id it adds a shift someone forgot.
+async function saveTimeEntry({ id, userId, employeeId, clockIn: inAt, clockOut: outAt, note, editedBy }) {
+  const tz = (await query(`SELECT ${SHOP_TZ} AS tz FROM (SELECT $1::text AS user_id) x
+                            LEFT JOIN pos_settings s ON s.user_id = x.user_id`, [userId])).rows[0].tz;
+  const out = outAt ? outAt : null;
+  if (id) {
+    await query(
+      `UPDATE pos_time_entries SET clock_in = ($2::timestamp AT TIME ZONE $5),
+              clock_out = CASE WHEN $3::text IS NULL THEN NULL ELSE ($3::timestamp AT TIME ZONE $5) END,
+              note = $4, edited_by = $6, edited_at = NOW()
+        WHERE id = $1`, [id, inAt, out, note || '', tz, editedBy || '']);
+    return id;
+  }
+  return (await query(
+    `INSERT INTO pos_time_entries (user_id, employee_id, clock_in, clock_out, note, edited_by, edited_at)
+     VALUES ($1, $2, ($3::timestamp AT TIME ZONE $6),
+             CASE WHEN $4::text IS NULL THEN NULL ELSE ($4::timestamp AT TIME ZONE $6) END, $5, $7, NOW())
+     RETURNING id`, [userId, employeeId, inAt, out, note || '', tz, editedBy || ''])).rows[0].id;
+}
+
+async function deleteTimeEntry(id) {
+  await query('DELETE FROM pos_time_entries WHERE id = $1', [id]);
 }
 
 // ─── Product Prices ─────────────────────────────────────────────────────────
@@ -3701,6 +3839,7 @@ async function updateSettings(userId, fields) {
     'audit_auto_enabled', 'audit_alert_enabled', 'audit_auto_time',
     'auto_email_enabled', 'auto_email_welcome', 'auto_email_receipt', 'auto_email_min_total',
     'auto_email_first_only', 'auto_email_cooldown_days', 'auto_email_delay_min', 'auto_email_excluded',
+    'time_clock_enabled', 'build_your_own_enabled',
     // The shop's own address on the app domain. Left off this list it is
     // silently dropped — the save reports success and the subdomain never
     // exists, which is exactly what happened.
@@ -4606,6 +4745,7 @@ async function ensureCompanySlugs() {
 module.exports = {
   pool,
   initSchema,
+  openShift, clockIn, clockOut, onTheClock, timeEntries, getTimeEntry, saveTimeEntry, deleteTimeEntry,
   saveGmailToken,
   saveCompanyName,
   getCompanyName,

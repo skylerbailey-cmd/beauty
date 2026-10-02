@@ -188,9 +188,10 @@ check('leaves the name blank when the search did find products', fields.ciName.v
 check('clears the previous price', fields.ciPrice.value === '' && fields.ciDiscPrice.value === '' && fields.ciQty.value === '1');
 
 // 10. the tile is in the grid, ahead of the products, and ignores the filters
-const gridSrc = grab('const oneOff = `', 'grid.innerHTML = oneOff');
+const gridSrc = grab('const oneOff = `', 'grid.innerHTML = (byoOn');
 check('the tile calls openCustomItem', /onclick="openCustomItem\(\)"/.test(gridSrc));
-check('the tile leads the grid', /grid\.innerHTML = oneOff \+ filtered\.map/.test(html));
+check('the tile leads the grid', /grid\.innerHTML = \(byoOn \? oneOff : ''\) \+ filtered\.map/.test(html));
+check('unless Settings has switched it off', /const byoOn = Number\(storeSettings\?\.build_your_own_enabled\) !== 0;/.test(html));
 
 // 11. the cart itself escapes what was typed (the check above proves the
 // helper works; this proves the renderer uses it)

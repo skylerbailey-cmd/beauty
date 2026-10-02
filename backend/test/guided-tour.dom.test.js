@@ -142,7 +142,9 @@ setTimeout(async () => {
   check('sales: no store settings', !sales.includes('Store details'));
   check('sales: can change their own PIN', sales.includes('Change your PIN'));
   check('manager: audits and settings', manager.includes('Nightly reconciliation') && manager.includes('Store details'));
-  check('manager: not the shop-wide reports only an admin opens', !manager.includes('Payroll'));
+  // Managers see everything an admin does in Reports.
+  check('manager: payroll, products and everyone’s commission, like an admin',
+    manager.includes('Payroll') && manager.includes('Top products') && manager.includes('Everyone’s commission'));
   check('manager: not the sales-only PIN step', !manager.includes('Change your PIN'));
   check('admin: payroll, products and everyone’s commission',
     admin.includes('Payroll') && admin.includes('Top products') && admin.includes('Everyone’s commission'));

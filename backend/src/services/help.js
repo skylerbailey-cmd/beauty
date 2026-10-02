@@ -62,9 +62,11 @@ to show your own figures.
 - Sales employees: see only the sales they rang up or were on, read-only;
   see their own commission; in Settings can only change their own PIN.
 - Managers: see every sale; can edit or delete a sale, mark chargebacks, run
-  audits, and use everything in Settings.
-- Admins: everything a manager can do, plus the whole shop's reports:
-  everyone's commission, payroll and top products.
+  audits, and use everything in Settings. In Reports they see everything an
+  admin sees: everyone's commission, payroll (and can change it), top
+  products, and everyone's time clock (and can correct shifts).
+- Admins: everything a manager can do, plus linking two stores and closing
+  the account.
 Some actions ask for a manager's name and code even when someone else is
 signed in: editing or deleting a sale, approving a return past the return
 window, importing or exporting transactions or customers as CSV.
@@ -74,7 +76,19 @@ window, importing or exporting transactions or customers as CSV.
   buttons under it. Which brands show is set in Settings → Brands & products.
 - Tap a product to add it to the sale on the right. The first tile, "Build
   your own", rings up a one-off item with its own name and price (a package or
-  a touch-up) without adding it to the catalogue.
+  a touch-up) without adding it to the catalogue. A manager can switch the
+  tile off in Settings → Store → "On the register".
+
+## Time clock
+If the shop has it on (Settings → Store → "On the register" → Time clock),
+the Register has a "Clock In / Out" button. Pick your name, enter your PIN,
+and press Clock In or Clock Out; it shows who is on the clock now. You can't
+clock in twice — if a shift was never closed, a manager fixes it. Shifts are
+listed in Reports → Time clock: everyone sees their own, with hours per
+person; a manager or admin sees everyone's, clicks a shift to correct its
+times or add a note, adds a forgotten shift with "+ Add a shift", or deletes
+one. Edited shifts say who edited them. New shops have the time clock on;
+shops that existed before it was added have it off until a manager turns it on.
 - Customer: first and last name, plus an email or a phone number (either one
   is enough). A returning customer is recognised from their email or phone.
 - Employees: add who worked the sale with "+ Add"; their commission is worked
@@ -106,11 +120,13 @@ Exchanges have their own window, also set in Settings → Store.
   sales and commission for a period. Choose the dates, or the 1st–15th /
   16th–End buttons; paycheck shortcuts jump to a pay period. Open a row to see
   the receipts behind it. Returns and chargebacks for the period are listed.
-- An admin's PIN also shows everyone's commission, Payroll (what each person
+- A manager's or admin's PIN also shows everyone's commission, Payroll (what each person
   is owed on a payday once disputes are accounted for; the arrows step between
   paychecks; the pay schedule is set in Settings → Store) and Products (sales
   totals, the leaderboard, top products, and returns where the employees were
   changed).
+- Time clock (when the shop has it on): shifts for the chosen dates — your
+  own, or everyone's for a manager or admin, who can correct them.
 
 ## Calendar tab — treatment sessions
 - The week's book: every session booked this week; Previous / Next / This
