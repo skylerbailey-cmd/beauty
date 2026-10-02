@@ -84,6 +84,28 @@ const TOKEN = '1//0gFakeRefreshToken-abcdefghijklmnopqrstuvwxyz0123456789';
     check('and it still works', await pg.getGmailToken(OLD) === TOKEN);
     check('running it again changes nothing', await pg.sealGmailTokens() === 0);
     await q('DELETE FROM pos_gmail_tokens WHERE user_id = ANY($1::text[])', [[SHOP, OLD]]);
+
+    console.log('\n── Card-processor tokens ──');
+    const MAV = 'mav_live_FAKE_0123456789abcdef', PAY = 'eyJhbGciOiJSUzI1NiJ9.FAKE.payarc';
+    await q('DELETE FROM pos_settings WHERE user_id = ANY($1::text[])', [[SHOP, OLD]]);
+    await pg.updateSettings(SHOP, { store_name: 'ZZ Token Shop', maverick_dba_id: '123', maverick_token: ` ${MAV} `, payarc_token: PAY });
+    const [set] = await q('SELECT maverick_token, payarc_token, maverick_dba_id FROM pos_settings WHERE user_id = $1', [SHOP]);
+    check('both are saved encrypted', secrets.isSealed(set.maverick_token) && secrets.isSealed(set.payarc_token), JSON.stringify(set));
+    check('the DBA id, not a secret, is left as it is', set.maverick_dba_id === '123');
+    const got = await pg.getSettings(SHOP);
+    check('settings read back with the plain tokens, trimmed', got.maverick_token === MAV && got.payarc_token === PAY);
+    await pg.updateSettings(SHOP, { payarc_token: '' });
+    check('clearing one leaves it empty, not an encrypted blank', (await pg.getSettings(SHOP)).payarc_token === ''
+      && (await q('SELECT payarc_token FROM pos_settings WHERE user_id = $1', [SHOP]))[0].payarc_token === '');
+    // One saved in plain text before encryption existed.
+    await q(`INSERT INTO pos_settings (user_id, store_name, maverick_token) VALUES ($1, 'ZZ Old', $2)`, [OLD, MAV]);
+    check('an old plain one still works before it is converted', (await pg.getSettings(OLD)).maverick_token === MAV);
+    const m = await pg.sealProcessorTokens();
+    const [oldSet] = await q('SELECT maverick_token FROM pos_settings WHERE user_id = $1', [OLD]);
+    check('the start-up pass encrypts it in place', m >= 1 && secrets.isSealed(oldSet.maverick_token));
+    check('and it still works', (await pg.getSettings(OLD)).maverick_token === MAV);
+    check('running it again changes nothing', await pg.sealProcessorTokens() === 0);
+    await q('DELETE FROM pos_settings WHERE user_id = ANY($1::text[])', [[SHOP, OLD]]);
   }
 
   console.log(`\n${pass} passed, ${fail} failed\n`);

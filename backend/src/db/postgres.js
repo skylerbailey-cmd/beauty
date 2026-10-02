@@ -464,10 +464,11 @@ Exchanges are only allowed within **7 days** of purchase.'`);
   )`);
   await migrate('CREATE INDEX IF NOT EXISTS idx_employee_pay ON pos_employee_pay(employee_id, effective_from)');
 
-  // Gmail refresh tokens stored before encryption existed, encrypted in
-  // place — on every start, so it also catches up the first time a key is
-  // set. A no-op once everything is sealed, and without a key.
+  // Gmail and card-processor tokens stored before encryption existed,
+  // encrypted in place — on every start, so it also catches up the first
+  // time a key is set. A no-op once everything is sealed, and without a key.
   await sealGmailTokens();
+  await sealProcessorTokens();
 
   // Which address opens which shop.
   //
@@ -1232,6 +1233,24 @@ async function sealGmailTokens() {
   }
   if (rows.length) console.log(`[secrets] Encrypted ${rows.length} stored Gmail token(s).`);
   return rows.length;
+}
+
+// Encrypts any Maverick or Payarc token still stored in plain text.
+async function sealProcessorTokens() {
+  if (!secrets.enabled()) return 0;
+  let n = 0;
+  for (const f of PROCESSOR_SECRETS) {
+    const rows = (await query(
+      `SELECT user_id, ${f} AS v FROM pos_settings
+        WHERE COALESCE(${f}, '') <> '' AND ${f} NOT LIKE $1`, [`${secrets.PREFIX}%`])).rows;
+    for (const r of rows) {
+      await query(`UPDATE pos_settings SET ${f} = $2 WHERE user_id = $1 AND ${f} = $3`,
+        [r.user_id, secrets.seal(String(r.v).trim()), r.v]);
+      n++;
+    }
+  }
+  if (n) console.log(`[secrets] Encrypted ${n} stored processor token(s).`);
+  return n;
 }
 
 // ─── Hourly wage / salary ───────────────────────────────────────────────────
@@ -3988,9 +4007,18 @@ async function defaultSettingsRow() {
 // Writing is what creates a shop, and updateSettings already inserts its own
 // row, so nothing needed this. A company that does not exist now reads as the
 // defaults, which is what an empty row would have said anyway.
+// The card-processor tokens are encrypted at rest (lib/secrets.js), like the
+// Gmail tokens; every read of a shop's settings comes through here and hands
+// back the plain token, so nothing that talks to a processor changes.
+const PROCESSOR_SECRETS = ['maverick_token', 'payarc_token'];
+
 async function getSettings(userId) {
   const result = await query('SELECT * FROM pos_settings WHERE user_id = $1', [userId]);
-  if (result.rows.length) return result.rows[0];
+  if (result.rows.length) {
+    const row = { ...result.rows[0] };
+    for (const f of PROCESSOR_SECRETS) row[f] = secrets.open(row[f]) ?? '';
+    return row;
+  }
   return { ...(await defaultSettingsRow()), user_id: userId };
 }
 
@@ -4013,7 +4041,7 @@ async function updateSettings(userId, fields) {
   for (const key of allowed) {
     if (fields[key] !== undefined) {
       sets.push(`${key} = $${idx}`);
-      params.push(fields[key]);
+      params.push(PROCESSOR_SECRETS.includes(key) ? secrets.seal(String(fields[key]).trim()) : fields[key]);
       idx++;
     }
   }
@@ -4910,7 +4938,7 @@ async function ensureCompanySlugs() {
 module.exports = {
   pool,
   initSchema,
-  PAY_TYPES, currentPay, setPay, sealGmailTokens,
+  PAY_TYPES, currentPay, setPay, sealGmailTokens, sealProcessorTokens,
   openShift, clockIn, clockOut, onTheClock, timeEntries, getTimeEntry, saveTimeEntry, deleteTimeEntry,
   saveGmailToken,
   saveCompanyName,

@@ -78,7 +78,7 @@ terminal; SkySale records only the method, amount and last four digits.
 ### Reconciliation (the audit)
 | Data | Where | Sensitivity |
 |---|---|---|
-| **Processor credentials**: Maverick DBA id and API token, Payarc bearer token and merchant id | `pos_settings.maverick_*`, `payarc_*` — tokens stored as plain text, never sent to the browser | **High** |
+| **Processor credentials**: Maverick DBA id and API token, Payarc bearer token and merchant id | `pos_settings.maverick_*`, `payarc_*` — tokens **encrypted at rest** (same key as Gmail), never sent to the browser | **High** |
 | Batch figures read from the processor at audit time | Not stored — fetched each time an audit runs | — |
 | Nightly results (days off, difference, whether a text went out), saved audits, who reviewed which day or line | `pos_audit_auto_runs`, `pos_saved_audits`, `pos_audit_reviews`, `pos_audit_line_reviews` | Medium |
 | Text-alert recipients: phone numbers or email addresses, and carrier | `pos_settings.sale_alert_*` | High |
@@ -224,8 +224,7 @@ These are **not** removed when a cancelled shop is deleted, and should be:
   `TOKEN_ENCRYPTION_KEY`, an environment variable kept out of the database.
   On each start, any token still in plain text is encrypted in place. **If the
   key is lost or changed, every shop has to reconnect Gmail** — keep a copy.
-  Processor tokens (Maverick, Payarc) are still plain text; the same helper
-  would cover them.
+  Card-processor tokens (Maverick, Payarc) are encrypted the same way.
 - **Who controls customer data:** the shop is the controller; SkySale is its
   processor/service provider (Terms §8, Privacy Policy §2).
 - **Sessions live in server memory**, so everyone is signed out on each deploy.
