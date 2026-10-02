@@ -232,6 +232,9 @@
     .tx-view-btn:hover { color: var(--accent-deep); }
     .tx-view-btn.active { color: var(--accent-deep); border-bottom-color: var(--accent); }
 
+    /* A processor not connected (and not just picked) stays off the page, even
+       when its Settings group is shown — settingsGroup sets display inline. */
+    .proc-card.proc-off { display: none !important; }
     #updateBar {
       display: none; position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px));
       transform: translateX(-50%); z-index: 3000; max-width: calc(100% - 24px);
@@ -2073,7 +2076,7 @@
       </div>
 
       <!-- Maverick Payments connection (for batch reconciliation) -->
-      <div class="report-card" data-sgroup="merchant" id="maverickConfigCard" style="margin-top:16px">
+      <div class="report-card proc-card" data-sgroup="merchant" id="maverickConfigCard" data-proc="maverick" style="margin-top:16px">
         <h3>Maverick Payments Connection<button class="help-dot" type="button" onclick="openSettingsHelp('maverick', this)" aria-label="How to find these details" title="How to find these details">?</button></h3>
         <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
           Connect this company's Maverick account to reconcile batches against recorded sales (Transactions → Run Batch Audit). The token is stored securely on the server and never shown again.
@@ -2114,7 +2117,7 @@
       </div>
 
       <!-- Payarc connection (the processor for companies not on Maverick) -->
-      <div class="report-card" data-sgroup="merchant" id="payarcConfigCard" style="margin-top:16px">
+      <div class="report-card proc-card" data-sgroup="merchant" id="payarcConfigCard" data-proc="payarc" style="margin-top:16px">
         <h3>Payarc Connection<button class="help-dot" type="button" onclick="openSettingsHelp('payarc', this)" aria-label="How to find these details" title="How to find these details">?</button></h3>
         <p style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:12px">
           Connect this company's Payarc account. In the Payarc dashboard go to <b>API</b>, click the <b>eye icon</b> on your token's row, and copy the <b>API Bearer Token</b> from the pop-up — not the ID shown in the table, which won't authenticate. Stored on the server and never shown again.
@@ -2133,17 +2136,33 @@
         <div id="payarcSaveStatus" style="font-family:system-ui,sans-serif;font-size:.82rem;margin-top:6px"></div>
       </div>
 
-
-      <!-- Two processors are supported today. A shop on a third has no way to
-           tell from this page whether that is permanent or whether we simply
-           have not got to theirs — so say so, and say who to ask. -->
-      <div data-sgroup="merchant" style="margin-top:14px;padding:12px 14px;background:var(--cream);border:1px solid var(--border);border-radius:10px;font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);line-height:1.5">
-        <b style="color:var(--dark)">Don't see your processor?</b>
-        Reconciliation works with Maverick and Payarc today. If your merchant account is with
-        someone else, email <a href="mailto:support@sky-sale.com?subject=Merchant%20connection%20request" style="color:var(--accent);font-weight:600">support@sky-sale.com</a>
-        and tell us who you process with — we'll look at adding them. Everything else
-        in the register works either way; only Run Batch Audit needs the connection.
+      <!-- Which processor the shop uses. Only connected processors' cards show;
+           picking one here opens its card to connect it, rather than every
+           processor's form sitting on the page whether it applies or not. -->
+      <div class="report-card" data-sgroup="merchant" id="processorPickerCard" style="margin-top:16px">
+        <h3>Payment processor</h3>
+        <p id="processorPickerIntro" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);margin-bottom:10px">
+          Connect the processor your card payments go through, so the audit can check your sales against
+          what it actually paid you.
+        </p>
+        <div id="processorPickerRow" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <label for="processorPicker" style="font-family:system-ui,sans-serif;font-size:.85rem">Add a payment processor:</label>
+          <select id="processorPicker" onchange="chooseProcessor(this.value)"
+            style="padding:8px 12px;border:1.5px solid var(--border);border-radius:8px;font-size:.85rem;font-family:system-ui,sans-serif;background:var(--white)"></select>
+        </div>
+        <!-- Two processors are supported today. A shop on a third has no way to
+             tell from this page whether that is permanent or whether we simply
+             have not got to theirs — so say so, and say who to ask. -->
+        <div id="processorOther" hidden style="margin-top:12px;padding:12px 14px;background:var(--cream);border:1px solid var(--border);border-radius:10px;font-family:system-ui,sans-serif;font-size:.82rem;color:var(--mid);line-height:1.5">
+          <b style="color:var(--dark)">Don't see your processor?</b>
+          Reconciliation works with Maverick and Payarc today. If your merchant account is with
+          someone else, email <a href="mailto:support@sky-sale.com?subject=Merchant%20connection%20request" style="color:var(--accent);font-weight:600">support@sky-sale.com</a>
+          and tell us who you process with — we'll look at adding them. Everything else
+          in the register works either way; only Run Batch Audit needs the connection.
+        </div>
       </div>
+
+
       </div>
       <!-- /settingsManagerOnly -->
 
@@ -9189,6 +9208,43 @@ async function savePaySchedule() {
 }
 
 // ─── Payarc connection ──────────────────────────────────────────────────────
+// ─── Payment processors: show only what is connected or being added ─────────
+const PROCESSORS = [
+  { key: 'maverick', name: 'Maverick Payments', connected: () => !!storeSettings.maverick_connected },
+  { key: 'payarc', name: 'Payarc', connected: () => !!storeSettings.payarc_connected },
+];
+let processorsChosen = new Set();   // picked from the list this visit, not yet connected
+
+function applyProcessorCards() {
+  const picker = document.getElementById('processorPicker');
+  if (!picker) return;
+  for (const p of PROCESSORS) {
+    const card = document.querySelector(`.proc-card[data-proc="${p.key}"]`);
+    if (card) card.classList.toggle('proc-off', !(p.connected() || processorsChosen.has(p.key)));
+  }
+  const addable = PROCESSORS.filter(p => !p.connected() && !processorsChosen.has(p.key));
+  const anyConnected = PROCESSORS.some(p => p.connected());
+  picker.innerHTML = `<option value="">${anyConnected ? 'Add another…' : 'Choose your processor…'}</option>`
+    + addable.map(p => `<option value="${p.key}">${escapeHtml(p.name)}</option>`).join('')
+    + '<option value="other">Someone else…</option>';
+  document.getElementById('processorPickerIntro').style.display = anyConnected ? 'none' : '';
+}
+
+function chooseProcessor(key) {
+  const picker = document.getElementById('processorPicker');
+  document.getElementById('processorOther').hidden = key !== 'other';
+  if (!key || key === 'other') return;
+  processorsChosen.add(key);
+  applyProcessorCards();
+  picker.value = '';
+  const card = document.querySelector(`.proc-card[data-proc="${key}"]`);
+  if (card) {
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const first = card.querySelector('input');
+    if (first) setTimeout(() => first.focus({ preventScroll: true }), 300);
+  }
+}
+
 function refreshPayarcConnState() {
   const tokenEl = document.getElementById('payarcToken');
   if (!tokenEl) return;
@@ -9198,6 +9254,7 @@ function refreshPayarcConnState() {
   const statusEl = document.getElementById('payarcConnStatus');
   statusEl.textContent = connected ? '✓ Connected' : '· Not connected';
   statusEl.style.color = connected ? 'var(--success)' : 'var(--mid)';
+  applyProcessorCards();
 }
 
 async function savePayarc() {
@@ -9261,6 +9318,7 @@ function refreshMaverickConnState() {
   const statusEl = document.getElementById('maverickConnStatus');
   statusEl.textContent = connected ? '✓ Connected' : '· Not connected';
   statusEl.style.color = connected ? 'var(--success)' : 'var(--mid)';
+  applyProcessorCards();
 }
 
 async function saveMaverick() {
@@ -9955,7 +10013,7 @@ function switchTab(tabName) {
   if (tabName !== 'calendar') stopCalendarPolling();
   if (tabName !== 'history') { txAccess = null; txCreds = null; selectedTxIds.clear(); }
   // Settings is re-locked the same way, for the same reason.
-  if (tabName !== 'settings') { settingsAccess = null; settingsCreds = null; employeePay = {}; }
+  if (tabName !== 'settings') { settingsAccess = null; settingsCreds = null; employeePay = {}; processorsChosen = new Set(); }
   // So is Reports: leaving it clears whoever's commissions were on screen, so
   // the next person at this browser has to enter their own name and PIN.
   if (tabName !== 'reports' && personalCreds) lockPersonalReport();
@@ -14642,14 +14700,14 @@ const TOUR_STEPS = [
     text: 'Paste a supplier’s product page and SkySale reads the names, prices and usage notes off it. Nothing is saved until you have checked it.' },
   { who: 'manager', tab: 'settings', view: 'merchant', at: '#alertsCard', title: 'Alerts',
     text: 'A text on every sale, and a warning when the nightly audit finds a mismatch, sent to the numbers you list.' },
-  { who: 'manager', tab: 'settings', view: 'merchant', at: '#maverickConfigCard', title: 'Maverick Payments',
-    text: 'Connect your Maverick account so audits can check your sales against it. The ? explains where to find each detail.',
+  { who: 'manager', tab: 'settings', view: 'merchant', at: '#processorPickerCard', title: 'Payment processor',
+    text: 'Pick the processor your card payments go through — Maverick or Payarc — and connect it, so audits can check your sales against what it paid you. The ? on its card explains where to find each detail.',
     live: () => {
-      const st = tourText(document.getElementById('maverickConnStatus'));
-      return st && { el: document.getElementById('maverickConfigCard'), text: `${st.replace(/\.?$/, '.')} This connection lets audits check your sales against Maverick. The ? explains where to find each detail.` };
+      const card = [...document.querySelectorAll('.proc-card')].find(c => !c.classList.contains('proc-off'));
+      const st = card && tourText(card.querySelector('[id$="ConnStatus"]'));
+      const name = card && (tourText(card.querySelector('h3')) || '').replace(/\s*Connection\s*\??$/, '').replace(/\?$/, '');
+      return st && { el: card, text: `${name}: ${st.replace(/\.?$/, '.')} This connection lets audits check your sales against what it paid you. Add another from the list above it.` };
     } },
-  { who: 'manager', tab: 'settings', view: 'merchant', at: '#payarcConfigCard', title: 'Payarc',
-    text: 'The same, for shops that process with Payarc.' },
   { who: 'manager', tab: 'settings', view: 'staff', at: cardOf('#empManagerView'), title: 'Employees',
     text: 'Add staff with their PIN, commission and role, copy a roster from another of your stores, and switch off anyone who has left.',
     live: () => {
