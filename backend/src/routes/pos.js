@@ -594,7 +594,7 @@ router.post('/transactions', async (req, res) => {
       subscription_required: true,
     });
   }
-  const { type, employee_id, employees: employeeAssignments, customer_name, customer_email, customer_phone, items, payment_method, card_last4, payments, notes, tax_rate, discount_amount, original_receipt, manager_name, manager_pin, processor_name, processor_pin } = req.body;
+  const { type, employee_id, employees: employeeAssignments, customer_name, customer_email, customer_phone, items, payment_method, card_last4, payments, notes, tax_rate, discount_amount, original_receipt, manager_name, manager_pin, processor_name, processor_pin, return_reason } = req.body;
 
   // Build your own can be switched off in Settings. Hiding the tile is the
   // register's side of that; this is the rule, so a page left open from
@@ -878,6 +878,7 @@ router.post('/transactions', async (req, res) => {
     processed_by_name: processedBy?.name || '',
     approved_by_id: approvedBy?.id || null,
     approved_by_name: approvedBy?.name || '',
+    return_reason: type === 'return' ? return_reason : '',
   });
 
   const txItems = items.map(i => ({

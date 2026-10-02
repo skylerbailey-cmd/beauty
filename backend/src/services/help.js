@@ -107,7 +107,10 @@ items to return ("Select All for Return", or pick items), or "Refund an
 Amount" for a partial refund or price adjustment without an item coming back.
 Pressing "Process Return" asks for the name and PIN of whoever is putting the
 return through, and records them on it as "Processed by" — on the receipt, in
-the Transactions list, in Reports → Returns and in the CSV export. The
+the Transactions list, in Reports → Returns and in the CSV export. The same
+box has an optional "Reason for the return" — pick a suggestion (Changed
+their mind, Damaged or faulty, Wrong item…) or type one; it shows in the
+same places. The
 employees on the return are separate: they are whose commission it comes off.
 The shop's return window and return policy (Settings → Store) decide what can
 be returned; past the window, or to a card the sale wasn't paid on, a manager

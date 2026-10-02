@@ -49,6 +49,7 @@ contact details); **Medium** = business-confidential; **Low** = configuration.
 | **Time clock**: clock-in/out times, notes, who edited a shift and when | `pos_time_entries` | High |
 | Payroll: paydays closed and by whom, per-person payments, hand-entered adjustments (bonuses, advances), balances carried between paychecks, chargeback holds | `pos_payroll_runs`, `pos_payroll_employee_runs`, `pos_payroll_adjustments`, `pos_payroll_balances`, `pos_chargeback_holds` | High |
 | Who processed and who approved each return | `pos_transactions.processed_by_*`, `approved_by_*` | Medium |
+| Reason for a return (optional, free text, ≤200 characters) | `pos_transactions.return_reason` | Medium |
 
 ### The shop's customers (consumers)
 | Data | Where | Sensitivity |

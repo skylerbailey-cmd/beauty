@@ -87,6 +87,10 @@ const RETURN = {
   check('and records who put it through', created.processed_by_id === 3 && created.processed_by_name === 'Cy');
   check('with no approver when none was needed', created.approved_by_id === null && created.approved_by_name === '');
   check('commission still comes off the sale’s employees, separately', created.type === 'return');
+  r = await post({ ...RETURN, processor_name: 'Cy', processor_pin: '3333', return_reason: 'Damaged or faulty' });
+  check('the reason goes with the return', r.code === 200 && created.return_reason === 'Damaged or faulty');
+  r = await post({ ...RETURN, processor_name: 'Cy', processor_pin: '3333' });
+  check('and is optional', r.code === 200 && !created.return_reason);
 
   console.log('\n── When a manager has to approve it ──');
   saleAgeDays = 45;
@@ -108,12 +112,16 @@ const RETURN = {
     items: [{ product_id: 'p1', product_name: 'Hydra Serum', quantity: 1, unit_price: 46.3 }],
     payments: [{ method: 'cash', amount: 50 }], payment_method: 'cash' });
   check('no PIN is asked for a sale', r.code === 200 && created.processed_by_name === '', JSON.stringify(r.body));
+  check('and a sale never carries a reason', !created.return_reason);
 
   console.log('\n── It is stored, and read back ──');
   const db = fs.readFileSync(path.join(__dirname, '..', 'src', 'db', 'postgres.js'), 'utf8');
   check('the columns exist', ['processed_by_id', 'processed_by_name', 'approved_by_id', 'approved_by_name']
     .every(c => db.includes(`ADD COLUMN IF NOT EXISTS ${c}`)));
-  check('they are written', /processed_by_id, processed_by_name, approved_by_id, approved_by_name\)/.test(db));
+  check('they are written', /processed_by_id, processed_by_name, approved_by_id, approved_by_name, return_reason\)/.test(db));
+  check('the reason has its column too', db.includes('ADD COLUMN IF NOT EXISTS return_reason'));
+  check('trimmed, capped at 200, and only on a return',
+    /txData\.type === 'return' \? String\(txData\.return_reason \|\| ''\)\.trim\(\)\.slice\(0, 200\) : ''/.test(db));
   check('Reports → Returns reads them', /t\.processed_by_name, t\.approved_by_name,/.test(db));
 
   // ── The register ──
@@ -150,14 +158,18 @@ const RETURN = {
   w.submitProcessor();
   check('both are needed', /name and PIN/.test(id('processorError').textContent) && !sent.length);
   replies = [[403, { needsProcessor: true, error: 'That name and PIN do not match anyone here.' }]];
-  id('processorName').value = 'Cy'; id('processorPin').value = '0000';
+  check('the box has an optional reason, with suggestions', !!id('returnReason') && /optional/.test(id('returnReason').closest('.field').textContent)
+    && id('returnReasonList').options.length >= 5);
+  id('processorName').value = 'Cy'; id('processorPin').value = '0000'; id('returnReason').value = '  Wrong item ';
   w.submitProcessor(); await settle();
+  check('a refused PIN keeps the reason typed', id('returnReason').value === 'Wrong item');
   check('a refused PIN asks again, keeping the name', id('processorModal').classList.contains('show')
     && /do not match/.test(id('processorError').textContent) && id('processorName').value === 'Cy' && id('processorPin').value === '');
   id('processorPin').value = '3333';
   w.submitProcessor(); await settle();
   const last = sent[sent.length - 1];
   check('the return goes with their name and PIN', last.type === 'return' && last.processor_name === 'Cy' && last.processor_pin === '3333');
+  check('and the reason', last.return_reason === 'Wrong item');
   check('and the receipt says who processed it', /Processed by:\s*Cy/.test(id('receiptContent').textContent));
 
   w.eval(`setMode('return'); returnOriginalTx = { receipt_number: '1042' };
@@ -172,17 +184,21 @@ const RETURN = {
   const cell = w.eval(`returnPeople({ type: 'return', processed_by_name: 'Cy', approved_by_name: 'Mia' })`);
   check('the transaction list shows who did it and who approved it', /by Cy/.test(cell) && /approved by Mia/.test(cell));
   check('not on a sale', w.eval(`returnPeople({ type: 'sale', processed_by_name: 'Cy' })`) === '');
+  check('the list shows the reason', /Wrong item/.test(w.eval(`returnPeople({ type: 'return', processed_by_name: 'Cy', return_reason: 'Wrong item' })`)));
+  check('a reason cannot inject markup', !/<img/.test(w.eval(`returnPeople({ type: 'return', return_reason: '<img src=x>' })`)));
   check('a name cannot inject markup', !/<img/.test(w.eval(`returnPeople({ type: 'return', processed_by_name: '<img src=x>' })`)));
   w.eval(`renderReportReturns([{ receipt_number: 'R1042', counts_on: '2026-09-28', rung_up: '2026-09-30', customer_name: 'Dana',
-    employee_name: 'Bo', processed_by_name: 'Cy', approved_by_name: 'Mia', share: -46.3 }])`);
+    employee_name: 'Bo', processed_by_name: 'Cy', approved_by_name: 'Mia', return_reason: 'Wrong item', share: -46.3 }])`);
   check('Reports → Returns has a Processed By column', /Processed By/.test(w.document.querySelector('#rptReturnsCard thead').textContent)
     && /Cy.*approved by Mia/.test(id('rptReturnsBody').textContent));
+  check('and a Reason column', /Reason/.test(w.document.querySelector('#rptReturnsCard thead').textContent) && /Wrong item/.test(id('rptReturnsBody').textContent));
   let csv = null;
   w.eval('downloadCSV = (name, rows) => { window.__csv = rows; }');
-  w.eval(`filteredTransactions = [{ receipt_number: 'R1042', created_at: '2026-09-30T15:00:00Z', type: 'return', total: 50, subtotal: 46.3, tax_amount: 3.7, items: [], employees: [], processed_by_name: 'Cy', approved_by_name: 'Mia' }];
+  w.eval(`filteredTransactions = [{ receipt_number: 'R1042', created_at: '2026-09-30T15:00:00Z', type: 'return', total: 50, subtotal: 46.3, tax_amount: 3.7, items: [], employees: [], processed_by_name: 'Cy', approved_by_name: 'Mia', return_reason: 'Wrong item' }];
     writeTransactionsCSV();`);
   csv = w.__csv;
-  check('the export has Processed By and Approved By', csv && csv[0].slice(-2).join() === 'Processed By,Approved By' && csv[1].slice(-2).join() === 'Cy,Mia');
+  check('the export has Processed By, Approved By and Return Reason', csv && csv[0].slice(-3).join() === 'Processed By,Approved By,Return Reason'
+    && csv[1].slice(-3).join() === 'Cy,Mia,Wrong item', JSON.stringify(csv && csv[1].slice(-3)));
 
   console.log(`\n${pass} passed, ${fail} failed\n`);
   process.exit(fail ? 1 : 0);

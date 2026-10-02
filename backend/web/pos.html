@@ -1618,7 +1618,7 @@
               A return counts against the period the item was <b>sold</b>, so one rung up later still appears here.
             </p>
             <table class="report-table">
-              <thead><tr><th>Receipt</th><th>Counts On</th><th>Refunded On</th><th>Customer</th><th>Employee</th><th>Processed By</th><th>Their Share</th></tr></thead>
+              <thead><tr><th>Receipt</th><th>Counts On</th><th>Refunded On</th><th>Customer</th><th>Employee</th><th>Processed By</th><th>Reason</th><th>Their Share</th></tr></thead>
               <tbody id="rptReturnsBody"></tbody>
               <tfoot id="rptReturnsFoot"></tfoot>
             </table>
@@ -2990,6 +2990,22 @@
     <div class="field">
       <label for="processorPin">Your PIN</label>
       <input type="password" id="processorPin" maxlength="6" autocomplete="off" onkeydown="if(event.key==='Enter')submitProcessor()">
+    </div>
+    <!-- Optional. Suggestions to pick from, or type anything. Kept on the
+         return and shown in Transactions, Reports → Returns and the CSV. -->
+    <div class="field">
+      <label for="returnReason">Reason for the return <span style="font-weight:400;color:var(--mid)">(optional)</span></label>
+      <input type="text" id="returnReason" list="returnReasonList" maxlength="200" autocomplete="off"
+        placeholder="e.g. Changed their mind" onkeydown="if(event.key==='Enter')submitProcessor()">
+      <datalist id="returnReasonList">
+        <option value="Changed their mind">
+        <option value="Didn't work for them">
+        <option value="Damaged or faulty">
+        <option value="Wrong item">
+        <option value="Duplicate purchase">
+        <option value="Gift return">
+        <option value="Price adjustment">
+      </datalist>
     </div>
     <div id="processorError" style="font-family:system-ui,sans-serif;font-size:.82rem;color:var(--danger);min-height:1em"></div>
     <div class="modal-actions">
@@ -5236,11 +5252,13 @@ async function processTransaction() {
 
 // The people on a return, under its type in the transaction list.
 function returnPeople(tx) {
-  if (tx.type !== 'return' || !(tx.processed_by_name || tx.approved_by_name)) return '';
+  if (tx.type !== 'return' || !(tx.processed_by_name || tx.approved_by_name || tx.return_reason)) return '';
   const bits = [];
   if (tx.processed_by_name) bits.push(`by ${escapeHtml(tx.processed_by_name)}`);
   if (tx.approved_by_name) bits.push(`approved by ${escapeHtml(tx.approved_by_name)}`);
-  return `<div style="font-family:system-ui,sans-serif;font-size:.72rem;color:var(--mid);margin-top:2px">${bits.join(', ')}</div>`;
+  const reason = tx.return_reason
+    ? `<div style="font-style:italic">“${escapeHtml(tx.return_reason)}”</div>` : '';
+  return `<div style="font-family:system-ui,sans-serif;font-size:.72rem;color:var(--mid);margin-top:2px">${bits.join(', ')}${reason}</div>`;
 }
 
 // ─── Who processed a return ─────────────────────────────────────────────────
@@ -5252,6 +5270,9 @@ function openProcessor(body, message) {
   processorBody = body;
   document.getElementById('processorName').value = body.processor_name || '';
   document.getElementById('processorPin').value = '';
+  // Kept if the dialog comes back (a wrong PIN, a manager's approval), so a
+  // reason typed once isn't lost.
+  document.getElementById('returnReason').value = body.return_reason || '';
   document.getElementById('processorError').textContent = message || '';
   document.getElementById('processorModal').classList.add('show');
   setTimeout(() => document.getElementById(body.processor_name ? 'processorPin' : 'processorName').focus(), 50);
@@ -5264,7 +5285,8 @@ function submitProcessor() {
   const name = document.getElementById('processorName').value.trim();
   const pin = document.getElementById('processorPin').value.trim();
   if (!name || !pin) { document.getElementById('processorError').textContent = 'Enter your name and PIN.'; return; }
-  const body = { ...processorBody, processor_name: name, processor_pin: pin };
+  const reason = document.getElementById('returnReason').value.trim();
+  const body = { ...processorBody, processor_name: name, processor_pin: pin, return_reason: reason };
   closeProcessor();
   submitTransaction(body);
 }
@@ -7139,7 +7161,7 @@ function exportTransactionsCSV() {
   withManagerCode('export-transactions', () => { approvedManager = null; writeTransactionsCSV(); });
 }
 function writeTransactionsCSV() {
-  const rows = [['Receipt', 'Date', 'Type', 'Employees', 'Customer', 'Email', 'Card Last 4', 'Payment', 'Items', 'Subtotal', 'Tax', 'Total', 'Charged Back', 'Chargeback Note', 'Processed By', 'Approved By']];
+  const rows = [['Receipt', 'Date', 'Type', 'Employees', 'Customer', 'Email', 'Card Last 4', 'Payment', 'Items', 'Subtotal', 'Tax', 'Total', 'Charged Back', 'Chargeback Note', 'Processed By', 'Approved By', 'Return Reason']];
   (filteredTransactions || []).forEach(tx => {
     rows.push([
       tx.receipt_number,
@@ -7158,6 +7180,7 @@ function writeTransactionsCSV() {
       tx.charged_back_note || '',
       tx.processed_by_name || '',
       tx.approved_by_name || '',
+      tx.type === 'return' ? (tx.return_reason || '') : '',
     ]);
   });
   if (rows.length === 1) { alert('No transactions to export. Adjust the date range/filters first.'); return; }
@@ -11706,13 +11729,14 @@ function renderReportReturns(returns) {
       <td>${escapeHtml(r.customer_name || '—')}</td>
       <td>${escapeHtml(r.employee_name || '')}${stores.length > 1 && r.store_name ? ` — ${escapeHtml(r.store_name)}` : ''}</td>
       <td>${escapeHtml(r.processed_by_name || '—')}${r.approved_by_name ? `<span style="color:var(--mid);font-size:.75rem"> — approved by ${escapeHtml(r.approved_by_name)}</span>` : ''}</td>
+      <td>${r.return_reason ? escapeHtml(r.return_reason) : '<span style="color:var(--mid)">—</span>'}</td>
       <td style="text-align:right">-$${money(Math.abs(Number(r.share) || 0))}</td>
     </tr>`;
   }).join('');
   const total = rows.reduce((s, r) => s + Math.abs(Number(r.share) || 0), 0);
   if (foot) {
     foot.innerHTML = `<tr>
-      <td colspan="6" style="text-align:right;font-weight:600">${rows.length} return${rows.length === 1 ? '' : 's'} — already off Net Sales</td>
+      <td colspan="7" style="text-align:right;font-weight:600">${rows.length} return${rows.length === 1 ? '' : 's'} — already off Net Sales</td>
       <td style="text-align:right;font-weight:700">-$${money(total)}</td>
     </tr>`;
   }

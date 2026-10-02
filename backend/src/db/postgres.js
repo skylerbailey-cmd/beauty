@@ -516,6 +516,9 @@ Exchanges are only allowed within **7 days** of purchase.'`);
   await migrate('ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS approved_by_id INTEGER');
   await migrate("ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS approved_by_name TEXT DEFAULT ''");
   await migrate("ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS customer_phone TEXT DEFAULT ''");
+  // Why it came back, in the words of whoever put the return through.
+  // Optional, so blank on every return from before it existed.
+  await migrate("ALTER TABLE pos_transactions ADD COLUMN IF NOT EXISTS return_reason TEXT DEFAULT ''");
   // A sale the customer disputed and the bank pulled back. Kept as a flag on
   // the original sale rather than a new transaction: the money never came in,
   // so it isn't a refund the store chose to give.
@@ -1371,8 +1374,8 @@ async function insertTransaction(txData) {
       (type, employee_id, customer_id, customer_name, customer_email, customer_phone,
        subtotal, tax_rate, tax_amount, discount_amount, total,
        payment_method, card_last4, notes, receipt_number, original_transaction_id, original_sale_date, employees_changed, user_id,
-       processed_by_id, processed_by_name, approved_by_id, approved_by_name)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING id, receipt_number`,
+       processed_by_id, processed_by_name, approved_by_id, approved_by_name, return_reason)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING id, receipt_number`,
     [
       txData.type || 'sale', txData.employee_id || null, txData.customer_id || null,
       txData.customer_name || '', txData.customer_email || '', txData.customer_phone || '',
@@ -1383,6 +1386,7 @@ async function insertTransaction(txData) {
       txData.original_sale_date || null, txData.employees_changed ? 1 : 0, txData.user_id,
       txData.processed_by_id || null, txData.processed_by_name || '',
       txData.approved_by_id || null, txData.approved_by_name || '',
+      txData.type === 'return' ? String(txData.return_reason || '').trim().slice(0, 200) : '',
     ]
   );
 }
@@ -3030,7 +3034,7 @@ async function employeeActivityForRange(userId, employeeName, startDate, endDate
       COALESCE(t.original_sale_date, t.created_at)::date::text AS counts_on,
       t.created_at::date::text AS rung_up,
       t.customer_name, t.subtotal, t.total, t.payment_method, t.card_last4,
-      t.processed_by_name, t.approved_by_name,
+      t.processed_by_name, t.approved_by_name, COALESCE(t.return_reason, '') AS return_reason,
       s.store_name, e.name AS employee_name,
       te.commission_value, te.commission_type,
       COALESCE(e.commission_rate, 0) AS commission_rate,
