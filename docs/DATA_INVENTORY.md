@@ -87,7 +87,7 @@ terminal; SkySale records only the method, amount and last four digits.
 | Data | Where | Sensitivity |
 |---|---|---|
 | Sign-in links: **hashed** token, email, expiry, when used | `pos_login_links` | High |
-| **Gmail access** for sending as the shop: refresh token and address | `pos_gmail_tokens` — **encrypted at rest** (AES-256-GCM, `lib/secrets.js`) once `TOKEN_ENCRYPTION_KEY` is set | **High** |
+| **Gmail access** for sending as the shop: refresh token and address | `pos_gmail_tokens` — **encrypted at rest** (AES-256-GCM, `lib/secrets.js`, key in Railway's `TOKEN_ENCRYPTION_KEY`; on since 2 Oct 2026) | **High** |
 | Session cookie (`connect.sid`), 30 days, http-only, secure in production | Browser + server memory | High |
 
 ---
