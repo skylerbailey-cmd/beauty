@@ -1,4 +1,5 @@
 'use strict';
+const secrets = require('../lib/secrets');
 
 const { Pool, types } = require('pg');
 
@@ -462,6 +463,11 @@ Exchanges are only allowed within **7 days** of purchase.'`);
     created_at TIMESTAMPTZ DEFAULT NOW()
   )`);
   await migrate('CREATE INDEX IF NOT EXISTS idx_employee_pay ON pos_employee_pay(employee_id, effective_from)');
+
+  // Gmail refresh tokens stored before encryption existed, encrypted in
+  // place — on every start, so it also catches up the first time a key is
+  // set. A no-op once everything is sealed, and without a key.
+  await sealGmailTokens();
 
   // Which address opens which shop.
   //
@@ -1212,6 +1218,20 @@ async function saveTimeEntry({ id, userId, employeeId, clockIn: inAt, clockOut: 
 
 async function deleteTimeEntry(id) {
   await query('DELETE FROM pos_time_entries WHERE id = $1', [id]);
+}
+
+// Encrypts any Gmail refresh token still stored in plain text. Returns how
+// many it sealed.
+async function sealGmailTokens() {
+  if (!secrets.enabled()) return 0;
+  const rows = (await query(
+    `SELECT user_id, refresh_token FROM pos_gmail_tokens WHERE refresh_token NOT LIKE $1`, [`${secrets.PREFIX}%`])).rows;
+  for (const r of rows) {
+    await query('UPDATE pos_gmail_tokens SET refresh_token = $2 WHERE user_id = $1 AND refresh_token = $3',
+      [r.user_id, secrets.seal(r.refresh_token), r.refresh_token]);
+  }
+  if (rows.length) console.log(`[secrets] Encrypted ${rows.length} stored Gmail token(s).`);
+  return rows.length;
 }
 
 // ─── Hourly wage / salary ───────────────────────────────────────────────────
@@ -4365,8 +4385,11 @@ async function getCompanyName(userId) {
   return (r.rows[0] && r.rows[0].company_name) || null;
 }
 
+// The token is encrypted at rest (lib/secrets.js) and decrypted on the way
+// out, so nothing that sends mail sees anything but the plain token.
 async function saveGmailToken(userId, refreshToken, email) {
   if (!userId || !refreshToken) return;
+  refreshToken = secrets.seal(refreshToken);
   await query(
     `INSERT INTO pos_gmail_tokens (user_id, refresh_token, email, updated_at)
      VALUES ($1, $2, $3, NOW())
@@ -4378,7 +4401,7 @@ async function saveGmailToken(userId, refreshToken, email) {
 async function getGmailToken(userId) {
   if (!userId) return null;
   const r = await query('SELECT refresh_token FROM pos_gmail_tokens WHERE user_id = $1', [userId]);
-  return r.rows[0]?.refresh_token || null;
+  return secrets.open(r.rows[0]?.refresh_token) || null;
 }
 
 // The legacy data bridge and the wholesale user-to-user move it depended on
@@ -4796,7 +4819,9 @@ async function emailHasAccount(email) {
 async function getGmailAccount(userId) {
   if (!userId) return null;
   const r = await query('SELECT refresh_token, email FROM pos_gmail_tokens WHERE user_id = $1', [userId]);
-  return r.rows[0] || null;
+  const row = r.rows[0];
+  if (!row) return null;
+  return { ...row, refresh_token: secrets.open(row.refresh_token) };
 }
 
 // ─── Importing a client list ────────────────────────────────────────────────
@@ -4885,7 +4910,7 @@ async function ensureCompanySlugs() {
 module.exports = {
   pool,
   initSchema,
-  PAY_TYPES, currentPay, setPay,
+  PAY_TYPES, currentPay, setPay, sealGmailTokens,
   openShift, clockIn, clockOut, onTheClock, timeEntries, getTimeEntry, saveTimeEntry, deleteTimeEntry,
   saveGmailToken,
   saveCompanyName,

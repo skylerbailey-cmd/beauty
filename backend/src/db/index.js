@@ -81,12 +81,17 @@ try {
 
 // ─── Users ────────────────────────────────────────────────────────────────────
 
+// Google tokens are encrypted at rest (lib/secrets.js); every read of a
+// users row comes through one of these two, which hand back plain tokens.
+const secrets = require('../lib/secrets');
+const openTokens = (u) => (u ? { ...u, access_token: secrets.open(u.access_token), refresh_token: secrets.open(u.refresh_token) } : u);
+
 function getUser(id) {
-  return db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  return openTokens(db.prepare('SELECT * FROM users WHERE id = ?').get(id));
 }
 
 function getUserByEmail(email) {
-  return db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  return openTokens(db.prepare('SELECT * FROM users WHERE email = ?').get(email));
 }
 
 function saveUser({ id, email, access_token, refresh_token, push_token, gmail_history_id }) {
@@ -99,7 +104,8 @@ function saveUser({ id, email, access_token, refresh_token, push_token, gmail_hi
       refresh_token = COALESCE(excluded.refresh_token, users.refresh_token),
       push_token = COALESCE(excluded.push_token, users.push_token),
       gmail_history_id = COALESCE(excluded.gmail_history_id, users.gmail_history_id)
-  `).run({ id, email, access_token, refresh_token, push_token: push_token || null, gmail_history_id: gmail_history_id || null });
+  `).run({ id, email, access_token: secrets.seal(access_token) ?? null, refresh_token: secrets.seal(refresh_token) ?? null,
+    push_token: push_token || null, gmail_history_id: gmail_history_id || null });
   return getUser(id);
 }
 
@@ -109,7 +115,7 @@ function updateUserTokens(userId, access_token, refresh_token) {
       access_token = ?,
       refresh_token = COALESCE(?, refresh_token)
     WHERE id = ?
-  `).run(access_token, refresh_token || null, userId);
+  `).run(secrets.seal(access_token) ?? null, secrets.seal(refresh_token) || null, userId);
 }
 
 // ─── Welcome Emails ──────────────────────────────────────────────────────────

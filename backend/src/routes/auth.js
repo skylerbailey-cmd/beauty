@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const { seal } = require('../lib/secrets');
 const { v4: uuidv4 } = require('uuid');
 const { createOAuthClient } = require('../services/gmail');
 const { db, saveUser, getUser } = require('../db');
@@ -199,7 +200,7 @@ router.get('/google/callback', async (req, res) => {
       const existingUser = getUser(sessionUserId);
       if (existingUser) {
         db.prepare('UPDATE users SET access_token = ?, refresh_token = COALESCE(?, refresh_token) WHERE id = ?')
-          .run(tokens.access_token, tokens.refresh_token || null, sessionUserId);
+          .run(seal(tokens.access_token) ?? null, seal(tokens.refresh_token) || null, sessionUserId);
         userId = sessionUserId;
         cookieEmail = existingUser.email; // keep the stable login email
       } else {
@@ -232,7 +233,7 @@ router.get('/google/callback', async (req, res) => {
       cookieEmail = user.email;
       if (tokens.access_token || tokens.refresh_token) {
         db.prepare('UPDATE users SET access_token = COALESCE(?, access_token), refresh_token = COALESCE(?, refresh_token) WHERE id = ?')
-          .run(tokens.access_token || null, tokens.refresh_token || null, userId);
+          .run(seal(tokens.access_token) || null, seal(tokens.refresh_token) || null, userId);
       }
     } else {
       // The old non-web flow (it served the mobile app, which is gone). Its ids

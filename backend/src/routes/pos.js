@@ -2530,8 +2530,9 @@ router.post('/reports/time', async (req, res) => {
         .filter((e) => e.active)
         .map((e) => ({ id: e.id, name: e.name, company_id: e.user_id }))
     : [];
-  const stores = books ? Object.fromEntries((await pgDb.getAllCompanyIds())
-    .filter((c) => scope.includes(c.user_id)).map((c) => [c.user_id, c.store_name])) : {};
+  // Only the shops in view — never a list of every shop on the server.
+  const stores = books ? Object.fromEntries(await Promise.all(scope.map(async (id) =>
+    [id, (await pgDb.getSettings(id))?.store_name || '']))) : {};
   res.json({ can_edit: books, enabled: await timeClockOn(req.session.userId), entries, people, stores });
 });
 

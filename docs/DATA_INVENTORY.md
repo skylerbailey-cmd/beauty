@@ -3,7 +3,7 @@
 Every kind of data SkySale collects or stores, where it lives, who can see it,
 what leaves our servers, and how long it is kept.
 
-- **Last reviewed:** 2 October 2026
+- **Last reviewed:** 2 October 2026 (updated for token encryption and customer notes)
 - **Sources:** the production Postgres schema (table and column names only — no
   records were read), the code in `backend/src` and `backend/web`.
 - **Keep it current:** when a table, column, browser-storage key, or outside
@@ -53,7 +53,8 @@ contact details); **Medium** = business-confidential; **Low** = configuration.
 ### The shop's customers (consumers)
 | Data | Where | Sensitivity |
 |---|---|---|
-| Name, email, phone, postal address, birthday, notes | `customers` | **High** (personal data) |
+| Name, email, phone, postal address, birthday | `customers` | **High** (personal data) |
+| **Free-text notes** — staff may type health details (allergies, skin conditions) | `customers.notes` | **High — may be sensitive.** The Terms (§8) ask shops not to record health information unless needed and consented to, and the app says so under the box. SkySale is not a health record system and signs no HIPAA BAAs. |
 | "Never email" flag | `customers.no_email` | Medium |
 | What they bought, and when | `customer_products`, `pos_transactions`, `pos_transaction_items` | High |
 | Name, email and phone copied onto each receipt | `pos_transactions.customer_*` | High |
@@ -86,7 +87,7 @@ terminal; SkySale records only the method, amount and last four digits.
 | Data | Where | Sensitivity |
 |---|---|---|
 | Sign-in links: **hashed** token, email, expiry, when used | `pos_login_links` | High |
-| **Gmail access** for sending as the shop: refresh token and address | `pos_gmail_tokens` — plain text | **High** |
+| **Gmail access** for sending as the shop: refresh token and address | `pos_gmail_tokens` — **encrypted at rest** (AES-256-GCM, `lib/secrets.js`) once `TOKEN_ENCRYPTION_KEY` is set | **High** |
 | Session cookie (`connect.sid`), 30 days, http-only, secure in production | Browser + server memory | High |
 
 ---
@@ -149,7 +150,7 @@ at sign-in to resolve an email to its account id; wiped on every deploy.
 
 | Table | Holds | Notes |
 |---|---|---|
-| `users` | id, email, company_name, theme, websites, brands, **Google access/refresh tokens**, push token, Gmail history id | Sending falls back to `pos_gmail_tokens` in Postgres when this is empty (`lib/sending-user.js`) |
+| `users` | id, email, company_name, theme, websites, brands, **Google access/refresh tokens** (encrypted, like Postgres), push token, Gmail history id | Sending falls back to `pos_gmail_tokens` in Postgres when this is empty (`lib/sending-user.js`) |
 | `emails` | Gmail thread/message ids, sender, subject, snippet, body, draft | Left from the removed Smart Inbox; nothing writes to it now |
 | `customers`, `customer_products`, `campaigns`, `welcome_emails` | Older copies of the Postgres tables | Superseded by Postgres |
 
@@ -219,8 +220,14 @@ These are **not** removed when a cancelled shop is deleted, and should be:
 ### Other risks worth knowing
 - **PINs are stored as plain text.** They're never sent to the browser, but a
   database leak would expose them. Hashing them is the fix.
-- **Processor tokens and Gmail refresh tokens are plain text** in Postgres.
-  Encrypting them at rest with a key held outside the database is the fix.
+- **Gmail tokens are encrypted at rest** (`lib/secrets.js`, AES-256-GCM) with
+  `TOKEN_ENCRYPTION_KEY`, an environment variable kept out of the database.
+  On each start, any token still in plain text is encrypted in place. **If the
+  key is lost or changed, every shop has to reconnect Gmail** — keep a copy.
+  Processor tokens (Maverick, Payarc) are still plain text; the same helper
+  would cover them.
+- **Who controls customer data:** the shop is the controller; SkySale is its
+  processor/service provider (Terms §8, Privacy Policy §2).
 - **Sessions live in server memory**, so everyone is signed out on each deploy.
 - **Full email bodies** are kept in `sent_emails` and `campaigns` for as long as
   the shop exists.
