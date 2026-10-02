@@ -11,6 +11,9 @@ try { ({ JSDOM } = require('jsdom')); } catch (_) {
   process.exit(0);
 }
 let pass = 0, fail = 0;
+// Refused either way: 403 for a wrong PIN, 409 for no PIN at all (an
+// out-of-date page, told to refresh).
+const refused = (c) => c === 403 || c === 409;
 const check = (l, ok, detail) => {
   console.log(`${ok ? '  ok  ' : '  FAIL'} ${l}`);
   if (!ok && detail) console.log(`        ${detail}`);
@@ -61,16 +64,16 @@ const ANA = { manager_name: 'Ana', manager_pin: '1111' };
   check('adding someone doesn\'t send their PIN back', added.code === 200 && !('pin' in added.body.employee));
 
   console.log('\n── Adding and changing staff needs a manager ──');
-  check('no PIN: adding someone is refused', (await call('/employees', 'post', { name: 'X', pin: '5555' })).code === 403);
+  check('no PIN: adding someone is refused', refused((await call('/employees', 'post', { name: 'X', pin: '5555' })).code));
   check('a sales PIN: refused', (await call('/employees', 'post', { name: 'X', pin: '5555', ...ANA })).code === 403);
   check('a manager can add a manager', (await call('/employees', 'post', { name: 'Y', pin: '5555', role: 'manager', ...MO })).code === 200);
   check('but not an admin', (await call('/employees', 'post', { name: 'Z', pin: '5555', role: 'admin', ...MO })).code === 403);
   check('an admin can', (await call('/employees', 'post', { name: 'Z', pin: '5555', role: 'admin', ...SKY })).code === 200);
 
   let r = await call('/employees/:id', 'put', { pin: '0000' }, { id: '2' });
-  check('no PIN: changing the manager\'s PIN is refused', r.code === 403 && !updates.length);
+  check('no PIN: changing the manager\'s PIN is refused', refused(r.code) && !updates.length);
   check('a sales PIN cannot either', (await call('/employees/:id', 'put', { role: 'manager', ...ANA }, { id: '1' })).code === 403);
-  check('nor can anyone deactivate someone without one', (await call('/employees/:id', 'put', { active: 0 }, { id: '1' })).code === 403);
+  check('nor can anyone deactivate someone without one', refused((await call('/employees/:id', 'put', { active: 0 }, { id: '1' })).code));
   check('another shop\'s employee is out of reach', (await call('/employees/:id', 'put', { name: 'X', ...MO }, { id: '9' })).code === 404);
   r = await call('/employees/:id', 'put', { name: 'Ana', pin: '', role: 'sales', ...MO }, { id: '1' });
   check('a blank PIN keeps theirs', r.code === 200 && !('pin' in updates.at(-1).f), JSON.stringify(updates.at(-1)));
@@ -83,8 +86,8 @@ const ANA = { manager_name: 'Ana', manager_pin: '1111' };
   check('the business card\'s title and phone need no PIN', r.code === 200 && updates.at(-1).f.title === 'Skin Specialist');
 
   console.log('\n── Pay needs a manager ──');
-  check('no PIN: a commission plan can\'t be set', (await call('/employees/:id/commission-plan', 'put', { plan_type: 'flat', base_rate: 90 }, { id: '1' })).code === 403);
-  check('nor removed', (await call('/employees/:id/commission-plan', 'delete', {}, { id: '1' })).code === 403);
+  check('no PIN: a commission plan can\'t be set', refused((await call('/employees/:id/commission-plan', 'put', { plan_type: 'flat', base_rate: 90 }, { id: '1' })).code));
+  check('nor removed', refused((await call('/employees/:id/commission-plan', 'delete', {}, { id: '1' })).code));
   check('a manager can set one', (await call('/employees/:id/commission-plan', 'put', { plan_type: 'flat', base_rate: 35, ...MO }, { id: '1' })).code === 200);
   check('but not the admin\'s', (await call('/employees/:id/commission-plan', 'put', { plan_type: 'flat', base_rate: 35, ...MO }, { id: '3' })).code === 403);
   check('another shop\'s employee\'s plan is out of reach', (await call('/employees/:id/commission-plan', 'get', {}, { id: '9' })).code === 404);

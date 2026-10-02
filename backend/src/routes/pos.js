@@ -267,6 +267,21 @@ async function managerFor(req) {
   return verifyManager(req.session.userId, manager_name, manager_pin);
 }
 
+// The refusal when no manager signed off. A request with no manager name or
+// PIN in it at all comes from a page loaded before these checks existed —
+// a tab left open across a deploy — and "sign in again" sends the person
+// round in circles, so it says to refresh instead.
+function refuseNoManager(req, res, message) {
+  const b = req.body || {};
+  if (b.manager_name === undefined && b.manager_pin === undefined) {
+    return res.status(409).json({
+      error: 'This page is out of date — SkySale was updated since it was opened. Refresh the page (⌘R, or Ctrl+R) and try again.',
+      stale_page: true,
+    });
+  }
+  return res.status(403).json({ error: message });
+}
+
 // Only an admin makes someone an admin, or changes an admin's record.
 // Otherwise a manager could promote themselves, and then do what only an
 // admin can — link stores, close the account.
@@ -292,7 +307,7 @@ router.get('/employees', async (req, res) => {
 router.post('/employees', async (req, res) => {
   const { name, pin, role, commission_rate } = req.body;
   const manager = await managerFor(req);
-  if (!manager) return res.status(403).json({ error: 'Adding an employee needs a manager or admin name and PIN. Reopen Settings and sign in again.' });
+  if (!manager) return refuseNoManager(req, res, 'Adding an employee needs a manager or admin name and PIN. Reopen Settings and sign in again.');
   if (role === 'admin' && !isAdmin(manager)) return res.status(403).json({ error: 'Only an admin can add another admin.' });
   if (!name || !pin) return res.status(400).json({ error: 'name and pin required' });
   if (pin.length < 4) return res.status(400).json({ error: 'PIN must be at least 4 digits' });
@@ -323,7 +338,7 @@ router.put('/employees/:id', async (req, res) => {
 
   if (Object.keys(fields).some((k) => !CARD_FIELDS.has(k))) {
     const manager = await managerFor(req);
-    if (!manager) return res.status(403).json({ error: 'Changing an employee needs a manager or admin name and PIN. Reopen Settings and sign in again.' });
+    if (!manager) return refuseNoManager(req, res, 'Changing an employee needs a manager or admin name and PIN. Reopen Settings and sign in again.');
     if (touchesAdmin(target, fields) && !isAdmin(manager)) {
       return res.status(403).json({ error: 'Only an admin can change an admin, or make someone one.' });
     }
@@ -356,7 +371,7 @@ router.put('/employees/:id/commission-plan', async (req, res) => {
   const target = await ownEmployee(req);
   if (!target) return res.status(404).json({ error: 'That employee was not found.' });
   const manager = await managerFor(req);
-  if (!manager) return res.status(403).json({ error: 'Changing how someone is paid needs a manager or admin name and PIN.' });
+  if (!manager) return refuseNoManager(req, res, 'Changing how someone is paid needs a manager or admin name and PIN.');
   if (isAdmin(target) && !isAdmin(manager)) return res.status(403).json({ error: 'Only an admin can change an admin\'s pay.' });
   const { plan_type, base_rate, tier_rate, tier_threshold, store_rate } = req.body;
   if (!['flat', 'daily_threshold'].includes(plan_type)) {
@@ -394,7 +409,7 @@ router.delete('/employees/:id/commission-plan', async (req, res) => {
   const target = await ownEmployee(req);
   if (!target) return res.status(404).json({ error: 'That employee was not found.' });
   const manager = await managerFor(req);
-  if (!manager) return res.status(403).json({ error: 'Changing how someone is paid needs a manager or admin name and PIN.' });
+  if (!manager) return refuseNoManager(req, res, 'Changing how someone is paid needs a manager or admin name and PIN.');
   if (isAdmin(target) && !isAdmin(manager)) return res.status(403).json({ error: 'Only an admin can change an admin\'s pay.' });
   await pgDb.deleteCommissionPlan(parseInt(req.params.id));
   res.json({ ok: true });
@@ -405,7 +420,7 @@ router.delete('/employees/:id/commission-plan', async (req, res) => {
 // it's never in the roster the register loads.
 router.post('/employees/pay', async (req, res) => {
   const manager = await managerFor(req);
-  if (!manager) return res.status(403).json({ error: 'Seeing pay needs a manager or admin name and PIN.' });
+  if (!manager) return refuseNoManager(req, res, 'Seeing pay needs a manager or admin name and PIN.');
   res.json(await pgDb.currentPay(req.session.userId));
 });
 
@@ -413,7 +428,7 @@ router.put('/employees/:id/pay', async (req, res) => {
   const target = await ownEmployee(req);
   if (!target) return res.status(404).json({ error: 'That employee was not found.' });
   const manager = await managerFor(req);
-  if (!manager) return res.status(403).json({ error: 'Changing how someone is paid needs a manager or admin name and PIN.' });
+  if (!manager) return refuseNoManager(req, res, 'Changing how someone is paid needs a manager or admin name and PIN.');
   if (isAdmin(target) && !isAdmin(manager)) return res.status(403).json({ error: 'Only an admin can change an admin\'s pay.' });
 
   const { pay_type, hourly_rate, annual_salary, effective_from } = req.body || {};

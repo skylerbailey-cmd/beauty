@@ -9,6 +9,9 @@ try { ({ JSDOM } = require('jsdom')); } catch (_) {
   process.exit(0);
 }
 let pass = 0, fail = 0;
+// Refused either way: 403 for a wrong PIN, 409 for no PIN at all (an
+// out-of-date page, told to refresh).
+const refused = (c) => c === 403 || c === 409;
 const check = (l, ok, detail) => {
   console.log(`${ok ? '  ok  ' : '  FAIL'} ${l}`);
   if (!ok && detail) console.log(`        ${detail}`);
@@ -43,10 +46,10 @@ const MO = { manager_name: 'Mo', manager_pin: '2222' };
   console.log('\n── On the server ──');
   const roster = await call('/employees', 'get');
   check('the register\'s roster carries no pay', !/hourly_rate|annual_salary|pay_type/.test(JSON.stringify(roster.body)));
-  check('reading pay needs a manager', (await call('/employees/pay', 'post', {})).code === 403);
+  check('reading pay needs a manager', refused((await call('/employees/pay', 'post', {})).code));
   check('a sales PIN won\'t do', (await call('/employees/pay', 'post', { manager_name: 'Ana', manager_pin: '1111' })).code === 403);
   check('a manager reads it', (await call('/employees/pay', 'post', MO)).body.pay[1].current.hourly_rate === 18);
-  check('setting pay needs a manager', (await call('/employees/:id/pay', 'put', { pay_type: 'hourly', hourly_rate: 20 }, { id: '1' })).code === 403);
+  check('setting pay needs a manager', refused((await call('/employees/:id/pay', 'put', { pay_type: 'hourly', hourly_rate: 20 }, { id: '1' })).code));
   check('only for this shop\'s staff', (await call('/employees/:id/pay', 'put', { pay_type: 'hourly', hourly_rate: 20, ...MO }, { id: '9' })).code === 404);
   check('a manager can\'t set the admin\'s pay', (await call('/employees/:id/pay', 'put', { pay_type: 'salary', annual_salary: 90000, ...MO }, { id: '3' })).code === 403);
   check('nonsense types are refused', (await call('/employees/:id/pay', 'put', { pay_type: 'weekly', ...MO }, { id: '1' })).code === 400);

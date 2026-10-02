@@ -232,6 +232,16 @@
     .tx-view-btn:hover { color: var(--accent-deep); }
     .tx-view-btn.active { color: var(--accent-deep); border-bottom-color: var(--accent); }
 
+    #updateBar {
+      display: none; position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+      transform: translateX(-50%); z-index: 3000; max-width: calc(100% - 24px);
+      align-items: center; gap: 12px; flex-wrap: wrap; justify-content: center;
+      background: var(--dark); color: #fff; border-radius: 12px; padding: 10px 14px;
+      font-family: system-ui, sans-serif; font-size: .88rem; box-shadow: 0 8px 28px rgba(0,0,0,.25);
+    }
+    #updateBar.show { display: flex; }
+    #updateBar button { border: none; border-radius: 8px; padding: 8px 14px; font-weight: 700; cursor: pointer; background: var(--accent); color: #fff; font-size: .85rem; }
+    #updateBar .ub-later { background: transparent; color: rgba(255,255,255,.75); font-weight: 500; }
     .modal-overlay {
       display: none; position: fixed; inset: 0; background: rgba(44,32,34,.5);
       z-index: 1000; align-items: center; justify-content: center;
@@ -972,6 +982,12 @@
   </style>
 </head>
 <body>
+<!-- Shown when a newer version of the page has been deployed. -->
+<div id="updateBar" role="status">
+  <span>SkySale has been updated. Refresh to get the latest version.</span>
+  <button type="button" onclick="location.reload()">Refresh</button>
+  <button type="button" class="ub-later" onclick="document.getElementById('updateBar').classList.remove('show')" aria-label="Not now">Later</button>
+</div>
 
 <header>
   <!-- The app switcher is gone. Welcome Emails and Smart Inbox were never
@@ -3282,6 +3298,31 @@ function refreshHeaderCompany() {
 }
 
 // ─── Init ───────────────────────────────────────────────────────────────────
+// ─── A newer SkySale has been deployed ──────────────────────────────────────
+// A register tab stays open for days, and a page from before a deploy keeps
+// running its old code against the new server — which is how a save ended up
+// refused, with "undefined" in a PIN box, until somebody happened to refresh.
+// The page's own ETag changes with every deploy, so it is checked when the
+// tab comes back into view and every few minutes; a change offers a refresh.
+// Never a refresh on its own: there may be a sale half rung up.
+let loadedPageTag = null;
+async function currentPageTag() {
+  try {
+    const r = await fetch(location.pathname, { method: 'HEAD', cache: 'no-store', credentials: 'include' });
+    return (r && r.ok && r.headers && (r.headers.get('etag') || r.headers.get('last-modified'))) || null;
+  } catch (_) { return null; }
+}
+async function checkForNewVersion() {
+  if (location.protocol === 'file:') return;
+  const tag = await currentPageTag();
+  if (!tag) return;
+  if (!loadedPageTag) { loadedPageTag = tag; return; }
+  if (tag !== loadedPageTag) document.getElementById('updateBar')?.classList.add('show');
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForNewVersion(); });
+setInterval(checkForNewVersion, 5 * 60 * 1000);
+checkForNewVersion();
+
 async function init() {
   try {
     const resp = await fetch(`${API}/auth/me`, { credentials: 'include' });
