@@ -1291,18 +1291,21 @@ function smsAddressesFor(settings) {
   return out;
 }
 
-// One line, kept short: a gateway splits anything much over 160 characters
-// into several texts, and some truncate instead.
+// One line, most important first. A carrier's gateway fits the sender's
+// address and the message into one text and cuts what doesn't fit off the
+// END — so who made the sale comes straight after the amount, not near the
+// end where it used to be lost. Plain ASCII separators too: a character
+// like "·" makes the carrier fall back to an encoding that holds 70
+// characters instead of 160, so it cut even sooner.
 function saleAlertText(tx, storeName) {
-  const who = (tx.employees || []).map(e => e.employee_name).join(', ');
+  const names = [...new Set((tx.employees || []).map(e => String(e.employee_name || '').trim()).filter(Boolean))];
   const what = tx.type === 'return' ? 'Refund' : 'Sale';
   return [
-    `${what} $${money(tx.total)}`,
+    `${what} $${money(tx.total)}${names.length ? ` by ${names.join(', ')}` : ''}`,
     storeName || '',
     tx.customer_name || '',
-    who ? `by ${who}` : '',
     `#${tx.receipt_number}`,
-  ].filter(Boolean).join(' · ');
+  ].filter(Boolean).join(' - ');
 }
 
 // Fire-and-forget: a sale must never fail because a text couldn't be sent, so
@@ -4717,3 +4720,4 @@ router.post('/help/feature-request', async (req, res) => {
 module.exports = router;
 module.exports.runNightlyAudits = runNightlyAudits;
 module.exports.runAutoEmails = runAutoEmails;
+module.exports.saleAlertText = saleAlertText;

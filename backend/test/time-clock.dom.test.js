@@ -122,6 +122,7 @@ const call = async (p, body, method = 'post') => {
   settings = { ...settings, build_your_own_enabled: 1 };
 
   console.log('\n── On the page ──');
+  const TODAY = new Date().toLocaleDateString('en-CA');
   const html = fs.readFileSync(path.join(__dirname, '..', 'web', 'pos.html'), 'utf8');
   let SETTINGS = { store_name: 'Glow SF', time_clock_enabled: 0, build_your_own_enabled: 1 };
   const posted = [];
@@ -134,9 +135,11 @@ const call = async (p, body, method = 'post') => {
     }
     if (/employees$/.test(url)) return { employees: staff.filter(s => s.user_id === SHOP).map(({ pin, ...e }) => e) };
     if (/time-clock\/now/.test(url)) return { enabled: true, on: [{ employee_name: 'Mo', clock_in: '2026-10-01T08:00' }] };
+    // Today, on this machine's clock — the box leaves the date off a time
+    // from today and adds it to one from any other day.
     if (/time-clock\/punch/.test(url)) return body.action === 'in'
-      ? { action: 'in', employee: body.name, clock_in: '2026-10-01T09:00' }
-      : { action: 'out', employee: body.name, clock_in: '2026-10-01T09:00', clock_out: '2026-10-01T17:30', hours: 8.5 };
+      ? { action: 'in', employee: body.name, clock_in: `${TODAY}T09:00` }
+      : { action: 'out', employee: body.name, clock_in: `${TODAY}T09:00`, clock_out: `${TODAY}T17:30`, hours: 8.5 };
     if (/reports\/time$/.test(url)) return body.name === 'Mo'
       ? { can_edit: true, enabled: true, entries, people: [{ id: 1, name: 'Ana', company_id: SHOP }], stores: { [SHOP]: 'Glow SF' } }
       : { can_edit: false, enabled: true, entries: entries.filter(e => e.employee_name === body.name), people: [], stores: {} };
