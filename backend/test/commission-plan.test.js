@@ -89,23 +89,23 @@ const money = (n) => Math.round(Number(n || 0) * 100) / 100;
   check('is still all at the base rate', await run('2026-06-01', '2026-06-30') === 700,
     `$${await run('2026-06-01', '2026-06-30')}, expected $700 (2000 @ 35%)`);
 
-  console.log('\n── A day over it: only the part above earns more ──');
+  console.log('\n── A day over it: the WHOLE day earns the tier rate ──');
   await cleanupSales();
   await sale('2026-06-04T18:00:00Z', 3000);
-  // 2000 @ 35% = 700, 1000 @ 40% = 400
-  check('the first $2,000 at 35%, the rest at 40%',
-    await run('2026-06-01', '2026-06-30') === 1100,
-    `$${await run('2026-06-01', '2026-06-30')}, expected $1100 — not $1200, which is the whole day at 40%`);
+  // 3000 @ 40% = 1200 — every dollar that day, not just the part above $2,000
+  check('all $3,000 at 40%',
+    await run('2026-06-01', '2026-06-30') === 1200,
+    `$${await run('2026-06-01', '2026-06-30')}, expected $1200 — $1100 is the marginal rule (only the part above at 40%)`);
 
-  console.log('\n── The dollar that crosses the line is worth no more than the one before it ──');
+  console.log('\n── Crossing the line moves the whole day to the tier rate ──');
   await cleanupSales();
   await sale('2026-06-05T18:00:00Z', 2000);
   const at = await run('2026-06-01', '2026-06-30');
   await cleanupSales();
   await sale('2026-06-05T18:00:00Z', 2001);
   const over = await run('2026-06-01', '2026-06-30');
-  check('one more dollar of sales adds forty cents, not $200',
-    money(over - at) === 0.4, `$${money(over - at)} for the 2001st dollar`);
+  check('one dollar over $2,000 puts the whole day at 40% — $100.40 more',
+    money(over - at) === 100.4, `$${money(over - at)} for the 2001st dollar`);
 
   console.log('\n── The day is the shop\'s day, not the server\'s ──');
   await cleanupSales();
@@ -113,16 +113,16 @@ const money = (n) => Math.round(Number(n || 0) * 100) / 100;
   await sale('2026-08-12T01:00:00Z', 1200);
   await sale('2026-08-12T02:00:00Z', 1300);
   const denver = await run('2026-08-01', '2026-08-31');
-  // One Denver day of $2,500: 2000 @ 35% + 500 @ 40% = 700 + 200 = 900.
-  check('two evening sales are one trading day', denver === 900,
-    `$${denver}, expected $900 — $700 (two UTC days of $1,200 and $1,300, both under) means it split the day`);
+  // One Denver day of $2,500, over the line: 2500 @ 40% = 1000.
+  check('two evening sales are one trading day', denver === 1000,
+    `$${denver}, expected $1000 — $875 (two UTC days of $1,200 and $1,300, both under) means it split the day`);
 
   console.log('\n── A morning and an evening on the same shop day ──');
   await cleanupSales();
   await sale('2026-08-11T16:00:00Z', 1200);   // 10am Denver, 11 Aug
   await sale('2026-08-12T02:00:00Z', 1300);   // 8pm Denver, 11 Aug — 12th in UTC
-  check('still one day', await run('2026-08-01', '2026-08-31') === 900,
-    `$${await run('2026-08-01', '2026-08-31')}, expected $900`);
+  check('still one day', await run('2026-08-01', '2026-08-31') === 1000,
+    `$${await run('2026-08-01', '2026-08-31')}, expected $1000`);
 
   console.log('\n── A return comes off before the threshold is judged ──');
   await cleanupSales();
@@ -135,14 +135,14 @@ const money = (n) => Math.round(Number(n || 0) * 100) / 100;
 
   console.log('\n── Several days add up separately ──');
   await cleanupSales();
-  await sale('2026-06-08T18:00:00Z', 3000);   // 700 + 400 = 1100
-  await sale('2026-06-09T18:00:00Z', 1000);   // 350
-  await sale('2026-06-10T18:00:00Z', 5000);   // 700 + 1200 = 1900
-  check('each day is judged on its own', await run('2026-06-01', '2026-06-30') === 3350,
-    `$${await run('2026-06-01', '2026-06-30')}, expected $3350`);
+  await sale('2026-06-08T18:00:00Z', 3000);   // over: 3000 @ 40% = 1200
+  await sale('2026-06-09T18:00:00Z', 1000);   // under: 1000 @ 35% = 350
+  await sale('2026-06-10T18:00:00Z', 5000);   // over: 5000 @ 40% = 2000
+  check('each day is judged on its own', await run('2026-06-01', '2026-06-30') === 3550,
+    `$${await run('2026-06-01', '2026-06-30')}, expected $3550`);
   check('and not on the period as a whole',
-    await run('2026-06-01', '2026-06-30') !== money(2000 * 0.35 + 7000 * 0.40),
-    'the whole period treated as one day would be $3,500');
+    await run('2026-06-01', '2026-06-30') !== money(9000 * 0.40),
+    'the whole period treated as one day would be $3,600');
 
   console.log('\n── The cheque pays the plan, not a flat rate ──');
   // The report worked the plan out properly and payroll did not — it paid
@@ -150,7 +150,7 @@ const money = (n) => Math.round(Number(n || 0) * 100) / 100;
   // the two screens gave different answers for the same fortnight, and the
   // one that decides what somebody is paid was the one that underpaid.
   await cleanupSales();
-  await sale('2026-07-08T18:00:00Z', 3000);   // 8 Jul: 700 + 400 = 1100
+  await sale('2026-07-08T18:00:00Z', 3000);   // 8 Jul: over, 3000 @ 40% = 1200
   await sale('2026-07-09T18:00:00Z', 1000);   // 9 Jul: 350
   const settings = await pgDb.getSettings(SHOP);
   const cheque = async (payday) => {
@@ -160,8 +160,8 @@ const money = (n) => Math.round(Number(n || 0) * 100) / 100;
   };
   const jul = await cheque('2026-08-01');     // pays 1-15 July
   check('the sales are the same either way', jul.sales === 4000, `$${jul.sales}`);
-  check('the cheque pays the plan', jul.earned === 1450,
-    `$${jul.earned}, expected $1450 — $1400 is the flat 35% payroll used to pay`);
+  check('the cheque pays the plan', jul.earned === 1550,
+    `$${jul.earned}, expected $1550 — $1400 is the flat 35% payroll used to pay`);
   check('which is what the report says too',
     jul.earned === await run('2026-07-01', '2026-07-15'),
     `cheque $${jul.earned}, report $${await run('2026-07-01', '2026-07-15')}`);
@@ -175,7 +175,7 @@ const money = (n) => Math.round(Number(n || 0) * 100) / 100;
   const withReturn = await cheque('2026-08-01');
   check('the sales figure drops by the return', withReturn.sales === 1800, `$${withReturn.sales}`);
   check('and the cheque never pays more than the sales support',
-    withReturn.earned < 1100, `$${withReturn.earned}`);
+    withReturn.earned < 1200, `$${withReturn.earned}`);
 
   console.log('\n── A manager\'s share of the floor ──');
   // Set per person in Settings, as a percentage of everything the shop takes.

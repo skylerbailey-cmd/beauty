@@ -2897,7 +2897,7 @@
     </div>
     <div id="empEditTierFields" style="display:none">
       <p style="font-family:system-ui,sans-serif;font-size:.78rem;color:var(--mid);margin:-4px 0 10px">
-        Example: under the threshold earns the base rate; at or above it, the WHOLE day earns the tier rate instead.
+        Example: a day at or under the threshold earns the base rate; a day over it earns the tier rate on the WHOLE day — every dollar, not just the part above the line.
       </p>
       <div style="display:flex;gap:10px">
         <div class="field" style="flex:1">
@@ -11446,7 +11446,7 @@ async function loadPayroll() {
     const rateText = e => {
       const t = e.plan_split;
       if (!t) return `${e.commission_rate}% of $${money(e.sales_total)}`;
-      const rule = `${t.tier_rate}% on each day's sales above $${money(t.threshold).replace(/\.00$/, '')}`;
+      const rule = `${t.tier_rate}% on the whole of any day over $${money(t.threshold).replace(/\.00$/, '')}`;
       return Number(t.at_tier) > 0
         ? `${t.base_rate}% of $${money(t.at_base)} + ${t.tier_rate}% of $${money(t.at_tier)} (${rule})`
         : `${t.base_rate}% of $${money(t.at_base)} (no day above $${money(t.threshold).replace(/\.00$/, '')} for ${t.tier_rate}%)`;

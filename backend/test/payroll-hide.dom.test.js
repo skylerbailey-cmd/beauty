@@ -84,7 +84,7 @@ setTimeout(async () => {
   const text = (i) => rows()[i].querySelector('.pr-detail').textContent.replace(/\s+/g, ' ');
   check('a tiered row shows both rates and what went at each',
     /35% of \$2,600\.00 \+ 40% of \$15,586\.50/.test(text(0)), text(0));
-  check('and the rule behind it', /40% on each day's sales above \$2,000\b/.test(text(0)), text(0));
+  check('and the rule behind it', /40% on the whole of any day over \$2,000\b/.test(text(0)), text(0));
   check('returns are still mentioned', /after \$8,172\.97 returned/.test(text(0)), text(0));
   check('no "35% of the total" that doesn\'t add up', !/35% of \$18,186\.50/.test(text(0)), text(0));
   check('a tiered person with no big day says so', /35% of \$450\.00 \(no day above \$2,000 for 40%\)/.test(text(1)), text(1));

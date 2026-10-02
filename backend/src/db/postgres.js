@@ -2464,10 +2464,10 @@ async function payrollForPayday(userId, payday, settings) {
     }
   }
 
-  // "35% for anything under $2,000, anything over that is 40%" — the step is
-  // in the RATE, not a switch on the whole day. Paying the tier rate on all
-  // of a day that crossed the line makes the dollar that crosses it worth
-  // more than every dollar before it.
+  // "35%, or 40% if they sell over $2,000 that day" — a day over the line is
+  // paid the tier rate on ALL of it; a day at or under it, the base rate.
+  // Must give the same answer as the commissions report
+  // (calculateEmployeeCommission), which has its own copy of this rule.
   const planCommission = (empId) => {
     const plan = plans.get(empId);
     const byDay = dailyNet.get(empId);
@@ -2477,11 +2477,13 @@ async function payrollForPayday(userId, payday, settings) {
     const tier = Number(plan.tier_rate) || 0;
     let total = 0;
     for (const net of byDay.values()) {
-      total += net <= cap ? net * base / 100 : (cap * base / 100) + ((net - cap) * tier / 100);
+      // Over the line, the WHOLE day is paid at the tier rate.
+      total += net > cap ? net * tier / 100 : net * base / 100;
     }
     return round2(total);
   };
-  // How much of their sales went at each rate, so the paycheck can say
+  // How much of their sales went at each rate — whole days, since a day over
+  // the line is all at the tier rate — so the paycheck can say
   // "35% of this and 40% of that" — a single rate times the total doesn't
   // come to the figure being paid, and reads as a mistake.
   const planSplit = (empId) => {
@@ -2491,8 +2493,7 @@ async function payrollForPayday(userId, payday, settings) {
     const cap = Number(plan.tier_threshold) || 0;
     let atBase = 0, atTier = 0;
     for (const net of byDay.values()) {
-      if (net <= cap) atBase += net;
-      else { atBase += cap; atTier += net - cap; }
+      if (net > cap) atTier += net; else atBase += net;
     }
     return {
       base_rate: Number(plan.base_rate) || 0, tier_rate: Number(plan.tier_rate) || 0,
@@ -4132,18 +4133,15 @@ async function calculateEmployeeCommission(employeeId, userId, startDate, endDat
       byDay[day].push(tx);
     }
 
-    // The threshold is a step in the RATE, not a switch on the whole day:
-    // the first $2,000 earns the base rate and only what is above it earns
-    // the tier rate. Paying the tier rate on the whole of a day that crossed
-    // the line made the $2,000th dollar worth more than the ones before it —
-    // on a $17,586 day that is $200 of commission conjured by the crossing
-    // itself. A day that stays under is untouched either way.
+    // A day over the threshold earns the tier rate on the WHOLE day; a day
+    // at or under it earns the base rate. (For a while this was marginal —
+    // only the part above the line at the tier rate — but that is not the
+    // shop's rule: over $2,000 means every dollar that day is 40%.)
     const marginal = (net) => {
       const cap = Number(plan.tier_threshold) || 0;
       const base = Number(plan.base_rate) || 0;
       const tier = Number(plan.tier_rate) || 0;
-      if (net <= cap) return net * base / 100;
-      return (cap * base / 100) + ((net - cap) * tier / 100);
+      return net > cap ? net * tier / 100 : net * base / 100;
     };
 
     let salesTotal = 0, returnsTotal = 0, saleCount = 0, returnCount = 0, commissionTotal = 0;
