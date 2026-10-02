@@ -603,6 +603,36 @@
     .modal-actions { flex-direction: column-reverse; }
     .modal-actions .btn { width: 100%; padding: 14px; }
 
+    /* ── Nothing wider than the screen ──
+       The page itself never scrolls sideways (see html, body above), so
+       anything wider than the screen was simply cut off — Reports most of
+       all, where the stacked sections sized themselves to their widest table.
+       Now the section column is the screen's width, and a card whose table
+       is wider than that scrolls the table inside the card. */
+    #rptLayout { align-items: stretch !important; }
+    #rptLayout > div { width: 100%; }
+    .report-card { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .report-table th, .report-table td { padding: 8px 6px; }
+    input, select, textarea { max-width: 100%; }
+    select { min-width: 0; }
+    /* Side-by-side pairs of cards stack. */
+    #calLowerGrid { grid-template-columns: 1fr !important; }
+    .date-range { flex-wrap: wrap; }
+    .emp-row { flex-wrap: wrap; row-gap: 6px; }
+    /* A wide table scrolls under its first column, so whose row it is stays
+       on screen while the figures move. */
+    .report-card .report-table th:first-child,
+    .report-card .report-table td:first-child {
+      position: sticky; left: 0; z-index: 1; background: var(--white);
+      box-shadow: 1px 0 0 var(--border);
+    }
+    /* The paycheck picker takes the row, with its arrows either side. */
+    div:has(> #payrollPayday) { width: 100%; }
+    #payrollPayday { flex: 1 1 0; width: 0; min-width: 0; }
+    /* Name, PIN and rate share the row instead of each keeping a fixed width. */
+    #empManagerView > div:first-of-type > input { flex: 1 1 40% !important; width: auto !important; min-width: 0 !important; }
+    #empManagerView > div:first-of-type > #newEmpName { flex-basis: 100% !important; }
+
     /* ── Things you have to hit ── */
     /* Anything below about 44px is missed as often as it is pressed. Centred
        and non-wrapping with it, because a minimum height applied to a button
@@ -8791,7 +8821,7 @@ function renderAlertRecipients() {
   const el = document.getElementById('alertRecipients');
   if (!el) return;
   el.innerHTML = alertRecipients.map((r, i) => `
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;font-family:system-ui,sans-serif;font-size:.85rem">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px;font-family:system-ui,sans-serif;font-size:.85rem">
       <input type="${r.carrier === 'email' ? 'email' : 'tel'}" value="${escapeHtml(r.phone)}"
              placeholder="${r.carrier === 'email' ? 'name@example.com' : 'Mobile number'}"
              oninput="alertRecipients[${i}].phone = this.value"
