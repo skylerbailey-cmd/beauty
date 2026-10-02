@@ -250,8 +250,30 @@ router.put('/products/custom/:id', async (req, res) => {
 
 // ─── Employees ─────────────────────────────────────────────────────────────
 
+// A PIN never leaves the server. The roster goes to every browser signed in
+// to the shop — the register at the counter included — so a PIN in it could
+// be read by anyone who opened the page source, manager's PIN and all.
+const publicEmployee = (e) => {
+  if (!e) return e;
+  const { pin, ...rest } = e;
+  return rest;
+};
+
+// A manager's (or admin's) name and PIN, sent with the request. Changing who
+// works here, their PIN, their role or their pay is a manager's job; the shop
+// being signed in on this browser is not enough.
+async function managerFor(req) {
+  const { manager_name, manager_pin } = req.body || {};
+  return verifyManager(req.session.userId, manager_name, manager_pin);
+}
+
+// Only an admin makes someone an admin, or changes an admin's record.
+// Otherwise a manager could promote themselves, and then do what only an
+// admin can — link stores, close the account.
+const touchesAdmin = (target, fields) => isAdmin(target) || fields.role === 'admin';
+
 router.get('/employees', async (req, res) => {
-  const employees = await pgDb.getEmployees(req.session.userId);
+  const employees = (await pgDb.getEmployees(req.session.userId)).map(publicEmployee);
   // The roster used to show one number: the flat rate on the employee row.
   // For anyone on a tiered plan that is the lower of two rates and not what
   // they are actually paid, and it said nothing at all about a store cut.
@@ -269,15 +291,44 @@ router.get('/employees', async (req, res) => {
 
 router.post('/employees', async (req, res) => {
   const { name, pin, role, commission_rate } = req.body;
+  const manager = await managerFor(req);
+  if (!manager) return res.status(403).json({ error: 'Adding an employee needs a manager or admin name and PIN. Reopen Settings and sign in again.' });
+  if (role === 'admin' && !isAdmin(manager)) return res.status(403).json({ error: 'Only an admin can add another admin.' });
   if (!name || !pin) return res.status(400).json({ error: 'name and pin required' });
   if (pin.length < 4) return res.status(400).json({ error: 'PIN must be at least 4 digits' });
   const employee = await pgDb.createEmployee(name, pin, role, commission_rate, req.session.userId);
-  res.json({ employee });
+  res.json({ employee: publicEmployee(employee) });
 });
+
+// The business card's title and phone are edited from the register by
+// whoever is printing the card, so those two need no PIN. Anything else —
+// name, PIN, role, pay rate, active — needs a manager.
+const CARD_FIELDS = new Set(['title', 'phone']);
+const EMPLOYEE_FIELDS = ['name', 'pin', 'role', 'active', 'commission_rate', 'phone', 'title'];
 
 router.put('/employees/:id', async (req, res) => {
   const id = parseInt(req.params.id);
-  await pgDb.updateEmployee(id, req.body);
+  const target = await pgDb.getEmployee(id);
+  // Only this shop's own staff, whatever id is asked for.
+  if (!target || target.user_id !== req.session.userId) return res.status(404).json({ error: 'That employee was not found.' });
+
+  const fields = {};
+  for (const k of EMPLOYEE_FIELDS) if (req.body[k] !== undefined) fields[k] = req.body[k];
+  // A blank PIN on the edit form means "keep theirs" — the form is never
+  // given the current one to show.
+  if (fields.pin !== undefined && !String(fields.pin).trim()) delete fields.pin;
+  if (fields.pin !== undefined && String(fields.pin).trim().length < 4) {
+    return res.status(400).json({ error: 'PIN must be at least 4 digits' });
+  }
+
+  if (Object.keys(fields).some((k) => !CARD_FIELDS.has(k))) {
+    const manager = await managerFor(req);
+    if (!manager) return res.status(403).json({ error: 'Changing an employee needs a manager or admin name and PIN. Reopen Settings and sign in again.' });
+    if (touchesAdmin(target, fields) && !isAdmin(manager)) {
+      return res.status(403).json({ error: 'Only an admin can change an admin, or make someone one.' });
+    }
+  }
+  await pgDb.updateEmployee(id, fields);
   res.json({ ok: true });
 });
 
@@ -289,12 +340,24 @@ router.put('/employees/:id', async (req, res) => {
 // transaction history (see calculateEmployeeCommission), so it naturally
 // resets every calendar day with no stored "today's total" to reset.
 
+// This shop's own employee, or nobody.
+async function ownEmployee(req) {
+  const e = await pgDb.getEmployee(parseInt(req.params.id));
+  return e && e.user_id === req.session.userId ? e : null;
+}
+
 router.get('/employees/:id/commission-plan', async (req, res) => {
+  if (!(await ownEmployee(req))) return res.status(404).json({ error: 'That employee was not found.' });
   const plan = await pgDb.getCommissionPlan(parseInt(req.params.id));
   res.json({ plan });
 });
 
 router.put('/employees/:id/commission-plan', async (req, res) => {
+  const target = await ownEmployee(req);
+  if (!target) return res.status(404).json({ error: 'That employee was not found.' });
+  const manager = await managerFor(req);
+  if (!manager) return res.status(403).json({ error: 'Changing how someone is paid needs a manager or admin name and PIN.' });
+  if (isAdmin(target) && !isAdmin(manager)) return res.status(403).json({ error: 'Only an admin can change an admin\'s pay.' });
   const { plan_type, base_rate, tier_rate, tier_threshold, store_rate } = req.body;
   if (!['flat', 'daily_threshold'].includes(plan_type)) {
     return res.status(400).json({ error: 'plan_type must be "flat" or "daily_threshold"' });
@@ -328,6 +391,11 @@ router.put('/employees/:id/commission-plan', async (req, res) => {
 });
 
 router.delete('/employees/:id/commission-plan', async (req, res) => {
+  const target = await ownEmployee(req);
+  if (!target) return res.status(404).json({ error: 'That employee was not found.' });
+  const manager = await managerFor(req);
+  if (!manager) return res.status(403).json({ error: 'Changing how someone is paid needs a manager or admin name and PIN.' });
+  if (isAdmin(target) && !isAdmin(manager)) return res.status(403).json({ error: 'Only an admin can change an admin\'s pay.' });
   await pgDb.deleteCommissionPlan(parseInt(req.params.id));
   res.json({ ok: true });
 });
@@ -377,6 +445,18 @@ router.post('/employees/import-from', async (req, res) => {
   const { user: sourceUser } = findOrCreateUserByEmail(String(source_email).trim().toLowerCase());
   if (!sourceUser) return res.status(404).json({ error: 'That company was not found.' });
   if (sourceUser.id === userId) return res.status(400).json({ error: 'Cannot import from the same company.' });
+
+  // Copying a roster copies everyone's PIN and role, so it needs a manager at
+  // BOTH shops — the same name and PIN working at each, as linking does.
+  // Without the second half, anyone who knew another shop's sign-in address
+  // could take its staff list.
+  const { manager_name, manager_pin } = req.body;
+  const here = await verifyManager(userId, manager_name, manager_pin);
+  if (!here) return res.status(403).json({ error: 'Copying employees needs a manager or admin name and PIN.' });
+  const there = await verifyManager(sourceUser.id, manager_name, manager_pin);
+  if (!there) {
+    return res.status(403).json({ error: 'Your name and PIN have to be a manager or admin at the other company too. If your PIN is different there, change it to match first, or add the employees by hand.' });
+  }
 
   const [sourceEmployees, existing] = await Promise.all([
     pgDb.getEmployees(sourceUser.id),
@@ -2485,7 +2565,7 @@ router.post('/reports/employee-personal', async (req, res) => {
     const names = [...new Set(report.map(r => r.employee_name).filter(Boolean))];
     const returns = (await Promise.all(names.map(n => returnsFor(all, n)))).flat()
       .sort((a, b) => (a.counts_on < b.counts_on ? 1 : a.counts_on > b.counts_on ? -1 : 0));
-    res.json({ employee, role: roleOf(employee), report, returns });
+    res.json({ employee: publicEmployee(employee), role: roleOf(employee), report, returns });
   } else {
     // A sales employee only ever sees their OWN figures, but they may work at
     // more than one company. Their own name+PIN is re-verified against each
@@ -2533,7 +2613,7 @@ router.post('/reports/employee-personal', async (req, res) => {
       .filter(co => included.includes(co.store_name)).map(co => co.user_id);
     const returns = theirScope.length ? await returnsFor(theirScope, employee.name) : [];
 
-    res.json({ employee, role: roleOf(employee), report: rows, returns,
+    res.json({ employee: publicEmployee(employee), role: roleOf(employee), report: rows, returns,
       companies_included: included, companies_rejected: rejected });
   }
 });

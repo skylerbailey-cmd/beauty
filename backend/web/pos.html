@@ -2809,8 +2809,8 @@
       <input type="text" id="empEditName">
     </div>
     <div class="field">
-      <label>PIN</label>
-      <input type="text" id="empEditPin" maxlength="6">
+      <label>New PIN <span style="font-weight:400;color:var(--mid)">(leave blank to keep their current one)</span></label>
+      <input type="password" id="empEditPin" maxlength="6" autocomplete="new-password" inputmode="numeric" placeholder="••••">
     </div>
     <div class="field">
       <label>Role</label>
@@ -5872,6 +5872,10 @@ function renderEmpImportOptions() {
   sel.innerHTML = others.map(a => `<option value="${escapeHtml(a.email)}">${escapeHtml(a.companyName) || escapeHtml(a.email)}</option>`).join('');
 }
 
+// The manager who unlocked Settings, sent with every change to the roster —
+// the server will not take one on the shop's sign-in alone.
+const rosterManager = () => ({ manager_name: settingsCreds?.name, manager_pin: settingsCreds?.pin });
+
 async function importEmployees() {
   const sourceEmail = document.getElementById('empImportSource').value;
   if (!sourceEmail) return;
@@ -5882,7 +5886,7 @@ async function importEmployees() {
   try {
     const resp = await fetch(`${API}/api/pos/employees/import-from`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-      body: JSON.stringify({ source_email: sourceEmail }),
+      body: JSON.stringify({ source_email: sourceEmail, ...rosterManager() }),
     });
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error);
@@ -5907,7 +5911,7 @@ async function addEmployee() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ name, pin, role, commission_rate }),
+    body: JSON.stringify({ name, pin, role, commission_rate, ...rosterManager() }),
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
@@ -5930,7 +5934,8 @@ async function editEmployee(id) {
   if (!emp) return;
   document.getElementById('empEditId').value = id;
   document.getElementById('empEditName').value = emp.name;
-  document.getElementById('empEditPin').value = emp.pin;
+  // The current PIN is never sent to the page. Blank keeps it.
+  document.getElementById('empEditPin').value = '';
   document.getElementById('empEditRole').value = emp.role || 'sales';
   document.getElementById('empEditCommission').value = emp.commission_rate || 0;
 
@@ -5969,7 +5974,7 @@ async function saveEmpEdit() {
   const role = document.getElementById('empEditRole').value;
   const commission_rate = parseFloat(document.getElementById('empEditCommission').value) || 0;
   if (!name) return alert('Name is required');
-  if (!pin || pin.length < 4) return alert('PIN must be at least 4 digits');
+  if (pin && pin.length < 4) return alert('PIN must be at least 4 digits');
 
   const planType = document.getElementById('empEditPlanType').value;
   if (planType === 'daily_threshold') {
@@ -5988,7 +5993,8 @@ async function saveEmpEdit() {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ name, pin, role, commission_rate }),
+    // No PIN typed: leave theirs as it is.
+    body: JSON.stringify({ name, ...(pin ? { pin } : {}), role, commission_rate, ...rosterManager() }),
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
@@ -6013,13 +6019,18 @@ async function saveEmpEdit() {
           tier_rate: parseFloat(document.getElementById('empEditTierRate').value),
           tier_threshold: parseFloat(document.getElementById('empEditTierThreshold').value),
           store_rate: storeRate,
+          ...rosterManager(),
         } : {
           plan_type: 'flat',
           base_rate: commission_rate,
           store_rate: storeRate,
+          ...rosterManager(),
         }),
       })
-    : await fetch(`${API}/api/pos/employees/${id}/commission-plan`, { method: 'DELETE', credentials: 'include' });
+    : await fetch(`${API}/api/pos/employees/${id}/commission-plan`, {
+        method: 'DELETE', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify(rosterManager()),
+      });
   if (!planResp.ok) {
     const err = await planResp.json().catch(() => ({}));
     // The name, PIN and rate did save; only the plan didn't, so say which.
@@ -6031,12 +6042,16 @@ async function saveEmpEdit() {
 }
 
 async function toggleEmployee(id, currentlyActive) {
-  await fetch(`${API}/api/pos/employees/${id}`, {
+  const resp = await fetch(`${API}/api/pos/employees/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     credentials: 'include',
-    body: JSON.stringify({ active: currentlyActive ? 0 : 1 }),
+    body: JSON.stringify({ active: currentlyActive ? 0 : 1, ...rosterManager() }),
   });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    alert(err.error || 'Could not change this employee.');
+  }
   loadEmployees();
 }
 
